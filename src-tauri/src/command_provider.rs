@@ -1,4 +1,5 @@
 use std::{
+    fs,
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
@@ -130,11 +131,16 @@ fn resolve_env_value(value: &str) -> Result<String, String> {
             .map_err(|_| format!("Missing environment variable {name}"));
     }
 
-    Ok(value.to_string())
+    resolve_placeholders(value)
 }
 
 fn resolve_args(args: &[String]) -> Result<Vec<String>, String> {
-    args.iter().map(|arg| resolve_env_placeholders(arg)).collect()
+    args.iter().map(|arg| resolve_placeholders(arg)).collect()
+}
+
+fn resolve_placeholders(input: &str) -> Result<String, String> {
+    let with_env = resolve_env_placeholders(input)?;
+    resolve_file_placeholders(&with_env)
 }
 
 fn resolve_env_placeholders(input: &str) -> Result<String, String> {
@@ -157,6 +163,28 @@ fn resolve_env_placeholders(input: &str) -> Result<String, String> {
 
     output.push_str(remaining);
     Ok(output)
+}
+
+fn resolve_file_placeholders(input: &str) -> Result<String, String> {
+    let mut output = String::new();
+    let mut remaining = input;
+
+    while let Some(start) = remaining.find("${file:") {
+        output.push_str(&remaining[..start]);
+        let after_start = &remaining[start + 7..];
+        let Some(end) = after_start.find('}') else {
+            output.push_str(&remaining[start..]);
+            return Ok(output);
+        };
+        let path = &after_start[..end];
+        let value = fs::read_to_string(path)
+            .map_err(|error| format!("Unable to read secret file {path}: {error}"))?;
+        output.push_str(&value);
+        remaining = &after_start[end + 1..];
+    }
+
+    output.push_str(remaining);
+    Ok(output.trim().to_string())
 }
 
 fn parse_command_output(
@@ -375,5 +403,30 @@ mod tests {
         let error = providers[0].error.as_ref().expect("error");
         assert!(error.contains("QUOTABARWIN_TEST_MISSING_SECRET"));
         assert!(!error.contains("KIMI_API_KEY="));
+    }
+
+    #[test]
+    fn file_secret_placeholder_reads_trimmed_file() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let secret_path = temp.path().join("kimi.key");
+        std::fs::write(&secret_path, "secret-from-file\n").expect("write secret");
+        let input = format!("Authorization: Bearer ${{file:{}}}", secret_path.display());
+
+        let output = resolve_placeholders(&input).expect("resolve file");
+
+        assert_eq!(output, "Authorization: Bearer secret-from-file");
+    }
+
+    #[test]
+    fn missing_file_secret_returns_path_not_secret() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let secret_path = temp.path().join("missing.key");
+        let input = format!("Authorization: Bearer ${{file:{}}}", secret_path.display());
+
+        let error = resolve_placeholders(&input).expect_err("missing file");
+
+        assert!(error.contains("Unable to read secret file"));
+        assert!(error.contains("missing.key"));
+        assert!(!error.contains("Bearer"));
     }
 }
