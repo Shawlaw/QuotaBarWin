@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Header } from "./components/Header";
 import { ProviderCard } from "./components/ProviderCard";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { Summary } from "./components/Summary";
+import { findGlobalLowestWindow } from "./lib/forecast";
 import {
   getCachedSnapshot,
   getConfig,
@@ -147,6 +149,7 @@ export function App() {
           presets={presets}
         />
       ) : null}
+      <Summary globalLowest={findGlobalLowestWindow(snapshot)} />
       <section className="provider-list" aria-label="Providers">
         {snapshot?.providers.map((provider) => (
           <ProviderCard

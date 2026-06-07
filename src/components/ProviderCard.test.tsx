@@ -52,3 +52,29 @@ test("provider_card_renders_kimi_fixture_snapshot", () => {
   expect(screen.getByRole("heading", { name: "Kimi Coding" })).toBeInTheDocument();
   expect(screen.getByText("Coding usage")).toBeInTheDocument();
 });
+
+test("provider_card_renders_bottleneck_badge", () => {
+  render(<ProviderCard provider={provider} />);
+
+  expect(screen.getAllByText("Bottleneck").length).toBeGreaterThan(0);
+});
+
+test("provider_card_renders_suggestion_text", () => {
+  render(
+    <ProviderCard
+      provider={{
+        ...provider,
+        windows: [
+          {
+            ...provider.windows[0],
+            remainingPercent: 8,
+            usedPercent: 92,
+            resetText: "in 2 hours"
+          }
+        ]
+      }}
+    />
+  );
+
+  expect(screen.getByText(/Avoid long tasks or large refactors/)).toBeInTheDocument();
+});
