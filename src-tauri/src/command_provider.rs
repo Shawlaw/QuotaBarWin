@@ -54,10 +54,29 @@ pub fn run_command_provider(
     }
 }
 
+pub fn run_single_provider_config(provider: &crate::config::ProviderConfig) -> ProviderSnapshot {
+    match provider {
+        crate::config::ProviderConfig::Mock { id, name, .. } => {
+            crate::providers::mock::provider_snapshot(id, name, &[])
+        }
+        crate::config::ProviderConfig::Command {
+            id,
+            name,
+            command,
+            parser,
+            ..
+        } => run_command_provider(id, name, command, parser)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| error_provider(id, name, "Provider returned no snapshot", None, None)),
+    }
+}
+
 fn execute_command(command: &CommandSpec) -> Result<RawCommandResult, String> {
     let started = Instant::now();
     let mut process = Command::new(&command.executable);
-    process.args(&command.args);
+    let args = resolve_args(&command.args)?;
+    process.args(args);
     process.stdout(Stdio::piped());
     process.stderr(Stdio::piped());
 
@@ -67,7 +86,7 @@ fn execute_command(command: &CommandSpec) -> Result<RawCommandResult, String> {
 
     if let Some(env) = &command.env {
         for (key, value) in env {
-            process.env(key, resolve_env_value(value));
+            process.env(key, resolve_env_value(value)?);
         }
     }
 
@@ -102,15 +121,42 @@ fn execute_command(command: &CommandSpec) -> Result<RawCommandResult, String> {
     }
 }
 
-fn resolve_env_value(value: &str) -> String {
+fn resolve_env_value(value: &str) -> Result<String, String> {
     if let Some(name) = value
         .strip_prefix("${env:")
         .and_then(|remaining| remaining.strip_suffix('}'))
     {
-        return std::env::var(name).unwrap_or_default();
+        return std::env::var(name)
+            .map_err(|_| format!("Missing environment variable {name}"));
     }
 
-    value.to_string()
+    Ok(value.to_string())
+}
+
+fn resolve_args(args: &[String]) -> Result<Vec<String>, String> {
+    args.iter().map(|arg| resolve_env_placeholders(arg)).collect()
+}
+
+fn resolve_env_placeholders(input: &str) -> Result<String, String> {
+    let mut output = String::new();
+    let mut remaining = input;
+
+    while let Some(start) = remaining.find("${env:") {
+        output.push_str(&remaining[..start]);
+        let after_start = &remaining[start + 6..];
+        let Some(end) = after_start.find('}') else {
+            output.push_str(&remaining[start..]);
+            return Ok(output);
+        };
+        let name = &after_start[..end];
+        let value = std::env::var(name)
+            .map_err(|_| format!("Missing environment variable {name}"))?;
+        output.push_str(&value);
+        remaining = &after_start[end + 1..];
+    }
+
+    output.push_str(remaining);
+    Ok(output)
 }
 
 fn parse_command_output(
@@ -313,5 +359,21 @@ mod tests {
             .as_ref()
             .expect("error")
             .contains("Failed to parse command stdout"));
+    }
+
+    #[test]
+    fn missing_env_var_returns_error_without_secret() {
+        let mut command = node_command("fake_provider_snapshot.js");
+        command.args.push(
+            "Authorization: Bearer ${env:QUOTABARWIN_TEST_MISSING_SECRET}".to_string(),
+        );
+
+        let providers =
+            run_command_provider("env", "Env", &command, &ParserSpec::ProviderSnapshot);
+
+        assert_eq!(providers[0].status, "error");
+        let error = providers[0].error.as_ref().expect("error");
+        assert!(error.contains("QUOTABARWIN_TEST_MISSING_SECRET"));
+        assert!(!error.contains("KIMI_API_KEY="));
     }
 }

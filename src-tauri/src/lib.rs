@@ -1,12 +1,14 @@
 mod command_provider;
 mod config;
 mod parser;
+mod presets;
 mod providers;
 mod quota;
 mod redact;
 mod tray;
 
 pub use config::{get_config, save_config, AppConfig};
+pub use presets::{get_provider_presets, test_provider};
 pub use quota::{
     get_cached_snapshot, refresh_snapshot, AppSnapshot, ProviderSnapshot, QuotaWindow,
 };
@@ -19,9 +21,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
+            get_provider_presets,
             save_config,
             refresh_snapshot,
-            get_cached_snapshot
+            get_cached_snapshot,
+            test_provider
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

@@ -5,11 +5,13 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import {
   getCachedSnapshot,
   getConfig,
+  getProviderPresets,
   listenForRefreshRequests,
   refreshSnapshot,
-  saveConfig
+  saveConfig,
+  testProvider
 } from "./lib/api";
-import type { AppConfig, AppSnapshot } from "./types";
+import type { AppConfig, AppSnapshot, ProviderPreset } from "./types";
 
 function fallbackSnapshot(error: unknown): AppSnapshot {
   return {
@@ -35,6 +37,7 @@ export function App() {
   const refreshInFlight = useRef(false);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -67,6 +70,7 @@ export function App() {
           return;
         }
         setConfig(loadedConfig);
+        setPresets(await getProviderPresets());
         const cached = await getCachedSnapshot();
         if (cached && isMounted) {
           setSnapshot(cached);
@@ -139,6 +143,8 @@ export function App() {
           onChange={setConfig}
           onClose={() => setSettingsOpen(false)}
           onSave={persistConfig}
+          onTestProvider={testProvider}
+          presets={presets}
         />
       ) : null}
       <section className="provider-list" aria-label="Providers">

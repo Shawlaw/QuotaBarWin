@@ -1,11 +1,21 @@
-import type { AppConfig, CommandProviderConfig, ParserSpec, ProviderConfig } from "../types";
+import { useState } from "react";
+import type {
+  AppConfig,
+  CommandProviderConfig,
+  ParserSpec,
+  ProviderConfig,
+  ProviderPreset,
+  ProviderSnapshot
+} from "../types";
 
 type SettingsPanelProps = {
   config: AppConfig;
   isSaving: boolean;
+  presets: ProviderPreset[];
   onChange: (config: AppConfig) => void;
   onClose: () => void;
   onSave: () => void;
+  onTestProvider: (provider: ProviderConfig) => Promise<ProviderSnapshot>;
 };
 
 function updateProvider(
@@ -46,29 +56,33 @@ function parserFromType(type: string): ParserSpec {
   return { type: "provider-snapshot" };
 }
 
-export function SettingsPanel({ config, isSaving, onChange, onClose, onSave }: SettingsPanelProps) {
-  function addCommandProvider() {
-    const id = `command-${Date.now()}`;
+function cloneProvider(provider: ProviderConfig): ProviderConfig {
+  return JSON.parse(JSON.stringify(provider)) as ProviderConfig;
+}
+
+export function SettingsPanel({
+  config,
+  isSaving,
+  presets,
+  onChange,
+  onClose,
+  onSave,
+  onTestProvider
+}: SettingsPanelProps) {
+  const [testResults, setTestResults] = useState<Record<string, ProviderSnapshot>>({});
+
+  function addPreset(preset: ProviderPreset) {
     onChange({
       ...config,
-      providers: [
-        ...config.providers,
-        {
-          id,
-          name: "Command Provider",
-          enabled: true,
-          kind: "command",
-          command: {
-            executable: "node",
-            args: ["fixtures/fake_provider_snapshot.js"],
-            cwd: null,
-            env: {},
-            timeoutMs: 15000
-          },
-          parser: { type: "provider-snapshot" }
-        }
-      ]
+      providers: [...config.providers, cloneProvider(preset.providerConfigTemplate)]
     });
+  }
+
+  function addCommandProvider() {
+    const custom = presets.find((preset) => preset.id === "custom-command-provider");
+    if (custom) {
+      addPreset(custom);
+    }
   }
 
   function updateCommandProvider(
@@ -136,6 +150,21 @@ export function SettingsPanel({ config, isSaving, onChange, onClose, onSave }: S
           />
         </label>
       </div>
+      <section className="preset-list" aria-label="Add Provider">
+        <h3>Add Provider</h3>
+        <div className="preset-actions">
+          {presets.map((preset) => (
+            <button
+              type="button"
+              className="button-secondary"
+              key={preset.id}
+              onClick={() => addPreset(preset)}
+            >
+              {preset.displayName}
+            </button>
+          ))}
+        </div>
+      </section>
       <div className="settings-provider-list">
         {config.providers.map((provider) => (
           <article className="settings-provider" key={provider.id}>
@@ -155,6 +184,13 @@ export function SettingsPanel({ config, isSaving, onChange, onClose, onSave }: S
               {provider.name}
             </label>
             <span>{provider.kind}</span>
+            {presets
+              .find((preset) => preset.providerConfigTemplate.id === provider.id)
+              ?.requiredEnvVars?.map((envVar) => (
+                <p className="env-hint" key={envVar}>
+                  Set {envVar}
+                </p>
+              ))}
             {provider.kind === "command" ? (
               <div className="command-fields">
                 <label>
@@ -230,6 +266,21 @@ export function SettingsPanel({ config, isSaving, onChange, onClose, onSave }: S
                 </label>
               </div>
             ) : null}
+            <div className="provider-test">
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={async () => {
+                  const result = await onTestProvider(provider);
+                  setTestResults((current) => ({ ...current, [provider.id]: result }));
+                }}
+              >
+                Test Provider
+              </button>
+              {testResults[provider.id] ? (
+                <pre>{JSON.stringify(testResults[provider.id], null, 2)}</pre>
+              ) : null}
+            </div>
           </article>
         ))}
       </div>

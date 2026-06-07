@@ -56,4 +56,12 @@ mod tests {
         assert!(!output.contains("Bearer"));
         assert!(!output.contains("super-secret-token"));
     }
+
+    #[test]
+    fn redaction_hides_authorization_bearer() {
+        let output = redact_sensitive("Authorization: Bearer real-secret-value-123456789012345");
+
+        assert!(!output.contains("real-secret-value"));
+        assert!(output.contains("[REDACTED]"));
+    }
 }

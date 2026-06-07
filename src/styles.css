@@ -199,6 +199,21 @@ button:disabled {
   gap: 12px;
 }
 
+.preset-list {
+  display: grid;
+  gap: 10px;
+}
+
+.preset-list h3 {
+  margin: 0;
+}
+
+.preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .settings-provider {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -216,6 +231,31 @@ button:disabled {
 .settings-provider > span {
   color: #5b6472;
   font-size: 13px;
+}
+
+.env-hint {
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  color: #92400e;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.provider-test {
+  display: grid;
+  gap: 10px;
+}
+
+.provider-test pre {
+  background: #111827;
+  border-radius: 6px;
+  color: #e5e7eb;
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
 }
 
 .progress-block {

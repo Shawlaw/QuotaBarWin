@@ -84,3 +84,12 @@ export type ParserSpec =
   | { type: "bigmodel-quota-limit-json-v1" }
   | { type: "json-mapping"; mapping: Record<string, unknown> }
   | { type: "regex-blocks"; rules: Record<string, unknown>[] };
+
+export type ProviderPreset = {
+  id: string;
+  displayName: string;
+  description: string;
+  providerConfigTemplate: ProviderConfig;
+  requiredEnvVars?: string[];
+  docs?: string | null;
+};

@@ -39,9 +39,11 @@ const mocks = vi.hoisted(() => {
   return {
     getCachedSnapshot: vi.fn(async () => null),
     getConfig: vi.fn(async () => config),
+    getProviderPresets: vi.fn(async () => []),
     listenForRefreshRequests: vi.fn(async () => () => undefined),
     refreshSnapshot: vi.fn(async () => snapshot),
-    saveConfig: vi.fn(async () => undefined)
+    saveConfig: vi.fn(async () => undefined),
+    testProvider: vi.fn(async () => snapshot.providers[0])
   };
 });
 
