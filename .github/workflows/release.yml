@@ -1,0 +1,58 @@
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  windows:
+    name: Build Windows installer and portable zip
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Test frontend
+        run: npm run test -- --run
+
+      - name: Test backend
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Tauri app
+        run: npm run tauri build
+
+      - name: Create portable zip
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path src-tauri/target/release -Filter QuotaBarWin.exe -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "QuotaBarWin.exe was not found" }
+          New-Item -ItemType Directory -Force -Path artifacts/portable | Out-Null
+          Copy-Item $exe.FullName artifacts/portable/QuotaBarWin.exe
+          Compress-Archive -Path artifacts/portable/* -DestinationPath artifacts/QuotaBarWin-portable-windows.zip -Force
+
+      - name: Collect installer artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/installers | Out-Null
+          Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Include *.msi,*.exe,*.zip,*.json |
+            Copy-Item -Destination artifacts/installers -Force
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: quotabarwin-windows-release
+          path: artifacts/**

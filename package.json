@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest",
-    "smoke": "vitest --run src/smoke.test.tsx"
+    "smoke": "vitest --run src/smoke.test.tsx",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -20,6 +21,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.0.0",
     "@testing-library/react": "^16.0.0",
+    "@tauri-apps/cli": "^2.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "jsdom": "^27.0.0",

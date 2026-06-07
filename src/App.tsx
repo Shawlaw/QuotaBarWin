@@ -6,6 +6,7 @@ import { Summary } from "./components/Summary";
 import { findGlobalLowestWindow } from "./lib/forecast";
 import {
   getCachedSnapshot,
+  getAppVersion,
   getConfig,
   getProviderPresets,
   listenForRefreshRequests,
@@ -39,6 +40,7 @@ export function App() {
   const refreshInFlight = useRef(false);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [appVersion, setAppVersion] = useState<string>("unknown");
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -68,10 +70,12 @@ export function App() {
     async function initialize() {
       try {
         const loadedConfig = await getConfig();
+        const loadedVersion = await getAppVersion();
         if (!isMounted) {
           return;
         }
         setConfig(loadedConfig);
+        setAppVersion(loadedVersion);
         setPresets(await getProviderPresets());
         const cached = await getCachedSnapshot();
         if (cached && isMounted) {
@@ -141,6 +145,7 @@ export function App() {
       {settingsOpen && config ? (
         <SettingsPanel
           config={config}
+          appVersion={appVersion}
           isSaving={isSaving}
           onChange={setConfig}
           onClose={() => setSettingsOpen(false)}

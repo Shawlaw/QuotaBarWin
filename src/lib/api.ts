@@ -14,6 +14,10 @@ export async function getConfig(): Promise<AppConfig> {
   return invoke<AppConfig>("get_config");
 }
 
+export async function getAppVersion(): Promise<string> {
+  return invoke<string>("get_app_version");
+}
+
 export async function saveConfig(config: AppConfig): Promise<void> {
   return invoke<void>("save_config", { config });
 }
@@ -24,6 +28,10 @@ export async function getProviderPresets(): Promise<ProviderPreset[]> {
 
 export async function testProvider(provider: ProviderConfig): Promise<ProviderSnapshot> {
   return invoke<ProviderSnapshot>("test_provider", { provider });
+}
+
+export async function exportDiagnostics(outputPath: string): Promise<void> {
+  return invoke<void>("export_diagnostics", { outputPath });
 }
 
 export async function listenForRefreshRequests(onRefresh: () => void): Promise<() => void> {

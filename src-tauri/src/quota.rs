@@ -202,6 +202,8 @@ mod tests {
             refresh_interval_seconds: 300,
             display_mode: "remaining".to_string(),
             low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
             providers: vec![ProviderConfig::Command {
                 id: "disabled".to_string(),
                 name: "Disabled".to_string(),

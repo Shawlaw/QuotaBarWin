@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     getCachedSnapshot: vi.fn(async () => null),
+    getAppVersion: vi.fn(async () => "0.0.0"),
     getConfig: vi.fn(async () => config),
     getProviderPresets: vi.fn(async () => []),
     listenForRefreshRequests: vi.fn(async () => () => undefined),

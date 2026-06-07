@@ -108,6 +108,7 @@ function renderSettings(initialConfig = configWithProviders([commandProvider])) 
     return (
       <SettingsPanel
         config={config}
+        appVersion="0.0.0"
         isSaving={false}
         onChange={setConfig}
         onClose={() => undefined}
@@ -124,6 +125,7 @@ function renderSettings(initialConfig = configWithProviders([commandProvider])) 
 test("settings_can_render_command_provider", () => {
   renderSettings();
 
+  expect(screen.getByText("Version 0.0.0")).toBeInTheDocument();
   expect(screen.getByDisplayValue("Local Command")).toBeInTheDocument();
   expect(screen.getByDisplayValue("node")).toBeInTheDocument();
   expect(screen.getByDisplayValue("provider-snapshot")).toBeInTheDocument();

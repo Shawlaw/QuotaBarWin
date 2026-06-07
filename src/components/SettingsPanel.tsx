@@ -10,6 +10,7 @@ import type {
 
 type SettingsPanelProps = {
   config: AppConfig;
+  appVersion: string;
   isSaving: boolean;
   presets: ProviderPreset[];
   onChange: (config: AppConfig) => void;
@@ -62,6 +63,7 @@ function cloneProvider(provider: ProviderConfig): ProviderConfig {
 
 export function SettingsPanel({
   config,
+  appVersion,
   isSaving,
   presets,
   onChange,
@@ -100,6 +102,7 @@ export function SettingsPanel({
     <section className="settings-panel" aria-label="Settings">
       <div className="settings-panel__header">
         <h2>Settings</h2>
+        <span className="version-label">Version {appVersion}</span>
         <button type="button" className="button-secondary" onClick={onClose}>
           Close
         </button>
@@ -148,6 +151,36 @@ export function SettingsPanel({
               })
             }
           />
+        </label>
+        <label>
+          Log level
+          <select
+            value={config.logLevel ?? "info"}
+            onChange={(event) =>
+              onChange({
+                ...config,
+                logLevel: event.currentTarget.value
+              })
+            }
+          >
+            <option value="debug">Debug</option>
+            <option value="info">Info</option>
+            <option value="warn">Warn</option>
+            <option value="error">Error</option>
+          </select>
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={config.launchAtStartup ?? false}
+            onChange={(event) =>
+              onChange({
+                ...config,
+                launchAtStartup: event.currentTarget.checked
+              })
+            }
+          />
+          Launch at startup
         </label>
       </div>
       <section className="preset-list" aria-label="Add Provider">

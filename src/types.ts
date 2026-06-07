@@ -44,10 +44,12 @@ export type AppSnapshot = {
 };
 
 export type AppConfig = {
-  schemaVersion: 1;
+  schemaVersion: number;
   refreshIntervalSeconds: number;
   displayMode: "remaining" | "used";
   lowQuotaWarningThreshold: number;
+  launchAtStartup?: boolean;
+  logLevel?: "debug" | "info" | "warn" | "error" | string;
   providers: ProviderConfig[];
 };
 

@@ -225,11 +225,18 @@ button:disabled {
 .settings-panel__header {
   align-items: center;
   display: flex;
+  gap: 12px;
   justify-content: space-between;
 }
 
 .settings-panel h2 {
   margin: 0;
+}
+
+.version-label {
+  color: #5b6472;
+  font-size: 13px;
+  margin-right: auto;
 }
 
 .settings-grid,
@@ -289,6 +296,12 @@ button:disabled {
   align-items: center;
   display: flex;
   gap: 8px;
+}
+
+.checkbox-row {
+  align-items: center;
+  display: flex !important;
+  gap: 8px !important;
 }
 
 .settings-provider > span {
