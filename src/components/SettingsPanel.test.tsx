@@ -10,7 +10,7 @@ const commandProvider = {
   kind: "command" as const,
   command: {
     executable: "node",
-    args: ["fixtures/fake_provider_snapshot.js"],
+    args: ["-H", "Authorization: Bearer ${file:C:\\Secrets\\kimi.key}", "fixtures/fake_provider_snapshot.js"],
     cwd: null,
     env: {},
     timeoutMs: 15000
@@ -128,6 +128,9 @@ test("settings_can_render_command_provider", () => {
   expect(screen.getByText("Version 0.0.0")).toBeInTheDocument();
   expect(screen.getByDisplayValue("Local Command")).toBeInTheDocument();
   expect(screen.getByDisplayValue("node")).toBeInTheDocument();
+  expect(screen.getByLabelText("Args")).toHaveValue(
+    "-H\nAuthorization: Bearer ${file:C:\\Secrets\\kimi.key}\nfixtures/fake_provider_snapshot.js"
+  );
   expect(screen.getByDisplayValue("provider-snapshot")).toBeInTheDocument();
 });
 
@@ -161,4 +164,12 @@ test("add_custom_command_provider", () => {
   fireEvent.click(screen.getByRole("button", { name: "Custom Command Provider" }));
 
   expect(screen.getByDisplayValue("Local Command")).toBeInTheDocument();
+});
+
+test("remove_provider_deletes_provider_from_settings", () => {
+  renderSettings();
+
+  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+  expect(screen.queryByDisplayValue("Local Command")).not.toBeInTheDocument();
 });

@@ -34,6 +34,12 @@ button {
   color: #0f766e;
 }
 
+.button-danger {
+  background: #ffffff;
+  border-color: #dc2626;
+  color: #b91c1c;
+}
+
 button:disabled {
   cursor: wait;
   opacity: 0.7;
@@ -41,7 +47,7 @@ button:disabled {
 
 .app-shell {
   margin: 0 auto;
-  max-width: 760px;
+  max-width: 960px;
   padding: 32px;
 }
 
@@ -243,7 +249,7 @@ button:disabled {
 .command-fields {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
 .settings-panel label {
@@ -255,13 +261,21 @@ button:disabled {
 }
 
 .settings-panel input,
-.settings-panel select {
+.settings-panel select,
+.settings-panel textarea {
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   color: #20232a;
   font: inherit;
   min-height: 36px;
   padding: 6px 8px;
+  width: 100%;
+}
+
+.settings-panel textarea {
+  line-height: 1.45;
+  min-height: 120px;
+  resize: vertical;
 }
 
 .settings-provider-list {
@@ -292,7 +306,14 @@ button:disabled {
   padding: 14px;
 }
 
-.settings-provider > label {
+.settings-provider__header {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+}
+
+.settings-provider__header > label {
   align-items: center;
   display: flex;
   gap: 8px;
@@ -304,9 +325,13 @@ button:disabled {
   gap: 8px !important;
 }
 
-.settings-provider > span {
+.settings-provider__header > span {
   color: #5b6472;
   font-size: 13px;
+}
+
+.args-field {
+  grid-column: 1 / -1;
 }
 
 .env-hint {
@@ -365,5 +390,10 @@ button:disabled {
   .header-actions,
   .settings-actions {
     flex-direction: column;
+  }
+
+  .settings-provider__header {
+    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 }

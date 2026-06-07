@@ -32,13 +32,34 @@ function updateProvider(
   };
 }
 
+function removeProvider(config: AppConfig, providerId: string): AppConfig {
+  return {
+    ...config,
+    providers: config.providers.filter((provider) => provider.id !== providerId)
+  };
+}
+
+function uniqueProviderId(config: AppConfig, providerId: string): string {
+  const existingIds = new Set(config.providers.map((provider) => provider.id));
+  if (!existingIds.has(providerId)) {
+    return providerId;
+  }
+
+  let index = 2;
+  while (existingIds.has(`${providerId}-${index}`)) {
+    index += 1;
+  }
+
+  return `${providerId}-${index}`;
+}
+
 function argsToText(args: string[]): string {
-  return args.join(" ");
+  return args.join("\n");
 }
 
 function textToArgs(text: string): string[] {
   return text
-    .split(" ")
+    .split(/\r?\n/)
     .map((part) => part.trim())
     .filter(Boolean);
 }
@@ -74,9 +95,12 @@ export function SettingsPanel({
   const [testResults, setTestResults] = useState<Record<string, ProviderSnapshot>>({});
 
   function addPreset(preset: ProviderPreset) {
+    const provider = cloneProvider(preset.providerConfigTemplate);
+    provider.id = uniqueProviderId(config, provider.id);
+
     onChange({
       ...config,
-      providers: [...config.providers, cloneProvider(preset.providerConfigTemplate)]
+      providers: [...config.providers, provider]
     });
   }
 
@@ -201,22 +225,31 @@ export function SettingsPanel({
       <div className="settings-provider-list">
         {config.providers.map((provider) => (
           <article className="settings-provider" key={provider.id}>
-            <label>
-              <input
-                type="checkbox"
-                checked={provider.enabled}
-                onChange={(event) =>
-                  onChange(
-                    updateProvider(config, provider.id, (current) => ({
-                      ...current,
-                      enabled: event.currentTarget.checked
-                    }))
-                  )
-                }
-              />
-              {provider.name}
-            </label>
-            <span>{provider.kind}</span>
+            <div className="settings-provider__header">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={provider.enabled}
+                  onChange={(event) =>
+                    onChange(
+                      updateProvider(config, provider.id, (current) => ({
+                        ...current,
+                        enabled: event.currentTarget.checked
+                      }))
+                    )
+                  }
+                />
+                {provider.name}
+              </label>
+              <span>{provider.kind}</span>
+              <button
+                type="button"
+                className="button-danger"
+                onClick={() => onChange(removeProvider(config, provider.id))}
+              >
+                Remove
+              </button>
+            </div>
             {presets
               .find((preset) => preset.providerConfigTemplate.id === provider.id)
               ?.requiredEnvVars?.map((envVar) => (
@@ -249,9 +282,10 @@ export function SettingsPanel({
                     }
                   />
                 </label>
-                <label>
+                <label className="args-field">
                   Args
-                  <input
+                  <textarea
+                    rows={5}
                     value={argsToText(provider.command.args)}
                     onChange={(event) =>
                       updateCommandProvider(provider, {
