@@ -1,0 +1,54 @@
+{
+  "id": "kimi-coding",
+  "name": "Kimi Coding",
+  "status": "ok",
+  "source": "command",
+  "updatedAt": "<dynamic>",
+  "windows": [
+    {
+      "id": "usage",
+      "label": "Coding usage",
+      "used": 15,
+      "limit": 100,
+      "unit": null,
+      "usedPercent": 15,
+      "remainingPercent": 85,
+      "resetAt": "2026-06-12T02:35:14.207781Z",
+      "resetText": null,
+      "confidence": "exact"
+    },
+    {
+      "id": "300-minute",
+      "label": "5h",
+      "used": 10,
+      "limit": 100,
+      "unit": null,
+      "usedPercent": 10,
+      "remainingPercent": 90,
+      "resetAt": "2026-06-07T16:35:14.207781Z",
+      "resetText": null,
+      "confidence": "exact"
+    },
+    {
+      "id": "total-quota",
+      "label": "Total quota",
+      "used": 1,
+      "limit": 100,
+      "unit": null,
+      "usedPercent": 1,
+      "remainingPercent": 99,
+      "resetAt": null,
+      "resetText": null,
+      "confidence": "exact"
+    }
+  ],
+  "metadata": {
+    "region": "REGION_CN",
+    "membershipLevel": "LEVEL_INTERMEDIATE",
+    "authMethod": "METHOD_API_KEY",
+    "authScope": "FEATURE_CODING",
+    "subType": "TYPE_PURCHASE",
+    "parallelLimit": 20
+  },
+  "error": null
+}

@@ -1,0 +1,56 @@
+{
+  "id": "bigmodel-coding-plan",
+  "name": "BigModel / Z.ai Coding Plan",
+  "status": "ok",
+  "source": "command",
+  "updatedAt": "<dynamic>",
+  "windows": [
+    {
+      "id": "time-limit-5-1",
+      "label": "TIME_LIMIT unit=5 number=1",
+      "used": 35,
+      "limit": 1000,
+      "unit": null,
+      "usedPercent": 3,
+      "remainingPercent": 97,
+      "resetAt": "2026-06-30T02:01:23.993000Z",
+      "resetText": null,
+      "confidence": "exact"
+    },
+    {
+      "id": "tokens-limit-3-5",
+      "label": "TOKENS_LIMIT unit=3 number=5",
+      "used": null,
+      "limit": null,
+      "unit": "tokens",
+      "usedPercent": 1,
+      "remainingPercent": 99,
+      "resetAt": "2026-06-07T20:28:03.180000Z",
+      "resetText": null,
+      "confidence": "exact"
+    },
+    {
+      "id": "tokens-limit-6-1",
+      "label": "TOKENS_LIMIT unit=6 number=1",
+      "used": null,
+      "limit": null,
+      "unit": "tokens",
+      "usedPercent": 4,
+      "remainingPercent": 96,
+      "resetAt": "2026-06-13T02:01:23.997000Z",
+      "resetText": null,
+      "confidence": "exact"
+    }
+  ],
+  "metadata": {
+    "level": "pro",
+    "usageDetails": {
+      "search-prime": 32,
+      "web-reader": 3,
+      "zread": 0
+    },
+    "rawCode": 200,
+    "rawMsg": "操作成功"
+  },
+  "error": null
+}

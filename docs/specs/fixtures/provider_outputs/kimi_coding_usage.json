@@ -1,0 +1,42 @@
+{
+  "user": {
+    "userId": "d7inujlgsoa1c9h3en10",
+    "region": "REGION_CN",
+    "membership": {
+      "level": "LEVEL_INTERMEDIATE"
+    },
+    "businessId": ""
+  },
+  "usage": {
+    "limit": "100",
+    "used": "15",
+    "remaining": "85",
+    "resetTime": "2026-06-12T02:35:14.207781Z"
+  },
+  "limits": [
+    {
+      "window": {
+        "duration": 300,
+        "timeUnit": "TIME_UNIT_MINUTE"
+      },
+      "detail": {
+        "limit": "100",
+        "used": "10",
+        "remaining": "90",
+        "resetTime": "2026-06-07T16:35:14.207781Z"
+      }
+    }
+  ],
+  "parallel": {
+    "limit": "20"
+  },
+  "totalQuota": {
+    "limit": "100",
+    "remaining": "99"
+  },
+  "authentication": {
+    "method": "METHOD_API_KEY",
+    "scope": "FEATURE_CODING"
+  },
+  "subType": "TYPE_PURCHASE"
+}
