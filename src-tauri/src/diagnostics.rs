@@ -1,4 +1,4 @@
-use std::{fs::{self, File}, io::Write, path::Path};
+use std::{fs::{self, File}, io::Write, path::{Path, PathBuf}};
 
 use serde::Serialize;
 use tauri::{command, AppHandle};
@@ -19,24 +19,32 @@ struct DiagnosticsManifest {
 }
 
 #[command]
-pub fn export_diagnostics(app: AppHandle, output_path: String) -> Result<(), String> {
+pub async fn export_diagnostics(app: AppHandle, output_path: String) -> Result<(), String> {
     let config_path = config_path_for_app(&app)?;
-    let config = load_or_create_config(&config_path).map(|loaded| loaded.config).ok();
     let snapshot = get_cached_snapshot().ok().flatten();
     let log_path = config_path.with_file_name("quotabarwin.log");
-    export_diagnostics_zip_to_path(
-        Path::new(&output_path),
-        env!("CARGO_PKG_VERSION"),
-        config
+    let app_version = env!("CARGO_PKG_VERSION").to_string();
+    let output_path = PathBuf::from(output_path);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = load_or_create_config(&config_path).map(|loaded| loaded.config).ok();
+        let config_value = config
             .as_ref()
-            .and_then(|config| serde_json::to_value(config).ok())
-            .as_ref(),
-        snapshot
+            .and_then(|config| serde_json::to_value(config).ok());
+        let snapshot_value = snapshot
             .as_ref()
-            .and_then(|snapshot| serde_json::to_value(snapshot).ok())
-            .as_ref(),
-        &log_path,
-    )
+            .and_then(|snapshot| serde_json::to_value(snapshot).ok());
+
+        export_diagnostics_zip_to_path(
+            &output_path,
+            &app_version,
+            config_value.as_ref(),
+            snapshot_value.as_ref(),
+            &log_path,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 pub fn export_diagnostics_zip_to_path(

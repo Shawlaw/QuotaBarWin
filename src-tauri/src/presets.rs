@@ -129,8 +129,10 @@ pub fn get_provider_presets() -> Result<Vec<ProviderPreset>, String> {
 }
 
 #[command]
-pub fn test_provider(provider: ProviderConfig) -> Result<ProviderSnapshot, String> {
-    Ok(run_single_provider_config(&provider))
+pub async fn test_provider(provider: ProviderConfig) -> Result<ProviderSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || Ok(run_single_provider_config(&provider)))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[cfg(test)]
@@ -235,7 +237,7 @@ mod tests {
     fn fixture_kimi_preset_parses_expected_snapshot() {
         let provider = provider_config_from_preset("kimi-coding-usage").expect("preset");
         let provider = fixture_command(provider, "kimi_usage_fixture.js");
-        let snapshot = test_provider(provider).expect("snapshot");
+        let snapshot = run_single_provider_config(&provider);
 
         assert_eq!(snapshot.id, "kimi-coding");
         assert_eq!(snapshot.status, "ok");
@@ -246,7 +248,7 @@ mod tests {
     fn fixture_bigmodel_preset_parses_expected_snapshot() {
         let provider = provider_config_from_preset("bigmodel-zai-coding-plan").expect("preset");
         let provider = fixture_command(provider, "bigmodel_quota_fixture.js");
-        let snapshot = test_provider(provider).expect("snapshot");
+        let snapshot = run_single_provider_config(&provider);
 
         assert_eq!(snapshot.id, "bigmodel-coding-plan");
         assert_eq!(snapshot.status, "ok");

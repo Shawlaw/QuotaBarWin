@@ -229,15 +229,21 @@ pub fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn get_config(app: AppHandle) -> Result<AppConfig, String> {
+pub async fn get_config(app: AppHandle) -> Result<AppConfig, String> {
     let path = config_path_for_app(&app)?;
-    load_or_create_config(&path).map(|loaded| loaded.config)
+    tauri::async_runtime::spawn_blocking(move || {
+        load_or_create_config(&path).map(|loaded| loaded.config)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
+pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
     let path = config_path_for_app(&app)?;
-    save_config_to_path(&path, &config)
+    tauri::async_runtime::spawn_blocking(move || save_config_to_path(&path, &config))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[cfg(test)]

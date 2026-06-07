@@ -131,9 +131,11 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
 }
 
 #[tauri::command]
-pub fn refresh_snapshot(app: AppHandle) -> Result<AppSnapshot, String> {
+pub async fn refresh_snapshot(app: AppHandle) -> Result<AppSnapshot, String> {
     let path = config_path_for_app(&app)?;
-    build_app_snapshot_from_config_path(&path)
+    tauri::async_runtime::spawn_blocking(move || build_app_snapshot_from_config_path(&path))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
