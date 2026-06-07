@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { ProviderCard } from "./ProviderCard";
 import type { ProviderSnapshot } from "../types";
+import kimiExpected from "../../docs/specs/fixtures/expected/kimi_provider_snapshot.json";
 
 const provider: ProviderSnapshot = {
   id: "codex-mock",
@@ -43,4 +44,11 @@ test("provider_card_renders_used_and_remaining", () => {
   render(<ProviderCard provider={provider} />);
 
   expect(screen.getByText("28% used / 72% remaining")).toBeInTheDocument();
+});
+
+test("provider_card_renders_kimi_fixture_snapshot", () => {
+  render(<ProviderCard provider={kimiExpected as ProviderSnapshot} />);
+
+  expect(screen.getByRole("heading", { name: "Kimi Coding" })).toBeInTheDocument();
+  expect(screen.getByText("Coding usage")).toBeInTheDocument();
 });

@@ -54,6 +54,10 @@ pub struct CommandSpec {
 pub enum ParserSpec {
     AppSnapshot,
     ProviderSnapshot,
+    KimiCodingUsageV1,
+    BigmodelQuotaLimitJsonV1,
+    JsonMapping { mapping: serde_json::Value },
+    RegexBlocks { rules: Vec<serde_json::Value> },
 }
 
 #[derive(Debug, Clone)]

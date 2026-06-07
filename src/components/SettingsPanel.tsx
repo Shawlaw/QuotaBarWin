@@ -1,4 +1,4 @@
-import type { AppConfig, CommandProviderConfig, ProviderConfig } from "../types";
+import type { AppConfig, CommandProviderConfig, ParserSpec, ProviderConfig } from "../types";
 
 type SettingsPanelProps = {
   config: AppConfig;
@@ -30,6 +30,20 @@ function textToArgs(text: string): string[] {
     .split(" ")
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+function parserFromType(type: string): ParserSpec {
+  if (type === "app-snapshot") {
+    return { type };
+  }
+  if (type === "kimi-coding-usage-v1") {
+    return { type };
+  }
+  if (type === "bigmodel-quota-limit-json-v1") {
+    return { type };
+  }
+
+  return { type: "provider-snapshot" };
 }
 
 export function SettingsPanel({ config, isSaving, onChange, onClose, onSave }: SettingsPanelProps) {
@@ -202,14 +216,16 @@ export function SettingsPanel({ config, isSaving, onChange, onClose, onSave }: S
                     value={provider.parser.type}
                     onChange={(event) =>
                       updateCommandProvider(provider, {
-                        parser: {
-                          type: event.currentTarget.value as CommandProviderConfig["parser"]["type"]
-                        }
+                        parser: parserFromType(event.currentTarget.value)
                       })
                     }
                   >
                     <option value="provider-snapshot">provider-snapshot</option>
                     <option value="app-snapshot">app-snapshot</option>
+                    <option value="kimi-coding-usage-v1">kimi-coding-usage-v1</option>
+                    <option value="bigmodel-quota-limit-json-v1">
+                      bigmodel-quota-limit-json-v1
+                    </option>
                   </select>
                 </label>
               </div>

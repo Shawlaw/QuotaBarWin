@@ -77,4 +77,10 @@ export type CommandSpec = {
   timeoutMs: number;
 };
 
-export type ParserSpec = { type: "app-snapshot" } | { type: "provider-snapshot" };
+export type ParserSpec =
+  | { type: "app-snapshot" }
+  | { type: "provider-snapshot" }
+  | { type: "kimi-coding-usage-v1" }
+  | { type: "bigmodel-quota-limit-json-v1" }
+  | { type: "json-mapping"; mapping: Record<string, unknown> }
+  | { type: "regex-blocks"; rules: Record<string, unknown>[] };

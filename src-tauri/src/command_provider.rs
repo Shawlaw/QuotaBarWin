@@ -8,6 +8,7 @@ use chrono::Utc;
 
 use crate::{
     config::{CommandSpec, ParserSpec},
+    parser::{parse_bigmodel_quota_limit_json, parse_kimi_coding_usage},
     quota::{clamp_snapshot_percentages, AppSnapshot, ProviderDiagnostics, ProviderSnapshot},
     redact::redact_sensitive,
 };
@@ -126,6 +127,24 @@ fn parse_command_output(
         ParserSpec::ProviderSnapshot => {
             serde_json::from_str::<ProviderSnapshot>(&result.stdout).map(|provider| vec![provider])
         }
+        ParserSpec::KimiCodingUsageV1 => Ok(vec![parse_kimi_coding_usage(id, name, &result.stdout)]),
+        ParserSpec::BigmodelQuotaLimitJsonV1 => {
+            Ok(vec![parse_bigmodel_quota_limit_json(id, name, &result.stdout)])
+        }
+        ParserSpec::JsonMapping { .. } => Ok(vec![error_provider(
+            id,
+            name,
+            "json-mapping parser is not configured in V2",
+            Some(result.clone()),
+            Some(command_path),
+        )]),
+        ParserSpec::RegexBlocks { .. } => Ok(vec![error_provider(
+            id,
+            name,
+            "regex-blocks parser is not configured in V2",
+            Some(result.clone()),
+            Some(command_path),
+        )]),
     };
 
     match parsed {

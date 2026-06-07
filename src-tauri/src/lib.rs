@@ -1,5 +1,6 @@
 mod command_provider;
 mod config;
+mod parser;
 mod providers;
 mod quota;
 mod redact;

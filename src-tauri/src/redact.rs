@@ -48,4 +48,12 @@ mod tests {
         assert!(!output.contains("Cookie=session"));
         assert!(output.contains("[REDACTED]"));
     }
+
+    #[test]
+    fn redacts_authorization_header() {
+        let output = redact_sensitive("Authorization: Bearer super-secret-token-value-1234567890");
+
+        assert!(!output.contains("Bearer"));
+        assert!(!output.contains("super-secret-token"));
+    }
 }
