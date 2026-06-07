@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Header } from "./components/Header";
 import { ProviderCard } from "./components/ProviderCard";
-import { refreshSnapshot } from "./lib/api";
-import type { AppSnapshot } from "./types";
+import { SettingsPanel } from "./components/SettingsPanel";
+import {
+  getCachedSnapshot,
+  getConfig,
+  listenForRefreshRequests,
+  refreshSnapshot,
+  saveConfig
+} from "./lib/api";
+import type { AppConfig, AppSnapshot } from "./types";
 
 function fallbackSnapshot(error: unknown): AppSnapshot {
   return {
@@ -25,30 +32,122 @@ function fallbackSnapshot(error: unknown): AppSnapshot {
 }
 
 export function App() {
+  const refreshInFlight = useRef(false);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
+  const [config, setConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const loadSnapshot = useCallback(async () => {
+    if (refreshInFlight.current) {
+      return;
+    }
+
+    refreshInFlight.current = true;
     setIsLoading(true);
     try {
       setSnapshot(await refreshSnapshot());
     } catch (error) {
-      setSnapshot(fallbackSnapshot(error));
+      const cached = await getCachedSnapshot();
+      setSnapshot(cached ?? fallbackSnapshot(error));
     } finally {
+      refreshInFlight.current = false;
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadSnapshot();
+    let isMounted = true;
+
+    async function initialize() {
+      try {
+        const loadedConfig = await getConfig();
+        if (!isMounted) {
+          return;
+        }
+        setConfig(loadedConfig);
+        const cached = await getCachedSnapshot();
+        if (cached && isMounted) {
+          setSnapshot(cached);
+        }
+      } finally {
+        if (isMounted) {
+          void loadSnapshot();
+        }
+      }
+    }
+
+    void initialize();
+
+    return () => {
+      isMounted = false;
+    };
   }, [loadSnapshot]);
+
+  useEffect(() => {
+    if (!config) {
+      return;
+    }
+
+    const interval = window.setInterval(
+      () => void loadSnapshot(),
+      Math.max(10, config.refreshIntervalSeconds) * 1000
+    );
+
+    return () => window.clearInterval(interval);
+  }, [config, loadSnapshot]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listenForRefreshRequests(() => void loadSnapshot()).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [loadSnapshot]);
+
+  async function persistConfig() {
+    if (!config) {
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await saveConfig(config);
+      setSettingsOpen(false);
+      await loadSnapshot();
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <main className="app-shell">
-      <Header isLoading={isLoading} onRefresh={loadSnapshot} />
+      <Header
+        isLoading={isLoading}
+        lastRefreshedAt={snapshot?.refreshedAt ?? null}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onRefresh={loadSnapshot}
+      />
+      {settingsOpen && config ? (
+        <SettingsPanel
+          config={config}
+          isSaving={isSaving}
+          onChange={setConfig}
+          onClose={() => setSettingsOpen(false)}
+          onSave={persistConfig}
+        />
+      ) : null}
       <section className="provider-list" aria-label="Providers">
         {snapshot?.providers.map((provider) => (
-          <ProviderCard key={provider.id} provider={provider} />
+          <ProviderCard
+            key={provider.id}
+            provider={provider}
+            lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
+          />
         ))}
       </section>
     </main>

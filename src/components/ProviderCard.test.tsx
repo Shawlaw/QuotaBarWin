@@ -32,3 +32,15 @@ test("ProviderCard renders provider name", () => {
 
   expect(screen.getByRole("heading", { name: "Codex Mock" })).toBeInTheDocument();
 });
+
+test("provider_card_renders_error_state", () => {
+  render(<ProviderCard provider={{ ...provider, status: "error", error: "Command failed" }} />);
+
+  expect(screen.getByText("Command failed")).toBeInTheDocument();
+});
+
+test("provider_card_renders_used_and_remaining", () => {
+  render(<ProviderCard provider={provider} />);
+
+  expect(screen.getByText("28% used / 72% remaining")).toBeInTheDocument();
+});

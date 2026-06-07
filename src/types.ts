@@ -42,3 +42,39 @@ export type AppSnapshot = {
   providers: ProviderSnapshot[];
   refreshedAt: string;
 };
+
+export type AppConfig = {
+  schemaVersion: 1;
+  refreshIntervalSeconds: number;
+  displayMode: "remaining" | "used";
+  lowQuotaWarningThreshold: number;
+  providers: ProviderConfig[];
+};
+
+export type ProviderConfig = MockProviderConfig | CommandProviderConfig;
+
+export type MockProviderConfig = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  kind: "mock";
+};
+
+export type CommandProviderConfig = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  kind: "command";
+  command: CommandSpec;
+  parser: ParserSpec;
+};
+
+export type CommandSpec = {
+  executable: string;
+  args: string[];
+  cwd?: string | null;
+  env?: Record<string, string>;
+  timeoutMs: number;
+};
+
+export type ParserSpec = { type: "app-snapshot" } | { type: "provider-snapshot" };

@@ -20,12 +20,14 @@ fn window(id: &str, label: &str, remaining_percent: f64) -> QuotaWindow {
     }
 }
 
-pub fn provider_snapshot() -> ProviderSnapshot {
+pub fn provider_snapshot(id: &str, name: &str, extra_messages: &[String]) -> ProviderSnapshot {
     let checked_at = Utc::now().to_rfc3339();
+    let mut messages = vec!["V0 mock provider snapshot".to_string()];
+    messages.extend(extra_messages.iter().cloned());
 
     ProviderSnapshot {
-        id: "codex-mock".to_string(),
-        name: "Codex Mock".to_string(),
+        id: id.to_string(),
+        name: name.to_string(),
         status: "ok".to_string(),
         source: "mock".to_string(),
         updated_at: Some(checked_at.clone()),
@@ -33,7 +35,7 @@ pub fn provider_snapshot() -> ProviderSnapshot {
         error: None,
         diagnostics: Some(ProviderDiagnostics {
             checked_at,
-            messages: vec!["V0 mock provider snapshot".to_string()],
+            messages,
             command_path: None,
             exit_code: None,
             duration_ms: None,
