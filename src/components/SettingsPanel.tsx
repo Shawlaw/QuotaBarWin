@@ -64,6 +64,31 @@ function textToArgs(text: string): string[] {
     .filter(Boolean);
 }
 
+function labelOverridesToText(overrides: Record<string, string> | undefined): string {
+  return Object.entries(overrides ?? {})
+    .map(([id, label]) => `${id}=${label}`)
+    .join("\n");
+}
+
+function textToLabelOverrides(text: string): Record<string, string> {
+  return Object.fromEntries(
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const separator = line.indexOf("=");
+        if (separator === -1) {
+          return null;
+        }
+        return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()] as const;
+      })
+      .filter((entry): entry is readonly [string, string] =>
+        Boolean(entry && entry[0].length > 0 && entry[1].length > 0)
+      )
+  );
+}
+
 function parserFromType(type: string): ParserSpec {
   if (type === "app-snapshot") {
     return { type };
@@ -330,6 +355,18 @@ export function SettingsPanel({
                       bigmodel-quota-limit-json-v1
                     </option>
                   </select>
+                </label>
+                <label className="args-field">
+                  Window label overrides
+                  <textarea
+                    rows={4}
+                    value={labelOverridesToText(provider.windowLabelOverrides)}
+                    onChange={(event) =>
+                      updateCommandProvider(provider, {
+                        windowLabelOverrides: textToLabelOverrides(event.currentTarget.value)
+                      })
+                    }
+                  />
                 </label>
               </div>
             ) : null}

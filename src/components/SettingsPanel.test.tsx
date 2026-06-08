@@ -15,7 +15,8 @@ const commandProvider = {
     env: {},
     timeoutMs: 15000
   },
-  parser: { type: "provider-snapshot" as const }
+  parser: { type: "provider-snapshot" as const },
+  windowLabelOverrides: {}
 };
 
 const presets: ProviderPreset[] = [
@@ -34,7 +35,8 @@ const presets: ProviderPreset[] = [
         args: ["-H", "Authorization: Bearer ${env:KIMI_API_KEY}"],
         timeoutMs: 15000
       },
-      parser: { type: "kimi-coding-usage-v1" }
+      parser: { type: "kimi-coding-usage-v1" },
+      windowLabelOverrides: {}
     }
   },
   {
@@ -52,7 +54,11 @@ const presets: ProviderPreset[] = [
         args: ["-H", "Authorization: Bearer ${env:BIGMODEL_API_KEY}"],
         timeoutMs: 15000
       },
-      parser: { type: "bigmodel-quota-limit-json-v1" }
+      parser: { type: "bigmodel-quota-limit-json-v1" },
+      windowLabelOverrides: {
+        "tokens-limit-3-5": "5h",
+        "tokens-limit-6-1": "Weekly limit"
+      }
     }
   },
   {
@@ -69,7 +75,8 @@ const presets: ProviderPreset[] = [
         args: ["show", "--json"],
         timeoutMs: 15000
       },
-      parser: { type: "app-snapshot" }
+      parser: { type: "app-snapshot" },
+      windowLabelOverrides: {}
     }
   },
   {
@@ -134,6 +141,31 @@ test("settings_can_render_command_provider", () => {
   expect(screen.getByDisplayValue("provider-snapshot")).toBeInTheDocument();
 });
 
+test("settings_edits_window_label_overrides", () => {
+  renderSettings({
+    ...configWithProviders([commandProvider]),
+    providers: [
+      {
+        ...commandProvider,
+        windowLabelOverrides: {
+          weekly: "Weekly limit"
+        }
+      }
+    ]
+  });
+
+  const overrides = screen.getByLabelText("Window label overrides");
+  expect(overrides).toHaveValue("weekly=Weekly limit");
+
+  fireEvent.change(overrides, {
+    target: { value: "weekly=Team weekly limit\n300-minute=5h" }
+  });
+
+  expect(screen.getByLabelText("Window label overrides")).toHaveValue(
+    "weekly=Team weekly limit\n300-minute=5h"
+  );
+});
+
 test("settings_shows_add_provider", () => {
   renderSettings();
 
@@ -156,6 +188,9 @@ test("add_bigmodel_preset_shows_env_hint", () => {
   fireEvent.click(screen.getByRole("button", { name: "BigModel / Z.ai Coding Plan" }));
 
   expect(screen.getByText("Set BIGMODEL_API_KEY")).toBeInTheDocument();
+  expect(screen.getByLabelText("Window label overrides")).toHaveValue(
+    "tokens-limit-3-5=5h\ntokens-limit-6-1=Weekly limit"
+  );
 });
 
 test("add_custom_command_provider", () => {

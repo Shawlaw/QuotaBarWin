@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     process::{Command, Stdio},
     thread,
@@ -31,6 +32,7 @@ pub fn run_command_provider(
     name: &str,
     command: &CommandSpec,
     parser: &ParserSpec,
+    window_label_overrides: &HashMap<String, String>,
 ) -> Vec<ProviderSnapshot> {
     match execute_command(command) {
         Ok(result) if result.timed_out => vec![error_provider(
@@ -47,7 +49,14 @@ pub fn run_command_provider(
             Some(result),
             Some(&command.executable),
         )],
-        Ok(result) => parse_command_output(id, name, parser, result, &command.executable),
+        Ok(result) => parse_command_output(
+            id,
+            name,
+            parser,
+            result,
+            &command.executable,
+            window_label_overrides,
+        ),
         Err(error) => vec![error_provider(
             id,
             name,
@@ -68,8 +77,9 @@ pub fn run_single_provider_config(provider: &crate::config::ProviderConfig) -> P
             name,
             command,
             parser,
+            window_label_overrides,
             ..
-        } => run_command_provider(id, name, command, parser)
+        } => run_command_provider(id, name, command, parser, window_label_overrides)
             .into_iter()
             .next()
             .unwrap_or_else(|| error_provider(id, name, "Provider returned no snapshot", None, None)),
@@ -206,6 +216,7 @@ fn parse_command_output(
     parser: &ParserSpec,
     result: RawCommandResult,
     command_path: &str,
+    window_label_overrides: &HashMap<String, String>,
 ) -> Vec<ProviderSnapshot> {
     let diagnostics = diagnostics_from_result(&result, Some(command_path));
     let parsed = match parser {
@@ -237,6 +248,7 @@ fn parse_command_output(
     match parsed {
         Ok(mut providers) => {
             for provider in &mut providers {
+                apply_window_label_overrides(provider, window_label_overrides);
                 provider.source = "command".to_string();
                 if provider.diagnostics.is_none() {
                     provider.diagnostics = Some(diagnostics.clone());
@@ -252,6 +264,25 @@ fn parse_command_output(
             Some(result),
             Some(command_path),
         )],
+    }
+}
+
+fn apply_window_label_overrides(
+    provider: &mut ProviderSnapshot,
+    overrides: &HashMap<String, String>,
+) {
+    if overrides.is_empty() {
+        return;
+    }
+
+    for window in &mut provider.windows {
+        if let Some(label) = overrides
+            .get(&window.id)
+            .or_else(|| overrides.get(&window.label))
+            .filter(|label| !label.trim().is_empty())
+        {
+            window.label = label.trim().to_string();
+        }
     }
 }
 
@@ -340,6 +371,7 @@ mod tests {
             "Fake",
             &node_command("fake_provider_snapshot.js"),
             &ParserSpec::ProviderSnapshot,
+            &HashMap::new(),
         );
 
         assert_eq!(providers.len(), 1);
@@ -354,6 +386,7 @@ mod tests {
             "Fake App",
             &node_command("fake_app_snapshot.js"),
             &ParserSpec::AppSnapshot,
+            &HashMap::new(),
         );
 
         assert_eq!(providers.len(), 1);
@@ -367,6 +400,7 @@ mod tests {
             "Bad",
             &node_command("fake_error.js"),
             &ParserSpec::ProviderSnapshot,
+            &HashMap::new(),
         );
 
         assert_eq!(providers[0].status, "error");
@@ -378,8 +412,13 @@ mod tests {
         let mut command = node_command("fake_slow.js");
         command.timeout_ms = 50;
 
-        let providers =
-            run_command_provider("slow", "Slow", &command, &ParserSpec::ProviderSnapshot);
+        let providers = run_command_provider(
+            "slow",
+            "Slow",
+            &command,
+            &ParserSpec::ProviderSnapshot,
+            &HashMap::new(),
+        );
 
         assert_eq!(providers[0].status, "error");
         assert_eq!(providers[0].diagnostics.as_ref().unwrap().timed_out, Some(true));
@@ -392,6 +431,7 @@ mod tests {
             "Invalid",
             &node_command("fake_invalid_json.js"),
             &ParserSpec::ProviderSnapshot,
+            &HashMap::new(),
         );
 
         assert_eq!(providers[0].status, "error");
@@ -409,13 +449,50 @@ mod tests {
             "Authorization: Bearer ${env:QUOTABARWIN_TEST_MISSING_SECRET}".to_string(),
         );
 
-        let providers =
-            run_command_provider("env", "Env", &command, &ParserSpec::ProviderSnapshot);
+        let providers = run_command_provider(
+            "env",
+            "Env",
+            &command,
+            &ParserSpec::ProviderSnapshot,
+            &HashMap::new(),
+        );
 
         assert_eq!(providers[0].status, "error");
         let error = providers[0].error.as_ref().expect("error");
         assert!(error.contains("QUOTABARWIN_TEST_MISSING_SECRET"));
         assert!(!error.contains("KIMI_API_KEY="));
+    }
+
+    #[test]
+    fn window_label_overrides_apply_after_parsing() {
+        let mut overrides = HashMap::new();
+        overrides.insert("weekly".to_string(), "Custom label".to_string());
+
+        let providers = run_command_provider(
+            "fake",
+            "Fake",
+            &node_command("fake_provider_snapshot.js"),
+            &ParserSpec::ProviderSnapshot,
+            &overrides,
+        );
+
+        assert_eq!(providers[0].windows[0].label, "Custom label");
+    }
+
+    #[test]
+    fn window_label_overrides_can_match_existing_label() {
+        let mut overrides = HashMap::new();
+        overrides.insert("Weekly".to_string(), "Team weekly".to_string());
+
+        let providers = run_command_provider(
+            "fake",
+            "Fake",
+            &node_command("fake_provider_snapshot.js"),
+            &ParserSpec::ProviderSnapshot,
+            &overrides,
+        );
+
+        assert_eq!(providers[0].windows[0].label, "Team weekly");
     }
 
     #[test]

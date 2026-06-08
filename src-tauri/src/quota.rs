@@ -110,8 +110,15 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
                 enabled,
                 command,
                 parser,
+                window_label_overrides,
             } if enabled => {
-                providers.extend(run_command_provider(&id, &name, &command, &parser));
+                providers.extend(run_command_provider(
+                    &id,
+                    &name,
+                    &command,
+                    &parser,
+                    &window_label_overrides,
+                ));
             }
             _ => {}
         }
@@ -221,6 +228,7 @@ mod tests {
                     timeout_ms: 1000,
                 },
                 parser: ParserSpec::ProviderSnapshot,
+                window_label_overrides: std::collections::HashMap::new(),
             }],
         };
 

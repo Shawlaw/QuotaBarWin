@@ -8,7 +8,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 3;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +40,8 @@ pub enum ProviderConfig {
         enabled: bool,
         command: CommandSpec,
         parser: ParserSpec,
+        #[serde(default)]
+        window_label_overrides: HashMap<String, String>,
     },
 }
 
@@ -191,7 +193,52 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(3);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(3);
+    if version < 4 {
+        add_default_window_label_overrides(&mut value);
+        value["schemaVersion"] = serde_json::json!(4);
+    }
+
     Ok(value)
+}
+
+fn add_default_window_label_overrides(value: &mut serde_json::Value) {
+    let Some(providers) = value.get_mut("providers").and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+
+    for provider in providers {
+        if provider.get("kind").and_then(serde_json::Value::as_str) != Some("command") {
+            continue;
+        }
+
+        if provider.get("windowLabelOverrides").is_none() {
+            provider["windowLabelOverrides"] = serde_json::json!({});
+        }
+
+        if provider
+            .pointer("/parser/type")
+            .and_then(serde_json::Value::as_str)
+            == Some("bigmodel-quota-limit-json-v1")
+        {
+            let Some(overrides) = provider
+                .get_mut("windowLabelOverrides")
+                .and_then(serde_json::Value::as_object_mut)
+            else {
+                continue;
+            };
+            overrides
+                .entry("tokens-limit-3-5".to_string())
+                .or_insert_with(|| serde_json::json!("5h"));
+            overrides
+                .entry("tokens-limit-6-1".to_string())
+                .or_insert_with(|| serde_json::json!("Weekly limit"));
+        }
+    }
 }
 
 pub fn migrate_config_file(path: &Path) -> Result<AppConfig, String> {
@@ -273,9 +320,85 @@ mod tests {
 
         let migrated = migrate_config_value(value).expect("migrates");
 
-        assert_eq!(migrated["schemaVersion"], serde_json::json!(3));
+        assert_eq!(migrated["schemaVersion"], serde_json::json!(4));
         assert_eq!(migrated["launchAtStartup"], serde_json::json!(false));
         assert_eq!(migrated["logLevel"], serde_json::json!("info"));
+    }
+
+    #[test]
+    fn config_migration_v3_to_v4_adds_window_label_overrides() {
+        let value = serde_json::json!({
+            "schemaVersion": 3,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "launchAtStartup": false,
+            "logLevel": "info",
+            "providers": [{
+                "kind": "command",
+                "id": "bigmodel",
+                "name": "BigModel",
+                "enabled": true,
+                "command": {
+                    "executable": "curl",
+                    "args": [],
+                    "timeoutMs": 15000
+                },
+                "parser": {
+                    "type": "bigmodel-quota-limit-json-v1"
+                }
+            }]
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(migrated["schemaVersion"], serde_json::json!(4));
+        assert_eq!(
+            migrated["providers"][0]["windowLabelOverrides"],
+            serde_json::json!({
+                "tokens-limit-3-5": "5h",
+                "tokens-limit-6-1": "Weekly limit"
+            })
+        );
+    }
+
+    #[test]
+    fn config_migration_v4_preserves_custom_window_label_overrides() {
+        let value = serde_json::json!({
+            "schemaVersion": 3,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "launchAtStartup": false,
+            "logLevel": "info",
+            "providers": [{
+                "kind": "command",
+                "id": "bigmodel",
+                "name": "BigModel",
+                "enabled": true,
+                "command": {
+                    "executable": "curl",
+                    "args": [],
+                    "timeoutMs": 15000
+                },
+                "parser": {
+                    "type": "bigmodel-quota-limit-json-v1"
+                },
+                "windowLabelOverrides": {
+                    "tokens-limit-3-5": "Five hour custom"
+                }
+            }]
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["providers"][0]["windowLabelOverrides"],
+            serde_json::json!({
+                "tokens-limit-3-5": "Five hour custom",
+                "tokens-limit-6-1": "Weekly limit"
+            })
+        );
     }
 
     #[test]

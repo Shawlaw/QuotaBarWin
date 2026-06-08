@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tauri::command;
 
 use crate::{
@@ -43,6 +44,7 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
                     timeout_ms: 15000,
                 },
                 parser: ParserSpec::KimiCodingUsageV1,
+                window_label_overrides: HashMap::new(),
             },
             required_env_vars: vec!["KIMI_API_KEY".to_string()],
             docs: Some("Set KIMI_API_KEY in your environment.".to_string()),
@@ -68,6 +70,10 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
                     timeout_ms: 15000,
                 },
                 parser: ParserSpec::BigmodelQuotaLimitJsonV1,
+                window_label_overrides: HashMap::from([
+                    ("tokens-limit-3-5".to_string(), "5h".to_string()),
+                    ("tokens-limit-6-1".to_string(), "Weekly limit".to_string()),
+                ]),
             },
             required_env_vars: vec!["BIGMODEL_API_KEY".to_string()],
             docs: Some("Set BIGMODEL_API_KEY in your environment.".to_string()),
@@ -88,6 +94,7 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
                     timeout_ms: 15000,
                 },
                 parser: ParserSpec::AppSnapshot,
+                window_label_overrides: HashMap::new(),
             },
             required_env_vars: Vec::new(),
             docs: Some("Install opencode-quota separately if you want to use this provider.".to_string()),
@@ -108,6 +115,7 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
                     timeout_ms: 15000,
                 },
                 parser: ParserSpec::ProviderSnapshot,
+                window_label_overrides: HashMap::new(),
             },
             required_env_vars: Vec::new(),
             docs: None,
@@ -165,6 +173,7 @@ mod tests {
                 name,
                 enabled,
                 parser,
+                window_label_overrides,
                 ..
             } => ProviderConfig::Command {
                 id,
@@ -178,6 +187,7 @@ mod tests {
                     timeout_ms: 15000,
                 },
                 parser,
+                window_label_overrides,
             },
             other => other,
         }
@@ -212,6 +222,22 @@ mod tests {
             .iter()
             .any(|arg| arg.contains("${env:BIGMODEL_API_KEY}")));
         assert_eq!(parser, &ParserSpec::BigmodelQuotaLimitJsonV1);
+        if let ProviderConfig::Command {
+            window_label_overrides,
+            ..
+        } = preset.provider_config_template
+        {
+            assert_eq!(
+                window_label_overrides.get("tokens-limit-3-5"),
+                Some(&"5h".to_string())
+            );
+            assert_eq!(
+                window_label_overrides.get("tokens-limit-6-1"),
+                Some(&"Weekly limit".to_string())
+            );
+        } else {
+            panic!("expected command provider");
+        }
     }
 
     #[test]
@@ -253,5 +279,7 @@ mod tests {
         assert_eq!(snapshot.id, "bigmodel-coding-plan");
         assert_eq!(snapshot.status, "ok");
         assert_eq!(snapshot.windows.len(), 3);
+        assert_eq!(snapshot.windows[0].label, "5h");
+        assert_eq!(snapshot.windows[1].label, "Weekly limit");
     }
 }

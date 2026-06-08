@@ -69,6 +69,7 @@ export type CommandProviderConfig = {
   kind: "command";
   command: CommandSpec;
   parser: ParserSpec;
+  windowLabelOverrides?: Record<string, string>;
 };
 
 export type CommandSpec = {
