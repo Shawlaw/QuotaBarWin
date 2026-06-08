@@ -1,4 +1,5 @@
 import type { AppSnapshot, ProviderSnapshot, QuotaWindow } from "../types";
+import { afterEach, vi } from "vitest";
 import {
   alertLevelForRemaining,
   findGlobalLowestWindow,
@@ -8,6 +9,10 @@ import {
   NotificationDeduper,
   suggestionForAlertLevel
 } from "./forecast";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function window(id: string, remainingPercent: number, resetAt: string | null = null): QuotaWindow {
   return {
@@ -62,18 +67,29 @@ test("maps_remaining_percent_to_alert_level", () => {
 });
 
 test("formats_reset_at_countdown", () => {
+  vi.spyOn(Date.prototype, "toLocaleString").mockReturnValue("06/08/2026, 10:14 AM GMT+8");
+
   expect(
     formatResetCountdown(
       window("5h", 10, "2026-06-08T02:14:00Z"),
       new Date("2026-06-08T00:00:00Z")
     )
-  ).toBe("resets in 2h 14m");
+  ).toBe("resets at 06/08/2026, 10:14 AM GMT+8");
 });
 
-test("uses_reset_text_when_reset_at_missing", () => {
+test("converts_relative_reset_text_to_local_time", () => {
+  vi.spyOn(Date.prototype, "toLocaleString").mockReturnValue("06/08/2026, 12:00 PM GMT+8");
   const quotaWindow = { ...window("weekly", 10), resetText: "in 4 hours" };
 
-  expect(formatResetCountdown(quotaWindow)).toBe("in 4 hours");
+  expect(formatResetCountdown(quotaWindow, new Date("2026-06-08T00:00:00Z"))).toBe(
+    "resets at 06/08/2026, 12:00 PM GMT+8"
+  );
+});
+
+test("keeps_unparsed_reset_text_when_reset_at_missing", () => {
+  const quotaWindow = { ...window("weekly", 10), resetText: "next billing cycle" };
+
+  expect(formatResetCountdown(quotaWindow)).toBe("next billing cycle");
 });
 
 test("generates_suggestion_for_low_critical_urgent", () => {

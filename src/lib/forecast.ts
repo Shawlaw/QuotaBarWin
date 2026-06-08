@@ -65,17 +65,9 @@ export function findGlobalLowestWindow(
 }
 
 export function formatResetCountdown(window: QuotaWindow, now: Date = new Date()): string {
-  if (window.resetAt) {
-    const resetTime = new Date(window.resetAt).getTime();
-    if (Number.isFinite(resetTime)) {
-      const diffMinutes = Math.max(0, Math.ceil((resetTime - now.getTime()) / 60000));
-      const hours = Math.floor(diffMinutes / 60);
-      const minutes = diffMinutes % 60;
-      if (hours > 0) {
-        return `resets in ${hours}h ${minutes}m`;
-      }
-      return `resets in ${minutes}m`;
-    }
+  const resetDate = resetDateForWindow(window, now);
+  if (resetDate) {
+    return `resets at ${formatLocalResetTime(resetDate)}`;
   }
 
   if (window.resetText) {
@@ -83,6 +75,67 @@ export function formatResetCountdown(window: QuotaWindow, now: Date = new Date()
   }
 
   return "reset unknown";
+}
+
+export function formatLocalResetTime(date: Date): string {
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short"
+  });
+}
+
+export function resetDateForWindow(window: QuotaWindow, now: Date = new Date()): Date | null {
+  if (window.resetAt) {
+    const resetDate = new Date(window.resetAt);
+    if (Number.isFinite(resetDate.getTime())) {
+      return resetDate;
+    }
+  }
+
+  if (window.resetText) {
+    return parseRelativeResetText(window.resetText, now);
+  }
+
+  return null;
+}
+
+export function parseRelativeResetText(text: string, now: Date = new Date()): Date | null {
+  const normalized = text.trim().toLowerCase();
+  const pattern =
+    /(\d+(?:\.\d+)?)\s*(weeks?|w|days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b/g;
+  let totalMs = 0;
+  let matched = false;
+
+  for (const match of normalized.matchAll(pattern)) {
+    const value = Number(match[1]);
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+
+    matched = true;
+    const unit = match[2];
+    if (unit === "w" || unit.startsWith("week")) {
+      totalMs += value * 7 * 24 * 60 * 60 * 1000;
+    } else if (unit === "d" || unit.startsWith("day")) {
+      totalMs += value * 24 * 60 * 60 * 1000;
+    } else if (unit === "h" || unit.startsWith("hr") || unit.startsWith("hour")) {
+      totalMs += value * 60 * 60 * 1000;
+    } else if (unit === "m" || unit.startsWith("min")) {
+      totalMs += value * 60 * 1000;
+    } else if (unit === "s" || unit.startsWith("sec")) {
+      totalMs += value * 1000;
+    }
+  }
+
+  if (!matched) {
+    return null;
+  }
+
+  return new Date(now.getTime() + totalMs);
 }
 
 export function suggestionForAlertLevel(level: AlertLevel): string {

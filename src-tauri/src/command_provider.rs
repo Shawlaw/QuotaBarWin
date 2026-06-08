@@ -5,6 +5,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use chrono::Utc;
 
 use crate::{
@@ -80,6 +83,7 @@ fn execute_command(command: &CommandSpec) -> Result<RawCommandResult, String> {
     process.args(args);
     process.stdout(Stdio::piped());
     process.stderr(Stdio::piped());
+    suppress_command_window(&mut process);
 
     if let Some(cwd) = &command.cwd {
         process.current_dir(cwd);
@@ -121,6 +125,15 @@ fn execute_command(command: &CommandSpec) -> Result<RawCommandResult, String> {
         thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[cfg(windows)]
+fn suppress_command_window(command: &mut Command) {
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn suppress_command_window(_command: &mut Command) {}
 
 fn resolve_env_value(value: &str) -> Result<String, String> {
     if let Some(name) = value
