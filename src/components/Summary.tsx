@@ -12,8 +12,11 @@ export function Summary({ globalLowest }: SummaryProps) {
 
   return (
     <section className="summary" aria-label="Quota summary">
-      Lowest quota: {globalLowest.providerName} · {globalLowest.window.label} ·{" "}
-      {formatPercent(globalLowest.window.remainingPercent)} left
+      <strong>Lowest quota alert</strong>
+      <span>
+        Lowest remaining across all providers: {globalLowest.providerName} ·{" "}
+        {globalLowest.window.label} · {formatPercent(globalLowest.window.remainingPercent)} left
+      </span>
     </section>
   );
 }

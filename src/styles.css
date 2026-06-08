@@ -176,6 +176,15 @@ button:disabled {
   margin: 0 0 16px;
 }
 
+.summary {
+  display: grid;
+  gap: 4px;
+}
+
+.summary strong {
+  color: #0f172a;
+}
+
 .status--ok {
   background: #dcfce7;
   color: #166534;

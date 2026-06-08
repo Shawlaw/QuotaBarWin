@@ -26,6 +26,11 @@ test("summary_renders_global_lowest_quota", () => {
   render(<Summary globalLowest={globalLowest} />);
 
   expect(
-    screen.getByText("Lowest quota: BigModel Coding Plan · 5-Hour Token Limit · 5% left")
+    screen.getByText("Lowest quota alert")
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Lowest remaining across all providers: BigModel Coding Plan · 5-Hour Token Limit · 5% left"
+    )
   ).toBeInTheDocument();
 });
