@@ -1,5 +1,5 @@
 import type { ProviderSnapshot } from "../types";
-import { findLowestWindowPerProvider } from "../lib/forecast";
+import { findLowestWindowPerProvider, formatResetCountdown } from "../lib/forecast";
 import { formatPercent } from "../lib/format";
 import { ProgressBar } from "./ProgressBar";
 
@@ -55,6 +55,11 @@ export function ProviderCard({ provider, lowQuotaWarningThreshold = 20 }: Provid
                 {formatPercent(window.usedPercent)} used / {formatPercent(window.remainingPercent)} remaining
               </span>
             </div>
+            {window.resetAt || window.resetText ? (
+              <div className="quota-window__details">
+                <span>{formatResetCountdown(window)}</span>
+              </div>
+            ) : null}
             <ProgressBar percent={window.remainingPercent} label={`${window.label} remaining`} />
           </section>
         ))}

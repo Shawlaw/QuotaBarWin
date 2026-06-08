@@ -208,9 +208,17 @@ button:disabled {
 }
 
 .quota-window__meta span,
+.quota-window__details,
 .progress-label {
   color: #5b6472;
   font-size: 14px;
+}
+
+.quota-window__details {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
 }
 
 .quota-window__warning {
