@@ -55,7 +55,7 @@ test("provider_card_renders_kimi_fixture_snapshot", () => {
   render(<ProviderCard provider={kimiExpected as ProviderSnapshot} />);
 
   expect(screen.getByRole("heading", { name: "Kimi Coding" })).toBeInTheDocument();
-  expect(screen.getByText("Coding usage")).toBeInTheDocument();
+  expect(screen.getByText("Weekly limit")).toBeInTheDocument();
 });
 
 test("provider_card_renders_bottleneck_badge", () => {

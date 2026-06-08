@@ -7,7 +7,7 @@
   "windows": [
     {
       "id": "usage",
-      "label": "Coding usage",
+      "label": "Weekly limit",
       "used": 15,
       "limit": 100,
       "unit": null,

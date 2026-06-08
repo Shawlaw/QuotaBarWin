@@ -12,7 +12,7 @@ pub fn parse_kimi_coding_usage(id: &str, name: &str, stdout: &str) -> ProviderSn
     let mut windows = Vec::new();
 
     if let Some(usage) = value.get("usage") {
-        if let Some(window) = kimi_detail_window("usage", "Coding usage", usage, &mut diagnostics) {
+        if let Some(window) = kimi_detail_window("usage", "Weekly limit", usage, &mut diagnostics) {
             windows.push(window);
         }
     } else {
