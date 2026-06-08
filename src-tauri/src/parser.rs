@@ -152,11 +152,7 @@ pub fn parse_bigmodel_quota_limit_json(id: &str, name: &str, stdout: &str) -> Pr
                     unit_number.map_or_else(|| "unknown".to_string(), |value| value.to_string()),
                     number.map_or_else(|| "unknown".to_string(), |value| value.to_string())
                 ),
-                label: format!(
-                    "{type_name} unit={} number={}",
-                    unit_number.map_or_else(|| "unknown".to_string(), |value| value.to_string()),
-                    number.map_or_else(|| "unknown".to_string(), |value| value.to_string())
-                ),
+                label: bigmodel_window_label(type_name, unit_number, number),
                 used,
                 limit: quota_limit,
                 unit: if type_name == "TOKENS_LIMIT" {
@@ -325,6 +321,40 @@ fn kimi_window_label(duration: Option<i64>, time_unit: &str) -> String {
     }
 }
 
+fn bigmodel_window_label(type_name: &str, unit: Option<i64>, number: Option<i64>) -> String {
+    let type_label = type_name
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.to_ascii_lowercase().chars().collect::<Vec<_>>();
+            if let Some(first) = chars.first_mut() {
+                first.make_ascii_uppercase();
+            }
+            chars.into_iter().collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    match (unit, number) {
+        (Some(5), Some(number)) => format!("{} · {type_label}", pluralize_period(number, "month")),
+        (Some(3), Some(number)) => format!("{} · {type_label}", pluralize_period(number, "hour")),
+        (Some(6), Some(number)) => format!("{} · {type_label}", pluralize_period(number, "week")),
+        _ => format!(
+            "{type_name} unit={} number={}",
+            unit.map_or_else(|| "unknown".to_string(), |value| value.to_string()),
+            number.map_or_else(|| "unknown".to_string(), |value| value.to_string())
+        ),
+    }
+}
+
+fn pluralize_period(number: i64, unit: &str) -> String {
+    if number == 1 {
+        format!("1 {unit}")
+    } else {
+        format!("{number} {unit}s")
+    }
+}
+
 fn normalize_reset(reset: &str, diagnostics: &mut Vec<String>) -> Option<String> {
     match DateTime::parse_from_rfc3339(reset) {
         Ok(_) => Some(reset.to_string()),
@@ -427,8 +457,22 @@ mod tests {
         assert_eq!(actual.status, "ok");
         assert_eq!(actual.windows.len(), expected.windows.len());
         assert_eq!(actual.metadata, expected.metadata);
+        assert_eq!(actual.windows[0].label, "1 month · Time Limit");
+        assert_eq!(actual.windows[1].label, "5 hours · Tokens Limit");
+        assert_eq!(actual.windows[2].label, "1 week · Tokens Limit");
         assert_percent(actual.windows[0].used_percent, 3.0);
         assert_percent(actual.windows[2].remaining_percent, 96.0);
+    }
+
+    #[test]
+    fn bigmodel_unknown_unit_keeps_raw_label() {
+        let provider = parse_bigmodel_quota_limit_json(
+            "bigmodel",
+            "BigModel",
+            r#"{"success":true,"code":200,"data":{"limits":[{"type":"CUSTOM_LIMIT","unit":9,"number":2,"percentage":50}]}}"#,
+        );
+
+        assert_eq!(provider.windows[0].label, "CUSTOM_LIMIT unit=9 number=2");
     }
 
     #[test]
