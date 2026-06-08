@@ -65,6 +65,8 @@ pub fn parse_kimi_coding_usage(id: &str, name: &str, stdout: &str) -> ProviderSn
         diagnostics.push("totalQuota missing".to_string());
     }
 
+    sort_quota_windows_for_display(&mut windows);
+
     let mut metadata = Map::new();
     insert_string(&mut metadata, "region", value.pointer("/user/region"));
     insert_string(
@@ -186,6 +188,8 @@ pub fn parse_bigmodel_quota_limit_json(id: &str, name: &str, stdout: &str) -> Pr
     } else {
         diagnostics.push("limits missing".to_string());
     }
+
+    sort_quota_windows_for_display(&mut windows);
 
     provider_from_parts(id, name, windows, diagnostics, Some(Value::Object(metadata)))
 }
@@ -355,6 +359,36 @@ fn pluralize_period(number: i64, unit: &str) -> String {
     }
 }
 
+fn sort_quota_windows_for_display(windows: &mut [QuotaWindow]) {
+    windows.sort_by(|left, right| {
+        quota_window_display_rank(left).cmp(&quota_window_display_rank(right))
+    });
+}
+
+fn quota_window_display_rank(window: &QuotaWindow) -> u8 {
+    if is_five_hour_window(window) {
+        return 0;
+    }
+    if is_weekly_window(window) {
+        return 1;
+    }
+    2
+}
+
+fn is_five_hour_window(window: &QuotaWindow) -> bool {
+    window.id == "300-minute"
+        || window.id.ends_with("-3-5")
+        || window.label == "5h"
+        || window.label.starts_with("5 hours")
+}
+
+fn is_weekly_window(window: &QuotaWindow) -> bool {
+    window.id == "usage"
+        || window.id.ends_with("-6-1")
+        || window.label == "Weekly limit"
+        || window.label.starts_with("1 week")
+}
+
 fn normalize_reset(reset: &str, diagnostics: &mut Vec<String>) -> Option<String> {
     match DateTime::parse_from_rfc3339(reset) {
         Ok(_) => Some(reset.to_string()),
@@ -437,9 +471,15 @@ mod tests {
         assert_eq!(actual.name, expected.name);
         assert_eq!(actual.status, "ok");
         assert_eq!(actual.windows.len(), expected.windows.len());
+        assert_eq!(actual.windows, expected.windows);
         assert_eq!(actual.metadata, expected.metadata);
-        assert_percent(actual.windows[0].remaining_percent, 85.0);
-        assert_percent(actual.windows[1].remaining_percent, 90.0);
+        assert_eq!(actual.windows[0].id, "300-minute");
+        assert_eq!(actual.windows[0].label, "5h");
+        assert_eq!(actual.windows[1].id, "usage");
+        assert_eq!(actual.windows[1].label, "Weekly limit");
+        assert_eq!(actual.windows[2].id, "total-quota");
+        assert_percent(actual.windows[0].remaining_percent, 90.0);
+        assert_percent(actual.windows[1].remaining_percent, 85.0);
         assert_percent(actual.windows[2].remaining_percent, 99.0);
     }
 
@@ -456,12 +496,17 @@ mod tests {
         assert_eq!(actual.name, expected.name);
         assert_eq!(actual.status, "ok");
         assert_eq!(actual.windows.len(), expected.windows.len());
+        assert_eq!(actual.windows, expected.windows);
         assert_eq!(actual.metadata, expected.metadata);
-        assert_eq!(actual.windows[0].label, "1 month · Time Limit");
-        assert_eq!(actual.windows[1].label, "5 hours · Tokens Limit");
-        assert_eq!(actual.windows[2].label, "1 week · Tokens Limit");
-        assert_percent(actual.windows[0].used_percent, 3.0);
-        assert_percent(actual.windows[2].remaining_percent, 96.0);
+        assert_eq!(actual.windows[0].id, "tokens-limit-3-5");
+        assert_eq!(actual.windows[0].label, "5 hours · Tokens Limit");
+        assert_eq!(actual.windows[1].id, "tokens-limit-6-1");
+        assert_eq!(actual.windows[1].label, "1 week · Tokens Limit");
+        assert_eq!(actual.windows[2].id, "time-limit-5-1");
+        assert_eq!(actual.windows[2].label, "1 month · Time Limit");
+        assert_percent(actual.windows[0].remaining_percent, 99.0);
+        assert_percent(actual.windows[1].remaining_percent, 96.0);
+        assert_percent(actual.windows[2].used_percent, 3.0);
     }
 
     #[test]

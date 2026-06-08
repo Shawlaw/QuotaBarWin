@@ -6,18 +6,6 @@
   "updatedAt": "<dynamic>",
   "windows": [
     {
-      "id": "usage",
-      "label": "Weekly limit",
-      "used": 15,
-      "limit": 100,
-      "unit": null,
-      "usedPercent": 15,
-      "remainingPercent": 85,
-      "resetAt": "2026-06-12T02:35:14.207781Z",
-      "resetText": null,
-      "confidence": "exact"
-    },
-    {
       "id": "300-minute",
       "label": "5h",
       "used": 10,
@@ -26,6 +14,18 @@
       "usedPercent": 10,
       "remainingPercent": 90,
       "resetAt": "2026-06-07T16:35:14.207781Z",
+      "resetText": null,
+      "confidence": "exact"
+    },
+    {
+      "id": "usage",
+      "label": "Weekly limit",
+      "used": 15,
+      "limit": 100,
+      "unit": null,
+      "usedPercent": 15,
+      "remainingPercent": 85,
+      "resetAt": "2026-06-12T02:35:14.207781Z",
       "resetText": null,
       "confidence": "exact"
     },

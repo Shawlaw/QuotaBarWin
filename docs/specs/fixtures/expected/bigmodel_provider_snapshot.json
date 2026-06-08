@@ -6,20 +6,8 @@
   "updatedAt": "<dynamic>",
   "windows": [
     {
-      "id": "time-limit-5-1",
-      "label": "TIME_LIMIT unit=5 number=1",
-      "used": 35,
-      "limit": 1000,
-      "unit": null,
-      "usedPercent": 3,
-      "remainingPercent": 97,
-      "resetAt": "2026-06-30T02:01:23.993000Z",
-      "resetText": null,
-      "confidence": "exact"
-    },
-    {
       "id": "tokens-limit-3-5",
-      "label": "TOKENS_LIMIT unit=3 number=5",
+      "label": "5 hours · Tokens Limit",
       "used": null,
       "limit": null,
       "unit": "tokens",
@@ -31,13 +19,25 @@
     },
     {
       "id": "tokens-limit-6-1",
-      "label": "TOKENS_LIMIT unit=6 number=1",
+      "label": "1 week · Tokens Limit",
       "used": null,
       "limit": null,
       "unit": "tokens",
       "usedPercent": 4,
       "remainingPercent": 96,
       "resetAt": "2026-06-13T02:01:23.997000Z",
+      "resetText": null,
+      "confidence": "exact"
+    },
+    {
+      "id": "time-limit-5-1",
+      "label": "1 month · Time Limit",
+      "used": 35,
+      "limit": 1000,
+      "unit": null,
+      "usedPercent": 3,
+      "remainingPercent": 97,
+      "resetAt": "2026-06-30T02:01:23.993000Z",
       "resetText": null,
       "confidence": "exact"
     }
