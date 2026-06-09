@@ -28,7 +28,6 @@ export function ProviderCard({
   onRefresh
 }: ProviderCardProps) {
   const [statusOpen, setStatusOpen] = useState(false);
-  const [actionsOpen, setActionsOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const refreshedAt = provider.updatedAt ?? provider.diagnostics?.checkedAt ?? null;
   const effectiveStatus = calculateProviderStatus(provider, lowQuotaWarningThreshold);
@@ -66,29 +65,15 @@ export function ProviderCard({
             </span>
           )}
           {onRefresh ? (
-            <div className="provider-actions">
-              <button
-                type="button"
-                className="button-ghost button-compact"
-                aria-expanded={actionsOpen}
-                onClick={() => setActionsOpen((current) => !current)}
-                data-testid={`provider-action-menu-${provider.id}`}
-              >
-                More
-              </button>
-              {actionsOpen ? (
-                <div className="provider-actions__menu">
-                  <button
-                    type="button"
-                    className="button-secondary button-compact"
-                    onClick={onRefresh}
-                    disabled={isRefreshing}
-                  >
-                    {isRefreshing ? "Refreshing" : "Refresh"}
-                  </button>
-                </div>
-              ) : null}
-            </div>
+            <button
+              type="button"
+              className="button-secondary button-compact"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              data-testid={`provider-refresh-${provider.id}`}
+            >
+              {isRefreshing ? "Refreshing" : "Refresh"}
+            </button>
           ) : null}
         </div>
       </div>

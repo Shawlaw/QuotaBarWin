@@ -94,6 +94,17 @@ test("provider_card_renders_status_label", () => {
   expect(screen.queryByText("Bottleneck")).not.toBeInTheDocument();
 });
 
+test("provider_card_shows_refresh_without_action_menu", () => {
+  const onRefresh = vi.fn();
+
+  render(<ProviderCard provider={provider} onRefresh={onRefresh} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+  expect(onRefresh).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("button", { name: "More" })).not.toBeInTheDocument();
+});
+
 test("provider_card_opens_warning_status_details", () => {
   render(
     <ProviderCard

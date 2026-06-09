@@ -57,6 +57,9 @@ button {
 }
 
 .button-refresh {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
   inline-size: 78px;
   overflow: hidden;
   padding: 0 9px;
@@ -216,22 +219,6 @@ button:disabled {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
-}
-
-.provider-actions {
-  position: relative;
-}
-
-.provider-actions__menu {
-  background: #ffffff;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  box-shadow: 0 12px 24px rgb(15 23 42 / 12%);
-  padding: 8px;
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 10;
 }
 
 .status {

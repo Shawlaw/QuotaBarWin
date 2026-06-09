@@ -23,14 +23,14 @@ export function Header({
       <div className="header-actions">
         <button
           type="button"
-          className={activeView === "overview" ? undefined : "button-secondary"}
+          className={activeView === "overview" ? "button-secondary" : undefined}
           onClick={onOpenOverview}
         >
           Overview
         </button>
         <button
           type="button"
-          className={activeView === "settings" ? undefined : "button-secondary"}
+          className={activeView === "settings" ? "button-secondary" : undefined}
           onClick={onOpenSettings}
         >
           Settings

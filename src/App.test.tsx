@@ -69,7 +69,7 @@ test("refresh_button_calls_refresh_snapshot", async () => {
   render(<App />);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "Refresh" })[0]);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
 });
@@ -81,9 +81,14 @@ test("settings_replaces_provider_overview", async () => {
   expect(screen.getByTestId("global-status-strip")).toBeInTheDocument();
   expect(screen.getByLabelText("Providers")).toBeInTheDocument();
 
+  expect(screen.getByRole("button", { name: "Overview" })).toHaveClass("button-secondary");
+  expect(screen.getByRole("button", { name: "Settings" })).not.toHaveClass("button-secondary");
+
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
   expect(screen.getByLabelText("Settings")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Overview" })).not.toHaveClass("button-secondary");
+  expect(screen.getByRole("button", { name: "Settings" })).toHaveClass("button-secondary");
   expect(screen.queryByTestId("overview-page")).not.toBeInTheDocument();
 });
