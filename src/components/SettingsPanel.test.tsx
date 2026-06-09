@@ -326,6 +326,9 @@ test("settings_shows_config_storage_info_and_provider_guide", () => {
   expect(screen.getByRole("button", { name: configStorageInfo.configPath })).toBeInTheDocument();
   expect(screen.getByText("AppData mode")).toBeInTheDocument();
   expect(screen.getByText("Custom Provider guide")).toBeInTheDocument();
+  expect(screen.getByText("Minimum output")).toBeInTheDocument();
+  expect(screen.getByText("Node.js example")).toBeInTheDocument();
+  expect(screen.getByText(/One provider result/)).toBeInTheDocument();
 });
 
 test("add_kimi_preset_shows_env_hint", () => {
