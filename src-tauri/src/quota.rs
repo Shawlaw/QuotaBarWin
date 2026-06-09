@@ -296,6 +296,31 @@ mod tests {
     }
 
     #[test]
+    fn quota_window_serializes_frontend_shape() {
+        let window = QuotaWindow {
+            id: "weekly".to_string(),
+            label: "Weekly limit".to_string(),
+            used: Some(40.0),
+            limit: Some(100.0),
+            unit: Some("requests".to_string()),
+            used_percent: Some(40.0),
+            remaining_percent: Some(60.0),
+            reset_at: Some("2026-06-15T00:00:00Z".to_string()),
+            reset_text: Some("Monday".to_string()),
+            confidence: "exact".to_string(),
+        };
+
+        let value = serde_json::to_value(&window).expect("serialize window");
+        let parsed = serde_json::from_value::<QuotaWindow>(value.clone()).expect("round trip");
+
+        assert_eq!(value["usedPercent"], serde_json::json!(40.0));
+        assert_eq!(value["remainingPercent"], serde_json::json!(60.0));
+        assert_eq!(value["resetAt"], serde_json::json!("2026-06-15T00:00:00Z"));
+        assert!(value.get("used_percent").is_none());
+        assert_eq!(parsed, window);
+    }
+
+    #[test]
     fn quota_percentages_are_in_range() {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");

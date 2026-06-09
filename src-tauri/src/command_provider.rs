@@ -447,6 +447,40 @@ mod tests {
     }
 
     #[test]
+    fn execute_command_passes_resolved_cli_args_in_order() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let secret_path = temp.path().join("api key.txt");
+        std::fs::write(&secret_path, "secret from file\n").expect("write secret");
+        let command = CommandSpec {
+            executable: "node".to_string(),
+            args: vec![
+                "-e".to_string(),
+                "console.log(JSON.stringify(process.argv.slice(1)))".to_string(),
+                "--".to_string(),
+                "--provider".to_string(),
+                "two words".to_string(),
+                format!("${{file:\"{}\"}}", secret_path.display()),
+            ],
+            cwd: None,
+            env: None,
+            timeout_ms: 2000,
+        };
+
+        let result = execute_command(&command).expect("execute command");
+        let args =
+            serde_json::from_str::<Vec<String>>(result.stdout.trim()).expect("parse stdout args");
+
+        assert_eq!(
+            args,
+            vec![
+                "--provider".to_string(),
+                "two words".to_string(),
+                "secret from file".to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn command_provider_parses_app_snapshot_stdout() {
         let providers = run_command_provider(
             "fake-app",

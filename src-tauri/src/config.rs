@@ -600,6 +600,76 @@ mod tests {
     }
 
     #[test]
+    fn save_then_load_round_trips_config() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("nested").join("config.json");
+        let config = AppConfig {
+            schema_version: CURRENT_CONFIG_SCHEMA_VERSION,
+            refresh_interval_seconds: 120,
+            display_mode: "used".to_string(),
+            low_quota_warning_threshold: 15.0,
+            launch_at_startup: true,
+            log_level: "debug".to_string(),
+            providers: vec![ProviderConfig::Mock {
+                id: "mock".to_string(),
+                name: "Mock".to_string(),
+                enabled: false,
+            }],
+        };
+
+        save_config_to_path(&path, &config).expect("save config");
+        let loaded = load_or_create_config(&path).expect("load config");
+
+        assert_eq!(loaded.config, config);
+        assert!(loaded.recovery_messages.is_empty());
+    }
+
+    #[test]
+    fn provider_config_parses_all_supported_kinds() {
+        let providers = serde_json::json!([
+            {
+                "kind": "mock",
+                "id": "mock",
+                "name": "Mock",
+                "enabled": true
+            },
+            {
+                "kind": "codex",
+                "id": "codex",
+                "name": "Codex",
+                "enabled": true,
+                "authToken": "${env:CODEX_ACCESS_TOKEN}",
+                "accountId": "acct",
+                "proxyUrl": "socks5h://127.0.0.1:7890",
+                "timeoutMs": 15000,
+                "windowLabelOverrides": { "weekly": "Weekly limit" },
+                "visibleWindowIds": ["5h", "weekly"]
+            },
+            {
+                "kind": "command",
+                "id": "command",
+                "name": "Command",
+                "enabled": true,
+                "command": {
+                    "executable": "node",
+                    "args": ["fixtures/fake_provider_snapshot.js"],
+                    "timeoutMs": 15000
+                },
+                "parser": { "type": "provider-snapshot" },
+                "windowLabelOverrides": {},
+                "visibleWindowIds": []
+            }
+        ]);
+
+        let parsed = serde_json::from_value::<Vec<ProviderConfig>>(providers)
+            .expect("deserialize providers");
+
+        assert!(matches!(parsed[0], ProviderConfig::Mock { .. }));
+        assert!(matches!(parsed[1], ProviderConfig::Codex { .. }));
+        assert!(matches!(parsed[2], ProviderConfig::Command { .. }));
+    }
+
+    #[test]
     fn config_migration_v1_to_v2() {
         let value = serde_json::json!({
             "schemaVersion": 1,
