@@ -36,14 +36,29 @@ const mocks = vi.hoisted(() => {
     ]
   };
 
+  const configStorageInfo = {
+    mode: "app-data",
+    configPath: "C:\\Users\\tester\\AppData\\Roaming\\QuotaBarWin\\config.quotaBarWin.json",
+    configDir: "C:\\Users\\tester\\AppData\\Roaming\\QuotaBarWin",
+    appDataConfigPath: "C:\\Users\\tester\\AppData\\Roaming\\QuotaBarWin\\config.quotaBarWin.json",
+    portableConfigPath: "C:\\Tools\\QuotaBarWin\\config.quotaBarWin.json",
+    portableMarkerPath: "C:\\Tools\\QuotaBarWin\\quotabarwin.portable"
+  };
+
   return {
     getCachedSnapshot: vi.fn(async () => null),
     getAppVersion: vi.fn(async () => "0.0.0"),
     getConfig: vi.fn(async () => config),
+    getConfigStorageInfo: vi.fn(async () => configStorageInfo),
     getProviderPresets: vi.fn(async () => []),
     listenForRefreshRequests: vi.fn(async () => () => undefined),
+    listenForSingleInstance: vi.fn(async () => () => undefined),
+    openConfigFolder: vi.fn(async () => undefined),
+    refreshProvider: vi.fn(async () => snapshot),
     refreshSnapshot: vi.fn(async () => snapshot),
+    resetConfig: vi.fn(async () => config),
     saveConfig: vi.fn(async () => undefined),
+    setPortableMode: vi.fn(async () => configStorageInfo),
     testProvider: vi.fn(async () => snapshot.providers[0])
   };
 });
@@ -57,4 +72,17 @@ test("refresh_button_calls_refresh_snapshot", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+});
+
+test("settings_replaces_provider_overview", async () => {
+  render(<App />);
+
+  await waitFor(() => expect(screen.getByRole("heading", { name: "QuotaBarWin V0.0.0" })).toBeInTheDocument());
+  expect(screen.getByLabelText("Providers")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+  expect(screen.getByLabelText("Settings")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Providers")).not.toBeInTheDocument();
 });

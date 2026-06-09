@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { ProviderCard } from "./ProviderCard";
 import type { ProviderSnapshot } from "../types";
@@ -45,10 +45,39 @@ test("provider_card_renders_error_state", () => {
   expect(screen.getByText("Command failed")).toBeInTheDocument();
 });
 
-test("provider_card_renders_used_and_remaining", () => {
+test("provider_card_renders_remaining_percent", () => {
   render(<ProviderCard provider={provider} />);
 
-  expect(screen.getByText("28% used / 72% remaining")).toBeInTheDocument();
+  expect(screen.getByText("72% remaining")).toBeInTheDocument();
+  expect(screen.queryByText(/28% used/)).not.toBeInTheDocument();
+});
+
+test("provider_card_renders_used_percent_when_display_mode_is_used", () => {
+  render(<ProviderCard provider={provider} displayMode="used" />);
+
+  expect(screen.getByText("28% used")).toBeInTheDocument();
+  expect(screen.queryByText(/72% remaining/)).not.toBeInTheDocument();
+});
+
+test("provider_card_fades_used_mode_opacity_as_usage_increases", () => {
+  render(<ProviderCard provider={provider} displayMode="used" />);
+  const fill = screen.getByRole("progressbar", { name: "5h window used" }).firstElementChild;
+
+  expect(fill).toHaveStyle({ width: "28%" });
+  expect(fill).toHaveStyle({ opacity: "0.748" });
+});
+
+test("provider_card_renders_provider_refresh_time", () => {
+  vi.spyOn(Date.prototype, "toLocaleString").mockImplementation(function (this: Date) {
+    if (this.toISOString() === "2026-06-08T00:00:00.000Z") {
+      return "06/08/2026, 08:00 AM GMT+8";
+    }
+    return "unknown refresh";
+  });
+
+  render(<ProviderCard provider={provider} />);
+
+  expect(screen.getByText("Last refresh 06/08/2026, 08:00 AM GMT+8")).toBeInTheDocument();
 });
 
 test("provider_card_renders_kimi_fixture_snapshot", () => {
@@ -58,30 +87,36 @@ test("provider_card_renders_kimi_fixture_snapshot", () => {
   expect(screen.getByText("Weekly limit")).toBeInTheDocument();
 });
 
-test("provider_card_renders_bottleneck_badge", () => {
+test("provider_card_renders_status_label", () => {
   render(<ProviderCard provider={provider} />);
 
-  expect(screen.getAllByText("Bottleneck").length).toBeGreaterThan(0);
+  expect(screen.getByText("status ok")).toBeInTheDocument();
+  expect(screen.queryByText("Bottleneck")).not.toBeInTheDocument();
 });
 
-test("provider_card_renders_suggestion_text", () => {
+test("provider_card_opens_warning_status_details", () => {
   render(
     <ProviderCard
       provider={{
         ...provider,
-        windows: [
-          {
-            ...provider.windows[0],
-            remainingPercent: 8,
-            usedPercent: 92,
-            resetText: "in 2 hours"
-          }
-        ]
+        status: "warning",
+        diagnostics: {
+          checkedAt: "2026-06-08T00:00:00.000Z",
+          messages: ["usage missing"],
+          commandPath: "node",
+          exitCode: 0,
+          durationMs: 42,
+          timedOut: false,
+          stderr: null
+        }
       }}
     />
   );
 
-  expect(screen.getByText(/Avoid long tasks or large refactors/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "status warning" }));
+
+  expect(screen.getByText("usage missing")).toBeInTheDocument();
+  expect(screen.getByText("42ms")).toBeInTheDocument();
 });
 
 test("provider_card_renders_reset_time_for_each_window", () => {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type {
   AppConfig,
   CommandProviderConfig,
+  ConfigStorageInfo,
   ParserSpec,
   ProviderConfig,
   ProviderPreset,
@@ -10,13 +11,21 @@ import type {
 
 type SettingsPanelProps = {
   config: AppConfig;
-  appVersion: string;
+  configStorageInfo: ConfigStorageInfo | null;
+  isConfigStorageBusy: boolean;
   isSaving: boolean;
   presets: ProviderPreset[];
   onChange: (config: AppConfig) => void;
-  onClose: () => void;
+  onOpenConfigFolder: () => Promise<void>;
+  onResetConfig: () => Promise<void>;
   onSave: () => void;
+  onSetPortableMode: (enabled: boolean) => void;
   onTestProvider: (provider: ProviderConfig) => Promise<ProviderSnapshot>;
+};
+
+type ProviderTextDraft = {
+  windowLabelOverrides?: string;
+  visibleWindowIds?: string;
 };
 
 function updateProvider(
@@ -36,6 +45,24 @@ function removeProvider(config: AppConfig, providerId: string): AppConfig {
   return {
     ...config,
     providers: config.providers.filter((provider) => provider.id !== providerId)
+  };
+}
+
+function moveProvider(config: AppConfig, providerId: string, direction: -1 | 1): AppConfig {
+  const fromIndex = config.providers.findIndex((provider) => provider.id === providerId);
+  const toIndex = fromIndex + direction;
+
+  if (fromIndex === -1 || toIndex < 0 || toIndex >= config.providers.length) {
+    return config;
+  }
+
+  const providers = [...config.providers];
+  const [provider] = providers.splice(fromIndex, 1);
+  providers.splice(toIndex, 0, provider);
+
+  return {
+    ...config,
+    providers
   };
 }
 
@@ -61,6 +88,17 @@ function textToArgs(text: string): string[] {
   return text
     .split(/\r?\n/)
     .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function visibleWindowsToText(windowIds: string[] | undefined): string {
+  return (windowIds ?? []).join("\n");
+}
+
+function textToVisibleWindows(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
     .filter(Boolean);
 }
 
@@ -109,31 +147,55 @@ function cloneProvider(provider: ProviderConfig): ProviderConfig {
 
 export function SettingsPanel({
   config,
-  appVersion,
+  configStorageInfo,
+  isConfigStorageBusy,
   isSaving,
   presets,
   onChange,
-  onClose,
+  onOpenConfigFolder,
+  onResetConfig,
   onSave,
+  onSetPortableMode,
   onTestProvider
 }: SettingsPanelProps) {
   const [testResults, setTestResults] = useState<Record<string, ProviderSnapshot>>({});
+  const [textDrafts, setTextDrafts] = useState<Record<string, ProviderTextDraft>>({});
+  const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
+
+  function setProviderTextDraft(
+    providerId: string,
+    field: keyof ProviderTextDraft,
+    value: string
+  ) {
+    setTextDrafts((current) => ({
+      ...current,
+      [providerId]: {
+        ...current[providerId],
+        [field]: value
+      }
+    }));
+  }
+
+  function windowLabelOverridesText(provider: CommandProviderConfig): string {
+    return (
+      textDrafts[provider.id]?.windowLabelOverrides ??
+      labelOverridesToText(provider.windowLabelOverrides)
+    );
+  }
+
+  function visibleWindowIdsText(provider: CommandProviderConfig): string {
+    return textDrafts[provider.id]?.visibleWindowIds ?? visibleWindowsToText(provider.visibleWindowIds);
+  }
 
   function addPreset(preset: ProviderPreset) {
     const provider = cloneProvider(preset.providerConfigTemplate);
     provider.id = uniqueProviderId(config, provider.id);
 
+    setExpandedProviders((current) => ({ ...current, [provider.id]: true }));
     onChange({
       ...config,
       providers: [...config.providers, provider]
     });
-  }
-
-  function addCommandProvider() {
-    const custom = presets.find((preset) => preset.id === "custom-command-provider");
-    if (custom) {
-      addPreset(custom);
-    }
   }
 
   function updateCommandProvider(
@@ -149,16 +211,9 @@ export function SettingsPanel({
 
   return (
     <section className="settings-panel" aria-label="Settings">
-      <div className="settings-panel__header">
-        <h2>Settings</h2>
-        <span className="version-label">Version {appVersion}</span>
-        <button type="button" className="button-secondary" onClick={onClose}>
-          Close
-        </button>
-      </div>
       <div className="settings-grid">
         <label>
-          Refresh interval
+          Refresh interval (seconds)
           <input
             type="number"
             min={10}
@@ -232,6 +287,126 @@ export function SettingsPanel({
           Launch at startup
         </label>
       </div>
+      <section className="settings-info" aria-label="Configuration storage">
+        <div className="settings-section-title">
+          <h3>Configuration</h3>
+          <span>{configStorageInfo?.mode === "portable" ? "Portable mode" : "AppData mode"}</span>
+        </div>
+        <label className="args-field">
+          Config file
+          <textarea
+            className="path-field"
+            readOnly
+            rows={2}
+            value={configStorageInfo?.configPath ?? "Loading config path..."}
+          />
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={configStorageInfo?.mode === "portable"}
+            disabled={!configStorageInfo || isConfigStorageBusy}
+            onChange={(event) => onSetPortableMode(event.currentTarget.checked)}
+          />
+          Portable mode
+        </label>
+        <div className="settings-hint">
+          Portable mode stores config beside the app executable as config.quotaBarWin.json and uses
+          quotabarwin.portable as the marker file.
+        </div>
+        <div className="config-paths">
+          <span>AppData</span>
+          <code>{configStorageInfo?.appDataConfigPath ?? "Loading..."}</code>
+          <span>Portable</span>
+          <code>{configStorageInfo?.portableConfigPath ?? "Loading..."}</code>
+        </div>
+        <div className="settings-actions settings-actions--inline">
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={!configStorageInfo || isConfigStorageBusy}
+            onClick={() => void onOpenConfigFolder()}
+          >
+            Open folder
+          </button>
+          <button
+            type="button"
+            className="button-danger"
+            disabled={isConfigStorageBusy}
+            onClick={() => {
+              if (window.confirm("Reset QuotaBarWin config to defaults? A backup will be created first.")) {
+                void onResetConfig();
+              }
+            }}
+          >
+            Reset config
+          </button>
+        </div>
+      </section>
+      <details className="settings-guide">
+        <summary>Custom Provider guide</summary>
+        <div className="guide-grid">
+          <section>
+            <h3>Command</h3>
+            <p>
+              QuotaBarWin runs Executable with each Args line as one command-line argument.
+              stdout is parsed as quota JSON; non-zero exit codes and timeouts become status error.
+            </p>
+            <p>
+              Args and env values can read secrets with {"${env:NAME}"} or {"${file:C:\\Path With Spaces\\secret.txt}"}.
+              Quoted file paths also work, for example {"${file:\"C:\\Path With Spaces\\secret.txt\"}"}.
+              Secret values are redacted from diagnostics.
+            </p>
+          </section>
+          <section>
+            <h3>Parser</h3>
+            <dl>
+              <dt>provider-snapshot</dt>
+              <dd>stdout is one ProviderSnapshot JSON object.</dd>
+              <dt>app-snapshot</dt>
+              <dd>stdout is an AppSnapshot JSON object with providers.</dd>
+              <dt>kimi-coding-usage-v1</dt>
+              <dd>stdout is Kimi usage API JSON.</dd>
+              <dt>bigmodel-quota-limit-json-v1</dt>
+              <dd>stdout is BigModel quota limit API JSON.</dd>
+            </dl>
+          </section>
+          <section className="args-field">
+            <h3>ProviderSnapshot example</h3>
+            <pre>{`{
+  "id": "my-provider",
+  "name": "My Provider",
+  "status": "ok",
+  "source": "command",
+  "updatedAt": "2026-06-08T10:00:00Z",
+  "windows": [
+    {
+      "id": "5h",
+      "label": "5h",
+      "used": 28,
+      "limit": 100,
+      "unit": "percent",
+      "usedPercent": 28,
+      "remainingPercent": 72,
+      "resetAt": null,
+      "confidence": "exact"
+    }
+  ],
+  "error": null,
+  "diagnostics": null,
+  "metadata": null
+}`}</pre>
+          </section>
+          <section>
+            <h3>Window fields</h3>
+            <p>
+              Window label overrides uses one id=label mapping per line. Displayed windows is empty
+              for all windows, or one window id / mapped label per line.
+            </p>
+            <p>Test Provider runs the edited provider once and shows the parsed result.</p>
+          </section>
+        </div>
+      </details>
       <section className="preset-list" aria-label="Add Provider">
         <h3>Add Provider</h3>
         <div className="preset-actions">
@@ -248,7 +423,7 @@ export function SettingsPanel({
         </div>
       </section>
       <div className="settings-provider-list">
-        {config.providers.map((provider) => (
+        {config.providers.map((provider, providerIndex) => (
           <article className="settings-provider" key={provider.id}>
             <div className="settings-provider__header">
               <label>
@@ -269,21 +444,51 @@ export function SettingsPanel({
               <span>{provider.kind}</span>
               <button
                 type="button"
+                className="button-secondary"
+                onClick={() =>
+                  setExpandedProviders((current) => ({
+                    ...current,
+                    [provider.id]: !(current[provider.id] ?? false)
+                  }))
+                }
+              >
+                {expandedProviders[provider.id] ? "Collapse" : "Edit"}
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={providerIndex === 0}
+                onClick={() => onChange(moveProvider(config, provider.id, -1))}
+              >
+                Up
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={providerIndex === config.providers.length - 1}
+                onClick={() => onChange(moveProvider(config, provider.id, 1))}
+              >
+                Down
+              </button>
+              <button
+                type="button"
                 className="button-danger"
                 onClick={() => onChange(removeProvider(config, provider.id))}
               >
                 Remove
               </button>
             </div>
-            {presets
-              .find((preset) => preset.providerConfigTemplate.id === provider.id)
-              ?.requiredEnvVars?.map((envVar) => (
-                <p className="env-hint" key={envVar}>
-                  Set {envVar}
-                </p>
-              ))}
-            {provider.kind === "command" ? (
-              <div className="command-fields">
+            {expandedProviders[provider.id] ? (
+              <>
+                {presets
+                  .find((preset) => preset.providerConfigTemplate.id === provider.id)
+                  ?.requiredEnvVars?.map((envVar) => (
+                    <p className="env-hint" key={envVar}>
+                      Set {envVar}
+                    </p>
+                  ))}
+                {provider.kind === "command" ? (
+                  <div className="command-fields">
                 <label>
                   Name
                   <input
@@ -360,38 +565,57 @@ export function SettingsPanel({
                   Window label overrides
                   <textarea
                     rows={4}
-                    value={labelOverridesToText(provider.windowLabelOverrides)}
-                    onChange={(event) =>
+                    placeholder={"window-id=Display name\n300-minute=5h\ntokens-limit-6-1=Weekly limit"}
+                    value={windowLabelOverridesText(provider)}
+                    onChange={(event) => {
+                      setProviderTextDraft(
+                        provider.id,
+                        "windowLabelOverrides",
+                        event.currentTarget.value
+                      );
                       updateCommandProvider(provider, {
                         windowLabelOverrides: textToLabelOverrides(event.currentTarget.value)
-                      })
-                    }
+                      });
+                    }}
                   />
                 </label>
-              </div>
+                <label className="args-field">
+                  Displayed windows
+                  <textarea
+                    rows={3}
+                    placeholder={"Leave empty to show all\n5h\ntokens-limit-3-5\nWeekly limit"}
+                    value={visibleWindowIdsText(provider)}
+                    onChange={(event) => {
+                      setProviderTextDraft(provider.id, "visibleWindowIds", event.currentTarget.value);
+                      updateCommandProvider(provider, {
+                        visibleWindowIds: textToVisibleWindows(event.currentTarget.value)
+                      });
+                    }}
+                  />
+                </label>
+                  </div>
+                ) : null}
+                <div className="provider-test">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={async () => {
+                      const result = await onTestProvider(provider);
+                      setTestResults((current) => ({ ...current, [provider.id]: result }));
+                    }}
+                  >
+                    Test Provider
+                  </button>
+                  {testResults[provider.id] ? (
+                    <pre>{JSON.stringify(testResults[provider.id], null, 2)}</pre>
+                  ) : null}
+                </div>
+              </>
             ) : null}
-            <div className="provider-test">
-              <button
-                type="button"
-                className="button-secondary"
-                onClick={async () => {
-                  const result = await onTestProvider(provider);
-                  setTestResults((current) => ({ ...current, [provider.id]: result }));
-                }}
-              >
-                Test Provider
-              </button>
-              {testResults[provider.id] ? (
-                <pre>{JSON.stringify(testResults[provider.id], null, 2)}</pre>
-              ) : null}
-            </div>
           </article>
         ))}
       </div>
       <div className="settings-actions">
-        <button type="button" className="button-secondary" onClick={addCommandProvider}>
-          Add command provider
-        </button>
         <button type="button" onClick={onSave} disabled={isSaving}>
           {isSaving ? "Saving" : "Save"}
         </button>

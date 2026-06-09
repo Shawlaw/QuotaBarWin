@@ -2,19 +2,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Header } from "./components/Header";
 import { ProviderCard } from "./components/ProviderCard";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { Summary } from "./components/Summary";
-import { findGlobalLowestWindow } from "./lib/forecast";
 import {
   getCachedSnapshot,
   getAppVersion,
   getConfig,
+  getConfigStorageInfo,
   getProviderPresets,
   listenForRefreshRequests,
+  listenForSingleInstance,
+  openConfigFolder,
+  refreshProvider,
   refreshSnapshot,
+  resetConfig,
   saveConfig,
+  setPortableMode,
   testProvider
 } from "./lib/api";
-import type { AppConfig, AppSnapshot, ProviderPreset } from "./types";
+import type { AppConfig, AppSnapshot, ConfigStorageInfo, ProviderPreset } from "./types";
 
 function fallbackSnapshot(error: unknown): AppSnapshot {
   return {
@@ -40,10 +44,13 @@ export function App() {
   const refreshInFlight = useRef(false);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [configStorageInfo, setConfigStorageInfo] = useState<ConfigStorageInfo | null>(null);
   const [appVersion, setAppVersion] = useState<string>("unknown");
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isConfigStorageBusy, setIsConfigStorageBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const loadSnapshot = useCallback(async () => {
@@ -71,10 +78,12 @@ export function App() {
       try {
         const loadedConfig = await getConfig();
         const loadedVersion = await getAppVersion();
+        const loadedStorageInfo = await getConfigStorageInfo();
         if (!isMounted) {
           return;
         }
         setConfig(loadedConfig);
+        setConfigStorageInfo(loadedStorageInfo);
         setAppVersion(loadedVersion);
         setPresets(await getProviderPresets());
         const cached = await getCachedSnapshot();
@@ -119,6 +128,17 @@ export function App() {
     };
   }, [loadSnapshot]);
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listenForSingleInstance((message) => window.alert(message)).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
   async function persistConfig() {
     if (!config) {
       return;
@@ -127,6 +147,7 @@ export function App() {
     setIsSaving(true);
     try {
       await saveConfig(config);
+      setConfigStorageInfo(await getConfigStorageInfo());
       setSettingsOpen(false);
       await loadSnapshot();
     } finally {
@@ -134,36 +155,93 @@ export function App() {
     }
   }
 
+  async function togglePortableMode(enabled: boolean) {
+    if (!config) {
+      return;
+    }
+
+    setIsConfigStorageBusy(true);
+    try {
+      await saveConfig(config);
+      const storageInfo = await setPortableMode(enabled);
+      setConfigStorageInfo(storageInfo);
+      setConfig(await getConfig());
+      await loadSnapshot();
+    } finally {
+      setIsConfigStorageBusy(false);
+    }
+  }
+
+  async function restoreDefaultConfig() {
+    setIsConfigStorageBusy(true);
+    try {
+      const defaultConfig = await resetConfig();
+      setConfig(defaultConfig);
+      setConfigStorageInfo(await getConfigStorageInfo());
+      await loadSnapshot();
+    } finally {
+      setIsConfigStorageBusy(false);
+    }
+  }
+
+  async function refreshSingleProvider(providerId: string) {
+    if (refreshingProviderIds[providerId]) {
+      return;
+    }
+
+    setRefreshingProviderIds((current) => ({ ...current, [providerId]: true }));
+    try {
+      setSnapshot(await refreshProvider(providerId));
+    } catch (error) {
+      const cached = await getCachedSnapshot();
+      setSnapshot(cached ?? fallbackSnapshot(error));
+    } finally {
+      setRefreshingProviderIds((current) => {
+        const next = { ...current };
+        delete next[providerId];
+        return next;
+      });
+    }
+  }
+
   return (
     <main className="app-shell">
       <Header
+        activeView={settingsOpen ? "settings" : "overview"}
+        appVersion={appVersion}
         isLoading={isLoading}
-        lastRefreshedAt={snapshot?.refreshedAt ?? null}
+        onOpenOverview={() => setSettingsOpen(false)}
         onOpenSettings={() => setSettingsOpen(true)}
         onRefresh={loadSnapshot}
       />
       {settingsOpen && config ? (
         <SettingsPanel
           config={config}
-          appVersion={appVersion}
+          configStorageInfo={configStorageInfo}
+          isConfigStorageBusy={isConfigStorageBusy}
           isSaving={isSaving}
           onChange={setConfig}
-          onClose={() => setSettingsOpen(false)}
+          onOpenConfigFolder={openConfigFolder}
+          onResetConfig={restoreDefaultConfig}
           onSave={persistConfig}
+          onSetPortableMode={(enabled) => void togglePortableMode(enabled)}
           onTestProvider={testProvider}
           presets={presets}
         />
-      ) : null}
-      <Summary globalLowest={findGlobalLowestWindow(snapshot)} />
-      <section className="provider-list" aria-label="Providers">
-        {snapshot?.providers.map((provider) => (
-          <ProviderCard
-            key={provider.id}
-            provider={provider}
-            lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
-          />
-        ))}
-      </section>
+      ) : (
+        <section className="provider-list" aria-label="Providers">
+          {snapshot?.providers.map((provider) => (
+            <ProviderCard
+              key={provider.id}
+              provider={provider}
+              displayMode={config?.displayMode ?? "remaining"}
+              lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
+              isRefreshing={refreshingProviderIds[provider.id] ?? false}
+              onRefresh={() => void refreshSingleProvider(provider.id)}
+            />
+          ))}
+        </section>
+      )}
     </main>
   );
 }

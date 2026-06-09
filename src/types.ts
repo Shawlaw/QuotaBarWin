@@ -53,6 +53,15 @@ export type AppConfig = {
   providers: ProviderConfig[];
 };
 
+export type ConfigStorageInfo = {
+  mode: "app-data" | "portable" | string;
+  configPath: string;
+  configDir: string;
+  appDataConfigPath: string;
+  portableConfigPath: string;
+  portableMarkerPath: string;
+};
+
 export type ProviderConfig = MockProviderConfig | CommandProviderConfig;
 
 export type MockProviderConfig = {
@@ -70,6 +79,7 @@ export type CommandProviderConfig = {
   command: CommandSpec;
   parser: ParserSpec;
   windowLabelOverrides?: Record<string, string>;
+  visibleWindowIds?: string[];
 };
 
 export type CommandSpec = {
