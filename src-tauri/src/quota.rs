@@ -7,7 +7,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::command_provider::run_command_provider;
+use crate::command_provider::{run_command_provider, run_script_provider};
 use crate::config::{config_path_for_app, load_or_create_config, ProviderConfig};
 use crate::providers::{codex, mock};
 
@@ -88,6 +88,12 @@ pub fn clamp_snapshot_percentages(provider: &mut ProviderSnapshot) {
             let remaining = clamp_percent(remaining_percent);
             window.remaining_percent = Some(remaining);
             window.used_percent = Some(clamp_percent(100.0 - remaining));
+        } else if let (Some(used), Some(limit)) = (window.used, window.limit) {
+            if limit > 0.0 {
+                let used_percent = clamp_percent((used / limit) * 100.0);
+                window.used_percent = Some(used_percent);
+                window.remaining_percent = Some(clamp_percent(100.0 - used_percent));
+            }
         }
     }
 }
@@ -160,6 +166,22 @@ fn run_provider_config(
             &window_label_overrides,
             &visible_window_ids,
         ),
+        ProviderConfig::Script {
+            id,
+            name,
+            enabled,
+            command,
+            output,
+            window_label_overrides,
+            visible_window_ids,
+        } if enabled => run_script_provider(
+            &id,
+            &name,
+            &command,
+            &output,
+            &window_label_overrides,
+            &visible_window_ids,
+        ),
         _ => Vec::new(),
     }
 }
@@ -168,7 +190,8 @@ fn provider_config_id(provider: &ProviderConfig) -> &str {
     match provider {
         ProviderConfig::Mock { id, .. }
         | ProviderConfig::Codex { id, .. }
-        | ProviderConfig::Command { id, .. } => id,
+        | ProviderConfig::Command { id, .. }
+        | ProviderConfig::Script { id, .. } => id,
     }
 }
 

@@ -10,11 +10,14 @@ use std::{
 use std::os::windows::process::CommandExt;
 
 use chrono::Utc;
+use serde::Deserialize;
 
 use crate::{
-    config::{CommandSpec, ParserSpec},
+    config::{CommandSpec, ParserSpec, ScriptOutputSpec},
     parser::{parse_bigmodel_quota_limit_json, parse_kimi_coding_usage},
-    quota::{clamp_snapshot_percentages, AppSnapshot, ProviderDiagnostics, ProviderSnapshot},
+    quota::{
+        clamp_snapshot_percentages, AppSnapshot, ProviderDiagnostics, ProviderSnapshot, QuotaWindow,
+    },
     redact::redact_sensitive,
 };
 
@@ -69,6 +72,48 @@ pub fn run_command_provider(
     }
 }
 
+pub fn run_script_provider(
+    id: &str,
+    name: &str,
+    command: &CommandSpec,
+    output: &ScriptOutputSpec,
+    window_label_overrides: &HashMap<String, String>,
+    visible_window_ids: &[String],
+) -> Vec<ProviderSnapshot> {
+    match execute_command(command) {
+        Ok(result) if result.timed_out => vec![error_provider(
+            id,
+            name,
+            "Command timed out",
+            Some(result),
+            Some(&command.executable),
+        )],
+        Ok(result) if result.exit_code != Some(0) => vec![error_provider(
+            id,
+            name,
+            "Command exited with a non-zero status",
+            Some(result),
+            Some(&command.executable),
+        )],
+        Ok(result) => parse_script_output(
+            id,
+            name,
+            output,
+            result,
+            &command.executable,
+            window_label_overrides,
+            visible_window_ids,
+        ),
+        Err(error) => vec![error_provider(
+            id,
+            name,
+            &error,
+            None,
+            Some(&command.executable),
+        )],
+    }
+}
+
 pub fn run_single_provider_config(provider: &crate::config::ProviderConfig) -> ProviderSnapshot {
     match provider {
         crate::config::ProviderConfig::Mock { id, name, .. } => {
@@ -107,6 +152,25 @@ pub fn run_single_provider_config(provider: &crate::config::ProviderConfig) -> P
             name,
             command,
             parser,
+            window_label_overrides,
+            visible_window_ids,
+        )
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| error_provider(id, name, "Provider returned no snapshot", None, None)),
+        crate::config::ProviderConfig::Script {
+            id,
+            name,
+            command,
+            output,
+            window_label_overrides,
+            visible_window_ids,
+            ..
+        } => run_script_provider(
+            id,
+            name,
+            command,
+            output,
             window_label_overrides,
             visible_window_ids,
         )
@@ -320,6 +384,130 @@ fn parse_command_output(
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScriptProviderSnapshotV1 {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    updated_at: Option<String>,
+    windows: Vec<ScriptQuotaWindowV1>,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    diagnostics: Option<ProviderDiagnostics>,
+    #[serde(default)]
+    metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScriptQuotaWindowV1 {
+    id: String,
+    label: String,
+    #[serde(default)]
+    used: Option<f64>,
+    #[serde(default)]
+    limit: Option<f64>,
+    #[serde(default)]
+    unit: Option<String>,
+    #[serde(default)]
+    used_percent: Option<f64>,
+    #[serde(default)]
+    remaining_percent: Option<f64>,
+    #[serde(default)]
+    reset_at: Option<String>,
+    #[serde(default)]
+    reset_text: Option<String>,
+    #[serde(default)]
+    confidence: Option<String>,
+}
+
+fn parse_script_output(
+    id: &str,
+    name: &str,
+    output: &ScriptOutputSpec,
+    result: RawCommandResult,
+    command_path: &str,
+    window_label_overrides: &HashMap<String, String>,
+    visible_window_ids: &[String],
+) -> Vec<ProviderSnapshot> {
+    let diagnostics = diagnostics_from_result(&result, Some(command_path));
+    let parsed = match output {
+        ScriptOutputSpec::ProviderSnapshotV1 => parse_script_provider_snapshot_v1(
+            id,
+            name,
+            &result.stdout,
+        )
+        .map(|provider| vec![provider]),
+        ScriptOutputSpec::AppSnapshotV1 => {
+            serde_json::from_str::<AppSnapshot>(&result.stdout).map(|snapshot| snapshot.providers)
+        }
+    };
+
+    match parsed {
+        Ok(mut providers) => {
+            for provider in &mut providers {
+                apply_window_label_overrides(provider, window_label_overrides);
+                apply_visible_windows(provider, visible_window_ids);
+                provider.source = "script".to_string();
+                if provider.diagnostics.is_none() {
+                    provider.diagnostics = Some(diagnostics.clone());
+                }
+                clamp_snapshot_percentages(provider);
+            }
+            providers
+        }
+        Err(error) => vec![error_provider(
+            id,
+            name,
+            &format!("Failed to parse script stdout: {error}"),
+            Some(result),
+            Some(command_path),
+        )],
+    }
+}
+
+fn parse_script_provider_snapshot_v1(
+    id: &str,
+    name: &str,
+    stdout: &str,
+) -> Result<ProviderSnapshot, serde_json::Error> {
+    let raw = serde_json::from_str::<ScriptProviderSnapshotV1>(stdout)?;
+    Ok(ProviderSnapshot {
+        id: raw.id.unwrap_or_else(|| id.to_string()),
+        name: raw.name.unwrap_or_else(|| name.to_string()),
+        status: raw.status.unwrap_or_else(|| "ok".to_string()),
+        source: raw.source.unwrap_or_else(|| "script".to_string()),
+        updated_at: raw.updated_at,
+        windows: raw
+            .windows
+            .into_iter()
+            .map(|window| QuotaWindow {
+                id: window.id,
+                label: window.label,
+                used: window.used,
+                limit: window.limit,
+                unit: window.unit,
+                used_percent: window.used_percent,
+                remaining_percent: window.remaining_percent,
+                reset_at: window.reset_at,
+                reset_text: window.reset_text,
+                confidence: window.confidence.unwrap_or_else(|| "unknown".to_string()),
+            })
+            .collect(),
+        error: raw.error,
+        diagnostics: raw.diagnostics,
+        metadata: raw.metadata,
+    })
+}
+
 fn apply_visible_windows(provider: &mut ProviderSnapshot, visible_window_ids: &[String]) {
     if visible_window_ids.is_empty() {
         return;
@@ -407,7 +595,7 @@ fn diagnostics_from_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{CommandSpec, ParserSpec};
+    use crate::config::{CommandSpec, ParserSpec, ScriptOutputSpec};
 
     fn fixture(name: &str) -> String {
         let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -444,6 +632,25 @@ mod tests {
         assert_eq!(providers.len(), 1);
         assert_eq!(providers[0].name, "Fake Command Provider");
         assert_eq!(providers[0].source, "command");
+    }
+
+    #[test]
+    fn script_provider_accepts_minimal_provider_snapshot_v1_stdout() {
+        let providers = run_script_provider(
+            "script-fixture",
+            "Script Fixture",
+            &node_command("fake_script_provider_snapshot_v1.js"),
+            &ScriptOutputSpec::ProviderSnapshotV1,
+            &HashMap::new(),
+            &[],
+        );
+
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].id, "script-fixture");
+        assert_eq!(providers[0].name, "Script Fixture");
+        assert_eq!(providers[0].source, "script");
+        assert_eq!(providers[0].windows[0].remaining_percent, Some(88.0));
+        assert!(providers[0].diagnostics.is_some());
     }
 
     #[test]

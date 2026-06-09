@@ -9,7 +9,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 5;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 6;
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
 const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
@@ -92,6 +92,28 @@ pub enum ProviderConfig {
         )]
         visible_window_ids: Vec<String>,
     },
+    #[serde(rename = "script")]
+    Script {
+        id: String,
+        name: String,
+        enabled: bool,
+        command: CommandSpec,
+        output: ScriptOutputSpec,
+        #[serde(
+            default,
+            rename = "windowLabelOverrides",
+            alias = "window_label_overrides",
+            alias = "window-label-overrides"
+        )]
+        window_label_overrides: HashMap<String, String>,
+        #[serde(
+            default,
+            rename = "visibleWindowIds",
+            alias = "visible_window_ids",
+            alias = "visible-window-ids"
+        )]
+        visible_window_ids: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -115,6 +137,15 @@ pub enum ParserSpec {
     BigmodelQuotaLimitJsonV1,
     JsonMapping { mapping: serde_json::Value },
     RegexBlocks { rules: Vec<serde_json::Value> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum ScriptOutputSpec {
+    #[serde(rename = "provider-snapshot-v1")]
+    ProviderSnapshotV1,
+    #[serde(rename = "app-snapshot-v1")]
+    AppSnapshotV1,
 }
 
 #[derive(Debug, Clone)]
@@ -378,6 +409,14 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
     if version < 5 {
         add_default_visible_windows(&mut value);
         value["schemaVersion"] = serde_json::json!(5);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(5);
+    if version < 6 {
+        value["schemaVersion"] = serde_json::json!(6);
     }
 
     Ok(value)
@@ -658,6 +697,20 @@ mod tests {
                 "parser": { "type": "provider-snapshot" },
                 "windowLabelOverrides": {},
                 "visibleWindowIds": []
+            },
+            {
+                "kind": "script",
+                "id": "script",
+                "name": "Script",
+                "enabled": true,
+                "command": {
+                    "executable": "node",
+                    "args": ["providers/custom/provider.js"],
+                    "timeoutMs": 15000
+                },
+                "output": { "type": "provider-snapshot-v1" },
+                "windowLabelOverrides": {},
+                "visibleWindowIds": []
             }
         ]);
 
@@ -667,6 +720,7 @@ mod tests {
         assert!(matches!(parsed[0], ProviderConfig::Mock { .. }));
         assert!(matches!(parsed[1], ProviderConfig::Codex { .. }));
         assert!(matches!(parsed[2], ProviderConfig::Command { .. }));
+        assert!(matches!(parsed[3], ProviderConfig::Script { .. }));
     }
 
     #[test]
@@ -681,7 +735,10 @@ mod tests {
 
         let migrated = migrate_config_value(value).expect("migrates");
 
-        assert_eq!(migrated["schemaVersion"], serde_json::json!(5));
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
         assert_eq!(migrated["launchAtStartup"], serde_json::json!(false));
         assert_eq!(migrated["logLevel"], serde_json::json!("info"));
     }
@@ -713,7 +770,10 @@ mod tests {
 
         let migrated = migrate_config_value(value).expect("migrates");
 
-        assert_eq!(migrated["schemaVersion"], serde_json::json!(5));
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
         assert_eq!(
             migrated["providers"][0]["visibleWindowIds"],
             serde_json::json!([])
