@@ -42,7 +42,7 @@ test("ProviderCard renders provider name", () => {
 test("provider_card_renders_error_state", () => {
   render(<ProviderCard provider={{ ...provider, status: "error", error: "Command failed" }} />);
 
-  expect(screen.getByText("Command failed")).toBeInTheDocument();
+  expect(screen.getByText(/Command failed/)).toBeInTheDocument();
 });
 
 test("provider_card_renders_remaining_percent", () => {
@@ -61,10 +61,10 @@ test("provider_card_renders_used_percent_when_display_mode_is_used", () => {
 
 test("provider_card_fades_used_mode_opacity_as_usage_increases", () => {
   render(<ProviderCard provider={provider} displayMode="used" />);
-  const fill = screen.getByRole("progressbar", { name: "5h window used" }).firstElementChild;
+  const fill = screen.getByRole("progressbar", { name: "Codex Mock 5h window used" }).firstElementChild;
 
   expect(fill).toHaveStyle({ width: "28%" });
-  expect(fill).toHaveStyle({ opacity: "0.748" });
+  expect(fill).toHaveStyle({ opacity: "0.352" });
 });
 
 test("provider_card_renders_provider_refresh_time", () => {
@@ -77,7 +77,7 @@ test("provider_card_renders_provider_refresh_time", () => {
 
   render(<ProviderCard provider={provider} />);
 
-  expect(screen.getByText("Last refresh 06/08/2026, 08:00 AM GMT+8")).toBeInTheDocument();
+  expect(screen.getByText("Last updated 06/08/2026, 08:00 AM GMT+8")).toBeInTheDocument();
 });
 
 test("provider_card_renders_kimi_fixture_snapshot", () => {
@@ -152,6 +152,27 @@ test("provider_card_renders_reset_time_for_each_window", () => {
     />
   );
 
-  expect(screen.getAllByText("resets at 06/08/2026, 10:00 AM GMT+8").length).toBeGreaterThan(0);
-  expect(screen.getByText("resets at 06/30/2026, 10:00 AM GMT+8")).toBeInTheDocument();
+  expect(screen.getAllByText("resets 06/08/2026, 10:00 AM GMT+8").length).toBeGreaterThan(0);
+  expect(screen.getByText("resets 06/30/2026, 10:00 AM GMT+8")).toBeInTheDocument();
+});
+
+test("provider_card_collapses_and_expands_many_quota_windows", () => {
+  render(
+    <ProviderCard
+      provider={{
+        ...provider,
+        windows: Array.from({ length: 7 }, (_, index) => ({
+          ...provider.windows[0],
+          id: `window-${index + 1}`,
+          label: `Window ${index + 1}`
+        }))
+      }}
+    />
+  );
+
+  expect(screen.getAllByTestId(/quota-row-codex-mock-window-/)).toHaveLength(4);
+  fireEvent.click(screen.getByRole("button", { name: "+ 3 more quota windows" }));
+  expect(screen.getAllByTestId(/quota-row-codex-mock-window-/)).toHaveLength(7);
+  fireEvent.click(screen.getByRole("button", { name: "Show less" }));
+  expect(screen.getAllByTestId(/quota-row-codex-mock-window-/)).toHaveLength(4);
 });

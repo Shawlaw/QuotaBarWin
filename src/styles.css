@@ -38,6 +38,12 @@ button {
   color: #334155;
 }
 
+.button-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: #475569;
+}
+
 .button-danger {
   background: #ffffff;
   border-color: #fecaca;
@@ -73,20 +79,26 @@ button:disabled {
 
 .app-shell {
   margin: 0 auto;
-  max-width: 1080px;
-  padding: 24px;
+  max-width: 1120px;
+  padding: 24px 28px 32px;
 }
 
 .app-header {
   align-items: center;
+  background: rgb(246 248 251 / 94%);
   display: flex;
   gap: 14px;
   justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
+  padding: 4px 0 12px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .header-actions,
 .settings-actions {
+  align-items: center;
   display: flex;
   gap: 10px;
 }
@@ -102,9 +114,22 @@ button:disabled {
 
 .app-header h1 {
   color: #0f172a;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 650;
   line-height: 1.2;
+}
+
+.github-link {
+  align-items: center;
+  color: #64748b;
+  display: inline-flex;
+  font-size: 13px;
+  min-height: 34px;
+  text-decoration: none;
+}
+
+.github-link:hover {
+  color: #0f766e;
 }
 
 .provider-card h2 {
@@ -130,6 +155,41 @@ button:disabled {
   padding: 10px 12px;
 }
 
+.overview-page {
+  display: grid;
+  gap: 14px;
+}
+
+.global-status {
+  background: #eef8f6;
+  border: 1px solid #cdece7;
+  border-radius: 8px;
+  color: #42645f;
+  font-size: 13px;
+  overflow: hidden;
+  padding: 10px 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-status--warning {
+  background: #fff7df;
+  border-color: #fde68a;
+  color: #87520b;
+}
+
+.global-status--error {
+  background: #fff1f1;
+  border-color: #fecaca;
+  color: #9f1d1d;
+}
+
+.global-status--empty {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
 .provider-list {
   display: grid;
   gap: 16px;
@@ -140,7 +200,7 @@ button:disabled {
   border: 1px solid #d9e2ec;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgb(30 41 59 / 5%);
-  padding: 16px;
+  padding: 18px 20px;
 }
 
 .provider-card__header,
@@ -156,6 +216,22 @@ button:disabled {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.provider-actions {
+  position: relative;
+}
+
+.provider-actions__menu {
+  background: #ffffff;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  box-shadow: 0 12px 24px rgb(15 23 42 / 12%);
+  padding: 8px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 10;
 }
 
 .status {
@@ -225,8 +301,8 @@ button:disabled {
 
 .window-list {
   display: grid;
-  gap: 14px;
-  margin-top: 16px;
+  gap: 16px;
+  margin-top: 18px;
 }
 
 .quota-window {
@@ -258,9 +334,23 @@ button:disabled {
   font-weight: 600;
 }
 
+.quota-window__no-progress,
+.provider-empty,
+.settings-empty {
+  color: #64748b;
+  font-size: 13px;
+  margin: 0;
+}
+
+.quota-more-button {
+  justify-self: flex-start;
+  margin-top: 12px;
+}
+
 .settings-panel {
   display: grid;
-  gap: 14px;
+  gap: 18px;
+  padding-bottom: 74px;
 }
 
 .settings-grid,
@@ -272,14 +362,18 @@ button:disabled {
 
 .settings-grid,
 .preset-list {
-  background: #ffffff;
-  border: 1px solid #d9e2ec;
   border-radius: 8px;
-  padding: 14px;
+  padding: 0;
+}
+
+.settings-section {
+  display: grid;
+  gap: 12px;
 }
 
 .settings-info,
-.settings-guide {
+.settings-guide,
+.preset-list {
   background: #ffffff;
   border: 1px solid #d9e2ec;
   border-radius: 8px;
@@ -302,7 +396,7 @@ button:disabled {
 .settings-guide h3,
 .preset-list h3 {
   color: #0f172a;
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 650;
   margin: 0;
 }
@@ -315,6 +409,11 @@ button:disabled {
 
 .settings-hint {
   color: #64748b;
+  font-size: 12px;
+}
+
+.field-error {
+  color: #b91c1c;
   font-size: 12px;
 }
 
@@ -344,15 +443,44 @@ button:disabled {
   padding: 4px 6px;
 }
 
+.path-chip {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #334155;
+  display: block;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  max-inline-size: 100%;
+  min-height: 30px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-actions--inline {
   justify-content: flex-start;
 }
 
-.settings-guide summary {
+.settings-guide summary,
+.settings-advanced > summary,
+.settings-info > summary {
   cursor: pointer;
   color: #0f172a;
   font-size: 14px;
   font-weight: 650;
+}
+
+.settings-info > summary {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.settings-info > summary span {
+  color: #64748b;
+  font-size: 12px;
 }
 
 .guide-grid {
@@ -465,7 +593,7 @@ button:disabled {
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(180px, 1fr) auto auto auto auto auto;
+  grid-template-columns: minmax(180px, 1fr) auto auto auto;
 }
 
 .settings-provider__header > label {
@@ -484,6 +612,13 @@ button:disabled {
 .settings-provider__header > span {
   color: #64748b;
   font-size: 12px;
+}
+
+.settings-provider__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .args-field {
@@ -524,7 +659,7 @@ button:disabled {
 .progress-track {
   background: #e5e7eb;
   border-radius: 999px;
-  height: 10px;
+  height: 12px;
   overflow: hidden;
 }
 
@@ -534,6 +669,47 @@ button:disabled {
   transition:
     opacity 180ms ease,
     width 160ms ease;
+}
+
+.progress-fill--warning {
+  background: #d97706;
+}
+
+.progress-fill--error {
+  background: #dc2626;
+}
+
+.fixed-save-bar {
+  align-items: center;
+  background: rgb(255 255 255 / 96%);
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  bottom: 18px;
+  box-shadow: 0 12px 28px rgb(15 23 42 / 12%);
+  display: flex;
+  justify-content: space-between;
+  left: max(28px, calc((100vw - 1120px) / 2 + 28px));
+  padding: 10px 12px;
+  position: fixed;
+  right: max(28px, calc((100vw - 1120px) / 2 + 28px));
+  z-index: 30;
+}
+
+.fixed-save-bar > span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border: 3px solid #f6f8fb;
+  border-radius: 999px;
 }
 
 @media (max-width: 520px) {
@@ -548,11 +724,24 @@ button:disabled {
 
   .header-actions,
   .settings-actions {
+    align-items: stretch;
     flex-direction: column;
+  }
+
+  .global-status {
+    white-space: normal;
   }
 
   .settings-provider__header {
     align-items: stretch;
     grid-template-columns: 1fr;
+  }
+
+  .fixed-save-bar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    left: 16px;
+    right: 16px;
   }
 }

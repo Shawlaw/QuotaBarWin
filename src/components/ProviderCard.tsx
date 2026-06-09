@@ -1,7 +1,13 @@
 import { useState } from "react";
-import type { ProviderDiagnostics, ProviderSnapshot } from "../types";
-import { formatResetCountdown } from "../lib/forecast";
-import { formatPercent } from "../lib/format";
+import type { ProviderDiagnostics, ProviderSnapshot, QuotaWindow } from "../types";
+import {
+  calculateProviderStatus,
+  displayPercentForWindow,
+  formatDisplayValue,
+  formatQuotaReset,
+  formatShortDateTime,
+  windowStatus
+} from "../lib/providerStatus";
 import { ProgressBar } from "./ProgressBar";
 
 type ProviderCardProps = {
@@ -12,6 +18,8 @@ type ProviderCardProps = {
   onRefresh?: () => void;
 };
 
+const MAX_COLLAPSED_WINDOWS = 4;
+
 export function ProviderCard({
   provider,
   displayMode = "remaining",
@@ -20,88 +28,143 @@ export function ProviderCard({
   onRefresh
 }: ProviderCardProps) {
   const [statusOpen, setStatusOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const refreshedAt = provider.updatedAt ?? provider.diagnostics?.checkedAt ?? null;
-  const statusLabel = `status ${provider.status}`;
-  const canOpenStatus = provider.status === "warning" || provider.status === "error";
+  const effectiveStatus = calculateProviderStatus(provider, lowQuotaWarningThreshold);
+  const statusLabel = `status ${effectiveStatus}`;
+  const canOpenStatus = effectiveStatus === "warning" || effectiveStatus === "error";
+  const hiddenWindowCount = Math.max(0, provider.windows.length - MAX_COLLAPSED_WINDOWS);
+  const visibleWindows = expanded
+    ? provider.windows
+    : provider.windows.slice(0, MAX_COLLAPSED_WINDOWS);
 
   return (
-    <article className="provider-card">
+    <article className={`provider-card provider-card--${effectiveStatus}`} data-testid={`provider-card-${provider.id}`}>
       <div className="provider-card__header">
         <div>
           <h2>{provider.name}</h2>
           <p>
             {refreshedAt
-              ? `Last refresh ${new Date(refreshedAt).toLocaleString()}`
+              ? `Last updated ${formatShortDateTime(refreshedAt) ?? "recently"}`
               : `${provider.source} provider`}
           </p>
         </div>
         <div className="provider-card__badges">
-          {onRefresh ? (
-            <button
-              type="button"
-              className="button-secondary button-compact"
-              onClick={onRefresh}
-              disabled={isRefreshing}
-            >
-              {isRefreshing ? "Refreshing" : "Refresh provider"}
-            </button>
-          ) : null}
           {canOpenStatus ? (
             <button
               type="button"
-              className={`status status--${provider.status} status-button`}
+              className={`status status--${effectiveStatus} status-button`}
               onClick={() => setStatusOpen((current) => !current)}
+              data-testid={`provider-status-${provider.id}`}
             >
               {statusLabel}
             </button>
-          ) : null}
-          {!canOpenStatus ? (
-            <span className={`status status--${provider.status}`}>{statusLabel}</span>
+          ) : (
+            <span className={`status status--${effectiveStatus}`} data-testid={`provider-status-${provider.id}`}>
+              {statusLabel}
+            </span>
+          )}
+          {onRefresh ? (
+            <div className="provider-actions">
+              <button
+                type="button"
+                className="button-ghost button-compact"
+                aria-expanded={actionsOpen}
+                onClick={() => setActionsOpen((current) => !current)}
+                data-testid={`provider-action-menu-${provider.id}`}
+              >
+                More
+              </button>
+              {actionsOpen ? (
+                <div className="provider-actions__menu">
+                  <button
+                    type="button"
+                    className="button-secondary button-compact"
+                    onClick={onRefresh}
+                    disabled={isRefreshing}
+                  >
+                    {isRefreshing ? "Refreshing" : "Refresh"}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
-      {provider.error ? <p className="provider-error">{provider.error}</p> : null}
+      {provider.error ? <p className="provider-error">Refresh failed · {provider.error}</p> : null}
       {statusOpen ? <StatusDetails error={provider.error} diagnostics={provider.diagnostics} /> : null}
       <div className="window-list">
-        {provider.windows.map((window) => {
-          const displayedPercent =
-            displayMode === "used" ? window.usedPercent : window.remainingPercent;
-          const displayedLabel = displayMode === "used" ? "used" : "remaining";
-          const opacityPercent =
-            displayMode === "used" && window.usedPercent !== null
-              ? 100 - window.usedPercent
-              : window.remainingPercent;
-
-          return (
-            <section className="quota-window" key={window.id}>
-              <div className="quota-window__meta">
-                <strong>{window.label}</strong>
-                <span
-                  className={
-                    window.remainingPercent !== null &&
-                    window.remainingPercent <= lowQuotaWarningThreshold
-                      ? "quota-window__warning"
-                      : undefined
-                  }
-                >
-                  {formatPercent(displayedPercent)} {displayedLabel}
-                </span>
-              </div>
-              {window.resetAt || window.resetText ? (
-                <div className="quota-window__details">
-                  <span>{formatResetCountdown(window)}</span>
-                </div>
-              ) : null}
-              <ProgressBar
-                percent={displayedPercent}
-                opacityPercent={opacityPercent}
-                label={`${window.label} ${displayedLabel}`}
-              />
-            </section>
-          );
-        })}
+        {visibleWindows.length > 0 ? (
+          visibleWindows.map((window) => (
+            <QuotaWindowRow
+              key={window.id}
+              providerId={provider.id}
+              providerName={provider.name}
+              window={window}
+              displayMode={displayMode}
+              lowQuotaWarningThreshold={lowQuotaWarningThreshold}
+            />
+          ))
+        ) : (
+          <p className="provider-empty">No quota windows reported yet.</p>
+        )}
       </div>
+      {hiddenWindowCount > 0 ? (
+        <button
+          type="button"
+          className="button-ghost quota-more-button"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "Show less" : `+ ${hiddenWindowCount} more quota windows`}
+        </button>
+      ) : null}
     </article>
+  );
+}
+
+function QuotaWindowRow({
+  providerId,
+  providerName,
+  window,
+  displayMode,
+  lowQuotaWarningThreshold
+}: {
+  providerId: string;
+  providerName: string;
+  window: QuotaWindow;
+  displayMode: "remaining" | "used";
+  lowQuotaWarningThreshold: number;
+}) {
+  const displayedPercent = displayPercentForWindow(window, displayMode);
+  const status = windowStatus(window, lowQuotaWarningThreshold);
+  const resetText = formatQuotaReset(window);
+
+  return (
+    <section
+      className={`quota-window quota-window--${status}`}
+      data-testid={`quota-row-${providerId}-${window.id}`}
+    >
+      <div className="quota-window__meta">
+        <strong>{window.label}</strong>
+        <span className={status === "warning" ? "quota-window__warning" : undefined}>
+          {formatDisplayValue(window, displayMode)}
+        </span>
+      </div>
+      <div className="quota-window__details">
+        {resetText ? <span>{resetText}</span> : <span>No reset time</span>}
+      </div>
+      {displayedPercent !== null ? (
+        <ProgressBar
+          percent={displayedPercent}
+          opacityPercent={displayedPercent}
+          label={`${providerName} ${window.label} ${displayMode}`}
+          tone={status === "warning" ? "warning" : "normal"}
+        />
+      ) : (
+        <div className="quota-window__no-progress">Progress unavailable</div>
+      )}
+    </section>
   );
 }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Header } from "./components/Header";
+import { GlobalStatusStrip } from "./components/GlobalStatusStrip";
 import { ProviderCard } from "./components/ProviderCard";
 import { SettingsPanel } from "./components/SettingsPanel";
 import {
@@ -229,17 +230,25 @@ export function App() {
           presets={presets}
         />
       ) : (
-        <section className="provider-list" aria-label="Providers">
-          {snapshot?.providers.map((provider) => (
-            <ProviderCard
-              key={provider.id}
-              provider={provider}
-              displayMode={config?.displayMode ?? "remaining"}
-              lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
-              isRefreshing={refreshingProviderIds[provider.id] ?? false}
-              onRefresh={() => void refreshSingleProvider(provider.id)}
-            />
-          ))}
+        <section className="overview-page" aria-label="Overview" data-testid="overview-page">
+          <GlobalStatusStrip
+            providers={snapshot?.providers ?? []}
+            refreshedAt={snapshot?.refreshedAt ?? null}
+            refreshIntervalSeconds={config?.refreshIntervalSeconds}
+            lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
+          />
+          <section className="provider-list" aria-label="Providers">
+            {snapshot?.providers.map((provider) => (
+              <ProviderCard
+                key={provider.id}
+                provider={provider}
+                displayMode={config?.displayMode ?? "remaining"}
+                lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
+                isRefreshing={refreshingProviderIds[provider.id] ?? false}
+                onRefresh={() => void refreshSingleProvider(provider.id)}
+              />
+            ))}
+          </section>
         </section>
       )}
     </main>

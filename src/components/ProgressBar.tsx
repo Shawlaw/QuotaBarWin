@@ -4,9 +4,10 @@ type ProgressBarProps = {
   percent: number | null;
   opacityPercent?: number | null;
   label: string;
+  tone?: "normal" | "warning" | "error";
 };
 
-export function ProgressBar({ percent, opacityPercent = percent, label }: ProgressBarProps) {
+export function ProgressBar({ percent, opacityPercent = percent, label, tone = "normal" }: ProgressBarProps) {
   const safePercent = percent === null ? 0 : clampPercent(percent);
   const safeOpacityPercent = opacityPercent === null ? 0 : clampPercent(opacityPercent);
   const opacity = Number((0.1 + safeOpacityPercent * 0.009).toFixed(3));
@@ -22,7 +23,7 @@ export function ProgressBar({ percent, opacityPercent = percent, label }: Progre
         aria-valuenow={Math.round(safePercent)}
       >
         <div
-          className="progress-fill"
+          className={`progress-fill progress-fill--${tone}`}
           style={{ opacity, width: `${safePercent}%` }}
         />
       </div>

@@ -77,12 +77,13 @@ test("refresh_button_calls_refresh_snapshot", async () => {
 test("settings_replaces_provider_overview", async () => {
   render(<App />);
 
-  await waitFor(() => expect(screen.getByRole("heading", { name: "QuotaBarWin V0.0.0" })).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole("heading", { name: "QuotaBarWin" })).toBeInTheDocument());
+  expect(screen.getByTestId("global-status-strip")).toBeInTheDocument();
   expect(screen.getByLabelText("Providers")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
   expect(screen.getByLabelText("Settings")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
-  expect(screen.queryByLabelText("Providers")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("overview-page")).not.toBeInTheDocument();
 });

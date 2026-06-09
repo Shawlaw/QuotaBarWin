@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type {
   AppConfig,
   CodexProviderConfig,
@@ -19,7 +19,7 @@ type SettingsPanelProps = {
   onChange: (config: AppConfig) => void;
   onOpenConfigFolder: () => Promise<void>;
   onResetConfig: () => Promise<void>;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   onSetPortableMode: (enabled: boolean) => void;
   onTestProvider: (provider: ProviderConfig) => Promise<ProviderSnapshot>;
 };
@@ -164,6 +164,18 @@ export function SettingsPanel({
   const [testResults, setTestResults] = useState<Record<string, ProviderSnapshot>>({});
   const [textDrafts, setTextDrafts] = useState<Record<string, ProviderTextDraft>>({});
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
+  const [expandedProviderActions, setExpandedProviderActions] = useState<Record<string, boolean>>({});
+  const [saveMessage, setSaveMessage] = useState("No changes");
+  const initialConfigRef = useRef(JSON.stringify(config));
+  const configDraft = JSON.stringify(config);
+  const hasChanges = configDraft !== initialConfigRef.current;
+  const refreshIntervalError =
+    config.refreshIntervalSeconds > 0 ? null : "Refresh interval must be greater than 0.";
+  const lowQuotaWarningError =
+    config.lowQuotaWarningThreshold >= 0 && config.lowQuotaWarningThreshold <= 100
+      ? null
+      : "Low quota warning must be between 0 and 100.";
+  const canSave = hasChanges && !refreshIntervalError && !lowQuotaWarningError && !isSaving;
 
   function setProviderTextDraft(
     providerId: string,
@@ -201,6 +213,23 @@ export function SettingsPanel({
     });
   }
 
+  async function saveSettings() {
+    setSaveMessage("Saving");
+    try {
+      await onSave();
+      initialConfigRef.current = JSON.stringify(config);
+      setSaveMessage("Saved");
+      window.setTimeout(() => setSaveMessage("No changes"), 1600);
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "Save failed");
+    }
+  }
+
+  function resetChanges() {
+    onChange(JSON.parse(initialConfigRef.current) as AppConfig);
+    setSaveMessage("No changes");
+  }
+
   function updateCommandProvider(
     provider: CommandProviderConfig,
     patch: Partial<CommandProviderConfig>
@@ -224,13 +253,17 @@ export function SettingsPanel({
   }
 
   return (
-    <section className="settings-panel" aria-label="Settings">
-      <div className="settings-grid">
+    <section className="settings-panel" aria-label="Settings" data-testid="settings-page">
+      <section className="settings-section" aria-label="General" data-testid="general-settings-section">
+        <div className="settings-section-title">
+          <h3>General</h3>
+        </div>
+        <div className="settings-grid">
         <label>
           Refresh interval (seconds)
           <input
             type="number"
-            min={10}
+            min={1}
             value={config.refreshIntervalSeconds}
             onChange={(event) =>
               onChange({
@@ -239,6 +272,7 @@ export function SettingsPanel({
               })
             }
           />
+          {refreshIntervalError ? <span className="field-error">{refreshIntervalError}</span> : null}
         </label>
         <label>
           Display mode
@@ -269,6 +303,7 @@ export function SettingsPanel({
               })
             }
           />
+          {lowQuotaWarningError ? <span className="field-error">{lowQuotaWarningError}</span> : null}
         </label>
         <label>
           Log level
@@ -300,143 +335,33 @@ export function SettingsPanel({
           />
           Launch at startup
         </label>
-      </div>
-      <section className="settings-info" aria-label="Configuration storage">
+        </div>
+      </section>
+
+      <section className="settings-section" aria-label="Providers" data-testid="providers-settings-section">
         <div className="settings-section-title">
-          <h3>Configuration</h3>
-          <span>{configStorageInfo?.mode === "portable" ? "Portable mode" : "AppData mode"}</span>
+          <h3>Providers</h3>
+          <span>{config.providers.length} configured</span>
         </div>
-        <label className="args-field">
-          Config file
-          <textarea
-            className="path-field"
-            readOnly
-            rows={2}
-            value={configStorageInfo?.configPath ?? "Loading config path..."}
-          />
-        </label>
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={configStorageInfo?.mode === "portable"}
-            disabled={!configStorageInfo || isConfigStorageBusy}
-            onChange={(event) => onSetPortableMode(event.currentTarget.checked)}
-          />
-          Portable mode
-        </label>
-        <div className="settings-hint">
-          Portable mode stores config beside the app executable as config.quotaBarWin.json and uses
-          quotabarwin.portable as the marker file.
-        </div>
-        <div className="config-paths">
-          <span>AppData</span>
-          <code>{configStorageInfo?.appDataConfigPath ?? "Loading..."}</code>
-          <span>Portable</span>
-          <code>{configStorageInfo?.portableConfigPath ?? "Loading..."}</code>
-        </div>
-        <div className="settings-actions settings-actions--inline">
-          <button
-            type="button"
-            className="button-secondary"
-            disabled={!configStorageInfo || isConfigStorageBusy}
-            onClick={() => void onOpenConfigFolder()}
-          >
-            Open folder
-          </button>
-          <button
-            type="button"
-            className="button-danger"
-            disabled={isConfigStorageBusy}
-            onClick={() => {
-              if (window.confirm("Reset QuotaBarWin config to defaults? A backup will be created first.")) {
-                void onResetConfig();
-              }
-            }}
-          >
-            Reset config
-          </button>
-        </div>
-      </section>
-      <details className="settings-guide">
-        <summary>Custom Provider guide</summary>
-        <div className="guide-grid">
-          <section>
-            <h3>Command</h3>
-            <p>
-              QuotaBarWin runs Executable with each Args line as one command-line argument.
-              stdout is parsed as quota JSON; non-zero exit codes and timeouts become status error.
-            </p>
-            <p>
-              Args and env values can read secrets with {"${env:NAME}"} or {"${file:C:\\Path With Spaces\\secret.txt}"}.
-              Quoted file paths also work, for example {"${file:\"C:\\Path With Spaces\\secret.txt\"}"}.
-              Secret values are redacted from diagnostics.
-            </p>
-          </section>
-          <section>
-            <h3>Parser</h3>
-            <dl>
-              <dt>provider-snapshot</dt>
-              <dd>stdout is one ProviderSnapshot JSON object.</dd>
-              <dt>app-snapshot</dt>
-              <dd>stdout is an AppSnapshot JSON object with providers.</dd>
-              <dt>kimi-coding-usage-v1</dt>
-              <dd>stdout is Kimi usage API JSON.</dd>
-              <dt>bigmodel-quota-limit-json-v1</dt>
-              <dd>stdout is BigModel quota limit API JSON.</dd>
-            </dl>
-          </section>
-          <section className="args-field">
-            <h3>ProviderSnapshot example</h3>
-            <pre>{`{
-  "id": "my-provider",
-  "name": "My Provider",
-  "status": "ok",
-  "source": "command",
-  "updatedAt": "2026-06-08T10:00:00Z",
-  "windows": [
-    {
-      "id": "5h",
-      "label": "5h",
-      "used": 28,
-      "limit": 100,
-      "unit": "percent",
-      "usedPercent": 28,
-      "remainingPercent": 72,
-      "resetAt": null,
-      "confidence": "exact"
-    }
-  ],
-  "error": null,
-  "diagnostics": null,
-  "metadata": null
-}`}</pre>
-          </section>
-          <section>
-            <h3>Window fields</h3>
-            <p>
-              Window label overrides uses one id=label mapping per line. Displayed windows is empty
-              for all windows, or one window id / mapped label per line.
-            </p>
-            <p>Test Provider runs the edited provider once and shows the parsed result.</p>
-          </section>
-        </div>
-      </details>
-      <section className="preset-list" aria-label="Add Provider">
-        <h3>Add Provider</h3>
-        <div className="preset-actions">
-          {presets.map((preset) => (
-            <button
-              type="button"
-              className="button-secondary"
-              key={preset.id}
-              onClick={() => addPreset(preset)}
-            >
-              {preset.displayName}
-            </button>
-          ))}
-        </div>
-      </section>
-      <div className="settings-provider-list">
+        <section className="preset-list" aria-label="Add Provider">
+          <h3>Add Provider</h3>
+          <div className="preset-actions">
+            {presets.map((preset) => (
+              <button
+                type="button"
+                className="button-secondary"
+                key={preset.id}
+                onClick={() => addPreset(preset)}
+              >
+                {preset.displayName}
+              </button>
+            ))}
+          </div>
+        </section>
+        <div className="settings-provider-list">
+        {config.providers.length === 0 ? (
+          <p className="settings-empty">No providers yet. Add one to start monitoring quota.</p>
+        ) : null}
         {config.providers.map((provider, providerIndex) => (
           <article className="settings-provider" key={provider.id}>
             <div className="settings-provider__header">
@@ -470,28 +395,48 @@ export function SettingsPanel({
               </button>
               <button
                 type="button"
-                className="button-secondary"
-                disabled={providerIndex === 0}
-                onClick={() => onChange(moveProvider(config, provider.id, -1))}
+                className="button-ghost"
+                onClick={() =>
+                  setExpandedProviderActions((current) => ({
+                    ...current,
+                    [provider.id]: !(current[provider.id] ?? false)
+                  }))
+                }
               >
-                Up
-              </button>
-              <button
-                type="button"
-                className="button-secondary"
-                disabled={providerIndex === config.providers.length - 1}
-                onClick={() => onChange(moveProvider(config, provider.id, 1))}
-              >
-                Down
-              </button>
-              <button
-                type="button"
-                className="button-danger"
-                onClick={() => onChange(removeProvider(config, provider.id))}
-              >
-                Remove
+                More
               </button>
             </div>
+            {expandedProviderActions[provider.id] ? (
+              <div className="settings-provider__actions">
+                <button
+                  type="button"
+                  className="button-secondary button-compact"
+                  disabled={providerIndex === 0}
+                  onClick={() => onChange(moveProvider(config, provider.id, -1))}
+                >
+                  Up
+                </button>
+                <button
+                  type="button"
+                  className="button-secondary button-compact"
+                  disabled={providerIndex === config.providers.length - 1}
+                  onClick={() => onChange(moveProvider(config, provider.id, 1))}
+                >
+                  Down
+                </button>
+                <button
+                  type="button"
+                  className="button-danger button-compact"
+                  onClick={() => {
+                    if (window.confirm(`Remove provider ${provider.name}?`)) {
+                      onChange(removeProvider(config, provider.id));
+                    }
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            ) : null}
             {expandedProviders[provider.id] ? (
               <>
                 {presets
@@ -721,11 +666,109 @@ export function SettingsPanel({
             ) : null}
           </article>
         ))}
-      </div>
-      <div className="settings-actions">
-        <button type="button" onClick={onSave} disabled={isSaving}>
-          {isSaving ? "Saving" : "Save"}
-        </button>
+        </div>
+      </section>
+
+      <details className="settings-section settings-advanced" data-testid="advanced-settings-section">
+        <summary>Advanced</summary>
+        <details className="settings-info" aria-label="Configuration storage">
+          <summary>
+            Configuration storage
+            <span>{configStorageInfo?.mode === "portable" ? "Portable mode" : "AppData mode"}</span>
+          </summary>
+          <div className="config-paths">
+            <span>Config file</span>
+            <button
+              type="button"
+              className="path-chip"
+              title={configStorageInfo?.configPath}
+              onClick={() => void navigator.clipboard?.writeText(configStorageInfo?.configPath ?? "")}
+            >
+              {configStorageInfo?.configPath ?? "Loading config path..."}
+            </button>
+            <span>AppData</span>
+            <code title={configStorageInfo?.appDataConfigPath}>{configStorageInfo?.appDataConfigPath ?? "Loading..."}</code>
+            <span>Portable</span>
+            <code title={configStorageInfo?.portableConfigPath}>{configStorageInfo?.portableConfigPath ?? "Loading..."}</code>
+          </div>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={configStorageInfo?.mode === "portable"}
+              disabled={!configStorageInfo || isConfigStorageBusy}
+              onChange={(event) => onSetPortableMode(event.currentTarget.checked)}
+            />
+            Portable mode
+          </label>
+          <div className="settings-hint">
+            Portable mode stores config beside the app executable and uses quotabarwin.portable as
+            the marker file.
+          </div>
+          <div className="settings-actions settings-actions--inline">
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={!configStorageInfo || isConfigStorageBusy}
+              onClick={() => void onOpenConfigFolder()}
+            >
+              Open folder
+            </button>
+            <button
+              type="button"
+              className="button-danger"
+              disabled={isConfigStorageBusy}
+              onClick={() => {
+                if (window.confirm("Reset QuotaBarWin config to defaults? A backup will be created first.")) {
+                  void onResetConfig();
+                }
+              }}
+            >
+              Reset config
+            </button>
+          </div>
+        </details>
+        <details className="settings-guide">
+          <summary>Custom Provider guide</summary>
+          <div className="guide-grid">
+            <section>
+              <h3>Command</h3>
+              <p>
+                QuotaBarWin runs Executable with each Args line as one command-line argument.
+                stdout is parsed as quota JSON; non-zero exit codes and timeouts become status error.
+              </p>
+              <p>
+                Args and env values can read secrets with {"${env:NAME}"} or {"${file:C:\\Path With Spaces\\secret.txt}"}.
+                Quoted file paths also work, for example {"${file:\"C:\\Path With Spaces\\secret.txt\"}"}.
+                Secret values are redacted from diagnostics.
+              </p>
+            </section>
+            <section>
+              <h3>Parser</h3>
+              <dl>
+                <dt>provider-snapshot</dt>
+                <dd>stdout is one ProviderSnapshot JSON object.</dd>
+                <dt>app-snapshot</dt>
+                <dd>stdout is an AppSnapshot JSON object with providers.</dd>
+                <dt>kimi-coding-usage-v1</dt>
+                <dd>stdout is Kimi usage API JSON.</dd>
+                <dt>bigmodel-quota-limit-json-v1</dt>
+                <dd>stdout is BigModel quota limit API JSON.</dd>
+              </dl>
+            </section>
+          </div>
+        </details>
+      </details>
+
+      <div className="fixed-save-bar" data-testid="fixed-save-bar">
+        <span>{hasChanges ? "Unsaved changes" : saveMessage}</span>
+        <div className="settings-actions">
+          <button type="button" className="button-secondary" onClick={resetChanges} disabled={!hasChanges || isSaving}>
+            Reset changes
+          </button>
+          <button type="button" onClick={() => void saveSettings()} disabled={!canSave} data-testid="save-settings-button">
+            {isSaving ? "Saving" : "Save"}
+          </button>
+        </div>
       </div>
     </section>
   );

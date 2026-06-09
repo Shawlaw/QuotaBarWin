@@ -18,7 +18,7 @@ export function Header({
   return (
     <header className="app-header">
       <div>
-        <h1>QuotaBarWin V{appVersion}</h1>
+        <h1 title={`Version ${appVersion}`}>QuotaBarWin</h1>
       </div>
       <div className="header-actions">
         <button
@@ -45,6 +45,14 @@ export function Header({
             {isLoading ? "Refreshing" : "Refresh"}
           </span>
         </button>
+        <a
+          className="github-link"
+          href="https://github.com/Shawlaw/QuotaBarWin"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GitHub
+        </a>
       </div>
     </header>
   );

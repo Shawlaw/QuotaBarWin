@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, vi } from "vitest";
 import { SettingsPanel } from "./SettingsPanel";
 import type { AppConfig, ConfigStorageInfo, ProviderPreset, ProviderSnapshot } from "../types";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const commandProvider = {
   id: "command-1",
@@ -272,8 +277,11 @@ test("codex_provider_proxy_url_is_editable", () => {
 test("settings_shows_config_storage_info_and_provider_guide", () => {
   renderSettings();
 
+  expect(screen.getByTestId("general-settings-section")).toBeInTheDocument();
+  expect(screen.getByTestId("providers-settings-section")).toBeInTheDocument();
+  expect(screen.getByTestId("advanced-settings-section")).not.toHaveAttribute("open");
   expect(screen.getByLabelText("Configuration storage")).toBeInTheDocument();
-  expect(screen.getByDisplayValue(configStorageInfo.configPath)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: configStorageInfo.configPath })).toBeInTheDocument();
   expect(screen.getByText("AppData mode")).toBeInTheDocument();
   expect(screen.getByText("Custom Provider guide")).toBeInTheDocument();
 });
@@ -343,7 +351,8 @@ test("settings_reorders_providers", () => {
     ])
   );
 
-  fireEvent.click(screen.getAllByRole("button", { name: "Up" })[1]);
+  fireEvent.click(screen.getAllByRole("button", { name: "More" })[1]);
+  fireEvent.click(screen.getByRole("button", { name: "Up" }));
 
   expect(screen.getByText("Second Command")).toBeInTheDocument();
 });
@@ -357,9 +366,32 @@ test("add_custom_command_provider", () => {
 });
 
 test("remove_provider_deletes_provider_from_settings", () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
   renderSettings();
 
+  fireEvent.click(screen.getByRole("button", { name: "More" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
   expect(screen.queryByText("Local Command")).not.toBeInTheDocument();
+});
+
+test("settings_save_bar_tracks_dirty_state_and_validation", () => {
+  renderSettings();
+
+  expect(screen.getByTestId("fixed-save-bar")).toHaveTextContent("No changes");
+  expect(screen.getByTestId("save-settings-button")).toBeDisabled();
+
+  fireEvent.change(screen.getByRole("spinbutton", { name: /Refresh interval/ }), {
+    target: { value: "0" }
+  });
+
+  expect(screen.getByText("Refresh interval must be greater than 0.")).toBeInTheDocument();
+  expect(screen.getByTestId("save-settings-button")).toBeDisabled();
+
+  fireEvent.change(screen.getByRole("spinbutton", { name: /Refresh interval/ }), {
+    target: { value: "120" }
+  });
+
+  expect(screen.getByTestId("fixed-save-bar")).toHaveTextContent("Unsaved changes");
+  expect(screen.getByTestId("save-settings-button")).toBeEnabled();
 });
