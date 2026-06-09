@@ -1,10 +1,14 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tauri::command;
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+};
+use tauri::{command, AppHandle};
 
 use crate::{
     command_provider::run_single_provider_config,
-    config::{CommandSpec, ParserSpec, ProviderConfig},
+    config::{config_path_for_app, CommandSpec, ProviderConfig, ScriptOutputSpec},
     quota::ProviderSnapshot,
 };
 
@@ -21,7 +25,63 @@ pub struct ProviderPreset {
     pub docs: Option<String>,
 }
 
-pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
+struct ProviderTemplate {
+    id: &'static str,
+    manifest: &'static str,
+    script: &'static str,
+}
+
+const PROVIDER_TEMPLATES: &[ProviderTemplate] = &[
+    ProviderTemplate {
+        id: "custom-script",
+        manifest: include_str!("../../providers/custom-script/provider.json"),
+        script: include_str!("../../providers/custom-script/provider.cjs"),
+    },
+    ProviderTemplate {
+        id: "kimi-coding",
+        manifest: include_str!("../../providers/kimi-coding/provider.json"),
+        script: include_str!("../../providers/kimi-coding/provider.cjs"),
+    },
+    ProviderTemplate {
+        id: "bigmodel-coding-plan",
+        manifest: include_str!("../../providers/bigmodel-coding-plan/provider.json"),
+        script: include_str!("../../providers/bigmodel-coding-plan/provider.cjs"),
+    },
+];
+
+fn script_path(template_root: &Path, id: &str) -> String {
+    template_root
+        .join(id)
+        .join("provider.cjs")
+        .to_string_lossy()
+        .to_string()
+}
+
+fn materialize_builtin_provider_templates(app: &AppHandle) -> Result<PathBuf, String> {
+    let config_path = config_path_for_app(app)?;
+    let config_dir = config_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let template_root = config_dir.join("providers").join("builtin");
+
+    for template in PROVIDER_TEMPLATES {
+        let dir = template_root.join(template.id);
+        fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+        let manifest_path = dir.join("provider.json");
+        let script_path = dir.join("provider.cjs");
+        if !manifest_path.exists() {
+            fs::write(&manifest_path, template.manifest).map_err(|error| error.to_string())?;
+        }
+        if !script_path.exists() {
+            fs::write(&script_path, template.script).map_err(|error| error.to_string())?;
+        }
+    }
+
+    Ok(template_root)
+}
+
+pub fn builtin_provider_presets_for_root(template_root: &Path) -> Vec<ProviderPreset> {
     vec![
         ProviderPreset {
             id: "codex-usage".to_string(),
@@ -50,24 +110,19 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
         ProviderPreset {
             id: "kimi-coding-usage".to_string(),
             display_name: "Kimi Coding Usage".to_string(),
-            description: "Kimi coding quota usage via curl".to_string(),
-            provider_config_template: ProviderConfig::Command {
+            description: "Kimi coding quota usage via editable provider script".to_string(),
+            provider_config_template: ProviderConfig::Script {
                 id: "kimi-coding".to_string(),
                 name: "Kimi Coding".to_string(),
                 enabled: true,
                 command: CommandSpec {
-                    executable: "curl".to_string(),
-                    args: vec![
-                        "-s".to_string(),
-                        "-H".to_string(),
-                        "Authorization: Bearer ${env:KIMI_API_KEY}".to_string(),
-                        "https://api.kimi.com/coding/v1/usages".to_string(),
-                    ],
+                    executable: "node".to_string(),
+                    args: vec![script_path(template_root, "kimi-coding")],
                     cwd: None,
                     env: None,
                     timeout_ms: 15000,
                 },
-                parser: ParserSpec::KimiCodingUsageV1,
+                output: ScriptOutputSpec::ProviderSnapshotV1,
                 window_label_overrides: HashMap::from([
                     ("300-minute".to_string(), "5h".to_string()),
                     ("usage".to_string(), "Weekly limit".to_string()),
@@ -81,24 +136,19 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
         ProviderPreset {
             id: "bigmodel-coding-plan".to_string(),
             display_name: "BigModel Coding Plan".to_string(),
-            description: "BigModel coding plan quota via curl".to_string(),
-            provider_config_template: ProviderConfig::Command {
+            description: "BigModel coding plan quota via editable provider script".to_string(),
+            provider_config_template: ProviderConfig::Script {
                 id: "bigmodel-coding-plan".to_string(),
                 name: "BigModel Coding Plan".to_string(),
                 enabled: true,
                 command: CommandSpec {
-                    executable: "curl".to_string(),
-                    args: vec![
-                        "-s".to_string(),
-                        "-H".to_string(),
-                        "Authorization: Bearer ${env:BIGMODEL_API_KEY}".to_string(),
-                        "https://open.bigmodel.cn/api/monitor/usage/quota/limit".to_string(),
-                    ],
+                    executable: "node".to_string(),
+                    args: vec![script_path(template_root, "bigmodel-coding-plan")],
                     cwd: None,
                     env: None,
                     timeout_ms: 15000,
                 },
-                parser: ParserSpec::BigmodelQuotaLimitJsonV1,
+                output: ScriptOutputSpec::ProviderSnapshotV1,
                 window_label_overrides: HashMap::from([
                     ("tokens-limit-3-5".to_string(), "5h".to_string()),
                     ("tokens-limit-6-1".to_string(), "Weekly limit".to_string()),
@@ -116,7 +166,7 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
             id: "opencode-quota-command".to_string(),
             display_name: "OpenCode Quota Command".to_string(),
             description: "Read an app snapshot from opencode-quota".to_string(),
-            provider_config_template: ProviderConfig::Command {
+            provider_config_template: ProviderConfig::Script {
                 id: "opencode-quota".to_string(),
                 name: "OpenCode Quota".to_string(),
                 enabled: true,
@@ -127,7 +177,7 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
                     env: None,
                     timeout_ms: 15000,
                 },
-                parser: ParserSpec::AppSnapshot,
+                output: ScriptOutputSpec::AppSnapshotV1,
                 window_label_overrides: HashMap::new(),
                 visible_window_ids: Vec::new(),
             },
@@ -137,21 +187,21 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
             ),
         },
         ProviderPreset {
-            id: "custom-command-provider".to_string(),
-            display_name: "Custom Command Provider".to_string(),
-            description: "Start from an editable command provider".to_string(),
-            provider_config_template: ProviderConfig::Command {
-                id: "custom-command".to_string(),
-                name: "Custom Command Provider".to_string(),
+            id: "custom-script-provider".to_string(),
+            display_name: "Custom Script Provider".to_string(),
+            description: "Start from an editable script provider".to_string(),
+            provider_config_template: ProviderConfig::Script {
+                id: "custom-script".to_string(),
+                name: "Custom Script Provider".to_string(),
                 enabled: true,
                 command: CommandSpec {
                     executable: "node".to_string(),
-                    args: vec!["fixtures/fake_provider_snapshot.js".to_string()],
+                    args: vec![script_path(template_root, "custom-script")],
                     cwd: None,
                     env: None,
                     timeout_ms: 15000,
                 },
-                parser: ParserSpec::ProviderSnapshot,
+                output: ScriptOutputSpec::ProviderSnapshotV1,
                 window_label_overrides: HashMap::new(),
                 visible_window_ids: Vec::new(),
             },
@@ -169,9 +219,15 @@ pub fn provider_config_from_preset(preset_id: &str) -> Option<ProviderConfig> {
         .map(|preset| preset.provider_config_template)
 }
 
+#[cfg(test)]
+fn builtin_provider_presets() -> Vec<ProviderPreset> {
+    builtin_provider_presets_for_root(Path::new("providers/builtin"))
+}
+
 #[command]
-pub fn get_provider_presets() -> Result<Vec<ProviderPreset>, String> {
-    Ok(builtin_provider_presets())
+pub fn get_provider_presets(app: AppHandle) -> Result<Vec<ProviderPreset>, String> {
+    let template_root = materialize_builtin_provider_templates(&app)?;
+    Ok(builtin_provider_presets_for_root(&template_root))
 }
 
 #[command]
@@ -184,37 +240,54 @@ pub async fn test_provider(provider: ProviderConfig) -> Result<ProviderSnapshot,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{CommandSpec, ParserSpec, ProviderConfig};
+    use crate::config::{CommandSpec, ProviderConfig, ScriptOutputSpec};
 
-    fn command_from(provider: &ProviderConfig) -> (&CommandSpec, &ParserSpec) {
+    fn script_from(provider: &ProviderConfig) -> (&CommandSpec, &ScriptOutputSpec) {
         match provider {
-            ProviderConfig::Command {
-                command, parser, ..
-            } => (command, parser),
-            _ => panic!("expected command provider"),
+            ProviderConfig::Script {
+                command, output, ..
+            } => (command, output),
+            _ => panic!("expected script provider"),
         }
     }
 
-    fn fixture_command(provider: ProviderConfig, script: &str) -> ProviderConfig {
-        let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    fn repo_file(parts: &[&str]) -> String {
+        let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.pop();
+        for part in parts {
+            path.push(part);
+        }
+        path.to_string_lossy().to_string()
+    }
+
+    fn fixture_script(
+        provider: ProviderConfig,
+        template_id: &str,
+        fixture_env: &str,
+        fixture_path: &str,
+    ) -> ProviderConfig {
+        let script = repo_file(&["providers", template_id, "provider.cjs"]);
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("repo root")
+            .join("docs")
+            .join("specs")
             .join("fixtures")
-            .join("commands")
-            .join(script)
+            .join("provider_outputs")
+            .join(fixture_path)
             .to_string_lossy()
             .to_string();
 
         match provider {
-            ProviderConfig::Command {
+            ProviderConfig::Script {
                 id,
                 name,
                 enabled,
-                parser,
+                output,
                 window_label_overrides,
                 visible_window_ids,
                 ..
-            } => ProviderConfig::Command {
+            } => ProviderConfig::Script {
                 id,
                 name,
                 enabled,
@@ -222,10 +295,10 @@ mod tests {
                     executable: "node".to_string(),
                     args: vec![script],
                     cwd: None,
-                    env: None,
+                    env: Some(HashMap::from([(fixture_env.to_string(), fixture)])),
                     timeout_ms: 15000,
                 },
-                parser,
+                output,
                 window_label_overrides,
                 visible_window_ids,
             },
@@ -243,12 +316,9 @@ mod tests {
         assert!(preset
             .required_env_vars
             .contains(&"KIMI_API_KEY".to_string()));
-        let (command, parser) = command_from(&preset.provider_config_template);
-        assert!(command
-            .args
-            .iter()
-            .any(|arg| arg.contains("${env:KIMI_API_KEY}")));
-        assert_eq!(parser, &ParserSpec::KimiCodingUsageV1);
+        let (command, output) = script_from(&preset.provider_config_template);
+        assert_eq!(command.executable, "node");
+        assert_eq!(output, &ScriptOutputSpec::ProviderSnapshotV1);
     }
 
     #[test]
@@ -297,13 +367,10 @@ mod tests {
         assert!(preset
             .required_env_vars
             .contains(&"BIGMODEL_API_KEY".to_string()));
-        let (command, parser) = command_from(&preset.provider_config_template);
-        assert!(command
-            .args
-            .iter()
-            .any(|arg| arg.contains("${env:BIGMODEL_API_KEY}")));
-        assert_eq!(parser, &ParserSpec::BigmodelQuotaLimitJsonV1);
-        if let ProviderConfig::Command {
+        let (command, output) = script_from(&preset.provider_config_template);
+        assert_eq!(command.executable, "node");
+        assert_eq!(output, &ScriptOutputSpec::ProviderSnapshotV1);
+        if let ProviderConfig::Script {
             window_label_overrides,
             ..
         } = preset.provider_config_template
@@ -317,7 +384,7 @@ mod tests {
                 Some(&"Weekly limit".to_string())
             );
         } else {
-            panic!("expected command provider");
+            panic!("expected script provider");
         }
     }
 
@@ -350,23 +417,28 @@ mod tests {
             .into_iter()
             .find(|preset| preset.id == "opencode-quota-command")
             .expect("opencode preset");
-        let (command, parser) = command_from(&preset.provider_config_template);
+        let (command, output) = script_from(&preset.provider_config_template);
 
         assert_eq!(command.executable, "opencode-quota");
-        assert_eq!(parser, &ParserSpec::AppSnapshot);
+        assert_eq!(output, &ScriptOutputSpec::AppSnapshotV1);
     }
 
     #[test]
     fn preset_add_creates_provider_config() {
-        let provider = provider_config_from_preset("custom-command-provider").expect("provider");
+        let provider = provider_config_from_preset("custom-script-provider").expect("provider");
 
-        assert!(matches!(provider, ProviderConfig::Command { .. }));
+        assert!(matches!(provider, ProviderConfig::Script { .. }));
     }
 
     #[test]
     fn fixture_kimi_preset_parses_expected_snapshot() {
         let provider = provider_config_from_preset("kimi-coding-usage").expect("preset");
-        let provider = fixture_command(provider, "kimi_usage_fixture.js");
+        let provider = fixture_script(
+            provider,
+            "kimi-coding",
+            "QUOTABARWIN_KIMI_FIXTURE",
+            "kimi_coding_usage.json",
+        );
         let snapshot = run_single_provider_config(&provider);
 
         assert_eq!(snapshot.id, "kimi-coding");
@@ -377,7 +449,12 @@ mod tests {
     #[test]
     fn fixture_bigmodel_preset_parses_expected_snapshot() {
         let provider = provider_config_from_preset("bigmodel-coding-plan").expect("preset");
-        let provider = fixture_command(provider, "bigmodel_quota_fixture.js");
+        let provider = fixture_script(
+            provider,
+            "bigmodel-coding-plan",
+            "QUOTABARWIN_BIGMODEL_FIXTURE",
+            "bigmodel_quota_limit.json",
+        );
         let snapshot = run_single_provider_config(&provider);
 
         assert_eq!(snapshot.id, "bigmodel-coding-plan");

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "custom-script",
+  "displayName": "Custom Script Provider",
+  "description": "Editable script template that prints provider-snapshot-v1 JSON.",
+  "runtime": "node",
+  "entry": "provider.cjs",
+  "output": "provider-snapshot-v1"
+}

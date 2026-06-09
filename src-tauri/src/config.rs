@@ -705,7 +705,7 @@ mod tests {
                 "enabled": true,
                 "command": {
                     "executable": "node",
-                    "args": ["providers/custom/provider.js"],
+                    "args": ["providers/custom/provider.cjs"],
                     "timeoutMs": 15000
                 },
                 "output": { "type": "provider-snapshot-v1" },

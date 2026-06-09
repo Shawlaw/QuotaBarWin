@@ -32,7 +32,7 @@ const scriptProvider = {
   kind: "script" as const,
   command: {
     executable: "node",
-    args: ["providers/custom/provider.js"],
+    args: ["providers/custom/provider.cjs"],
     cwd: null,
     env: {},
     timeoutMs: 15000
@@ -73,13 +73,13 @@ const presets: ProviderPreset[] = [
       id: "kimi-coding",
       name: "Kimi Coding",
       enabled: true,
-      kind: "command",
+      kind: "script",
       command: {
-        executable: "curl",
-        args: ["-H", "Authorization: Bearer ${env:KIMI_API_KEY}"],
+        executable: "node",
+        args: ["C:\\QuotaBarWin\\providers\\builtin\\kimi-coding\\provider.cjs"],
         timeoutMs: 15000
       },
-      parser: { type: "kimi-coding-usage-v1" },
+      output: { type: "provider-snapshot-v1" },
       windowLabelOverrides: {},
       visibleWindowIds: []
     }
@@ -93,13 +93,13 @@ const presets: ProviderPreset[] = [
       id: "bigmodel-coding-plan",
       name: "BigModel Coding Plan",
       enabled: true,
-      kind: "command",
+      kind: "script",
       command: {
-        executable: "curl",
-        args: ["-H", "Authorization: Bearer ${env:BIGMODEL_API_KEY}"],
+        executable: "node",
+        args: ["C:\\QuotaBarWin\\providers\\builtin\\bigmodel-coding-plan\\provider.cjs"],
         timeoutMs: 15000
       },
-      parser: { type: "bigmodel-quota-limit-json-v1" },
+      output: { type: "provider-snapshot-v1" },
       windowLabelOverrides: {
         "tokens-limit-3-5": "5h",
         "tokens-limit-6-1": "Weekly limit",
@@ -116,22 +116,22 @@ const presets: ProviderPreset[] = [
       id: "opencode-quota",
       name: "OpenCode Quota",
       enabled: true,
-      kind: "command",
+      kind: "script",
       command: {
         executable: "opencode-quota",
         args: ["show", "--json"],
         timeoutMs: 15000
       },
-      parser: { type: "app-snapshot" },
+      output: { type: "app-snapshot-v1" },
       windowLabelOverrides: {},
       visibleWindowIds: []
     }
   },
   {
-    id: "custom-command-provider",
-    displayName: "Custom Command Provider",
-    description: "Custom command",
-    providerConfigTemplate: commandProvider
+    id: "custom-script-provider",
+    displayName: "Custom Script Provider",
+    description: "Custom script",
+    providerConfigTemplate: scriptProvider
   }
 ];
 
@@ -216,7 +216,7 @@ test("settings_can_render_script_provider_contract", () => {
 
   expect(screen.getByDisplayValue("Local Script")).toBeInTheDocument();
   expect(screen.getByTestId("script-executable-script-1")).toHaveValue("node");
-  expect(screen.getByLabelText("Args")).toHaveValue("providers/custom/provider.js");
+  expect(screen.getByLabelText("Args")).toHaveValue("providers/custom/provider.cjs");
   expect(screen.getByLabelText("Output contract")).toHaveValue("provider-snapshot-v1");
 
   fireEvent.change(screen.getByLabelText("Output contract"), {
@@ -399,12 +399,13 @@ test("settings_reorders_providers", () => {
   expect(screen.getByText("Second Command")).toBeInTheDocument();
 });
 
-test("add_custom_command_provider", () => {
+test("add_custom_script_provider", () => {
   renderSettings(configWithProviders([]));
 
-  fireEvent.click(screen.getByRole("button", { name: "Custom Command Provider" }));
+  fireEvent.click(screen.getByRole("button", { name: "Custom Script Provider" }));
 
-  expect(screen.getByDisplayValue("Local Command")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("Local Script")).toBeInTheDocument();
+  expect(screen.getByLabelText("Output contract")).toHaveValue("provider-snapshot-v1");
 });
 
 test("remove_provider_deletes_provider_from_settings", () => {

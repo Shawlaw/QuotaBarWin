@@ -866,10 +866,10 @@ export function SettingsPanel({
           <summary>Custom Provider guide</summary>
           <div className="guide-grid">
             <section>
-              <h3>Command</h3>
+              <h3>Script</h3>
               <p>
                 QuotaBarWin runs Executable with each Args line as one command-line argument.
-                stdout is parsed as quota JSON; non-zero exit codes and timeouts become status error.
+                stdout must print quota JSON; non-zero exit codes and timeouts become status error.
               </p>
               <p>
                 Args and env values can read secrets with {"${env:NAME}"} or {"${file:C:\\Path With Spaces\\secret.txt}"}.
@@ -878,16 +878,12 @@ export function SettingsPanel({
               </p>
             </section>
             <section>
-              <h3>Parser</h3>
+              <h3>Output</h3>
               <dl>
-                <dt>provider-snapshot</dt>
-                <dd>stdout is one ProviderSnapshot JSON object.</dd>
-                <dt>app-snapshot</dt>
+                <dt>provider-snapshot-v1</dt>
+                <dd>stdout is one provider object with status, windows, and optional metadata.</dd>
+                <dt>app-snapshot-v1</dt>
                 <dd>stdout is an AppSnapshot JSON object with providers.</dd>
-                <dt>kimi-coding-usage-v1</dt>
-                <dd>stdout is Kimi usage API JSON.</dd>
-                <dt>bigmodel-quota-limit-json-v1</dt>
-                <dd>stdout is BigModel quota limit API JSON.</dd>
               </dl>
             </section>
           </div>
