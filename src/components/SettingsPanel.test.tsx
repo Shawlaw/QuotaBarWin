@@ -25,6 +25,23 @@ const commandProvider = {
   visibleWindowIds: []
 };
 
+const scriptProvider = {
+  id: "script-1",
+  name: "Local Script",
+  enabled: true,
+  kind: "script" as const,
+  command: {
+    executable: "node",
+    args: ["providers/custom/provider.js"],
+    cwd: null,
+    env: {},
+    timeoutMs: 15000
+  },
+  output: { type: "provider-snapshot-v1" as const },
+  windowLabelOverrides: {},
+  visibleWindowIds: []
+};
+
 const presets: ProviderPreset[] = [
   {
     id: "codex-usage",
@@ -142,7 +159,14 @@ function renderSettings(initialConfig = configWithProviders([commandProvider])) 
     id: provider.id,
     name: provider.name,
     status: "ok",
-    source: provider.kind === "codex" ? "native" : provider.kind === "command" ? "command" : "mock",
+    source:
+      provider.kind === "codex"
+        ? "native"
+        : provider.kind === "command"
+          ? "command"
+          : provider.kind === "script"
+            ? "script"
+            : "mock",
     updatedAt: null,
     windows: [],
     error: null,
@@ -183,6 +207,24 @@ test("settings_can_render_command_provider", () => {
     "-H\nAuthorization: Bearer ${file:C:\\Secrets\\kimi.key}\nfixtures/fake_provider_snapshot.js"
   );
   expect(screen.getByDisplayValue("provider-snapshot")).toBeInTheDocument();
+});
+
+test("settings_can_render_script_provider_contract", () => {
+  renderSettings(configWithProviders([scriptProvider]));
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+  expect(screen.getByDisplayValue("Local Script")).toBeInTheDocument();
+  expect(screen.getByTestId("script-executable-script-1")).toHaveValue("node");
+  expect(screen.getByLabelText("Args")).toHaveValue("providers/custom/provider.js");
+  expect(screen.getByLabelText("Output contract")).toHaveValue("provider-snapshot-v1");
+
+  fireEvent.change(screen.getByLabelText("Output contract"), {
+    target: { value: "app-snapshot-v1" }
+  });
+
+  expect(screen.getByLabelText("Output contract")).toHaveValue("app-snapshot-v1");
+  expect(screen.queryByLabelText("Parser")).not.toBeInTheDocument();
 });
 
 test("settings_edits_window_label_overrides", () => {

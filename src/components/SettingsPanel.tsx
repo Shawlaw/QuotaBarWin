@@ -7,7 +7,9 @@ import type {
   ParserSpec,
   ProviderConfig,
   ProviderPreset,
-  ProviderSnapshot
+  ProviderSnapshot,
+  ScriptOutputSpec,
+  ScriptProviderConfig
 } from "../types";
 
 type SettingsPanelProps = {
@@ -29,7 +31,7 @@ type ProviderTextDraft = {
   visibleWindowIds?: string;
 };
 
-type WindowConfigProvider = CommandProviderConfig | CodexProviderConfig;
+type WindowConfigProvider = CommandProviderConfig | CodexProviderConfig | ScriptProviderConfig;
 
 function updateProvider(
   config: AppConfig,
@@ -144,6 +146,14 @@ function parserFromType(type: string): ParserSpec {
   return { type: "provider-snapshot" };
 }
 
+function scriptOutputFromType(type: string): ScriptOutputSpec {
+  if (type === "app-snapshot-v1") {
+    return { type };
+  }
+
+  return { type: "provider-snapshot-v1" };
+}
+
 function cloneProvider(provider: ProviderConfig): ProviderConfig {
   return JSON.parse(JSON.stringify(provider)) as ProviderConfig;
 }
@@ -237,6 +247,17 @@ export function SettingsPanel({
     onChange(
       updateProvider(config, provider.id, (current) =>
         current.kind === "command" ? { ...current, ...patch } : current
+      )
+    );
+  }
+
+  function updateScriptProvider(
+    provider: ScriptProviderConfig,
+    patch: Partial<ScriptProviderConfig>
+  ) {
+    onChange(
+      updateProvider(config, provider.id, (current) =>
+        current.kind === "script" ? { ...current, ...patch } : current
       )
     );
   }
@@ -538,6 +559,113 @@ export function SettingsPanel({
                         onChange={(event) => {
                           setProviderTextDraft(provider.id, "visibleWindowIds", event.currentTarget.value);
                           updateCodexProvider(provider, {
+                            visibleWindowIds: textToVisibleWindows(event.currentTarget.value)
+                          });
+                        }}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+                {provider.kind === "script" ? (
+                  <div className="command-fields">
+                    <label>
+                      Name
+                      <input
+                        value={provider.name}
+                        onChange={(event) =>
+                          updateScriptProvider(provider, { name: event.currentTarget.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Executable
+                      <input
+                        data-testid={`script-executable-${provider.id}`}
+                        value={provider.command.executable}
+                        onChange={(event) =>
+                          updateScriptProvider(provider, {
+                            command: {
+                              ...provider.command,
+                              executable: event.currentTarget.value
+                            }
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="args-field">
+                      Args
+                      <textarea
+                        rows={5}
+                        data-testid={`script-args-${provider.id}`}
+                        value={argsToText(provider.command.args)}
+                        onChange={(event) =>
+                          updateScriptProvider(provider, {
+                            command: {
+                              ...provider.command,
+                              args: textToArgs(event.currentTarget.value)
+                            }
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Output contract
+                      <select
+                        data-testid={`script-output-${provider.id}`}
+                        value={provider.output.type}
+                        onChange={(event) =>
+                          updateScriptProvider(provider, {
+                            output: scriptOutputFromType(event.currentTarget.value)
+                          })
+                        }
+                      >
+                        <option value="provider-snapshot-v1">provider-snapshot-v1</option>
+                        <option value="app-snapshot-v1">app-snapshot-v1</option>
+                      </select>
+                    </label>
+                    <label>
+                      Timeout
+                      <input
+                        type="number"
+                        min={100}
+                        value={provider.command.timeoutMs}
+                        onChange={(event) =>
+                          updateScriptProvider(provider, {
+                            command: {
+                              ...provider.command,
+                              timeoutMs: Number(event.currentTarget.value)
+                            }
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="args-field">
+                      Window label overrides
+                      <textarea
+                        rows={4}
+                        placeholder={"window-id=Display name\n5h=5h\nweekly=Weekly limit"}
+                        value={windowLabelOverridesText(provider)}
+                        onChange={(event) => {
+                          setProviderTextDraft(
+                            provider.id,
+                            "windowLabelOverrides",
+                            event.currentTarget.value
+                          );
+                          updateScriptProvider(provider, {
+                            windowLabelOverrides: textToLabelOverrides(event.currentTarget.value)
+                          });
+                        }}
+                      />
+                    </label>
+                    <label className="args-field">
+                      Displayed windows
+                      <textarea
+                        rows={3}
+                        placeholder={"Leave empty to show all\n5h\nweekly\nWeekly limit"}
+                        value={visibleWindowIdsText(provider)}
+                        onChange={(event) => {
+                          setProviderTextDraft(provider.id, "visibleWindowIds", event.currentTarget.value);
+                          updateScriptProvider(provider, {
                             visibleWindowIds: textToVisibleWindows(event.currentTarget.value)
                           });
                         }}

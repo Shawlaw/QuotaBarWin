@@ -1,6 +1,6 @@
 export type ProviderStatus = "ok" | "warning" | "error" | "unknown";
 export type ConfidenceLevel = "exact" | "estimated" | "unknown";
-export type ProviderSource = "mock" | "command" | "native";
+export type ProviderSource = "mock" | "command" | "native" | "script";
 
 export type QuotaWindow = {
   id: string;
@@ -62,7 +62,11 @@ export type ConfigStorageInfo = {
   portableMarkerPath: string;
 };
 
-export type ProviderConfig = MockProviderConfig | CodexProviderConfig | CommandProviderConfig;
+export type ProviderConfig =
+  | MockProviderConfig
+  | CodexProviderConfig
+  | CommandProviderConfig
+  | ScriptProviderConfig;
 
 export type MockProviderConfig = {
   id: string;
@@ -95,6 +99,17 @@ export type CommandProviderConfig = {
   visibleWindowIds?: string[];
 };
 
+export type ScriptProviderConfig = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  kind: "script";
+  command: CommandSpec;
+  output: ScriptOutputSpec;
+  windowLabelOverrides?: Record<string, string>;
+  visibleWindowIds?: string[];
+};
+
 export type CommandSpec = {
   executable: string;
   args: string[];
@@ -110,6 +125,10 @@ export type ParserSpec =
   | { type: "bigmodel-quota-limit-json-v1" }
   | { type: "json-mapping"; mapping: Record<string, unknown> }
   | { type: "regex-blocks"; rules: Record<string, unknown>[] };
+
+export type ScriptOutputSpec =
+  | { type: "provider-snapshot-v1" }
+  | { type: "app-snapshot-v1" };
 
 export type ProviderPreset = {
   id: string;
