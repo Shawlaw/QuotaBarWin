@@ -29,7 +29,9 @@ fn redact_word(word: &str) -> String {
 fn looks_like_long_token(word: &str) -> bool {
     let token_chars = word
         .chars()
-        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.'))
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
+        })
         .count();
     token_chars >= 32
 }
@@ -40,7 +42,8 @@ mod tests {
 
     #[test]
     fn redacts_authorization_and_tokens_from_logs() {
-        let input = "Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456 API_KEY=secret Cookie=session";
+        let input =
+            "Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456 API_KEY=secret Cookie=session";
         let output = redact_sensitive(input);
 
         assert!(!output.contains("abcdefghijklmnopqrstuvwxyz123456"));

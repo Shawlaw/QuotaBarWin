@@ -16,8 +16,8 @@ fn release_workflow_yaml_is_valid() {
         .parent()
         .expect("repo root")
         .to_path_buf();
-    let workflow = fs::read_to_string(root.join(".github/workflows/release.yml"))
-        .expect("release workflow");
+    let workflow =
+        fs::read_to_string(root.join(".github/workflows/release.yml")).expect("release workflow");
     let value: serde_yaml::Value = serde_yaml::from_str(&workflow).expect("valid yaml");
 
     assert!(value.get("jobs").is_some());

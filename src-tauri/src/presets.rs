@@ -44,18 +44,23 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
                     timeout_ms: 15000,
                 },
                 parser: ParserSpec::KimiCodingUsageV1,
-                window_label_overrides: HashMap::new(),
+                window_label_overrides: HashMap::from([
+                    ("300-minute".to_string(), "5h".to_string()),
+                    ("usage".to_string(), "Weekly limit".to_string()),
+                    ("total-quota".to_string(), "Total quota".to_string()),
+                ]),
+                visible_window_ids: Vec::new(),
             },
             required_env_vars: vec!["KIMI_API_KEY".to_string()],
             docs: Some("Set KIMI_API_KEY in your environment.".to_string()),
         },
         ProviderPreset {
-            id: "bigmodel-zai-coding-plan".to_string(),
-            display_name: "BigModel / Z.ai Coding Plan".to_string(),
-            description: "BigModel/Z.ai coding plan quota via curl".to_string(),
+            id: "bigmodel-coding-plan".to_string(),
+            display_name: "BigModel Coding Plan".to_string(),
+            description: "BigModel coding plan quota via curl".to_string(),
             provider_config_template: ProviderConfig::Command {
                 id: "bigmodel-coding-plan".to_string(),
-                name: "BigModel / Z.ai Coding Plan".to_string(),
+                name: "BigModel Coding Plan".to_string(),
                 enabled: true,
                 command: CommandSpec {
                     executable: "curl".to_string(),
@@ -73,7 +78,12 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
                 window_label_overrides: HashMap::from([
                     ("tokens-limit-3-5".to_string(), "5h".to_string()),
                     ("tokens-limit-6-1".to_string(), "Weekly limit".to_string()),
+                    (
+                        "time-limit-5-1".to_string(),
+                        "Monthly time limit".to_string(),
+                    ),
                 ]),
+                visible_window_ids: Vec::new(),
             },
             required_env_vars: vec!["BIGMODEL_API_KEY".to_string()],
             docs: Some("Set BIGMODEL_API_KEY in your environment.".to_string()),
@@ -95,9 +105,12 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
                 },
                 parser: ParserSpec::AppSnapshot,
                 window_label_overrides: HashMap::new(),
+                visible_window_ids: Vec::new(),
             },
             required_env_vars: Vec::new(),
-            docs: Some("Install opencode-quota separately if you want to use this provider.".to_string()),
+            docs: Some(
+                "Install opencode-quota separately if you want to use this provider.".to_string(),
+            ),
         },
         ProviderPreset {
             id: "custom-command-provider".to_string(),
@@ -116,6 +129,7 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
                 },
                 parser: ParserSpec::ProviderSnapshot,
                 window_label_overrides: HashMap::new(),
+                visible_window_ids: Vec::new(),
             },
             required_env_vars: Vec::new(),
             docs: None,
@@ -174,6 +188,7 @@ mod tests {
                 enabled,
                 parser,
                 window_label_overrides,
+                visible_window_ids,
                 ..
             } => ProviderConfig::Command {
                 id,
@@ -188,6 +203,7 @@ mod tests {
                 },
                 parser,
                 window_label_overrides,
+                visible_window_ids,
             },
             other => other,
         }
@@ -200,9 +216,14 @@ mod tests {
             .find(|preset| preset.id == "kimi-coding-usage")
             .expect("kimi preset");
 
-        assert!(preset.required_env_vars.contains(&"KIMI_API_KEY".to_string()));
+        assert!(preset
+            .required_env_vars
+            .contains(&"KIMI_API_KEY".to_string()));
         let (command, parser) = command_from(&preset.provider_config_template);
-        assert!(command.args.iter().any(|arg| arg.contains("${env:KIMI_API_KEY}")));
+        assert!(command
+            .args
+            .iter()
+            .any(|arg| arg.contains("${env:KIMI_API_KEY}")));
         assert_eq!(parser, &ParserSpec::KimiCodingUsageV1);
     }
 
@@ -210,7 +231,7 @@ mod tests {
     fn preset_bigmodel_has_required_env_var() {
         let preset = builtin_provider_presets()
             .into_iter()
-            .find(|preset| preset.id == "bigmodel-zai-coding-plan")
+            .find(|preset| preset.id == "bigmodel-coding-plan")
             .expect("bigmodel preset");
 
         assert!(preset
@@ -238,6 +259,29 @@ mod tests {
         } else {
             panic!("expected command provider");
         }
+    }
+
+    #[test]
+    fn presets_serialize_frontend_editable_mapping_fields() {
+        let presets = builtin_provider_presets();
+        let value = serde_json::to_value(&presets).expect("serialize presets");
+        let bigmodel = value
+            .as_array()
+            .expect("preset array")
+            .iter()
+            .find(|preset| preset["id"] == "bigmodel-coding-plan")
+            .expect("bigmodel preset");
+        let template = &bigmodel["providerConfigTemplate"];
+
+        assert_eq!(
+            template["windowLabelOverrides"],
+            serde_json::json!({
+                "tokens-limit-3-5": "5h",
+                "tokens-limit-6-1": "Weekly limit",
+                "time-limit-5-1": "Monthly time limit"
+            })
+        );
+        assert_eq!(template["visibleWindowIds"], serde_json::json!([]));
     }
 
     #[test]
@@ -272,7 +316,7 @@ mod tests {
 
     #[test]
     fn fixture_bigmodel_preset_parses_expected_snapshot() {
-        let provider = provider_config_from_preset("bigmodel-zai-coding-plan").expect("preset");
+        let provider = provider_config_from_preset("bigmodel-coding-plan").expect("preset");
         let provider = fixture_command(provider, "bigmodel_quota_fixture.js");
         let snapshot = run_single_provider_config(&provider);
 

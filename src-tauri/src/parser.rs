@@ -91,7 +91,13 @@ pub fn parse_kimi_coding_usage(id: &str, name: &str, stdout: &str) -> ProviderSn
         diagnostics.push("parallel.limit missing".to_string());
     }
 
-    provider_from_parts(id, name, windows, diagnostics, Some(Value::Object(metadata)))
+    provider_from_parts(
+        id,
+        name,
+        windows,
+        diagnostics,
+        Some(Value::Object(metadata)),
+    )
 }
 
 pub fn parse_bigmodel_quota_limit_json(id: &str, name: &str, stdout: &str) -> ProviderSnapshot {
@@ -109,7 +115,13 @@ pub fn parse_bigmodel_quota_limit_json(id: &str, name: &str, stdout: &str) -> Pr
     if value.get("success").and_then(Value::as_bool) != Some(true)
         || value.get("code").and_then(number_to_i64) != Some(200)
     {
-        let mut provider = provider_from_parts(id, name, windows, diagnostics, Some(Value::Object(metadata)));
+        let mut provider = provider_from_parts(
+            id,
+            name,
+            windows,
+            diagnostics,
+            Some(Value::Object(metadata)),
+        );
         provider.status = "error".to_string();
         provider.error = Some("BigModel response was unsuccessful".to_string());
         return provider;
@@ -117,7 +129,13 @@ pub fn parse_bigmodel_quota_limit_json(id: &str, name: &str, stdout: &str) -> Pr
 
     let Some(data) = value.get("data") else {
         diagnostics.push("data missing".to_string());
-        return provider_from_parts(id, name, windows, diagnostics, Some(Value::Object(metadata)));
+        return provider_from_parts(
+            id,
+            name,
+            windows,
+            diagnostics,
+            Some(Value::Object(metadata)),
+        );
     };
 
     insert_string(&mut metadata, "level", data.get("level"));
@@ -128,7 +146,10 @@ pub fn parse_bigmodel_quota_limit_json(id: &str, name: &str, stdout: &str) -> Pr
         }
 
         for limit in limits {
-            let type_name = limit.get("type").and_then(Value::as_str).unwrap_or("UNKNOWN");
+            let type_name = limit
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("UNKNOWN");
             if type_name == "UNKNOWN" {
                 diagnostics.push("limit item missing type".to_string());
             }
@@ -191,7 +212,13 @@ pub fn parse_bigmodel_quota_limit_json(id: &str, name: &str, stdout: &str) -> Pr
 
     sort_quota_windows_for_display(&mut windows);
 
-    provider_from_parts(id, name, windows, diagnostics, Some(Value::Object(metadata)))
+    provider_from_parts(
+        id,
+        name,
+        windows,
+        diagnostics,
+        Some(Value::Object(metadata)),
+    )
 }
 
 pub fn epoch_ms_to_iso_utc(value: i64) -> Option<String> {
@@ -283,7 +310,11 @@ fn provider_from_parts(
     diagnostics: Vec<String>,
     metadata: Option<Value>,
 ) -> ProviderSnapshot {
-    let status = if diagnostics.is_empty() { "ok" } else { "warning" };
+    let status = if diagnostics.is_empty() {
+        "ok"
+    } else {
+        "warning"
+    };
     ProviderSnapshot {
         id: id.to_string(),
         name: name.to_string(),
@@ -489,8 +520,11 @@ mod tests {
         let expected = read_fixture("docs/specs/fixtures/expected/bigmodel_provider_snapshot.json");
         let expected: ProviderSnapshot = serde_json::from_str(&expected).expect("expected");
 
-        let actual =
-            parse_bigmodel_quota_limit_json("bigmodel-coding-plan", "BigModel / Z.ai Coding Plan", &input);
+        let actual = parse_bigmodel_quota_limit_json(
+            "bigmodel-coding-plan",
+            "BigModel / Z.ai Coding Plan",
+            &input,
+        );
 
         assert_eq!(actual.id, expected.id);
         assert_eq!(actual.name, expected.name);

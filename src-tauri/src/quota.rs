@@ -100,28 +100,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     let mut providers = Vec::new();
 
     for provider in loaded.config.providers {
-        match provider {
-            ProviderConfig::Mock { id, name, enabled } if enabled => {
-                providers.push(mock::provider_snapshot(&id, &name, &loaded.recovery_messages));
-            }
-            ProviderConfig::Command {
-                id,
-                name,
-                enabled,
-                command,
-                parser,
-                window_label_overrides,
-            } if enabled => {
-                providers.extend(run_command_provider(
-                    &id,
-                    &name,
-                    &command,
-                    &parser,
-                    &window_label_overrides,
-                ));
-            }
-            _ => {}
-        }
+        providers.extend(run_provider_config(provider, &loaded.recovery_messages));
     }
 
     let snapshot = AppSnapshot {
@@ -137,12 +116,129 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     Ok(snapshot)
 }
 
+fn run_provider_config(
+    provider: ProviderConfig,
+    recovery_messages: &[String],
+) -> Vec<ProviderSnapshot> {
+    match provider {
+        ProviderConfig::Mock { id, name, enabled } if enabled => {
+            vec![mock::provider_snapshot(&id, &name, recovery_messages)]
+        }
+        ProviderConfig::Command {
+            id,
+            name,
+            enabled,
+            command,
+            parser,
+            window_label_overrides,
+            visible_window_ids,
+        } if enabled => run_command_provider(
+            &id,
+            &name,
+            &command,
+            &parser,
+            &window_label_overrides,
+            &visible_window_ids,
+        ),
+        _ => Vec::new(),
+    }
+}
+
+fn provider_config_id(provider: &ProviderConfig) -> &str {
+    match provider {
+        ProviderConfig::Mock { id, .. } | ProviderConfig::Command { id, .. } => id,
+    }
+}
+
+pub fn refresh_provider_from_config_path(
+    path: &Path,
+    provider_id: &str,
+) -> Result<AppSnapshot, String> {
+    let _guard = refresh_lock()
+        .lock()
+        .map_err(|_| "Refresh lock poisoned".to_string())?;
+    let loaded = load_or_create_config(path)?;
+    let provider = loaded
+        .config
+        .providers
+        .iter()
+        .find(|provider| provider_config_id(provider) == provider_id)
+        .cloned()
+        .ok_or_else(|| format!("Provider {provider_id} was not found"))?;
+    let refreshed_providers = run_provider_config(provider, &loaded.recovery_messages);
+    let refreshed_provider_ids = refreshed_providers
+        .iter()
+        .map(|provider| provider.id.as_str())
+        .collect::<Vec<_>>();
+    let refreshed_at = Utc::now().to_rfc3339();
+
+    let mut snapshot = snapshot_cache()
+        .lock()
+        .map_err(|_| "Snapshot cache lock poisoned".to_string())?
+        .clone()
+        .unwrap_or_else(|| AppSnapshot {
+            schema_version: 1,
+            providers: Vec::new(),
+            refreshed_at: refreshed_at.clone(),
+        });
+
+    let insert_at = snapshot
+        .providers
+        .iter()
+        .position(|provider| provider.id == provider_id)
+        .unwrap_or_else(|| {
+            loaded
+                .config
+                .providers
+                .iter()
+                .take_while(|provider| provider_config_id(provider) != provider_id)
+                .filter(|provider| {
+                    let id = provider_config_id(provider);
+                    snapshot
+                        .providers
+                        .iter()
+                        .any(|snapshot_provider| snapshot_provider.id == id)
+                })
+                .count()
+        });
+
+    snapshot.providers.retain(|provider| {
+        provider.id != provider_id
+            && !refreshed_provider_ids
+                .iter()
+                .any(|refreshed_id| *refreshed_id == provider.id)
+    });
+
+    for (offset, provider) in refreshed_providers.into_iter().enumerate() {
+        snapshot
+            .providers
+            .insert((insert_at + offset).min(snapshot.providers.len()), provider);
+    }
+    snapshot.refreshed_at = refreshed_at;
+
+    *snapshot_cache()
+        .lock()
+        .map_err(|_| "Snapshot cache lock poisoned".to_string())? = Some(snapshot.clone());
+
+    Ok(snapshot)
+}
+
 #[tauri::command]
 pub async fn refresh_snapshot(app: AppHandle) -> Result<AppSnapshot, String> {
     let path = config_path_for_app(&app)?;
     tauri::async_runtime::spawn_blocking(move || build_app_snapshot_from_config_path(&path))
         .await
         .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn refresh_provider(app: AppHandle, provider_id: String) -> Result<AppSnapshot, String> {
+    let path = config_path_for_app(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        refresh_provider_from_config_path(&path, &provider_id)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -186,9 +282,7 @@ mod tests {
         for provider in snapshot.providers {
             for window in provider.windows {
                 let used = window.used_percent.expect("used percent exists");
-                let remaining = window
-                    .remaining_percent
-                    .expect("remaining percent exists");
+                let remaining = window.remaining_percent.expect("remaining percent exists");
 
                 assert!((0.0..=100.0).contains(&used));
                 assert!((0.0..=100.0).contains(&remaining));
@@ -229,6 +323,7 @@ mod tests {
                 },
                 parser: ParserSpec::ProviderSnapshot,
                 window_label_overrides: std::collections::HashMap::new(),
+                visible_window_ids: Vec::new(),
             }],
         };
 
@@ -236,6 +331,63 @@ mod tests {
 
         assert!(snapshot.providers.is_empty());
         assert!(!marker.exists());
+    }
+
+    #[test]
+    fn refresh_provider_updates_only_target_provider_cache_entry() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let counter_a = temp.path().join("counter-a.txt");
+        let counter_b = temp.path().join("counter-b.txt");
+
+        let provider = |id: &str, name: &str, counter: &std::path::Path| {
+            ProviderConfig::Command {
+            id: id.to_string(),
+            name: name.to_string(),
+            enabled: true,
+            command: CommandSpec {
+                executable: "node".to_string(),
+                args: vec![
+                    "-e".to_string(),
+                    r#"const fs=require('node:fs');const [file,id,name]=process.argv.slice(1);const next=(Number(fs.existsSync(file)?fs.readFileSync(file,'utf8'):'0')||0)+1;fs.writeFileSync(file,String(next));console.log(JSON.stringify({id,name,status:'ok',source:'command',updatedAt:'2026-06-08T10:00:00+08:00',windows:[{id:'weekly',label:'Weekly',used:next,limit:10,unit:'requests',usedPercent:next,remainingPercent:100-next,resetAt:null,confidence:'exact'}]}));"#.to_string(),
+                    counter.to_string_lossy().to_string(),
+                    id.to_string(),
+                    name.to_string(),
+                ],
+                cwd: None,
+                env: None,
+                timeout_ms: 2000,
+            },
+            parser: ParserSpec::ProviderSnapshot,
+            window_label_overrides: std::collections::HashMap::new(),
+            visible_window_ids: Vec::new(),
+        }
+        };
+
+        let config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![
+                provider("provider-a", "Provider A", &counter_a),
+                provider("provider-b", "Provider B", &counter_b),
+            ],
+        };
+        save_config_to_path(&path, &config).expect("save config");
+
+        let initial = build_app_snapshot_from_config_path(&path).expect("initial snapshot");
+        let refreshed =
+            refresh_provider_from_config_path(&path, "provider-a").expect("refresh provider");
+
+        assert_eq!(initial.providers[0].windows[0].used, Some(1.0));
+        assert_eq!(initial.providers[1].windows[0].used, Some(1.0));
+        assert_eq!(refreshed.providers[0].id, "provider-a");
+        assert_eq!(refreshed.providers[0].windows[0].used, Some(2.0));
+        assert_eq!(refreshed.providers[1].id, "provider-b");
+        assert_eq!(refreshed.providers[1].windows[0].used, Some(1.0));
     }
 
     #[test]

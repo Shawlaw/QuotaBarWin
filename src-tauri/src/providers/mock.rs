@@ -31,7 +31,10 @@ pub fn provider_snapshot(id: &str, name: &str, extra_messages: &[String]) -> Pro
         status: "ok".to_string(),
         source: "mock".to_string(),
         updated_at: Some(checked_at.clone()),
-        windows: vec![window("5h", "5h window", 72.0), window("weekly", "weekly window", 35.0)],
+        windows: vec![
+            window("5h", "5h window", 72.0),
+            window("weekly", "weekly window", 35.0),
+        ],
         error: None,
         diagnostics: Some(ProviderDiagnostics {
             checked_at,

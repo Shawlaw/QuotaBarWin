@@ -33,6 +33,7 @@ pub fn run_command_provider(
     command: &CommandSpec,
     parser: &ParserSpec,
     window_label_overrides: &HashMap<String, String>,
+    visible_window_ids: &[String],
 ) -> Vec<ProviderSnapshot> {
     match execute_command(command) {
         Ok(result) if result.timed_out => vec![error_provider(
@@ -56,6 +57,7 @@ pub fn run_command_provider(
             result,
             &command.executable,
             window_label_overrides,
+            visible_window_ids,
         ),
         Err(error) => vec![error_provider(
             id,
@@ -78,11 +80,19 @@ pub fn run_single_provider_config(provider: &crate::config::ProviderConfig) -> P
             command,
             parser,
             window_label_overrides,
+            visible_window_ids,
             ..
-        } => run_command_provider(id, name, command, parser, window_label_overrides)
-            .into_iter()
-            .next()
-            .unwrap_or_else(|| error_provider(id, name, "Provider returned no snapshot", None, None)),
+        } => run_command_provider(
+            id,
+            name,
+            command,
+            parser,
+            window_label_overrides,
+            visible_window_ids,
+        )
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| error_provider(id, name, "Provider returned no snapshot", None, None)),
     }
 }
 
@@ -110,7 +120,9 @@ fn execute_command(command: &CommandSpec) -> Result<RawCommandResult, String> {
 
     loop {
         if let Some(_status) = child.try_wait().map_err(|error| error.to_string())? {
-            let output = child.wait_with_output().map_err(|error| error.to_string())?;
+            let output = child
+                .wait_with_output()
+                .map_err(|error| error.to_string())?;
             return Ok(RawCommandResult {
                 stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                 stderr: redact_sensitive(&String::from_utf8_lossy(&output.stderr)),
@@ -122,7 +134,9 @@ fn execute_command(command: &CommandSpec) -> Result<RawCommandResult, String> {
 
         if started.elapsed() >= timeout {
             let _ = child.kill();
-            let output = child.wait_with_output().map_err(|error| error.to_string())?;
+            let output = child
+                .wait_with_output()
+                .map_err(|error| error.to_string())?;
             return Ok(RawCommandResult {
                 stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                 stderr: redact_sensitive(&String::from_utf8_lossy(&output.stderr)),
@@ -150,8 +164,7 @@ fn resolve_env_value(value: &str) -> Result<String, String> {
         .strip_prefix("${env:")
         .and_then(|remaining| remaining.strip_suffix('}'))
     {
-        return std::env::var(name)
-            .map_err(|_| format!("Missing environment variable {name}"));
+        return std::env::var(name).map_err(|_| format!("Missing environment variable {name}"));
     }
 
     resolve_placeholders(value)
@@ -178,8 +191,8 @@ fn resolve_env_placeholders(input: &str) -> Result<String, String> {
             return Ok(output);
         };
         let name = &after_start[..end];
-        let value = std::env::var(name)
-            .map_err(|_| format!("Missing environment variable {name}"))?;
+        let value =
+            std::env::var(name).map_err(|_| format!("Missing environment variable {name}"))?;
         output.push_str(&value);
         remaining = &after_start[end + 1..];
     }
@@ -199,7 +212,7 @@ fn resolve_file_placeholders(input: &str) -> Result<String, String> {
             output.push_str(&remaining[start..]);
             return Ok(output);
         };
-        let path = &after_start[..end];
+        let path = normalize_file_placeholder_path(&after_start[..end]);
         let value = fs::read_to_string(path)
             .map_err(|error| format!("Unable to read secret file {path}: {error}"))?;
         output.push_str(&value);
@@ -210,6 +223,19 @@ fn resolve_file_placeholders(input: &str) -> Result<String, String> {
     Ok(output.trim().to_string())
 }
 
+fn normalize_file_placeholder_path(raw_path: &str) -> &str {
+    let path = raw_path.trim();
+    if path.len() >= 2 {
+        let first = path.as_bytes()[0];
+        let last = path.as_bytes()[path.len() - 1];
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            return &path[1..path.len() - 1];
+        }
+    }
+
+    path
+}
+
 fn parse_command_output(
     id: &str,
     name: &str,
@@ -217,18 +243,24 @@ fn parse_command_output(
     result: RawCommandResult,
     command_path: &str,
     window_label_overrides: &HashMap<String, String>,
+    visible_window_ids: &[String],
 ) -> Vec<ProviderSnapshot> {
     let diagnostics = diagnostics_from_result(&result, Some(command_path));
     let parsed = match parser {
-        ParserSpec::AppSnapshot => serde_json::from_str::<AppSnapshot>(&result.stdout)
-            .map(|snapshot| snapshot.providers),
+        ParserSpec::AppSnapshot => {
+            serde_json::from_str::<AppSnapshot>(&result.stdout).map(|snapshot| snapshot.providers)
+        }
         ParserSpec::ProviderSnapshot => {
             serde_json::from_str::<ProviderSnapshot>(&result.stdout).map(|provider| vec![provider])
         }
-        ParserSpec::KimiCodingUsageV1 => Ok(vec![parse_kimi_coding_usage(id, name, &result.stdout)]),
-        ParserSpec::BigmodelQuotaLimitJsonV1 => {
-            Ok(vec![parse_bigmodel_quota_limit_json(id, name, &result.stdout)])
+        ParserSpec::KimiCodingUsageV1 => {
+            Ok(vec![parse_kimi_coding_usage(id, name, &result.stdout)])
         }
+        ParserSpec::BigmodelQuotaLimitJsonV1 => Ok(vec![parse_bigmodel_quota_limit_json(
+            id,
+            name,
+            &result.stdout,
+        )]),
         ParserSpec::JsonMapping { .. } => Ok(vec![error_provider(
             id,
             name,
@@ -249,6 +281,7 @@ fn parse_command_output(
         Ok(mut providers) => {
             for provider in &mut providers {
                 apply_window_label_overrides(provider, window_label_overrides);
+                apply_visible_windows(provider, visible_window_ids);
                 provider.source = "command".to_string();
                 if provider.diagnostics.is_none() {
                     provider.diagnostics = Some(diagnostics.clone());
@@ -265,6 +298,19 @@ fn parse_command_output(
             Some(command_path),
         )],
     }
+}
+
+fn apply_visible_windows(provider: &mut ProviderSnapshot, visible_window_ids: &[String]) {
+    if visible_window_ids.is_empty() {
+        return;
+    }
+
+    provider.windows.retain(|window| {
+        visible_window_ids.iter().any(|visible| {
+            let visible = visible.trim();
+            !visible.is_empty() && (visible == window.id || visible == window.label)
+        })
+    });
 }
 
 fn apply_window_label_overrides(
@@ -372,6 +418,7 @@ mod tests {
             &node_command("fake_provider_snapshot.js"),
             &ParserSpec::ProviderSnapshot,
             &HashMap::new(),
+            &[],
         );
 
         assert_eq!(providers.len(), 1);
@@ -387,6 +434,7 @@ mod tests {
             &node_command("fake_app_snapshot.js"),
             &ParserSpec::AppSnapshot,
             &HashMap::new(),
+            &[],
         );
 
         assert_eq!(providers.len(), 1);
@@ -401,10 +449,14 @@ mod tests {
             &node_command("fake_error.js"),
             &ParserSpec::ProviderSnapshot,
             &HashMap::new(),
+            &[],
         );
 
         assert_eq!(providers[0].status, "error");
-        assert_eq!(providers[0].diagnostics.as_ref().unwrap().exit_code, Some(7));
+        assert_eq!(
+            providers[0].diagnostics.as_ref().unwrap().exit_code,
+            Some(7)
+        );
     }
 
     #[test]
@@ -418,10 +470,14 @@ mod tests {
             &command,
             &ParserSpec::ProviderSnapshot,
             &HashMap::new(),
+            &[],
         );
 
         assert_eq!(providers[0].status, "error");
-        assert_eq!(providers[0].diagnostics.as_ref().unwrap().timed_out, Some(true));
+        assert_eq!(
+            providers[0].diagnostics.as_ref().unwrap().timed_out,
+            Some(true)
+        );
     }
 
     #[test]
@@ -432,6 +488,7 @@ mod tests {
             &node_command("fake_invalid_json.js"),
             &ParserSpec::ProviderSnapshot,
             &HashMap::new(),
+            &[],
         );
 
         assert_eq!(providers[0].status, "error");
@@ -445,9 +502,9 @@ mod tests {
     #[test]
     fn missing_env_var_returns_error_without_secret() {
         let mut command = node_command("fake_provider_snapshot.js");
-        command.args.push(
-            "Authorization: Bearer ${env:QUOTABARWIN_TEST_MISSING_SECRET}".to_string(),
-        );
+        command
+            .args
+            .push("Authorization: Bearer ${env:QUOTABARWIN_TEST_MISSING_SECRET}".to_string());
 
         let providers = run_command_provider(
             "env",
@@ -455,6 +512,7 @@ mod tests {
             &command,
             &ParserSpec::ProviderSnapshot,
             &HashMap::new(),
+            &[],
         );
 
         assert_eq!(providers[0].status, "error");
@@ -474,6 +532,7 @@ mod tests {
             &node_command("fake_provider_snapshot.js"),
             &ParserSpec::ProviderSnapshot,
             &overrides,
+            &[],
         );
 
         assert_eq!(providers[0].windows[0].label, "Custom label");
@@ -490,8 +549,28 @@ mod tests {
             &node_command("fake_provider_snapshot.js"),
             &ParserSpec::ProviderSnapshot,
             &overrides,
+            &[],
         );
 
+        assert_eq!(providers[0].windows[0].label, "Team weekly");
+    }
+
+    #[test]
+    fn visible_windows_filter_after_label_overrides() {
+        let mut overrides = HashMap::new();
+        overrides.insert("weekly".to_string(), "Team weekly".to_string());
+        let visible = vec!["Team weekly".to_string()];
+
+        let providers = run_command_provider(
+            "fake",
+            "Fake",
+            &node_command("fake_provider_snapshot.js"),
+            &ParserSpec::ProviderSnapshot,
+            &overrides,
+            &visible,
+        );
+
+        assert_eq!(providers[0].windows.len(), 1);
         assert_eq!(providers[0].windows[0].label, "Team weekly");
     }
 
@@ -505,6 +584,37 @@ mod tests {
         let output = resolve_placeholders(&input).expect("resolve file");
 
         assert_eq!(output, "Authorization: Bearer secret-from-file");
+    }
+
+    #[test]
+    fn file_secret_placeholder_accepts_paths_with_spaces() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let secret_dir = temp.path().join("kimi secrets");
+        std::fs::create_dir(&secret_dir).expect("create secret dir");
+        let secret_path = secret_dir.join("api key.txt");
+        std::fs::write(&secret_path, "secret-from-spaced-path\n").expect("write secret");
+        let input = format!("Authorization: Bearer ${{file:{}}}", secret_path.display());
+
+        let output = resolve_placeholders(&input).expect("resolve file");
+
+        assert_eq!(output, "Authorization: Bearer secret-from-spaced-path");
+    }
+
+    #[test]
+    fn file_secret_placeholder_accepts_quoted_paths() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let secret_dir = temp.path().join("bigmodel secrets");
+        std::fs::create_dir(&secret_dir).expect("create secret dir");
+        let secret_path = secret_dir.join("api key.txt");
+        std::fs::write(&secret_path, "secret-from-quoted-path\n").expect("write secret");
+        let input = format!(
+            "Authorization: Bearer ${{file:\"{}\"}}",
+            secret_path.display()
+        );
+
+        let output = resolve_placeholders(&input).expect("resolve file");
+
+        assert_eq!(output, "Authorization: Bearer secret-from-quoted-path");
     }
 
     #[test]

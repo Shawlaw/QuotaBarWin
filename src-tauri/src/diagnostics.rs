@@ -1,4 +1,8 @@
-use std::{fs::{self, File}, io::Write, path::{Path, PathBuf}};
+use std::{
+    fs::{self, File},
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use serde::Serialize;
 use tauri::{command, AppHandle};
@@ -27,7 +31,9 @@ pub async fn export_diagnostics(app: AppHandle, output_path: String) -> Result<(
     let output_path = PathBuf::from(output_path);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let config = load_or_create_config(&config_path).map(|loaded| loaded.config).ok();
+        let config = load_or_create_config(&config_path)
+            .map(|loaded| loaded.config)
+            .ok();
         let config_value = config
             .as_ref()
             .and_then(|config| serde_json::to_value(config).ok());
@@ -133,7 +139,10 @@ fn read_redacted_log(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{io::{Cursor, Read}, path::PathBuf};
+    use std::{
+        io::{Cursor, Read},
+        path::PathBuf,
+    };
 
     #[test]
     fn diagnostics_export_redacts_secrets() {
