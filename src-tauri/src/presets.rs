@@ -33,6 +33,7 @@ pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
                 enabled: true,
                 auth_token: "${env:CODEX_ACCESS_TOKEN}".to_string(),
                 account_id: None,
+                proxy_url: None,
                 timeout_ms: 15000,
                 window_label_overrides: HashMap::from([
                     ("5h".to_string(), "5h".to_string()),
@@ -264,12 +265,14 @@ mod tests {
             ProviderConfig::Codex {
                 auth_token,
                 account_id,
+                proxy_url,
                 window_label_overrides,
                 visible_window_ids,
                 ..
             } => {
                 assert_eq!(auth_token, "${env:CODEX_ACCESS_TOKEN}");
                 assert_eq!(account_id, None);
+                assert_eq!(proxy_url, None);
                 assert_eq!(window_label_overrides.get("5h"), Some(&"5h".to_string()));
                 assert_eq!(
                     window_label_overrides.get("weekly"),

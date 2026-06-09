@@ -15,12 +15,13 @@ pub fn provider_snapshot(
     name: &str,
     auth_token: &str,
     account_id: Option<&str>,
+    proxy_url: Option<&str>,
     timeout_ms: u64,
     window_label_overrides: &HashMap<String, String>,
     visible_window_ids: &[String],
 ) -> ProviderSnapshot {
     let started = std::time::Instant::now();
-    match fetch_codex_usage(auth_token, account_id, timeout_ms) {
+    match fetch_codex_usage(auth_token, account_id, proxy_url, timeout_ms) {
         Ok(value) => {
             let mut provider = provider_from_usage_response(id, name, &value);
             provider.diagnostics = merge_diagnostics(
@@ -46,6 +47,7 @@ pub fn provider_snapshot(
 fn fetch_codex_usage(
     auth_token: &str,
     account_id: Option<&str>,
+    proxy_url: Option<&str>,
     timeout_ms: u64,
 ) -> Result<Value, String> {
     let token = resolve_secret_value(auth_token)?;
@@ -58,10 +60,7 @@ fn fetch_codex_usage(
         return Err("Codex access token is empty".to_string());
     }
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_millis(timeout_ms.max(1)))
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = build_codex_client(timeout_ms, proxy_url)?;
     let mut request = client
         .get(CODEX_USAGE_URL)
         .header("Authorization", format!("Bearer {token}"))
@@ -85,6 +84,28 @@ fn fetch_codex_usage(
     }
 
     response.json::<Value>().map_err(|error| error.to_string())
+}
+
+fn build_codex_client(
+    timeout_ms: u64,
+    proxy_url: Option<&str>,
+) -> Result<reqwest::blocking::Client, String> {
+    let mut builder =
+        reqwest::blocking::Client::builder().timeout(Duration::from_millis(timeout_ms.max(1)));
+
+    if let Some(proxy_url) = proxy_url.map(str::trim).filter(|value| !value.is_empty()) {
+        let proxy_url = resolve_secret_value(proxy_url)?;
+        let proxy_url = proxy_url.trim();
+        let proxy = reqwest::Proxy::all(proxy_url).map_err(|error| {
+            format!(
+                "Invalid Codex proxy URL: {}",
+                redact_sensitive(&error.to_string())
+            )
+        })?;
+        builder = builder.proxy(proxy);
+    }
+
+    builder.build().map_err(|error| error.to_string())
 }
 
 fn provider_from_usage_response(id: &str, name: &str, value: &Value) -> ProviderSnapshot {
@@ -355,5 +376,11 @@ mod tests {
             resolve_secret_value(&format!("${{file:\"{}\"}}", secret_path.display())).unwrap();
 
         assert_eq!(actual, "token-from-file");
+    }
+
+    #[test]
+    fn codex_client_accepts_http_and_socks_proxy_urls() {
+        build_codex_client(1000, Some("http://127.0.0.1:7890")).expect("http proxy client");
+        build_codex_client(1000, Some("socks5h://127.0.0.1:7890")).expect("socks proxy client");
     }
 }

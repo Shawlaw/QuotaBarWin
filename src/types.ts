@@ -78,6 +78,7 @@ export type CodexProviderConfig = {
   kind: "codex";
   authToken: string;
   accountId?: string | null;
+  proxyUrl?: string | null;
   timeoutMs: number;
   windowLabelOverrides?: Record<string, string>;
   visibleWindowIds?: string[];

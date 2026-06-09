@@ -51,6 +51,8 @@ pub enum ProviderConfig {
             alias = "account-id"
         )]
         account_id: Option<String>,
+        #[serde(default, rename = "proxyUrl", alias = "proxy_url", alias = "proxy-url")]
+        proxy_url: Option<String>,
         #[serde(rename = "timeoutMs", alias = "timeout_ms", alias = "timeout-ms")]
         timeout_ms: u64,
         #[serde(

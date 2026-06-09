@@ -33,6 +33,7 @@ const presets: ProviderPreset[] = [
       kind: "codex",
       authToken: "${env:CODEX_ACCESS_TOKEN}",
       accountId: null,
+      proxyUrl: null,
       timeoutMs: 15000,
       windowLabelOverrides: {
         "5h": "5h",
@@ -250,10 +251,22 @@ test("add_codex_preset_shows_token_fields", () => {
   expect(screen.getByText("Set CODEX_ACCESS_TOKEN")).toBeInTheDocument();
   expect(screen.getByLabelText("Auth token")).toHaveValue("${env:CODEX_ACCESS_TOKEN}");
   expect(screen.getByLabelText("ChatGPT account id")).toHaveValue("");
+  expect(screen.getByLabelText("Proxy URL")).toHaveValue("");
   expect(screen.getByLabelText("Window label overrides")).toHaveValue(
     "5h=5h\nweekly=Weekly limit"
   );
   expect(screen.getByLabelText("Displayed windows")).toHaveValue("5h\nWeekly limit");
+});
+
+test("codex_provider_proxy_url_is_editable", () => {
+  renderSettings(configWithProviders([]));
+
+  fireEvent.click(screen.getByRole("button", { name: "Codex Usage" }));
+  fireEvent.change(screen.getByLabelText("Proxy URL"), {
+    target: { value: "socks5h://127.0.0.1:7890" }
+  });
+
+  expect(screen.getByLabelText("Proxy URL")).toHaveValue("socks5h://127.0.0.1:7890");
 });
 
 test("settings_shows_config_storage_info_and_provider_guide", () => {

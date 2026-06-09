@@ -536,6 +536,18 @@ export function SettingsPanel({
                       />
                     </label>
                     <label>
+                      Proxy URL
+                      <input
+                        placeholder="Optional, e.g. http://127.0.0.1:7890 or socks5h://127.0.0.1:7890"
+                        value={provider.proxyUrl ?? ""}
+                        onChange={(event) =>
+                          updateCodexProvider(provider, {
+                            proxyUrl: event.currentTarget.value || null
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
                       Timeout
                       <input
                         type="number"
