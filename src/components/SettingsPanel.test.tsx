@@ -22,6 +22,26 @@ const commandProvider = {
 
 const presets: ProviderPreset[] = [
   {
+    id: "codex-usage",
+    displayName: "Codex Usage",
+    description: "Codex usage",
+    requiredEnvVars: ["CODEX_ACCESS_TOKEN"],
+    providerConfigTemplate: {
+      id: "codex",
+      name: "Codex",
+      enabled: true,
+      kind: "codex",
+      authToken: "${env:CODEX_ACCESS_TOKEN}",
+      accountId: null,
+      timeoutMs: 15000,
+      windowLabelOverrides: {
+        "5h": "5h",
+        weekly: "Weekly limit"
+      },
+      visibleWindowIds: ["5h", "Weekly limit"]
+    }
+  },
+  {
     id: "kimi-coding-usage",
     displayName: "Kimi Coding Usage",
     description: "Kimi usage",
@@ -116,7 +136,7 @@ function renderSettings(initialConfig = configWithProviders([commandProvider])) 
     id: provider.id,
     name: provider.name,
     status: "ok",
-    source: provider.kind === "command" ? "command" : "mock",
+    source: provider.kind === "codex" ? "native" : provider.kind === "command" ? "command" : "mock",
     updatedAt: null,
     windows: [],
     error: null,
@@ -217,8 +237,23 @@ test("settings_shows_add_provider", () => {
   renderSettings();
 
   expect(screen.getByRole("heading", { name: "Add Provider" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Codex Usage" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Kimi Coding Usage" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "OpenCode Quota Command" })).toBeInTheDocument();
+});
+
+test("add_codex_preset_shows_token_fields", () => {
+  renderSettings(configWithProviders([]));
+
+  fireEvent.click(screen.getByRole("button", { name: "Codex Usage" }));
+
+  expect(screen.getByText("Set CODEX_ACCESS_TOKEN")).toBeInTheDocument();
+  expect(screen.getByLabelText("Auth token")).toHaveValue("${env:CODEX_ACCESS_TOKEN}");
+  expect(screen.getByLabelText("ChatGPT account id")).toHaveValue("");
+  expect(screen.getByLabelText("Window label overrides")).toHaveValue(
+    "5h=5h\nweekly=Weekly limit"
+  );
+  expect(screen.getByLabelText("Displayed windows")).toHaveValue("5h\nWeekly limit");
 });
 
 test("settings_shows_config_storage_info_and_provider_guide", () => {

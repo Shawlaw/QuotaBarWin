@@ -24,6 +24,29 @@ pub struct ProviderPreset {
 pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
     vec![
         ProviderPreset {
+            id: "codex-usage".to_string(),
+            display_name: "Codex Usage".to_string(),
+            description: "Codex/OpenAI 5h and weekly quota via ChatGPT usage API".to_string(),
+            provider_config_template: ProviderConfig::Codex {
+                id: "codex".to_string(),
+                name: "Codex".to_string(),
+                enabled: true,
+                auth_token: "${env:CODEX_ACCESS_TOKEN}".to_string(),
+                account_id: None,
+                timeout_ms: 15000,
+                window_label_overrides: HashMap::from([
+                    ("5h".to_string(), "5h".to_string()),
+                    ("weekly".to_string(), "Weekly limit".to_string()),
+                ]),
+                visible_window_ids: vec!["5h".to_string(), "Weekly limit".to_string()],
+            },
+            required_env_vars: vec!["CODEX_ACCESS_TOKEN".to_string()],
+            docs: Some(
+                "Provide a ChatGPT/Codex access token, or change Auth token to ${file:C:\\path\\token.txt}."
+                    .to_string(),
+            ),
+        },
+        ProviderPreset {
             id: "kimi-coding-usage".to_string(),
             display_name: "Kimi Coding Usage".to_string(),
             description: "Kimi coding quota usage via curl".to_string(),
@@ -225,6 +248,40 @@ mod tests {
             .iter()
             .any(|arg| arg.contains("${env:KIMI_API_KEY}")));
         assert_eq!(parser, &ParserSpec::KimiCodingUsageV1);
+    }
+
+    #[test]
+    fn preset_codex_uses_native_token_provider() {
+        let preset = builtin_provider_presets()
+            .into_iter()
+            .find(|preset| preset.id == "codex-usage")
+            .expect("codex preset");
+
+        assert!(preset
+            .required_env_vars
+            .contains(&"CODEX_ACCESS_TOKEN".to_string()));
+        match preset.provider_config_template {
+            ProviderConfig::Codex {
+                auth_token,
+                account_id,
+                window_label_overrides,
+                visible_window_ids,
+                ..
+            } => {
+                assert_eq!(auth_token, "${env:CODEX_ACCESS_TOKEN}");
+                assert_eq!(account_id, None);
+                assert_eq!(window_label_overrides.get("5h"), Some(&"5h".to_string()));
+                assert_eq!(
+                    window_label_overrides.get("weekly"),
+                    Some(&"Weekly limit".to_string())
+                );
+                assert_eq!(
+                    visible_window_ids,
+                    vec!["5h".to_string(), "Weekly limit".to_string()]
+                );
+            }
+            _ => panic!("expected codex provider"),
+        }
     }
 
     #[test]

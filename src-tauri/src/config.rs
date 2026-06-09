@@ -37,6 +37,37 @@ pub enum ProviderConfig {
         name: String,
         enabled: bool,
     },
+    #[serde(rename = "codex")]
+    Codex {
+        id: String,
+        name: String,
+        enabled: bool,
+        #[serde(rename = "authToken", alias = "auth_token", alias = "auth-token")]
+        auth_token: String,
+        #[serde(
+            default,
+            rename = "accountId",
+            alias = "account_id",
+            alias = "account-id"
+        )]
+        account_id: Option<String>,
+        #[serde(rename = "timeoutMs", alias = "timeout_ms", alias = "timeout-ms")]
+        timeout_ms: u64,
+        #[serde(
+            default,
+            rename = "windowLabelOverrides",
+            alias = "window_label_overrides",
+            alias = "window-label-overrides"
+        )]
+        window_label_overrides: HashMap<String, String>,
+        #[serde(
+            default,
+            rename = "visibleWindowIds",
+            alias = "visible_window_ids",
+            alias = "visible-window-ids"
+        )]
+        visible_window_ids: Vec<String>,
+    },
     #[serde(rename = "command")]
     Command {
         id: String,

@@ -74,6 +74,24 @@ pub fn run_single_provider_config(provider: &crate::config::ProviderConfig) -> P
         crate::config::ProviderConfig::Mock { id, name, .. } => {
             crate::providers::mock::provider_snapshot(id, name, &[])
         }
+        crate::config::ProviderConfig::Codex {
+            id,
+            name,
+            auth_token,
+            account_id,
+            timeout_ms,
+            window_label_overrides,
+            visible_window_ids,
+            ..
+        } => crate::providers::codex::provider_snapshot(
+            id,
+            name,
+            auth_token,
+            account_id.as_deref(),
+            *timeout_ms,
+            window_label_overrides,
+            visible_window_ids,
+        ),
         crate::config::ProviderConfig::Command {
             id,
             name,

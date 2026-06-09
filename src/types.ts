@@ -62,13 +62,25 @@ export type ConfigStorageInfo = {
   portableMarkerPath: string;
 };
 
-export type ProviderConfig = MockProviderConfig | CommandProviderConfig;
+export type ProviderConfig = MockProviderConfig | CodexProviderConfig | CommandProviderConfig;
 
 export type MockProviderConfig = {
   id: string;
   name: string;
   enabled: boolean;
   kind: "mock";
+};
+
+export type CodexProviderConfig = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  kind: "codex";
+  authToken: string;
+  accountId?: string | null;
+  timeoutMs: number;
+  windowLabelOverrides?: Record<string, string>;
+  visibleWindowIds?: string[];
 };
 
 export type CommandProviderConfig = {

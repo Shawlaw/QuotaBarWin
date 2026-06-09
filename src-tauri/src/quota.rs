@@ -9,7 +9,7 @@ use tauri::AppHandle;
 
 use crate::command_provider::run_command_provider;
 use crate::config::{config_path_for_app, load_or_create_config, ProviderConfig};
-use crate::providers::mock;
+use crate::providers::{codex, mock};
 
 static SNAPSHOT_CACHE: OnceLock<Mutex<Option<AppSnapshot>>> = OnceLock::new();
 static REFRESH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -124,6 +124,24 @@ fn run_provider_config(
         ProviderConfig::Mock { id, name, enabled } if enabled => {
             vec![mock::provider_snapshot(&id, &name, recovery_messages)]
         }
+        ProviderConfig::Codex {
+            id,
+            name,
+            enabled,
+            auth_token,
+            account_id,
+            timeout_ms,
+            window_label_overrides,
+            visible_window_ids,
+        } if enabled => vec![codex::provider_snapshot(
+            &id,
+            &name,
+            &auth_token,
+            account_id.as_deref(),
+            timeout_ms,
+            &window_label_overrides,
+            &visible_window_ids,
+        )],
         ProviderConfig::Command {
             id,
             name,
@@ -146,7 +164,9 @@ fn run_provider_config(
 
 fn provider_config_id(provider: &ProviderConfig) -> &str {
     match provider {
-        ProviderConfig::Mock { id, .. } | ProviderConfig::Command { id, .. } => id,
+        ProviderConfig::Mock { id, .. }
+        | ProviderConfig::Codex { id, .. }
+        | ProviderConfig::Command { id, .. } => id,
     }
 }
 

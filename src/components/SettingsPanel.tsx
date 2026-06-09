@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type {
   AppConfig,
+  CodexProviderConfig,
   CommandProviderConfig,
   ConfigStorageInfo,
   ParserSpec,
@@ -27,6 +28,8 @@ type ProviderTextDraft = {
   windowLabelOverrides?: string;
   visibleWindowIds?: string;
 };
+
+type WindowConfigProvider = CommandProviderConfig | CodexProviderConfig;
 
 function updateProvider(
   config: AppConfig,
@@ -176,14 +179,14 @@ export function SettingsPanel({
     }));
   }
 
-  function windowLabelOverridesText(provider: CommandProviderConfig): string {
+  function windowLabelOverridesText(provider: WindowConfigProvider): string {
     return (
       textDrafts[provider.id]?.windowLabelOverrides ??
       labelOverridesToText(provider.windowLabelOverrides)
     );
   }
 
-  function visibleWindowIdsText(provider: CommandProviderConfig): string {
+  function visibleWindowIdsText(provider: WindowConfigProvider): string {
     return textDrafts[provider.id]?.visibleWindowIds ?? visibleWindowsToText(provider.visibleWindowIds);
   }
 
@@ -205,6 +208,17 @@ export function SettingsPanel({
     onChange(
       updateProvider(config, provider.id, (current) =>
         current.kind === "command" ? { ...current, ...patch } : current
+      )
+    );
+  }
+
+  function updateCodexProvider(
+    provider: CodexProviderConfig,
+    patch: Partial<CodexProviderConfig>
+  ) {
+    onChange(
+      updateProvider(config, provider.id, (current) =>
+        current.kind === "codex" ? { ...current, ...patch } : current
       )
     );
   }
@@ -487,6 +501,87 @@ export function SettingsPanel({
                       Set {envVar}
                     </p>
                   ))}
+                {provider.kind === "codex" ? (
+                  <div className="command-fields">
+                    <label>
+                      Name
+                      <input
+                        value={provider.name}
+                        onChange={(event) =>
+                          updateCodexProvider(provider, { name: event.currentTarget.value })
+                        }
+                      />
+                    </label>
+                    <label className="args-field">
+                      Auth token
+                      <textarea
+                        rows={3}
+                        placeholder={"Paste a token, ${env:CODEX_ACCESS_TOKEN}, or ${file:C:\\Secrets\\codex-token.txt}"}
+                        value={provider.authToken}
+                        onChange={(event) =>
+                          updateCodexProvider(provider, { authToken: event.currentTarget.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      ChatGPT account id
+                      <input
+                        placeholder="Optional"
+                        value={provider.accountId ?? ""}
+                        onChange={(event) =>
+                          updateCodexProvider(provider, {
+                            accountId: event.currentTarget.value || null
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Timeout
+                      <input
+                        type="number"
+                        min={100}
+                        value={provider.timeoutMs}
+                        onChange={(event) =>
+                          updateCodexProvider(provider, {
+                            timeoutMs: Number(event.currentTarget.value)
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="args-field">
+                      Window label overrides
+                      <textarea
+                        rows={4}
+                        placeholder={"window-id=Display name\n5h=5h\nweekly=Weekly limit"}
+                        value={windowLabelOverridesText(provider)}
+                        onChange={(event) => {
+                          setProviderTextDraft(
+                            provider.id,
+                            "windowLabelOverrides",
+                            event.currentTarget.value
+                          );
+                          updateCodexProvider(provider, {
+                            windowLabelOverrides: textToLabelOverrides(event.currentTarget.value)
+                          });
+                        }}
+                      />
+                    </label>
+                    <label className="args-field">
+                      Displayed windows
+                      <textarea
+                        rows={3}
+                        placeholder={"Leave empty to show all\n5h\nweekly\nWeekly limit"}
+                        value={visibleWindowIdsText(provider)}
+                        onChange={(event) => {
+                          setProviderTextDraft(provider.id, "visibleWindowIds", event.currentTarget.value);
+                          updateCodexProvider(provider, {
+                            visibleWindowIds: textToVisibleWindows(event.currentTarget.value)
+                          });
+                        }}
+                      />
+                    </label>
+                  </div>
+                ) : null}
                 {provider.kind === "command" ? (
                   <div className="command-fields">
                 <label>
