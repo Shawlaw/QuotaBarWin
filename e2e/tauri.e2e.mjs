@@ -219,7 +219,7 @@ function writeE2eConfig() {
     configPath,
     JSON.stringify(
       {
-        schemaVersion: 5,
+        schemaVersion: 6,
         refreshIntervalSeconds: 300,
         displayMode: "remaining",
         lowQuotaWarningThreshold: 20,
@@ -233,7 +233,7 @@ function writeE2eConfig() {
             enabled: true
           },
           {
-            kind: "command",
+            kind: "script",
             id: "fixture-cli",
             name: "Fixture CLI",
             enabled: true,
@@ -244,12 +244,12 @@ function writeE2eConfig() {
               env: {},
               timeoutMs: 2000
             },
-            parser: { type: "provider-snapshot" },
+            output: { type: "provider-snapshot-v1" },
             windowLabelOverrides: {},
             visibleWindowIds: []
           },
           {
-            kind: "command",
+            kind: "script",
             id: "slow-cli",
             name: "Slow CLI",
             enabled: false,
@@ -260,7 +260,7 @@ function writeE2eConfig() {
               env: {},
               timeoutMs: 50
             },
-            parser: { type: "provider-snapshot" },
+            output: { type: "provider-snapshot-v1" },
             windowLabelOverrides: {},
             visibleWindowIds: []
           }
