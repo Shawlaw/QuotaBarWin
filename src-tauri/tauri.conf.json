@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "QuotaBarWin",
+        "title": "QuotaBarWin V0.0.0",
         "label": "main",
         "width": 760,
         "height": 620
