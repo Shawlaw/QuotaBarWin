@@ -264,6 +264,7 @@ export function SettingsPanel({
           <input
             type="number"
             min={1}
+            data-testid="refresh-interval-input"
             value={config.refreshIntervalSeconds}
             onChange={(event) =>
               onChange({
@@ -277,6 +278,7 @@ export function SettingsPanel({
         <label>
           Display mode
           <select
+            data-testid="display-mode-select"
             value={config.displayMode}
             onChange={(event) =>
               onChange({
@@ -295,6 +297,7 @@ export function SettingsPanel({
             type="number"
             min={0}
             max={100}
+            data-testid="low-quota-warning-input"
             value={config.lowQuotaWarningThreshold}
             onChange={(event) =>
               onChange({
@@ -363,7 +366,7 @@ export function SettingsPanel({
           <p className="settings-empty">No providers yet. Add one to start monitoring quota.</p>
         ) : null}
         {config.providers.map((provider, providerIndex) => (
-          <article className="settings-provider" key={provider.id}>
+          <article className="settings-provider" key={provider.id} data-testid={`settings-provider-${provider.id}`}>
             <div className="settings-provider__header">
               <label>
                 <input
@@ -384,6 +387,7 @@ export function SettingsPanel({
               <button
                 type="button"
                 className="button-secondary"
+                data-testid={`edit-provider-${provider.id}`}
                 onClick={() =>
                   setExpandedProviders((current) => ({
                     ...current,
@@ -396,6 +400,7 @@ export function SettingsPanel({
               <button
                 type="button"
                 className="button-ghost"
+                data-testid={`more-provider-${provider.id}`}
                 onClick={() =>
                   setExpandedProviderActions((current) => ({
                     ...current,
@@ -427,6 +432,7 @@ export function SettingsPanel({
                 <button
                   type="button"
                   className="button-danger button-compact"
+                  data-testid={`remove-provider-${provider.id}`}
                   onClick={() => {
                     if (window.confirm(`Remove provider ${provider.name}?`)) {
                       onChange(removeProvider(config, provider.id));
@@ -651,6 +657,7 @@ export function SettingsPanel({
                   <button
                     type="button"
                     className="button-secondary"
+                    data-testid={`test-provider-${provider.id}`}
                     onClick={async () => {
                       const result = await onTestProvider(provider);
                       setTestResults((current) => ({ ...current, [provider.id]: result }));
