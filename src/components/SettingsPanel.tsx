@@ -804,8 +804,9 @@ export function SettingsPanel({
         </div>
       </section>
 
-      <details className="settings-section settings-advanced" data-testid="advanced-settings-section">
+      <details className="settings-advanced" data-testid="advanced-settings-section">
         <summary>Advanced</summary>
+        <div className="settings-section">
         <details className="settings-info" aria-label="Configuration storage">
           <summary>
             Configuration storage
@@ -937,6 +938,7 @@ export function SettingsPanel({
             </section>
           </div>
         </details>
+        </div>
       </details>
 
       <div className="fixed-save-bar" data-testid="fixed-save-bar">

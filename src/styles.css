@@ -450,6 +450,11 @@ button:disabled {
   justify-content: flex-start;
 }
 
+.settings-advanced {
+  display: grid;
+  gap: 12px;
+}
+
 .settings-guide summary,
 .settings-advanced > summary,
 .settings-info > summary {
