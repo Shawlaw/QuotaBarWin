@@ -122,6 +122,12 @@ function QuotaWindowRow({
   lowQuotaWarningThreshold: number;
 }) {
   const displayedPercent = displayPercentForWindow(window, displayMode);
+  const opacityPercent =
+    window.remainingPercent !== null && window.remainingPercent !== undefined
+      ? window.remainingPercent
+      : window.usedPercent !== null && window.usedPercent !== undefined
+        ? 100 - window.usedPercent
+        : null;
   const status = windowStatus(window, lowQuotaWarningThreshold);
   const resetText = formatQuotaReset(window);
 
@@ -142,7 +148,7 @@ function QuotaWindowRow({
       {displayedPercent !== null ? (
         <ProgressBar
           percent={displayedPercent}
-          opacityPercent={displayedPercent}
+          opacityPercent={opacityPercent}
           label={`${providerName} ${window.label} ${displayMode}`}
           tone={status === "warning" ? "warning" : "normal"}
         />

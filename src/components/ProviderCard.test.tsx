@@ -60,11 +60,24 @@ test("provider_card_renders_used_percent_when_display_mode_is_used", () => {
 });
 
 test("provider_card_fades_used_mode_opacity_as_usage_increases", () => {
-  render(<ProviderCard provider={provider} displayMode="used" />);
+  const { rerender } = render(<ProviderCard provider={provider} displayMode="used" />);
   const fill = screen.getByRole("progressbar", { name: "Codex Mock 5h window used" }).firstElementChild;
 
   expect(fill).toHaveStyle({ width: "28%" });
-  expect(fill).toHaveStyle({ opacity: "0.352" });
+  expect(fill).toHaveStyle({ opacity: "0.748" }); // opacity follows remaining percent (72), not used percent (28)
+
+  rerender(
+    <ProviderCard
+      provider={{
+        ...provider,
+        windows: [{ ...provider.windows[0], usedPercent: 80, remainingPercent: 20 }]
+      }}
+      displayMode="used"
+    />
+  );
+
+  expect(fill).toHaveStyle({ width: "80%" });
+  expect(fill).toHaveStyle({ opacity: "0.28" }); // 0.1 + 20 * 0.009
 });
 
 test("provider_card_renders_provider_refresh_time", () => {
