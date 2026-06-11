@@ -98,15 +98,41 @@ pub fn clamp_snapshot_percentages(provider: &mut ProviderSnapshot) {
     }
 }
 
+fn merge_failed_provider_with_cache(
+    failed: ProviderSnapshot,
+    cached_providers: &[ProviderSnapshot],
+) -> ProviderSnapshot {
+    if let Some(cached) = cached_providers.iter().find(|p| p.id == failed.id) {
+        let mut fallback = cached.clone();
+        fallback.status = "stale".to_string();
+        fallback.error = failed.error;
+        fallback.diagnostics = failed.diagnostics;
+        fallback
+    } else {
+        failed
+    }
+}
+
 pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, String> {
     let _guard = refresh_lock()
         .lock()
         .map_err(|_| "Refresh lock poisoned".to_string())?;
     let loaded = load_or_create_config(path)?;
+    let cached = snapshot_cache()
+        .lock()
+        .map_err(|_| "Snapshot cache lock poisoned".to_string())?
+        .clone();
+    let old_providers = cached.as_ref().map(|s| s.providers.as_slice()).unwrap_or(&[]);
     let mut providers = Vec::new();
 
     for provider in loaded.config.providers {
-        providers.extend(run_provider_config(provider, &loaded.recovery_messages));
+        for result in run_provider_config(provider, &loaded.recovery_messages) {
+            if result.status == "error" {
+                providers.push(merge_failed_provider_with_cache(result, old_providers));
+            } else {
+                providers.push(result);
+            }
+        }
     }
 
     let snapshot = AppSnapshot {
@@ -247,6 +273,8 @@ pub fn refresh_provider_from_config_path(
                 .count()
         });
 
+    let cached_providers_before_remove = snapshot.providers.clone();
+
     snapshot.providers.retain(|provider| {
         provider.id != provider_id
             && !refreshed_provider_ids
@@ -255,9 +283,14 @@ pub fn refresh_provider_from_config_path(
     });
 
     for (offset, provider) in refreshed_providers.into_iter().enumerate() {
+        let final_provider = if provider.status == "error" {
+            merge_failed_provider_with_cache(provider, &cached_providers_before_remove)
+        } else {
+            provider
+        };
         snapshot
             .providers
-            .insert((insert_at + offset).min(snapshot.providers.len()), provider);
+            .insert((insert_at + offset).min(snapshot.providers.len()), final_provider);
     }
     snapshot.refreshed_at = refreshed_at;
 
