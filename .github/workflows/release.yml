@@ -33,7 +33,7 @@ jobs:
         run: npm run test -- --run
 
       - name: Test backend
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
       - name: Build Tauri app
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
