@@ -1,4 +1,4 @@
-export type ProviderStatus = "ok" | "warning" | "error" | "unknown";
+export type ProviderStatus = "ok" | "warning" | "error" | "stale" | "unknown";
 export type ConfidenceLevel = "exact" | "estimated" | "unknown";
 export type ProviderSource = "mock" | "command" | "native" | "script";
 
