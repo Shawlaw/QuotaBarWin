@@ -126,7 +126,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     let mut providers = Vec::new();
 
     for provider in loaded.config.providers {
-        for result in run_provider_config(provider, &loaded.recovery_messages) {
+        for result in run_provider_with_retry(provider, &loaded.recovery_messages, &[std::time::Duration::from_secs(1), std::time::Duration::from_secs(2)]) {
             if result.status == "error" {
                 providers.push(merge_failed_provider_with_cache(result, old_providers));
             } else {
@@ -146,6 +146,55 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
         .map_err(|_| "Snapshot cache lock poisoned".to_string())? = Some(snapshot.clone());
 
     Ok(snapshot)
+}
+
+fn is_retryable_error(providers: &[ProviderSnapshot]) -> bool {
+    providers.iter().any(|provider| {
+        if provider.status != "error" {
+            return false;
+        }
+        if provider
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.timed_out)
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        let error_text = provider
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .to_lowercase();
+        let stderr_text = provider
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.stderr.as_deref())
+            .unwrap_or("")
+            .to_lowercase();
+        let combined = format!("{error_text} {stderr_text}");
+        combined.contains("timed out")
+            || combined.contains("timeout")
+            || combined.contains("connection")
+            || combined.contains("connect")
+            || (combined.contains("codex usage api returned") && combined.contains(" 5"))
+    })
+}
+
+fn run_provider_with_retry(
+    provider: ProviderConfig,
+    recovery_messages: &[String],
+    delays: &[std::time::Duration],
+) -> Vec<ProviderSnapshot> {
+    let mut result = run_provider_config(provider.clone(), recovery_messages);
+    for delay in delays {
+        if !is_retryable_error(&result) {
+            break;
+        }
+        std::thread::sleep(*delay);
+        result = run_provider_config(provider.clone(), recovery_messages);
+    }
+    result
 }
 
 fn run_provider_config(
@@ -236,7 +285,7 @@ pub fn refresh_provider_from_config_path(
         .find(|provider| provider_config_id(provider) == provider_id)
         .cloned()
         .ok_or_else(|| format!("Provider {provider_id} was not found"))?;
-    let refreshed_providers = run_provider_config(provider, &loaded.recovery_messages);
+    let refreshed_providers = run_provider_with_retry(provider, &loaded.recovery_messages, &[std::time::Duration::from_secs(1), std::time::Duration::from_secs(2)]);
     let refreshed_provider_ids = refreshed_providers
         .iter()
         .map(|provider| provider.id.as_str())
@@ -750,5 +799,137 @@ mod tests {
         assert_eq!(snapshot.providers[0].status, "error");
         assert!(snapshot.providers[0].windows.is_empty());
         assert!(snapshot.providers[0].error.is_some());
+    }
+
+    #[test]
+    fn retryable_error_detects_timeout() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "command".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Command timed out".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn retryable_error_detects_connection_failure() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "native".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("error sending request: connection refused".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn retryable_error_detects_codex_5xx() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "native".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Codex usage API returned 503: service unavailable".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn non_retryable_error_rejects_empty_token() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "native".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Codex access token is empty".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(!is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn non_retryable_error_rejects_parse_failure() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "command".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Failed to parse command stdout: invalid JSON".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(!is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn non_retryable_error_rejects_auth_failure() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "native".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Codex usage API returned 401: unauthorized".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(!is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn retryable_provider_succeeds_on_second_attempt() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let marker = temp.path().join("marker.txt");
+
+        let retryable_provider = ProviderConfig::Command {
+            id: "retryable".to_string(),
+            name: "Retryable".to_string(),
+            enabled: true,
+            command: CommandSpec {
+                executable: "node".to_string(),
+                args: vec![
+                    "-e".to_string(),
+                    r#"const fs=require('fs');const m=process.argv[1];let c=0;try{c=parseInt(fs.readFileSync(m,'utf8'))}catch(e){};c++;fs.writeFileSync(m,String(c));if(c===1){process.stderr.write('timed out');process.exit(1)}console.log(JSON.stringify({id:'retryable',name:'Retryable',status:'ok',source:'command',updatedAt:'2026-06-08T10:00:00+08:00',windows:[{id:'weekly',label:'Weekly',used:1,limit:10,unit:'requests',usedPercent:10,remainingPercent:90,resetAt:null,confidence:'exact'}]}));"#.to_string(),
+                    marker.to_string_lossy().to_string(),
+                ],
+                cwd: None,
+                env: None,
+                timeout_ms: 2000,
+            },
+            parser: ParserSpec::ProviderSnapshot,
+            window_label_overrides: std::collections::HashMap::new(),
+            visible_window_ids: Vec::new(),
+        };
+
+        let result = run_provider_with_retry(
+            retryable_provider,
+            &[],
+            &[std::time::Duration::from_millis(10)],
+        );
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].status, "ok");
+        assert_eq!(result[0].windows[0].used, Some(1.0));
     }
 }
