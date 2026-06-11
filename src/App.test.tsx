@@ -50,15 +50,27 @@ const mocks = vi.hoisted(() => {
     getAppVersion: vi.fn(async () => "0.0.0"),
     getConfig: vi.fn(async () => config),
     getConfigStorageInfo: vi.fn(async () => configStorageInfo),
+    getNetworkProxy: vi.fn(async () => null),
     getProviderPresets: vi.fn(async () => []),
     listenForRefreshRequests: vi.fn(async () => () => undefined),
     listenForSingleInstance: vi.fn(async () => () => undefined),
     openConfigFolder: vi.fn(async () => undefined),
     openCustomProviderGuide: vi.fn(async () => undefined),
+    previewRemoteProvider: vi.fn(async () => {
+      throw new Error("Preview not available in browser preview");
+    }),
+    addRemoteProvider: vi.fn(async () => {
+      throw new Error("Add remote provider not available in browser preview");
+    }),
+    removeRemoteProvider: vi.fn(async () => undefined),
+    refreshRemoteProvider: vi.fn(async () => ({ id: "", available: false, newChecksum: null })),
+    checkRemoteUpdates: vi.fn(async () => []),
+    applyRemoteUpdate: vi.fn(async () => undefined),
     refreshProvider: vi.fn(async () => snapshot),
     refreshSnapshot: vi.fn(async () => snapshot),
     resetConfig: vi.fn(async () => config),
     saveConfig: vi.fn(async () => undefined),
+    setNetworkProxy: vi.fn(async () => undefined),
     setPortableMode: vi.fn(async () => configStorageInfo),
     testProvider: vi.fn(async () => snapshot.providers[0])
   };
