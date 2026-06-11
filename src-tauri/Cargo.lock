@@ -2867,10 +2867,12 @@ name = "quotabarwin"
 version = "0.0.0"
 dependencies = [
  "chrono",
+ "hex",
  "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

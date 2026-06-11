@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 6;
+use crate::proxy::ProxyConfig;
+
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 7;
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
 const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
@@ -26,6 +28,8 @@ pub struct AppConfig {
     pub launch_at_startup: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default)]
+    pub network_proxy: Option<ProxyConfig>,
     pub providers: Vec<ProviderConfig>,
 }
 
@@ -115,6 +119,41 @@ pub enum ProviderConfig {
         )]
         visible_window_ids: Vec<String>,
     },
+    #[serde(rename = "remote")]
+    Remote {
+        id: String,
+        name: String,
+        enabled: bool,
+        #[serde(rename = "manifestUrl", alias = "manifest_url", alias = "manifest-url")]
+        manifest_url: String,
+        #[serde(rename = "sourceUrl", alias = "source_url", alias = "source-url")]
+        source_url: String,
+        runtime: String,
+        #[serde(default, rename = "resolvedRuntime", alias = "resolved_runtime", alias = "resolved-runtime")]
+        resolved_runtime: Option<String>,
+        #[serde(default, rename = "proxyUrl", alias = "proxy_url", alias = "proxy-url")]
+        proxy_url: Option<String>,
+        #[serde(default, rename = "autoUpdate", alias = "auto_update", alias = "auto-update")]
+        auto_update: bool,
+        #[serde(rename = "updateIntervalSeconds", alias = "update_interval_seconds", alias = "update-interval-seconds", default = "default_update_interval_seconds")]
+        update_interval_seconds: u64,
+        #[serde(default, rename = "trustedChecksum", alias = "trusted_checksum", alias = "trusted-checksum")]
+        trusted_checksum: Option<String>,
+        #[serde(
+            default,
+            rename = "windowLabelOverrides",
+            alias = "window_label_overrides",
+            alias = "window-label-overrides"
+        )]
+        window_label_overrides: HashMap<String, String>,
+        #[serde(
+            default,
+            rename = "visibleWindowIds",
+            alias = "visible_window_ids",
+            alias = "visible-window-ids"
+        )]
+        visible_window_ids: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -170,6 +209,10 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
+fn default_update_interval_seconds() -> u64 {
+    3600
+}
+
 pub fn default_config() -> AppConfig {
     AppConfig {
         schema_version: CURRENT_CONFIG_SCHEMA_VERSION,
@@ -178,6 +221,7 @@ pub fn default_config() -> AppConfig {
         low_quota_warning_threshold: 20.0,
         launch_at_startup: false,
         log_level: default_log_level(),
+        network_proxy: None,
         providers: vec![ProviderConfig::Mock {
             id: "mock-codex".to_string(),
             name: "Codex Mock".to_string(),
@@ -418,6 +462,15 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         .unwrap_or(5);
     if version < 6 {
         value["schemaVersion"] = serde_json::json!(6);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(6);
+    if version < 7 {
+        value["networkProxy"] = serde_json::json!(null);
+        value["schemaVersion"] = serde_json::json!(7);
     }
 
     Ok(value)
@@ -667,6 +720,7 @@ mod tests {
             low_quota_warning_threshold: 15.0,
             launch_at_startup: true,
             log_level: "debug".to_string(),
+            network_proxy: None,
             providers: vec![ProviderConfig::Mock {
                 id: "mock".to_string(),
                 name: "Mock".to_string(),
@@ -729,6 +783,20 @@ mod tests {
                 "output": { "type": "provider-snapshot-v1" },
                 "windowLabelOverrides": {},
                 "visibleWindowIds": []
+            },
+            {
+                "kind": "remote",
+                "id": "remote-kimi",
+                "name": "Remote Kimi",
+                "enabled": true,
+                "manifestUrl": "https://example.com/provider.json",
+                "sourceUrl": "https://example.com/provider.cjs",
+                "runtime": "node",
+                "autoUpdate": true,
+                "updateIntervalSeconds": 1800,
+                "trustedChecksum": "sha256:abc123",
+                "windowLabelOverrides": {},
+                "visibleWindowIds": []
             }
         ]);
 
@@ -739,6 +807,7 @@ mod tests {
         assert!(matches!(parsed[1], ProviderConfig::Codex { .. }));
         assert!(matches!(parsed[2], ProviderConfig::Command { .. }));
         assert!(matches!(parsed[3], ProviderConfig::Script { .. }));
+        assert!(matches!(parsed[4], ProviderConfig::Remote { .. }));
     }
 
     #[test]
@@ -853,6 +922,7 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            network_proxy: None,
             providers: vec![ProviderConfig::Command {
                 id: "provider".to_string(),
                 name: "Provider".to_string(),

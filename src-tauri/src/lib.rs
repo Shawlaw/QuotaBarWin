@@ -1,3 +1,5 @@
+#![allow(dependency_on_unit_never_type_fallback)]
+
 mod app_info;
 mod command_provider;
 mod config;
@@ -7,9 +9,12 @@ mod parser;
 mod presets;
 #[cfg(test)]
 mod productization;
+mod proxy;
 mod providers;
 mod quota;
 mod redact;
+mod remote_provider;
+mod remote_provider_commands;
 mod tray;
 
 use tauri::{Emitter, Manager};
@@ -23,9 +28,14 @@ pub use config::{
 };
 pub use diagnostics::export_diagnostics;
 pub use presets::{get_provider_presets, test_provider};
+pub use proxy::{ProxyConfig, ProxyKind};
 pub use quota::{
     get_cached_snapshot, refresh_provider, refresh_snapshot, AppSnapshot, ProviderSnapshot,
     QuotaWindow,
+};
+pub use remote_provider_commands::{
+    add_remote_provider, apply_remote_update, check_remote_updates, get_network_proxy,
+    refresh_remote_provider, remove_remote_provider, set_network_proxy,
 };
 
 fn window_title(version: &str) -> String {
@@ -90,7 +100,14 @@ pub fn run() {
             refresh_snapshot,
             refresh_provider,
             get_cached_snapshot,
-            test_provider
+            test_provider,
+            get_network_proxy,
+            set_network_proxy,
+            add_remote_provider,
+            remove_remote_provider,
+            refresh_remote_provider,
+            check_remote_updates,
+            apply_remote_update
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

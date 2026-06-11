@@ -182,6 +182,8 @@ fn run_provider_config(
             &window_label_overrides,
             &visible_window_ids,
         ),
+        // Remote providers are materialized and executed separately; not yet wired here.
+        ProviderConfig::Remote { .. } => Vec::new(),
         _ => Vec::new(),
     }
 }
@@ -191,7 +193,8 @@ fn provider_config_id(provider: &ProviderConfig) -> &str {
         ProviderConfig::Mock { id, .. }
         | ProviderConfig::Codex { id, .. }
         | ProviderConfig::Command { id, .. }
-        | ProviderConfig::Script { id, .. } => id,
+        | ProviderConfig::Script { id, .. }
+        | ProviderConfig::Remote { id, .. } => id,
     }
 }
 
@@ -377,6 +380,7 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            network_proxy: None,
             providers: vec![ProviderConfig::Command {
                 id: "disabled".to_string(),
                 name: "Disabled".to_string(),
@@ -441,6 +445,7 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            network_proxy: None,
             providers: vec![
                 provider("provider-a", "Provider A", &counter_a),
                 provider("provider-b", "Provider B", &counter_b),

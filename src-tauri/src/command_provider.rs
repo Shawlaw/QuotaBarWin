@@ -177,6 +177,13 @@ pub fn run_single_provider_config(provider: &crate::config::ProviderConfig) -> P
         .into_iter()
         .next()
         .unwrap_or_else(|| error_provider(id, name, "Provider returned no snapshot", None, None)),
+        crate::config::ProviderConfig::Remote { id, name, .. } => error_provider(
+            id,
+            name,
+            "Remote provider execution is not yet integrated",
+            None,
+            None,
+        ),
     }
 }
 
