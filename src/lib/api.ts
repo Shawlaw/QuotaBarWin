@@ -6,7 +6,9 @@ import type {
   ConfigStorageInfo,
   ProviderConfig,
   ProviderPreset,
-  ProviderSnapshot
+  ProviderSnapshot,
+  ProxyConfig,
+  RemoteProviderConfig
 } from "../types";
 
 function hasTauriInternals(): boolean {
@@ -20,6 +22,7 @@ const fallbackConfig: AppConfig = {
   lowQuotaWarningThreshold: 20,
   launchAtStartup: false,
   logLevel: "info",
+  networkProxy: null,
   providers: [
     {
       id: "browser-preview",
@@ -230,6 +233,79 @@ export async function testProvider(provider: ProviderConfig): Promise<ProviderSn
   }
 
   return invoke<ProviderSnapshot>("test_provider", { provider });
+}
+
+export type UpdateInfo = {
+  id: string;
+  available: boolean;
+  newChecksum: string | null;
+};
+
+export async function getNetworkProxy(): Promise<ProxyConfig | null> {
+  if (!hasTauriInternals()) {
+    return null;
+  }
+
+  return invoke<ProxyConfig | null>("get_network_proxy");
+}
+
+export async function setNetworkProxy(proxy: ProxyConfig | null): Promise<void> {
+  if (!hasTauriInternals()) {
+    void proxy;
+    return;
+  }
+
+  return invoke<void>("set_network_proxy", { proxy });
+}
+
+export async function addRemoteProvider(
+  url: string,
+  proxyUrl: string | null,
+  autoUpdate: boolean
+): Promise<RemoteProviderConfig> {
+  if (!hasTauriInternals()) {
+    void url;
+    void proxyUrl;
+    void autoUpdate;
+    throw new Error("Adding remote providers is not available in browser preview");
+  }
+
+  return invoke<RemoteProviderConfig>("add_remote_provider", { url, proxyUrl, autoUpdate });
+}
+
+export async function removeRemoteProvider(id: string): Promise<void> {
+  if (!hasTauriInternals()) {
+    void id;
+    return;
+  }
+
+  return invoke<void>("remove_remote_provider", { id });
+}
+
+export async function refreshRemoteProvider(id: string): Promise<UpdateInfo> {
+  if (!hasTauriInternals()) {
+    void id;
+    return { id: "", available: false, newChecksum: null };
+  }
+
+  return invoke<UpdateInfo>("refresh_remote_provider", { id });
+}
+
+export async function checkRemoteUpdates(): Promise<UpdateInfo[]> {
+  if (!hasTauriInternals()) {
+    return [];
+  }
+
+  return invoke<UpdateInfo[]>("check_remote_updates");
+}
+
+export async function applyRemoteUpdate(id: string): Promise<void> {
+  if (!hasTauriInternals()) {
+    void id;
+    return;
+  }
+
+  return invoke<void>("apply_remote_update", { id });
 }
 
 export async function exportDiagnostics(outputPath: string): Promise<void> {

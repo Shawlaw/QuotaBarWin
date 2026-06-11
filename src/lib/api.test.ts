@@ -1,11 +1,17 @@
 import { afterEach, expect, test } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
+  addRemoteProvider,
+  checkRemoteUpdates,
   getCachedSnapshot,
   getConfig,
+  getNetworkProxy,
   refreshProvider,
+  refreshRemoteProvider,
   refreshSnapshot,
+  removeRemoteProvider,
   saveConfig,
+  setNetworkProxy,
   testProvider
 } from "./api";
 import type { AppConfig, AppSnapshot, ProviderConfig, ProviderSnapshot } from "../types";
@@ -19,6 +25,7 @@ const config: AppConfig = {
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
+  networkProxy: null,
   providers: [
     {
       kind: "mock",
@@ -110,4 +117,78 @@ test("api_passes_provider_and_config_payloads_to_ipc", async () => {
   expect(payloads.refresh_provider).toEqual({ providerId: "command" });
   expect(payloads.save_config).toEqual({ config });
   expect(payloads.test_provider).toEqual({ provider: commandProvider });
+});
+
+test("api_invokes_network_proxy_commands", async () => {
+  const payloads: Record<string, unknown> = {};
+  mockIPC((cmd, payload) => {
+    payloads[cmd] = payload;
+    if (cmd === "get_network_proxy") {
+      return { kind: "http", url: "http://proxy.example.com:8080" };
+    }
+    if (cmd === "set_network_proxy") {
+      return null;
+    }
+    throw new Error(`unexpected command ${cmd}`);
+  });
+
+  const proxy = await getNetworkProxy();
+  await setNetworkProxy({ kind: "socks5", url: "socks5://proxy.example.com:1080" });
+
+  expect(proxy).toEqual({ kind: "http", url: "http://proxy.example.com:8080" });
+  expect(payloads.set_network_proxy).toEqual({
+    proxy: { kind: "socks5", url: "socks5://proxy.example.com:1080" }
+  });
+});
+
+test("api_invokes_remote_provider_commands", async () => {
+  const payloads: Record<string, unknown> = {};
+  const remoteProvider = {
+    kind: "remote" as const,
+    id: "remote-kimi",
+    name: "Remote Kimi",
+    enabled: true,
+    manifestUrl: "https://example.com/provider.json",
+    sourceUrl: "https://example.com/provider.cjs",
+    runtime: "node",
+    autoUpdate: true,
+    updateIntervalSeconds: 3600
+  };
+  mockIPC((cmd, payload) => {
+    payloads[cmd] = payload;
+    if (cmd === "add_remote_provider") {
+      return remoteProvider;
+    }
+    if (cmd === "remove_remote_provider") {
+      return null;
+    }
+    if (cmd === "refresh_remote_provider") {
+      return { id: "remote-kimi", available: true, newChecksum: "sha256:abc" };
+    }
+    if (cmd === "check_remote_updates") {
+      return [{ id: "remote-kimi", available: true, newChecksum: "sha256:abc" }];
+    }
+    throw new Error(`unexpected command ${cmd}`);
+  });
+
+  await expect(
+    addRemoteProvider("https://example.com/provider.json", "http://proxy.example.com:8080", true)
+  ).resolves.toEqual(remoteProvider);
+  await expect(removeRemoteProvider("remote-kimi")).resolves.toBeNull();
+  await expect(refreshRemoteProvider("remote-kimi")).resolves.toEqual({
+    id: "remote-kimi",
+    available: true,
+    newChecksum: "sha256:abc"
+  });
+  await expect(checkRemoteUpdates()).resolves.toEqual([
+    { id: "remote-kimi", available: true, newChecksum: "sha256:abc" }
+  ]);
+
+  expect(payloads.add_remote_provider).toEqual({
+    url: "https://example.com/provider.json",
+    proxyUrl: "http://proxy.example.com:8080",
+    autoUpdate: true
+  });
+  expect(payloads.remove_remote_provider).toEqual({ id: "remote-kimi" });
+  expect(payloads.refresh_remote_provider).toEqual({ id: "remote-kimi" });
 });

@@ -1,6 +1,6 @@
 export type ProviderStatus = "ok" | "warning" | "error" | "stale" | "unknown";
 export type ConfidenceLevel = "exact" | "estimated" | "unknown";
-export type ProviderSource = "mock" | "command" | "native" | "script";
+export type ProviderSource = "mock" | "command" | "native" | "script" | "remote";
 
 export type QuotaWindow = {
   id: string;
@@ -50,6 +50,7 @@ export type AppConfig = {
   lowQuotaWarningThreshold: number;
   launchAtStartup?: boolean;
   logLevel?: "debug" | "info" | "warn" | "error" | string;
+  networkProxy?: ProxyConfig | null;
   providers: ProviderConfig[];
 };
 
@@ -66,7 +67,8 @@ export type ProviderConfig =
   | MockProviderConfig
   | CodexProviderConfig
   | CommandProviderConfig
-  | ScriptProviderConfig;
+  | ScriptProviderConfig
+  | RemoteProviderConfig;
 
 export type MockProviderConfig = {
   id: string;
@@ -106,6 +108,31 @@ export type ScriptProviderConfig = {
   kind: "script";
   command: CommandSpec;
   output: ScriptOutputSpec;
+  windowLabelOverrides?: Record<string, string>;
+  visibleWindowIds?: string[];
+};
+
+export type ProxyKind = "none" | "system" | "http" | "socks5";
+
+export type ProxyConfig = {
+  kind: ProxyKind;
+  url?: string | null;
+};
+
+export type RemoteProviderConfig = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  kind: "remote";
+  manifestUrl: string;
+  sourceUrl: string;
+  providerDir?: string | null;
+  runtime: string;
+  resolvedRuntime?: string | null;
+  proxyUrl?: string | null;
+  autoUpdate: boolean;
+  updateIntervalSeconds: number;
+  trustedChecksum?: string | null;
   windowLabelOverrides?: Record<string, string>;
   visibleWindowIds?: string[];
 };
