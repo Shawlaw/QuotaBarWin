@@ -98,15 +98,41 @@ pub fn clamp_snapshot_percentages(provider: &mut ProviderSnapshot) {
     }
 }
 
+fn merge_failed_provider_with_cache(
+    failed: ProviderSnapshot,
+    cached_providers: &[ProviderSnapshot],
+) -> ProviderSnapshot {
+    if let Some(cached) = cached_providers.iter().find(|p| p.id == failed.id) {
+        let mut fallback = cached.clone();
+        fallback.status = "stale".to_string();
+        fallback.error = failed.error;
+        fallback.diagnostics = failed.diagnostics;
+        fallback
+    } else {
+        failed
+    }
+}
+
 pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, String> {
     let _guard = refresh_lock()
         .lock()
         .map_err(|_| "Refresh lock poisoned".to_string())?;
     let loaded = load_or_create_config(path)?;
+    let cached = snapshot_cache()
+        .lock()
+        .map_err(|_| "Snapshot cache lock poisoned".to_string())?
+        .clone();
+    let old_providers = cached.as_ref().map(|s| s.providers.as_slice()).unwrap_or(&[]);
     let mut providers = Vec::new();
 
     for provider in loaded.config.providers {
-        providers.extend(run_provider_config(provider, &loaded.recovery_messages));
+        for result in run_provider_with_retry(provider, &loaded.recovery_messages, &[std::time::Duration::from_secs(1), std::time::Duration::from_secs(2)]) {
+            if result.status == "error" {
+                providers.push(merge_failed_provider_with_cache(result, old_providers));
+            } else {
+                providers.push(result);
+            }
+        }
     }
 
     let snapshot = AppSnapshot {
@@ -120,6 +146,55 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
         .map_err(|_| "Snapshot cache lock poisoned".to_string())? = Some(snapshot.clone());
 
     Ok(snapshot)
+}
+
+fn is_retryable_error(providers: &[ProviderSnapshot]) -> bool {
+    providers.iter().any(|provider| {
+        if provider.status != "error" {
+            return false;
+        }
+        if provider
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.timed_out)
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        let error_text = provider
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .to_lowercase();
+        let stderr_text = provider
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.stderr.as_deref())
+            .unwrap_or("")
+            .to_lowercase();
+        let combined = format!("{error_text} {stderr_text}");
+        combined.contains("timed out")
+            || combined.contains("timeout")
+            || combined.contains("connection")
+            || combined.contains("connect")
+            || (combined.contains("codex usage api returned") && combined.contains(" 5"))
+    })
+}
+
+fn run_provider_with_retry(
+    provider: ProviderConfig,
+    recovery_messages: &[String],
+    delays: &[std::time::Duration],
+) -> Vec<ProviderSnapshot> {
+    let mut result = run_provider_config(provider.clone(), recovery_messages);
+    for delay in delays {
+        if !is_retryable_error(&result) {
+            break;
+        }
+        std::thread::sleep(*delay);
+        result = run_provider_config(provider.clone(), recovery_messages);
+    }
+    result
 }
 
 fn run_provider_config(
@@ -213,7 +288,7 @@ pub fn refresh_provider_from_config_path(
         .find(|provider| provider_config_id(provider) == provider_id)
         .cloned()
         .ok_or_else(|| format!("Provider {provider_id} was not found"))?;
-    let refreshed_providers = run_provider_config(provider, &loaded.recovery_messages);
+    let refreshed_providers = run_provider_with_retry(provider, &loaded.recovery_messages, &[std::time::Duration::from_secs(1), std::time::Duration::from_secs(2)]);
     let refreshed_provider_ids = refreshed_providers
         .iter()
         .map(|provider| provider.id.as_str())
@@ -250,6 +325,8 @@ pub fn refresh_provider_from_config_path(
                 .count()
         });
 
+    let cached_providers_before_remove = snapshot.providers.clone();
+
     snapshot.providers.retain(|provider| {
         provider.id != provider_id
             && !refreshed_provider_ids
@@ -258,9 +335,14 @@ pub fn refresh_provider_from_config_path(
     });
 
     for (offset, provider) in refreshed_providers.into_iter().enumerate() {
+        let final_provider = if provider.status == "error" {
+            merge_failed_provider_with_cache(provider, &cached_providers_before_remove)
+        } else {
+            provider
+        };
         snapshot
             .providers
-            .insert((insert_at + offset).min(snapshot.providers.len()), provider);
+            .insert((insert_at + offset).min(snapshot.providers.len()), final_provider);
     }
     snapshot.refreshed_at = refreshed_at;
 
@@ -303,6 +385,7 @@ mod tests {
     use crate::config::{save_config_to_path, AppConfig, CommandSpec, ParserSpec};
 
     fn snapshot_from_config(config: AppConfig) -> AppSnapshot {
+        *snapshot_cache().lock().expect("lock") = None;
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
         save_config_to_path(&path, &config).expect("save config");
@@ -447,21 +530,21 @@ mod tests {
             log_level: "info".to_string(),
             network_proxy: None,
             providers: vec![
-                provider("provider-a", "Provider A", &counter_a),
-                provider("provider-b", "Provider B", &counter_b),
+                provider("stale-a", "Stale A", &counter_a),
+                provider("stale-b", "Stale B", &counter_b),
             ],
         };
         save_config_to_path(&path, &config).expect("save config");
 
         let initial = build_app_snapshot_from_config_path(&path).expect("initial snapshot");
         let refreshed =
-            refresh_provider_from_config_path(&path, "provider-a").expect("refresh provider");
+            refresh_provider_from_config_path(&path, "stale-a").expect("refresh provider");
 
         assert_eq!(initial.providers[0].windows[0].used, Some(1.0));
         assert_eq!(initial.providers[1].windows[0].used, Some(1.0));
-        assert_eq!(refreshed.providers[0].id, "provider-a");
+        assert_eq!(refreshed.providers[0].id, "stale-a");
         assert_eq!(refreshed.providers[0].windows[0].used, Some(2.0));
-        assert_eq!(refreshed.providers[1].id, "provider-b");
+        assert_eq!(refreshed.providers[1].id, "stale-b");
         assert_eq!(refreshed.providers[1].windows[0].used, Some(1.0));
     }
 
@@ -494,5 +577,364 @@ mod tests {
 
         assert_eq!(provider.windows[0].used_percent, Some(100.0));
         assert_eq!(provider.windows[0].remaining_percent, Some(0.0));
+    }
+
+    #[test]
+    fn refresh_provider_failure_falls_back_to_cached_snapshot() {
+        *snapshot_cache().lock().expect("lock") = None;
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let counter_a = temp.path().join("counter-a.txt");
+        let counter_b = temp.path().join("counter-b.txt");
+
+        let working_provider = |id: &str, name: &str, counter: &std::path::Path| {
+            ProviderConfig::Command {
+                id: id.to_string(),
+                name: name.to_string(),
+                enabled: true,
+                command: CommandSpec {
+                    executable: "node".to_string(),
+                    args: vec![
+                        "-e".to_string(),
+                        r#"const fs=require('node:fs');const [file,id,name]=process.argv.slice(1);const next=(Number(fs.existsSync(file)?fs.readFileSync(file,'utf8'):'0')||0)+1;fs.writeFileSync(file,String(next));console.log(JSON.stringify({id,name,status:'ok',source:'command',updatedAt:'2026-06-08T10:00:00+08:00',windows:[{id:'weekly',label:'Weekly',used:next,limit:10,unit:'requests',usedPercent:next,remainingPercent:100-next,resetAt:null,confidence:'exact'}]}));"#.to_string(),
+                        counter.to_string_lossy().to_string(),
+                        id.to_string(),
+                        name.to_string(),
+                    ],
+                    cwd: None,
+                    env: None,
+                    timeout_ms: 2000,
+                },
+                parser: ParserSpec::ProviderSnapshot,
+                window_label_overrides: std::collections::HashMap::new(),
+                visible_window_ids: Vec::new(),
+            }
+        };
+
+        let broken_provider = |id: &str, name: &str| {
+            ProviderConfig::Command {
+                id: id.to_string(),
+                name: name.to_string(),
+                enabled: true,
+                command: CommandSpec {
+                    executable: "node".to_string(),
+                    args: vec!["-e".to_string(), "process.stderr.write('boom');process.exit(1)".to_string()],
+                    cwd: None,
+                    env: None,
+                    timeout_ms: 2000,
+                },
+                parser: ParserSpec::ProviderSnapshot,
+                window_label_overrides: std::collections::HashMap::new(),
+                visible_window_ids: Vec::new(),
+            }
+        };
+
+        let config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![
+                working_provider("stale-a", "Stale A", &counter_a),
+                working_provider("stale-b", "Stale B", &counter_b),
+            ],
+        };
+        save_config_to_path(&path, &config).expect("save config");
+
+        let initial = build_app_snapshot_from_config_path(&path).expect("initial snapshot");
+        assert_eq!(initial.providers[0].status, "ok");
+        assert_eq!(initial.providers[0].windows[0].used, Some(1.0));
+
+        let broken_config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![
+                broken_provider("stale-a", "Stale A"),
+                working_provider("stale-b", "Stale B", &counter_b),
+            ],
+        };
+        save_config_to_path(&path, &broken_config).expect("save broken config");
+
+        let refreshed = refresh_provider_from_config_path(&path, "stale-a").expect("refresh provider");
+
+        assert_eq!(refreshed.providers[0].id, "stale-a");
+        assert_eq!(refreshed.providers[0].status, "stale");
+        assert!(!refreshed.providers[0].windows.is_empty());
+        assert!(refreshed.providers[0].error.is_some());
+        assert_eq!(refreshed.providers[1].id, "stale-b");
+        assert_eq!(refreshed.providers[1].status, "ok");
+        assert!(!refreshed.providers[1].windows.is_empty());
+    }
+
+    #[test]
+    fn build_snapshot_failure_falls_back_to_cached_provider_data() {
+        *snapshot_cache().lock().expect("lock") = None;
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let counter_a = temp.path().join("counter-a.txt");
+        let counter_b = temp.path().join("counter-b.txt");
+
+        let working_provider = |id: &str, name: &str, counter: &std::path::Path| {
+            ProviderConfig::Command {
+                id: id.to_string(),
+                name: name.to_string(),
+                enabled: true,
+                command: CommandSpec {
+                    executable: "node".to_string(),
+                    args: vec![
+                        "-e".to_string(),
+                        r#"const fs=require('node:fs');const [file,id,name]=process.argv.slice(1);const next=(Number(fs.existsSync(file)?fs.readFileSync(file,'utf8'):'0')||0)+1;fs.writeFileSync(file,String(next));console.log(JSON.stringify({id,name,status:'ok',source:'command',updatedAt:'2026-06-08T10:00:00+08:00',windows:[{id:'weekly',label:'Weekly',used:next,limit:10,unit:'requests',usedPercent:next,remainingPercent:100-next,resetAt:null,confidence:'exact'}]}));"#.to_string(),
+                        counter.to_string_lossy().to_string(),
+                        id.to_string(),
+                        name.to_string(),
+                    ],
+                    cwd: None,
+                    env: None,
+                    timeout_ms: 2000,
+                },
+                parser: ParserSpec::ProviderSnapshot,
+                window_label_overrides: std::collections::HashMap::new(),
+                visible_window_ids: Vec::new(),
+            }
+        };
+
+        let broken_provider = |id: &str, name: &str| {
+            ProviderConfig::Command {
+                id: id.to_string(),
+                name: name.to_string(),
+                enabled: true,
+                command: CommandSpec {
+                    executable: "node".to_string(),
+                    args: vec!["-e".to_string(), "process.stderr.write('boom');process.exit(1)".to_string()],
+                    cwd: None,
+                    env: None,
+                    timeout_ms: 2000,
+                },
+                parser: ParserSpec::ProviderSnapshot,
+                window_label_overrides: std::collections::HashMap::new(),
+                visible_window_ids: Vec::new(),
+            }
+        };
+
+        let config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![
+                working_provider("stale-a", "Stale A", &counter_a),
+                working_provider("stale-b", "Stale B", &counter_b),
+            ],
+        };
+        save_config_to_path(&path, &config).expect("save config");
+
+        let initial = build_app_snapshot_from_config_path(&path).expect("initial snapshot");
+        assert_eq!(initial.providers[0].windows[0].used, Some(1.0));
+        assert_eq!(initial.providers[1].windows[0].used, Some(1.0));
+
+        let broken_config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![
+                broken_provider("stale-a", "Stale A"),
+                working_provider("stale-b", "Stale B", &counter_b),
+            ],
+        };
+        save_config_to_path(&path, &broken_config).expect("save broken config");
+
+        let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");
+
+        assert_eq!(snapshot.providers[0].id, "stale-a");
+        assert_eq!(snapshot.providers[0].status, "stale");
+        assert!(!snapshot.providers[0].windows.is_empty());
+        assert!(snapshot.providers[0].error.is_some());
+        assert_eq!(snapshot.providers[1].id, "stale-b");
+        assert_eq!(snapshot.providers[1].status, "ok");
+        assert!(!snapshot.providers[1].windows.is_empty());
+    }
+
+    #[test]
+    fn refresh_provider_failure_without_cache_returns_error() {
+        *snapshot_cache().lock().expect("lock") = None;
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+
+        let broken_provider = ProviderConfig::Command {
+            id: "broken".to_string(),
+            name: "Broken".to_string(),
+            enabled: true,
+            command: CommandSpec {
+                executable: "node".to_string(),
+                args: vec!["-e".to_string(), "process.stderr.write('boom');process.exit(1)".to_string()],
+                cwd: None,
+                env: None,
+                timeout_ms: 2000,
+            },
+            parser: ParserSpec::ProviderSnapshot,
+            window_label_overrides: std::collections::HashMap::new(),
+            visible_window_ids: Vec::new(),
+        };
+
+        let config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![broken_provider],
+        };
+        save_config_to_path(&path, &config).expect("save config");
+
+        let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");
+
+        assert_eq!(snapshot.providers[0].id, "broken");
+        assert_eq!(snapshot.providers[0].status, "error");
+        assert!(snapshot.providers[0].windows.is_empty());
+        assert!(snapshot.providers[0].error.is_some());
+    }
+
+    #[test]
+    fn retryable_error_detects_timeout() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "command".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Command timed out".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn retryable_error_detects_connection_failure() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "native".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("error sending request: connection refused".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn retryable_error_detects_codex_5xx() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "native".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Codex usage API returned 503: service unavailable".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn non_retryable_error_rejects_empty_token() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "native".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Codex access token is empty".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(!is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn non_retryable_error_rejects_parse_failure() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "command".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Failed to parse command stdout: invalid JSON".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(!is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn non_retryable_error_rejects_auth_failure() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "native".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Codex usage API returned 401: unauthorized".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(!is_retryable_error(&providers));
+    }
+
+    #[test]
+    fn retryable_provider_succeeds_on_second_attempt() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let marker = temp.path().join("marker.txt");
+
+        let retryable_provider = ProviderConfig::Command {
+            id: "retryable".to_string(),
+            name: "Retryable".to_string(),
+            enabled: true,
+            command: CommandSpec {
+                executable: "node".to_string(),
+                args: vec![
+                    "-e".to_string(),
+                    r#"const fs=require('fs');const m=process.argv[1];let c=0;try{c=parseInt(fs.readFileSync(m,'utf8'))}catch(e){};c++;fs.writeFileSync(m,String(c));if(c===1){process.stderr.write('timed out');process.exit(1)}console.log(JSON.stringify({id:'retryable',name:'Retryable',status:'ok',source:'command',updatedAt:'2026-06-08T10:00:00+08:00',windows:[{id:'weekly',label:'Weekly',used:1,limit:10,unit:'requests',usedPercent:10,remainingPercent:90,resetAt:null,confidence:'exact'}]}));"#.to_string(),
+                    marker.to_string_lossy().to_string(),
+                ],
+                cwd: None,
+                env: None,
+                timeout_ms: 2000,
+            },
+            parser: ParserSpec::ProviderSnapshot,
+            window_label_overrides: std::collections::HashMap::new(),
+            visible_window_ids: Vec::new(),
+        };
+
+        let result = run_provider_with_retry(
+            retryable_provider,
+            &[],
+            &[std::time::Duration::from_millis(10)],
+        );
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].status, "ok");
+        assert_eq!(result[0].windows[0].used, Some(1.0));
     }
 }

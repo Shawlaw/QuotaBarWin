@@ -32,7 +32,7 @@ export function ProviderCard({
   const refreshedAt = provider.updatedAt ?? provider.diagnostics?.checkedAt ?? null;
   const effectiveStatus = calculateProviderStatus(provider, lowQuotaWarningThreshold);
   const statusLabel = `status ${effectiveStatus}`;
-  const canOpenStatus = effectiveStatus === "warning" || effectiveStatus === "error";
+  const canOpenStatus = effectiveStatus === "warning" || effectiveStatus === "error" || effectiveStatus === "stale";
   const hiddenWindowCount = Math.max(0, provider.windows.length - MAX_COLLAPSED_WINDOWS);
   const visibleWindows = expanded
     ? provider.windows
@@ -77,7 +77,12 @@ export function ProviderCard({
           ) : null}
         </div>
       </div>
-      {provider.error ? <p className="provider-error">Refresh failed · {provider.error}</p> : null}
+      {provider.error ? (
+        <p className="provider-error">
+          {effectiveStatus === "stale" ? "Showing cached data · " : "Refresh failed · "}
+          {provider.error}
+        </p>
+      ) : null}
       {statusOpen ? <StatusDetails error={provider.error} diagnostics={provider.diagnostics} /> : null}
       <div className="window-list">
         {visibleWindows.length > 0 ? (

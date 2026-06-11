@@ -20,6 +20,7 @@ type SettingsPanelProps = {
   presets: ProviderPreset[];
   onChange: (config: AppConfig) => void;
   onOpenConfigFolder: () => Promise<void>;
+  onOpenCustomProviderGuide: () => Promise<void>;
   onResetConfig: () => Promise<void>;
   onSave: () => void | Promise<void>;
   onSetPortableMode: (enabled: boolean) => void;
@@ -166,6 +167,7 @@ export function SettingsPanel({
   presets,
   onChange,
   onOpenConfigFolder,
+  onOpenCustomProviderGuide,
   onResetConfig,
   onSave,
   onSetPortableMode,
@@ -863,81 +865,19 @@ export function SettingsPanel({
             </button>
           </div>
         </details>
-        <details className="settings-guide">
-          <summary>Custom Provider guide</summary>
-          <div className="guide-grid">
-            <section>
-              <h3>Start here</h3>
-              <p>
-                QuotaBarWin runs your local script and reads the JSON it prints. The script can be
-                Node.js, Python, PowerShell, or any executable.
-              </p>
-              <p>
-                Add Custom Script Provider, set Executable to node, set Args to your provider.cjs
-                file path, then use Test Provider.
-              </p>
-            </section>
-            <section>
-              <h3>Minimum output</h3>
-              <pre>{`{
-  "status": "ok",
-  "windows": [
-    {
-      "id": "weekly",
-      "label": "Weekly",
-      "used": 12,
-      "limit": 100,
-      "unit": "requests",
-      "confidence": "exact"
-    }
-  ]
-}`}</pre>
-            </section>
-            <section>
-              <h3>Node.js example</h3>
-              <pre>{`console.log(JSON.stringify({
-  status: "ok",
-  windows: [
-    {
-      id: "weekly",
-      label: "Weekly",
-      used: 12,
-      limit: 100,
-      unit: "requests",
-      confidence: "exact"
-    }
-  ]
-}));`}</pre>
-            </section>
-            <section>
-              <h3>Fields</h3>
-              <dl>
-                <dt>Executable</dt>
-                <dd>node, python, powershell, or a full executable path.</dd>
-                <dt>Args</dt>
-                <dd>One command-line argument per line, usually the script path.</dd>
-                <dt>Secrets</dt>
-                <dd>Use {"${env:API_KEY}"} or {"${file:C:\\Secrets\\api-key.txt}"}.</dd>
-              </dl>
-            </section>
-            <section>
-              <h3>What QuotaBarWin adds</h3>
-              <p>
-                Provider id, provider name, source, diagnostics, and percentages are filled in when
-                possible. Secret values are hidden from diagnostics.
-              </p>
-            </section>
-            <section>
-              <h3>Output contract</h3>
-              <dl>
-                <dt>provider-snapshot-v1</dt>
-                <dd>One provider result. This is the usual choice.</dd>
-                <dt>app-snapshot-v1</dt>
-                <dd>Multiple providers in one AppSnapshot JSON object.</dd>
-              </dl>
-            </section>
+        <section className="settings-guide" aria-label="Custom Provider Guide">
+          <div>
+            <h3>Custom Provider Guide</h3>
+            <p>Open the full local guide in your browser for examples and the output contract.</p>
           </div>
-        </details>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => void onOpenCustomProviderGuide()}
+          >
+            Open Guide
+          </button>
+        </section>
         </div>
       </details>
 

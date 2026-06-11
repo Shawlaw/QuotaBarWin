@@ -77,6 +77,10 @@ describe("calculateProviderStatus", () => {
     ).toBe("warning");
   });
 
+  test('marks_stale_when_provider_status_is_stale', () => {
+    expect(calculateProviderStatus({ ...provider, status: 'stale' }, 20)).toBe('stale');
+  });
+
   test("marks_error_when_provider_refresh_failed", () => {
     expect(calculateProviderStatus({ ...provider, status: "error", error: "failed" }, 20)).toBe("error");
   });

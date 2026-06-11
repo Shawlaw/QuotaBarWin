@@ -181,6 +181,12 @@ button:disabled {
   color: #87520b;
 }
 
+.global-status--stale {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+
 .global-status--error {
   background: #fff1f1;
   border-color: #fecaca;
@@ -241,6 +247,11 @@ button:disabled {
 .status--warning {
   background: #fff7df;
   color: #87520b;
+}
+
+.status--stale {
+  background: #eef2ff;
+  color: #4338ca;
 }
 
 .status--error {
@@ -372,6 +383,13 @@ button:disabled {
   gap: 10px;
 }
 
+.settings-guide {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
 .settings-section-title {
   align-items: center;
   display: flex;
@@ -386,6 +404,12 @@ button:disabled {
   font-size: 18px;
   font-weight: 650;
   margin: 0;
+}
+
+.settings-guide p {
+  color: #64748b;
+  font-size: 13px;
+  margin: 4px 0 0;
 }
 
 .settings-section-title span {
@@ -455,7 +479,6 @@ button:disabled {
   gap: 12px;
 }
 
-.settings-guide summary,
 .settings-advanced > summary,
 .settings-info > summary {
   cursor: pointer;
@@ -473,52 +496,6 @@ button:disabled {
 .settings-info > summary span {
   color: #64748b;
   font-size: 12px;
-}
-
-.guide-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  margin-top: 12px;
-}
-
-.guide-grid section {
-  display: grid;
-  gap: 8px;
-}
-
-.guide-grid p,
-.guide-grid dl {
-  color: #4b5563;
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 0;
-}
-
-.guide-grid dl {
-  display: grid;
-  gap: 4px 10px;
-  grid-template-columns: auto 1fr;
-}
-
-.guide-grid dt {
-  color: #334155;
-  font-weight: 650;
-}
-
-.guide-grid dd {
-  margin: 0;
-}
-
-.guide-grid pre {
-  background: #111827;
-  border-radius: 6px;
-  color: #e5e7eb;
-  font-size: 12px;
-  line-height: 1.45;
-  margin: 0;
-  overflow: auto;
-  padding: 12px;
 }
 
 .settings-panel label {
@@ -727,6 +704,11 @@ button:disabled {
   .settings-provider__header {
     align-items: stretch;
     grid-template-columns: 1fr;
+  }
+
+  .settings-guide {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .fixed-save-bar {

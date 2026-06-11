@@ -203,6 +203,15 @@ export async function openConfigFolder(): Promise<void> {
   return invoke<void>("open_config_folder");
 }
 
+export async function openCustomProviderGuide(): Promise<void> {
+  if (!hasTauriInternals()) {
+    window.open("/custom-provider-guide.html", "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  return invoke<void>("open_custom_provider_guide");
+}
+
 export async function getProviderPresets(): Promise<ProviderPreset[]> {
   if (!hasTauriInternals()) {
     return [];

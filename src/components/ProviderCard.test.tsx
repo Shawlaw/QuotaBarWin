@@ -200,3 +200,20 @@ test("provider_card_collapses_and_expands_many_quota_windows", () => {
   fireEvent.click(screen.getByRole("button", { name: "Show less" }));
   expect(screen.getAllByTestId(/quota-row-codex-mock-window-/)).toHaveLength(4);
 });
+
+test('provider_card_renders_stale_state_with_cached_data', () => {
+  render(
+    <ProviderCard
+      provider={{
+        ...provider,
+        status: 'stale',
+        error: 'Refresh failed · Connection timed out',
+        updatedAt: null
+      }}
+    />
+  );
+
+  expect(screen.getByText('status stale')).toBeInTheDocument();
+  expect(screen.getByText(/Connection timed out/)).toBeInTheDocument();
+  expect(screen.getByText('72% remaining')).toBeInTheDocument();
+});
