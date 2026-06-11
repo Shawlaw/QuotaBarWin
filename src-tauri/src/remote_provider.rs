@@ -61,6 +61,18 @@ pub struct UpdateInfo {
     pub new_checksum: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteProviderPreview {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub runtime: String,
+    pub source_url: String,
+    pub required_env_vars: Vec<String>,
+    pub checksum: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RemoteProviderError {
     Network(String),

@@ -10,7 +10,7 @@ use crate::{
     remote_provider::{
         cache_remote_provider, check_update, compute_checksum, fetch_manifest, fetch_source,
         load_cached_manifest, load_cached_meta, resolve_runtime, resolve_source_url,
-        validate_runtime_executable, UpdateInfo,
+        validate_runtime_executable, RemoteProviderPreview, UpdateInfo,
     },
 };
 
@@ -59,6 +59,34 @@ pub async fn set_network_proxy(app: AppHandle, proxy: Option<ProxyConfig>) -> Re
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn preview_remote_provider(
+    app: AppHandle,
+    url: String,
+    proxy_url: Option<String>,
+) -> Result<RemoteProviderPreview, String> {
+    let path = config_path_for_app(&app)?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let loaded = load_or_create_config(&path)?;
+        let global_proxy = loaded.config.network_proxy.clone();
+        let manifest = fetch_manifest(&url, proxy_url.as_deref(), global_proxy.as_ref(), FETCH_TIMEOUT)
+            .map_err(|error| error.to_string())?;
+        let source_url = resolve_source_url(&url, &manifest.entry);
+        Ok(RemoteProviderPreview {
+            id: manifest.id,
+            name: manifest.display_name,
+            description: manifest.description,
+            runtime: manifest.runtime,
+            source_url,
+            required_env_vars: manifest.required_env_vars,
+            checksum: manifest.checksums.source,
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]

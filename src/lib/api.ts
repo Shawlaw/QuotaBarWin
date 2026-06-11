@@ -258,6 +258,29 @@ export async function setNetworkProxy(proxy: ProxyConfig | null): Promise<void> 
   return invoke<void>("set_network_proxy", { proxy });
 }
 
+export type RemoteProviderPreview = {
+  id: string;
+  name: string;
+  description?: string | null;
+  runtime: string;
+  sourceUrl: string;
+  requiredEnvVars: string[];
+  checksum: string | null;
+};
+
+export async function previewRemoteProvider(
+  url: string,
+  proxyUrl: string | null
+): Promise<RemoteProviderPreview> {
+  if (!hasTauriInternals()) {
+    void url;
+    void proxyUrl;
+    throw new Error("Remote provider preview is not available in browser preview");
+  }
+
+  return invoke<RemoteProviderPreview>("preview_remote_provider", { url, proxyUrl });
+}
+
 export async function addRemoteProvider(
   url: string,
   proxyUrl: string | null,
