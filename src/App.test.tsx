@@ -54,6 +54,7 @@ const mocks = vi.hoisted(() => {
     listenForRefreshRequests: vi.fn(async () => () => undefined),
     listenForSingleInstance: vi.fn(async () => () => undefined),
     openConfigFolder: vi.fn(async () => undefined),
+    openCustomProviderGuide: vi.fn(async () => undefined),
     refreshProvider: vi.fn(async () => snapshot),
     refreshSnapshot: vi.fn(async () => snapshot),
     resetConfig: vi.fn(async () => config),
