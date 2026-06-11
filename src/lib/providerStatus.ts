@@ -34,6 +34,10 @@ export function calculateProviderStatus(
   provider: ProviderSnapshot,
   lowQuotaWarningThreshold = 20
 ): ProviderSnapshot["status"] {
+  if (provider.status === "stale") {
+    return "stale";
+  }
+
   if (provider.status === "error" || provider.error) {
     return "error";
   }

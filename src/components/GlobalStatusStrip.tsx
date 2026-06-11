@@ -28,6 +28,7 @@ export function GlobalStatusStrip({
   }));
   const error = statuses.find(({ status }) => status === "error");
   const warning = statuses.find(({ status }) => status === "warning");
+  const stale = statuses.find(({ status }) => status === "stale");
 
   if (error) {
     return (
@@ -48,6 +49,14 @@ export function GlobalStatusStrip({
     return (
       <section className="global-status global-status--warning" data-testid="global-status-strip">
         {warning.provider.name} needs attention{window ? ` · ${window.label} below ${lowQuotaWarningThreshold}%` : ""}
+      </section>
+    );
+  }
+
+  if (stale) {
+    return (
+      <section className="global-status global-status--stale" data-testid="global-status-strip">
+        {stale.provider.name} data is stale
       </section>
     );
   }
