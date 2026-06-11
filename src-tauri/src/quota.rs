@@ -7,7 +7,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::command_provider::{run_command_provider, run_script_provider};
+use crate::command_provider::{run_command_provider, run_remote_provider, run_script_provider};
 use crate::config::{config_path_for_app, load_or_create_config, ProviderConfig};
 use crate::providers::{codex, mock};
 
@@ -257,8 +257,25 @@ fn run_provider_config(
             &window_label_overrides,
             &visible_window_ids,
         ),
-        // Remote providers are materialized and executed separately; not yet wired here.
-        ProviderConfig::Remote { .. } => Vec::new(),
+        ProviderConfig::Remote {
+            id,
+            name,
+            enabled,
+            provider_dir,
+            runtime,
+            resolved_runtime,
+            window_label_overrides,
+            visible_window_ids,
+            ..
+        } if enabled => run_remote_provider(
+            &id,
+            &name,
+            provider_dir.as_deref(),
+            &runtime,
+            resolved_runtime.as_deref(),
+            &window_label_overrides,
+            &visible_window_ids,
+        ),
         _ => Vec::new(),
     }
 }
@@ -636,6 +653,7 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            network_proxy: None,
             providers: vec![
                 working_provider("stale-a", "Stale A", &counter_a),
                 working_provider("stale-b", "Stale B", &counter_b),
@@ -654,6 +672,7 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            network_proxy: None,
             providers: vec![
                 broken_provider("stale-a", "Stale A"),
                 working_provider("stale-b", "Stale B", &counter_b),
@@ -729,6 +748,7 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            network_proxy: None,
             providers: vec![
                 working_provider("stale-a", "Stale A", &counter_a),
                 working_provider("stale-b", "Stale B", &counter_b),
@@ -747,6 +767,7 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            network_proxy: None,
             providers: vec![
                 broken_provider("stale-a", "Stale A"),
                 working_provider("stale-b", "Stale B", &counter_b),
@@ -794,6 +815,7 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            network_proxy: None,
             providers: vec![broken_provider],
         };
         save_config_to_path(&path, &config).expect("save config");

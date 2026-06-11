@@ -136,6 +136,7 @@ pub async fn add_remote_provider(
             enabled: true,
             manifest_url: url,
             source_url,
+            provider_dir: Some(provider_dir.clone()),
             runtime: manifest.runtime.clone(),
             resolved_runtime: Some(resolved_runtime_path.display().to_string()),
             proxy_url,

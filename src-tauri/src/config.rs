@@ -130,6 +130,8 @@ pub enum ProviderConfig {
         manifest_url: String,
         #[serde(rename = "sourceUrl", alias = "source_url", alias = "source-url")]
         source_url: String,
+        #[serde(default, rename = "providerDir", alias = "provider_dir", alias = "provider-dir")]
+        provider_dir: Option<PathBuf>,
         runtime: String,
         #[serde(default, rename = "resolvedRuntime", alias = "resolved_runtime", alias = "resolved-runtime")]
         resolved_runtime: Option<String>,

@@ -19,6 +19,7 @@ use crate::{
         clamp_snapshot_percentages, AppSnapshot, ProviderDiagnostics, ProviderSnapshot, QuotaWindow,
     },
     redact::redact_sensitive,
+    remote_provider::{ensure_runtime_resolved, load_cached_manifest},
 };
 
 #[derive(Debug, Clone)]
@@ -114,6 +115,97 @@ pub fn run_script_provider(
     }
 }
 
+pub fn provider_error_snapshot(id: &str, name: &str, error: &str) -> ProviderSnapshot {
+    error_provider(id, name, error, None, None)
+}
+
+fn remote_source_file_name(entry: &str) -> String {
+    entry
+        .rsplit('/')
+        .next()
+        .unwrap_or(entry)
+        .rsplit('\\')
+        .next()
+        .unwrap_or(entry)
+        .to_string()
+}
+
+pub fn run_remote_provider(
+    id: &str,
+    name: &str,
+    provider_dir: Option<&std::path::Path>,
+    runtime: &str,
+    resolved_runtime: Option<&str>,
+    window_label_overrides: &HashMap<String, String>,
+    visible_window_ids: &[String],
+) -> Vec<ProviderSnapshot> {
+    let Some(provider_dir) = provider_dir else {
+        return vec![provider_error_snapshot(id, name, "Remote provider cache directory is missing")];
+    };
+
+    let manifest = match load_cached_manifest(provider_dir) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            return vec![provider_error_snapshot(
+                id,
+                name,
+                &format!("Failed to load remote provider manifest: {error}"),
+            )];
+        }
+    };
+
+    let executable = match ensure_runtime_resolved(runtime, resolved_runtime) {
+        Ok(path) => path,
+        Err(error) => {
+            return vec![provider_error_snapshot(
+                id,
+                name,
+                &format!("Failed to resolve runtime: {error}"),
+            )];
+        }
+    };
+
+    let source_name = remote_source_file_name(&manifest.entry);
+    let source_path = provider_dir.join(&source_name);
+    if !source_path.exists() {
+        return vec![provider_error_snapshot(
+            id,
+            name,
+            &format!("Cached source file does not exist: {}", source_path.display()),
+        )];
+    }
+
+    let output = match serde_json::from_value::<ScriptOutputSpec>(serde_json::json!({
+        "type": manifest.output
+    })) {
+        Ok(output) => output,
+        Err(error) => {
+            return vec![provider_error_snapshot(
+                id,
+                name,
+                &format!("Unsupported remote provider output type '{}': {error}", manifest.output),
+            )];
+        }
+    };
+
+    let command = CommandSpec {
+        executable: executable.display().to_string(),
+        args: vec![source_path.display().to_string()],
+        cwd: Some(provider_dir.display().to_string()),
+        env: None,
+        timeout_ms: 15_000,
+    };
+
+    run_script_provider(
+        id,
+        name,
+        &command,
+        &output,
+        window_label_overrides,
+        visible_window_ids,
+    )
+}
+
 pub fn run_single_provider_config(provider: &crate::config::ProviderConfig) -> ProviderSnapshot {
     match provider {
         crate::config::ProviderConfig::Mock { id, name, .. } => {
@@ -177,13 +269,27 @@ pub fn run_single_provider_config(provider: &crate::config::ProviderConfig) -> P
         .into_iter()
         .next()
         .unwrap_or_else(|| error_provider(id, name, "Provider returned no snapshot", None, None)),
-        crate::config::ProviderConfig::Remote { id, name, .. } => error_provider(
+        crate::config::ProviderConfig::Remote {
             id,
             name,
-            "Remote provider execution is not yet integrated",
-            None,
-            None,
-        ),
+            provider_dir,
+            runtime,
+            resolved_runtime,
+            window_label_overrides,
+            visible_window_ids,
+            ..
+        } => run_remote_provider(
+            id,
+            name,
+            provider_dir.as_deref(),
+            runtime,
+            resolved_runtime.as_deref(),
+            window_label_overrides,
+            visible_window_ids,
+        )
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| provider_error_snapshot(id, name, "Provider returned no snapshot")),
     }
 }
 
