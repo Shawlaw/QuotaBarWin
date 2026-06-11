@@ -333,6 +333,7 @@ mod tests {
     use crate::config::{save_config_to_path, AppConfig, CommandSpec, ParserSpec};
 
     fn snapshot_from_config(config: AppConfig) -> AppSnapshot {
+        *snapshot_cache().lock().expect("lock") = None;
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
         save_config_to_path(&path, &config).expect("save config");
@@ -522,5 +523,232 @@ mod tests {
 
         assert_eq!(provider.windows[0].used_percent, Some(100.0));
         assert_eq!(provider.windows[0].remaining_percent, Some(0.0));
+    }
+
+    #[test]
+    fn refresh_provider_failure_falls_back_to_cached_snapshot() {
+        *snapshot_cache().lock().expect("lock") = None;
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let counter_a = temp.path().join("counter-a.txt");
+        let counter_b = temp.path().join("counter-b.txt");
+
+        let working_provider = |id: &str, name: &str, counter: &std::path::Path| {
+            ProviderConfig::Command {
+                id: id.to_string(),
+                name: name.to_string(),
+                enabled: true,
+                command: CommandSpec {
+                    executable: "node".to_string(),
+                    args: vec![
+                        "-e".to_string(),
+                        r#"const fs=require('node:fs');const [file,id,name]=process.argv.slice(1);const next=(Number(fs.existsSync(file)?fs.readFileSync(file,'utf8'):'0')||0)+1;fs.writeFileSync(file,String(next));console.log(JSON.stringify({id,name,status:'ok',source:'command',updatedAt:'2026-06-08T10:00:00+08:00',windows:[{id:'weekly',label:'Weekly',used:next,limit:10,unit:'requests',usedPercent:next,remainingPercent:100-next,resetAt:null,confidence:'exact'}]}));"#.to_string(),
+                        counter.to_string_lossy().to_string(),
+                        id.to_string(),
+                        name.to_string(),
+                    ],
+                    cwd: None,
+                    env: None,
+                    timeout_ms: 2000,
+                },
+                parser: ParserSpec::ProviderSnapshot,
+                window_label_overrides: std::collections::HashMap::new(),
+                visible_window_ids: Vec::new(),
+            }
+        };
+
+        let broken_provider = |id: &str, name: &str| {
+            ProviderConfig::Command {
+                id: id.to_string(),
+                name: name.to_string(),
+                enabled: true,
+                command: CommandSpec {
+                    executable: "node".to_string(),
+                    args: vec!["-e".to_string(), "process.stderr.write('boom');process.exit(1)".to_string()],
+                    cwd: None,
+                    env: None,
+                    timeout_ms: 2000,
+                },
+                parser: ParserSpec::ProviderSnapshot,
+                window_label_overrides: std::collections::HashMap::new(),
+                visible_window_ids: Vec::new(),
+            }
+        };
+
+        let config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![
+                working_provider("provider-a", "Provider A", &counter_a),
+                working_provider("provider-b", "Provider B", &counter_b),
+            ],
+        };
+        save_config_to_path(&path, &config).expect("save config");
+
+        let initial = build_app_snapshot_from_config_path(&path).expect("initial snapshot");
+        assert_eq!(initial.providers[0].status, "ok");
+        assert_eq!(initial.providers[0].windows[0].used, Some(1.0));
+
+        let broken_config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![
+                broken_provider("provider-a", "Provider A"),
+                working_provider("provider-b", "Provider B", &counter_b),
+            ],
+        };
+        save_config_to_path(&path, &broken_config).expect("save broken config");
+
+        let refreshed = refresh_provider_from_config_path(&path, "provider-a").expect("refresh provider");
+
+        assert_eq!(refreshed.providers[0].id, "provider-a");
+        assert_eq!(refreshed.providers[0].status, "stale");
+        assert_eq!(refreshed.providers[0].windows[0].used, Some(1.0));
+        assert!(refreshed.providers[0].error.is_some());
+        assert_eq!(refreshed.providers[1].id, "provider-b");
+        assert_eq!(refreshed.providers[1].status, "ok");
+        assert!(!refreshed.providers[1].windows.is_empty());
+    }
+
+    #[test]
+    fn build_snapshot_failure_falls_back_to_cached_provider_data() {
+        *snapshot_cache().lock().expect("lock") = None;
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let counter_a = temp.path().join("counter-a.txt");
+        let counter_b = temp.path().join("counter-b.txt");
+
+        let working_provider = |id: &str, name: &str, counter: &std::path::Path| {
+            ProviderConfig::Command {
+                id: id.to_string(),
+                name: name.to_string(),
+                enabled: true,
+                command: CommandSpec {
+                    executable: "node".to_string(),
+                    args: vec![
+                        "-e".to_string(),
+                        r#"const fs=require('node:fs');const [file,id,name]=process.argv.slice(1);const next=(Number(fs.existsSync(file)?fs.readFileSync(file,'utf8'):'0')||0)+1;fs.writeFileSync(file,String(next));console.log(JSON.stringify({id,name,status:'ok',source:'command',updatedAt:'2026-06-08T10:00:00+08:00',windows:[{id:'weekly',label:'Weekly',used:next,limit:10,unit:'requests',usedPercent:next,remainingPercent:100-next,resetAt:null,confidence:'exact'}]}));"#.to_string(),
+                        counter.to_string_lossy().to_string(),
+                        id.to_string(),
+                        name.to_string(),
+                    ],
+                    cwd: None,
+                    env: None,
+                    timeout_ms: 2000,
+                },
+                parser: ParserSpec::ProviderSnapshot,
+                window_label_overrides: std::collections::HashMap::new(),
+                visible_window_ids: Vec::new(),
+            }
+        };
+
+        let broken_provider = |id: &str, name: &str| {
+            ProviderConfig::Command {
+                id: id.to_string(),
+                name: name.to_string(),
+                enabled: true,
+                command: CommandSpec {
+                    executable: "node".to_string(),
+                    args: vec!["-e".to_string(), "process.stderr.write('boom');process.exit(1)".to_string()],
+                    cwd: None,
+                    env: None,
+                    timeout_ms: 2000,
+                },
+                parser: ParserSpec::ProviderSnapshot,
+                window_label_overrides: std::collections::HashMap::new(),
+                visible_window_ids: Vec::new(),
+            }
+        };
+
+        let config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![
+                working_provider("provider-a", "Provider A", &counter_a),
+                working_provider("provider-b", "Provider B", &counter_b),
+            ],
+        };
+        save_config_to_path(&path, &config).expect("save config");
+
+        let initial = build_app_snapshot_from_config_path(&path).expect("initial snapshot");
+        assert_eq!(initial.providers[0].windows[0].used, Some(1.0));
+        assert_eq!(initial.providers[1].windows[0].used, Some(1.0));
+
+        let broken_config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![
+                broken_provider("provider-a", "Provider A"),
+                working_provider("provider-b", "Provider B", &counter_b),
+            ],
+        };
+        save_config_to_path(&path, &broken_config).expect("save broken config");
+
+        let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");
+
+        assert_eq!(snapshot.providers[0].id, "provider-a");
+        assert_eq!(snapshot.providers[0].status, "stale");
+        assert_eq!(snapshot.providers[0].windows[0].used, Some(1.0));
+        assert!(snapshot.providers[0].error.is_some());
+        assert_eq!(snapshot.providers[1].id, "provider-b");
+        assert_eq!(snapshot.providers[1].status, "ok");
+        assert_eq!(snapshot.providers[1].windows[0].used, Some(2.0));
+    }
+
+    #[test]
+    fn refresh_provider_failure_without_cache_returns_error() {
+        *snapshot_cache().lock().expect("lock") = None;
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+
+        let broken_provider = ProviderConfig::Command {
+            id: "broken".to_string(),
+            name: "Broken".to_string(),
+            enabled: true,
+            command: CommandSpec {
+                executable: "node".to_string(),
+                args: vec!["-e".to_string(), "process.stderr.write('boom');process.exit(1)".to_string()],
+                cwd: None,
+                env: None,
+                timeout_ms: 2000,
+            },
+            parser: ParserSpec::ProviderSnapshot,
+            window_label_overrides: std::collections::HashMap::new(),
+            visible_window_ids: Vec::new(),
+        };
+
+        let config = AppConfig {
+            schema_version: 5,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            providers: vec![broken_provider],
+        };
+        save_config_to_path(&path, &config).expect("save config");
+
+        let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");
+
+        assert_eq!(snapshot.providers[0].id, "broken");
+        assert_eq!(snapshot.providers[0].status, "error");
+        assert!(snapshot.providers[0].windows.is_empty());
+        assert!(snapshot.providers[0].error.is_some());
     }
 }
