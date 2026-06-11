@@ -18,8 +18,8 @@ const HIDDEN_STARTUP_ARG: &str = "--hidden";
 
 pub use app_info::get_app_version;
 pub use config::{
-    get_config, get_config_storage_info, migrate_config_file, open_config_folder, reset_config,
-    save_config, set_portable_mode, AppConfig,
+    get_config, get_config_storage_info, migrate_config_file, open_config_folder,
+    open_custom_provider_guide, reset_config, save_config, set_portable_mode, AppConfig,
 };
 pub use diagnostics::export_diagnostics;
 pub use presets::{get_provider_presets, test_provider};
@@ -84,6 +84,7 @@ pub fn run() {
             get_app_version,
             export_diagnostics,
             open_config_folder,
+            open_custom_provider_guide,
             reset_config,
             save_config,
             set_portable_mode,

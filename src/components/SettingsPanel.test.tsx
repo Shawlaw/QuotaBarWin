@@ -184,6 +184,7 @@ function renderSettings(initialConfig = configWithProviders([commandProvider])) 
         isSaving={false}
         onChange={setConfig}
         onOpenConfigFolder={async () => undefined}
+        onOpenCustomProviderGuide={async () => undefined}
         onResetConfig={async () => undefined}
         onSave={() => undefined}
         onSetPortableMode={() => undefined}
@@ -316,7 +317,7 @@ test("codex_provider_proxy_url_is_editable", () => {
   expect(screen.getByLabelText("Proxy URL")).toHaveValue("socks5h://127.0.0.1:7890");
 });
 
-test("settings_shows_config_storage_info_and_provider_guide", () => {
+test("settings_shows_config_storage_info_and_provider_guide_entry", () => {
   renderSettings();
 
   expect(screen.getByTestId("general-settings-section")).toBeInTheDocument();
@@ -325,10 +326,8 @@ test("settings_shows_config_storage_info_and_provider_guide", () => {
   expect(screen.getByLabelText("Configuration storage")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: configStorageInfo.configPath })).toBeInTheDocument();
   expect(screen.getByText("AppData mode")).toBeInTheDocument();
-  expect(screen.getByText("Custom Provider guide")).toBeInTheDocument();
-  expect(screen.getByText("Minimum output")).toBeInTheDocument();
-  expect(screen.getByText("Node.js example")).toBeInTheDocument();
-  expect(screen.getByText(/One provider result/)).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Custom Provider Guide" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Open Guide" })).toBeInTheDocument();
 });
 
 test("add_kimi_preset_shows_env_hint", () => {

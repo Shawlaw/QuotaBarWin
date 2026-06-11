@@ -12,6 +12,7 @@ import {
   listenForRefreshRequests,
   listenForSingleInstance,
   openConfigFolder,
+  openCustomProviderGuide,
   refreshProvider,
   refreshSnapshot,
   resetConfig,
@@ -223,6 +224,7 @@ export function App() {
           isSaving={isSaving}
           onChange={setConfig}
           onOpenConfigFolder={openConfigFolder}
+          onOpenCustomProviderGuide={openCustomProviderGuide}
           onResetConfig={restoreDefaultConfig}
           onSave={persistConfig}
           onSetPortableMode={(enabled) => void togglePortableMode(enabled)}

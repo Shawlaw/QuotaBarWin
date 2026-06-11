@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuotaBarWin Custom Provider Guide</title>
+    <style>
+      :root {
+        color: #1f2937;
+        background: #f6f8fb;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      main {
+        margin: 0 auto;
+        max-width: 920px;
+        padding: 40px 24px 56px;
+      }
+
+      header {
+        border-bottom: 1px solid #d9e2ec;
+        margin-bottom: 28px;
+        padding-bottom: 20px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        color: #0f172a;
+        line-height: 1.2;
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 34px;
+        font-weight: 720;
+      }
+
+      h2 {
+        font-size: 22px;
+        margin-top: 32px;
+      }
+
+      h3 {
+        font-size: 16px;
+        margin-top: 18px;
+      }
+
+      p {
+        margin: 10px 0 0;
+      }
+
+      ol,
+      ul {
+        margin: 10px 0 0;
+        padding-left: 22px;
+      }
+
+      li + li {
+        margin-top: 6px;
+      }
+
+      code,
+      pre {
+        font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+
+      code {
+        background: #eef2f7;
+        border-radius: 4px;
+        padding: 1px 4px;
+      }
+
+      pre {
+        background: #111827;
+        border-radius: 8px;
+        color: #e5e7eb;
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 12px 0 0;
+        overflow: auto;
+        padding: 16px;
+      }
+
+      section {
+        background: #ffffff;
+        border: 1px solid #d9e2ec;
+        border-radius: 8px;
+        margin-top: 16px;
+        padding: 18px;
+      }
+
+      dl {
+        display: grid;
+        gap: 8px 14px;
+        grid-template-columns: minmax(120px, auto) 1fr;
+        margin: 12px 0 0;
+      }
+
+      dt {
+        color: #334155;
+        font-weight: 700;
+      }
+
+      dd {
+        margin: 0;
+      }
+
+      .lead {
+        color: #475569;
+        font-size: 16px;
+        max-width: 720px;
+      }
+
+      .note {
+        background: #eef8f6;
+        border-color: #cdece7;
+      }
+
+      @media (max-width: 640px) {
+        main {
+          padding: 28px 16px 40px;
+        }
+
+        h1 {
+          font-size: 28px;
+        }
+
+        dl {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Custom Provider Guide</h1>
+        <p class="lead">
+          QuotaBarWin can run a local script and read the JSON it prints. Use this when a quota
+          source is not covered by a built-in provider.
+        </p>
+      </header>
+
+      <section>
+        <h2>Quick Start</h2>
+        <ol>
+          <li>Add <strong>Custom Script Provider</strong> in Settings.</li>
+          <li>Set <strong>Executable</strong> to <code>node</code>, <code>python</code>, <code>powershell</code>, or a full executable path.</li>
+          <li>Put one command-line argument per line in <strong>Args</strong>. Usually this is the script path.</li>
+          <li>Set <strong>Output contract</strong> to <code>provider-snapshot-v1</code>.</li>
+          <li>Click <strong>Test Provider</strong> and check the JSON result.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Minimum Output</h2>
+        <p>Your script should print one JSON object to stdout.</p>
+        <pre>{
+  "status": "ok",
+  "windows": [
+    {
+      "id": "weekly",
+      "label": "Weekly",
+      "used": 12,
+      "limit": 100,
+      "unit": "requests",
+      "confidence": "exact"
+    }
+  ]
+}</pre>
+      </section>
+
+      <section>
+        <h2>Node.js Example</h2>
+        <pre>console.log(JSON.stringify({
+  status: "ok",
+  windows: [
+    {
+      id: "weekly",
+      label: "Weekly",
+      used: 12,
+      limit: 100,
+      unit: "requests",
+      confidence: "exact"
+    }
+  ]
+}));</pre>
+      </section>
+
+      <section>
+        <h2>Common Fields</h2>
+        <dl>
+          <dt><code>id</code></dt>
+          <dd>A stable window id, such as <code>daily</code>, <code>5h</code>, or <code>weekly</code>.</dd>
+          <dt><code>label</code></dt>
+          <dd>The text shown in QuotaBarWin.</dd>
+          <dt><code>used</code></dt>
+          <dd>The amount already consumed.</dd>
+          <dt><code>limit</code></dt>
+          <dd>The total amount available in the same unit as <code>used</code>.</dd>
+          <dt><code>unit</code></dt>
+          <dd>Examples: <code>requests</code>, <code>tokens</code>, <code>minutes</code>, or <code>percent</code>.</dd>
+          <dt><code>confidence</code></dt>
+          <dd>Use <code>exact</code> for source-of-truth values or <code>estimated</code> for inferred values.</dd>
+        </dl>
+      </section>
+
+      <section>
+        <h2>Secrets</h2>
+        <p>
+          Settings support placeholders, so secrets do not have to be stored directly in the config.
+        </p>
+        <ul>
+          <li><code>${env:API_KEY}</code> reads an environment variable.</li>
+          <li><code>${file:C:\Secrets\api-key.txt}</code> reads a local file.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Output Contracts</h2>
+        <dl>
+          <dt><code>provider-snapshot-v1</code></dt>
+          <dd>One provider result. This is the usual choice for a custom script.</dd>
+          <dt><code>app-snapshot-v1</code></dt>
+          <dd>Multiple providers in one app-level JSON object.</dd>
+        </dl>
+      </section>
+
+      <section class="note">
+        <h2>What QuotaBarWin Adds</h2>
+        <p>
+          Provider id, provider name, source, diagnostics, and percentages are filled in when
+          possible. Secret values are hidden from diagnostics.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

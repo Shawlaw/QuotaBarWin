@@ -14,6 +14,8 @@ pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 6;
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
 const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
+const CUSTOM_PROVIDER_GUIDE_FILE_NAME: &str = "custom-provider-guide.html";
+const CUSTOM_PROVIDER_GUIDE_HTML: &str = include_str!("custom_provider_guide.html");
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -610,6 +612,25 @@ pub async fn open_config_folder(app: AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+pub async fn open_custom_provider_guide(app: AppHandle) -> Result<(), String> {
+    let guide_path = config_path_for_app(&app)?.with_file_name(CUSTOM_PROVIDER_GUIDE_FILE_NAME);
+    tauri::async_runtime::spawn_blocking(move || {
+        write_custom_provider_guide(&guide_path)?;
+        open_path_external(&guide_path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn write_custom_provider_guide(path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    fs::write(path, CUSTOM_PROVIDER_GUIDE_HTML).map_err(|error| error.to_string())
+}
+
 fn reveal_path(path: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
@@ -635,6 +656,36 @@ fn reveal_path(path: &Path) -> Result<(), String> {
         let dir = path.parent().unwrap_or(path);
         Command::new("xdg-open")
             .arg(dir)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+}
+
+fn open_path_external(path: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        Command::new("rundll32")
+            .arg("url.dll,FileProtocolHandler")
+            .arg(path)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(path)
             .spawn()
             .map_err(|error| error.to_string())?;
         return Ok(());
