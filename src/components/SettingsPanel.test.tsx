@@ -150,6 +150,7 @@ function configWithProviders(providers: AppConfig["providers"]): AppConfig {
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
+    networkProxy: null,
     providers
   };
 }
@@ -439,4 +440,35 @@ test("settings_save_bar_tracks_dirty_state_and_validation", () => {
 
   expect(screen.getByTestId("fixed-save-bar")).toHaveTextContent("Unsaved changes");
   expect(screen.getByTestId("save-settings-button")).toBeEnabled();
+});
+
+
+test("network_proxy_section_renders_and_switches_proxy_kind", () => {
+  renderSettings(configWithProviders([commandProvider]));
+
+  expect(screen.getByTestId("proxy-kind-select")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByTestId("proxy-kind-select"), { target: { value: "http" } });
+
+  expect(screen.getByTestId("proxy-url-input")).toBeInTheDocument();
+});
+
+test("remote_providers_section_renders_installed_remote_providers", () => {
+  const remoteProvider = {
+    id: "remote-kimi",
+    name: "Remote Kimi",
+    enabled: true,
+    kind: "remote" as const,
+    manifestUrl: "https://example.com/provider.json",
+    sourceUrl: "https://example.com/provider.cjs",
+    runtime: "node",
+    autoUpdate: true,
+    updateIntervalSeconds: 3600
+  };
+
+  renderSettings(configWithProviders([commandProvider, remoteProvider]));
+
+  const section = screen.getByTestId("remote-providers-section");
+  expect(section).toBeInTheDocument();
+  expect(section).toHaveTextContent("Remote Kimi");
 });

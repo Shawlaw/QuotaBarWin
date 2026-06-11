@@ -8,9 +8,21 @@ import type {
   ProviderConfig,
   ProviderPreset,
   ProviderSnapshot,
+  RemoteProviderConfig,
   ScriptOutputSpec,
   ScriptProviderConfig
 } from "../types";
+import {
+  addRemoteProvider,
+  applyRemoteUpdate,
+  checkRemoteUpdates,
+  getConfig,
+  previewRemoteProvider,
+  refreshRemoteProvider,
+  removeRemoteProvider
+} from "../lib/api";
+import { NetworkProxySettings } from "./NetworkProxySettings";
+import { RemoteProviderSettings } from "./RemoteProviderSettings";
 
 type SettingsPanelProps = {
   config: AppConfig;
@@ -348,6 +360,10 @@ export function SettingsPanel({
             <option value="error">Error</option>
           </select>
         </label>
+        <NetworkProxySettings
+          proxy={config.networkProxy}
+          onChange={(proxy) => onChange({ ...config, networkProxy: proxy })}
+        />
         <label className="checkbox-row">
           <input
             type="checkbox"
@@ -805,6 +821,31 @@ export function SettingsPanel({
         ))}
         </div>
       </section>
+
+      <RemoteProviderSettings
+        providers={config.providers.filter(
+          (provider): provider is RemoteProviderConfig => provider.kind === "remote"
+        )}
+        onPreview={previewRemoteProvider}
+        onAdd={async (url, providerProxyUrl, providerAutoUpdate) => {
+          const added = await addRemoteProvider(url, providerProxyUrl, providerAutoUpdate);
+          const updated = await getConfig();
+          onChange(updated);
+          return added;
+        }}
+        onRemove={async (id) => {
+          await removeRemoteProvider(id);
+          const updated = await getConfig();
+          onChange(updated);
+        }}
+        onRefresh={refreshRemoteProvider}
+        onCheckUpdates={checkRemoteUpdates}
+        onApplyUpdate={async (id) => {
+          await applyRemoteUpdate(id);
+          const updated = await getConfig();
+          onChange(updated);
+        }}
+      />
 
       <details className="settings-advanced" data-testid="advanced-settings-section">
         <summary>Advanced</summary>
