@@ -14,6 +14,8 @@ mod tray;
 
 use tauri::{Emitter, Manager};
 
+const HIDDEN_STARTUP_ARG: &str = "--hidden";
+
 pub use app_info::get_app_version;
 pub use config::{
     get_config, get_config_storage_info, migrate_config_file, open_config_folder, reset_config,
@@ -30,6 +32,10 @@ fn window_title(version: &str) -> String {
     format!("QuotaBarWin V{version}")
 }
 
+fn should_start_hidden() -> bool {
+    std::env::args().any(|arg| matches!(arg.as_str(), HIDDEN_STARTUP_ARG | "--start-hidden"))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -41,16 +47,34 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec![]),
-        ))
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name("QuotaBarWin")
+                .args([HIDDEN_STARTUP_ARG])
+                .build(),
+        )
         .setup(|app| {
             let title = window_title(&app.package_info().version.to_string());
             if let Some(window) = app.get_webview_window("main") {
                 window.set_title(&title)?;
+                if should_start_hidden() {
+                    let _ = window.hide();
+                }
             }
             tray::create_tray(app.handle())?;
+            let app_handle = app.handle().clone();
+            match config::config_path_for_app(&app_handle)
+                .and_then(|path| config::load_or_create_config(&path))
+                .map(|loaded| loaded.config.launch_at_startup)
+            {
+                Ok(enabled) => {
+                    if let Err(error) = config::sync_launch_at_startup_for_app(&app_handle, enabled)
+                    {
+                        eprintln!("Failed to sync launch-at-startup setting: {error}");
+                    }
+                }
+                Err(error) => eprintln!("Failed to load launch-at-startup setting: {error}"),
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -85,5 +109,10 @@ mod tests {
     #[test]
     fn window_title_contains_version() {
         assert_eq!(window_title("1.2.3"), "QuotaBarWin V1.2.3");
+    }
+
+    #[test]
+    fn hidden_startup_arg_is_stable() {
+        assert_eq!(HIDDEN_STARTUP_ARG, "--hidden");
     }
 }

@@ -8,6 +8,7 @@ use std::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_autostart::ManagerExt;
 
 pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 6;
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
@@ -533,9 +534,26 @@ pub async fn get_config(app: AppHandle) -> Result<AppConfig, String> {
 #[tauri::command]
 pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
     let path = config_path_for_app(&app)?;
+    let launch_at_startup = config.launch_at_startup;
     tauri::async_runtime::spawn_blocking(move || save_config_to_path(&path, &config))
         .await
-        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())??;
+    sync_launch_at_startup_for_app(&app, launch_at_startup)
+}
+
+pub fn sync_launch_at_startup_for_app(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    let autolaunch = app.autolaunch();
+    let is_enabled = autolaunch.is_enabled().map_err(|error| error.to_string())?;
+
+    if enabled && !is_enabled {
+        return autolaunch.enable().map_err(|error| error.to_string());
+    }
+
+    if !enabled && is_enabled {
+        return autolaunch.disable().map_err(|error| error.to_string());
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
