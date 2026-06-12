@@ -56,6 +56,7 @@ const mocks = vi.hoisted(() => {
     listenForSingleInstance: vi.fn(async () => () => undefined),
     openConfigFolder: vi.fn(async () => undefined),
     openCustomProviderGuide: vi.fn(async () => undefined),
+    openRemoteProviderGuide: vi.fn(async () => undefined),
     previewRemoteProvider: vi.fn(async () => {
       throw new Error("Preview not available in browser preview");
     }),

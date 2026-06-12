@@ -11,6 +11,7 @@ type RemoteProviderSettingsProps = {
   onRefresh: (id: string) => Promise<UpdateInfo>;
   onCheckUpdates: () => Promise<UpdateInfo[]>;
   onApplyUpdate: (id: string) => Promise<void>;
+  onOpenGuide: () => Promise<void>;
 };
 
 export function RemoteProviderSettings({
@@ -20,7 +21,8 @@ export function RemoteProviderSettings({
   onRemove,
   onRefresh,
   onCheckUpdates,
-  onApplyUpdate
+  onApplyUpdate,
+  onOpenGuide
 }: RemoteProviderSettingsProps) {
   const [url, setUrl] = useState("");
   const [proxyUrl, setProxyUrl] = useState("");
@@ -119,7 +121,17 @@ export function RemoteProviderSettings({
     <section className="settings-section" aria-label="Remote Providers" data-testid="remote-providers-section">
       <div className="settings-section-title">
         <h3>Remote Providers</h3>
-        <span>{providers.length} installed</span>
+        <div className="settings-section-actions">
+          <span>{providers.length} installed</span>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => void onOpenGuide()}
+            data-testid="open-remote-provider-guide"
+          >
+            Open Guide
+          </button>
+        </div>
       </div>
 
       <div className="settings-grid remote-provider-add-form">

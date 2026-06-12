@@ -26,6 +26,25 @@ const preview: RemoteProviderPreview = {
 };
 
 describe("RemoteProviderSettings", () => {
+  test("open_guide_button_calls_handler", () => {
+    const onOpenGuide = vi.fn();
+    render(
+      <RemoteProviderSettings
+        providers={[]}
+        onPreview={vi.fn()}
+        onAdd={vi.fn()}
+        onRemove={vi.fn()}
+        onRefresh={vi.fn()}
+        onCheckUpdates={vi.fn()}
+        onApplyUpdate={vi.fn()}
+        onOpenGuide={onOpenGuide}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId("open-remote-provider-guide"));
+    expect(onOpenGuide).toHaveBeenCalledTimes(1);
+  });
+
   test("renders_add_form_and_empty_state", () => {
     render(
       <RemoteProviderSettings
@@ -36,6 +55,7 @@ describe("RemoteProviderSettings", () => {
         onRefresh={vi.fn()}
         onCheckUpdates={vi.fn()}
         onApplyUpdate={vi.fn()}
+        onOpenGuide={vi.fn()}
       />
     );
 
@@ -56,6 +76,7 @@ describe("RemoteProviderSettings", () => {
         onRefresh={vi.fn()}
         onCheckUpdates={vi.fn()}
         onApplyUpdate={vi.fn()}
+        onOpenGuide={vi.fn()}
       />
     );
 
@@ -85,6 +106,7 @@ describe("RemoteProviderSettings", () => {
         onRefresh={vi.fn()}
         onCheckUpdates={vi.fn()}
         onApplyUpdate={vi.fn()}
+        onOpenGuide={vi.fn()}
       />
     );
 
@@ -104,6 +126,7 @@ describe("RemoteProviderSettings", () => {
         onRefresh={vi.fn()}
         onCheckUpdates={vi.fn()}
         onApplyUpdate={vi.fn()}
+        onOpenGuide={vi.fn()}
       />
     );
 
@@ -123,6 +146,7 @@ describe("RemoteProviderSettings", () => {
         onRefresh={vi.fn()}
         onCheckUpdates={onCheckUpdates}
         onApplyUpdate={vi.fn()}
+        onOpenGuide={vi.fn()}
       />
     );
 
@@ -144,6 +168,7 @@ describe("RemoteProviderSettings", () => {
           { id: "remote-kimi", available: true, newChecksum: "sha256:new" }
         ])}
         onApplyUpdate={onApplyUpdate}
+        onOpenGuide={vi.fn()}
       />
     );
 

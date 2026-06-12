@@ -328,7 +328,8 @@ test("settings_shows_config_storage_info_and_provider_guide_entry", () => {
   expect(screen.getByRole("button", { name: configStorageInfo.configPath })).toBeInTheDocument();
   expect(screen.getByText("AppData mode")).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Custom Provider Guide" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Open Guide" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Remote Providers" })).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "Open Guide" })).toHaveLength(2);
 });
 
 test("add_kimi_preset_shows_env_hint", () => {

@@ -830,3 +830,9 @@ button:disabled {
   font-size: 13px;
   font-weight: 600;
 }
+
+.settings-section-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}

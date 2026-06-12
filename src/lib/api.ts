@@ -215,6 +215,15 @@ export async function openCustomProviderGuide(): Promise<void> {
   return invoke<void>("open_custom_provider_guide");
 }
 
+export async function openRemoteProviderGuide(): Promise<void> {
+  if (!hasTauriInternals()) {
+    window.open("/remote-provider-guide.html", "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  return invoke<void>("open_remote_provider_guide");
+}
+
 export async function getProviderPresets(): Promise<ProviderPreset[]> {
   if (!hasTauriInternals()) {
     return [];

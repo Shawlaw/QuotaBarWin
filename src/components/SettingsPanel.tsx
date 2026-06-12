@@ -17,6 +17,7 @@ import {
   applyRemoteUpdate,
   checkRemoteUpdates,
   getConfig,
+  openRemoteProviderGuide,
   previewRemoteProvider,
   refreshRemoteProvider,
   removeRemoteProvider
@@ -845,6 +846,7 @@ export function SettingsPanel({
           const updated = await getConfig();
           onChange(updated);
         }}
+        onOpenGuide={openRemoteProviderGuide}
       />
 
       <details className="settings-advanced" data-testid="advanced-settings-section">

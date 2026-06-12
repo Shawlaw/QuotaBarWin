@@ -18,6 +18,8 @@ const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
 const CUSTOM_PROVIDER_GUIDE_FILE_NAME: &str = "custom-provider-guide.html";
 const CUSTOM_PROVIDER_GUIDE_HTML: &str = include_str!("custom_provider_guide.html");
+const REMOTE_PROVIDER_GUIDE_FILE_NAME: &str = "remote-provider-guide.html";
+const REMOTE_PROVIDER_GUIDE_HTML: &str = include_str!("remote_provider_guide.html");
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -686,6 +688,25 @@ fn write_custom_provider_guide(path: &Path) -> Result<(), String> {
     fs::write(path, CUSTOM_PROVIDER_GUIDE_HTML).map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+pub async fn open_remote_provider_guide(app: AppHandle) -> Result<(), String> {
+    let guide_path = config_path_for_app(&app)?.with_file_name(REMOTE_PROVIDER_GUIDE_FILE_NAME);
+    tauri::async_runtime::spawn_blocking(move || {
+        write_remote_provider_guide(&guide_path)?;
+        open_path_external(&guide_path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn write_remote_provider_guide(path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    fs::write(path, REMOTE_PROVIDER_GUIDE_HTML).map_err(|error| error.to_string())
+}
+
 fn reveal_path(path: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
@@ -1140,3 +1161,15 @@ mod tests {
         assert!(!legacy_path.exists());
     }
 }
+
+    #[test]
+    fn write_remote_provider_guide_creates_html_file() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let guide_path = temp.path().join("remote-provider-guide.html");
+        write_remote_provider_guide(&guide_path).expect("write guide");
+
+        assert!(guide_path.exists());
+        let contents = fs::read_to_string(&guide_path).expect("read guide");
+        assert!(contents.contains("Remote Provider Guide"));
+        assert!(contents.contains("Manifest format"));
+    }
