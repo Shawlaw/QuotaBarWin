@@ -13,13 +13,11 @@ import type {
   ScriptProviderConfig
 } from "../types";
 import {
-  addRemoteProvider,
   applyRemoteUpdate,
   checkRemoteUpdates,
   getConfig,
   installRemoteProviderRegistry,
   openRemoteProviderGuide,
-  previewRemoteProvider,
   refreshRemoteProvider,
   removeRemoteProvider
 } from "../lib/api";
@@ -828,13 +826,6 @@ export function SettingsPanel({
         providers={config.providers.filter(
           (provider): provider is RemoteProviderConfig => provider.kind === "remote"
         )}
-        onPreview={previewRemoteProvider}
-        onAdd={async (url, providerProxyUrl, providerAutoUpdate) => {
-          const added = await addRemoteProvider(url, providerProxyUrl, providerAutoUpdate);
-          const updated = await getConfig();
-          onChange(updated);
-          return added;
-        }}
         onInstallRegistry={async (url, providerProxyUrl, providerAutoUpdate) => {
           const result = await installRemoteProviderRegistry(
             url,

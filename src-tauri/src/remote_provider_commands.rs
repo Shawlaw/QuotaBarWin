@@ -13,7 +13,7 @@ use crate::{
         fetch_provider_registry, fetch_source, load_cached_manifest, load_cached_meta,
         parse_manifest, resolve_provider_url, resolve_runtime, resolve_source_url,
         validate_runtime_executable,
-        ProviderManifest, RemoteProviderPreview, UpdateInfo,
+        ProviderManifest, UpdateInfo,
     },
 };
 
@@ -62,34 +62,6 @@ pub async fn set_network_proxy(app: AppHandle, proxy: Option<ProxyConfig>) -> Re
     })
     .await
     .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn preview_remote_provider(
-    app: AppHandle,
-    url: String,
-    proxy_url: Option<String>,
-) -> Result<RemoteProviderPreview, String> {
-    let path = config_path_for_app(&app)?;
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let loaded = load_or_create_config(&path)?;
-        let global_proxy = loaded.config.network_proxy.clone();
-        let manifest = fetch_manifest(&url, proxy_url.as_deref(), global_proxy.as_ref(), FETCH_TIMEOUT)
-            .map_err(|error| error.to_string())?;
-        let source_url = resolve_source_url(&url, &manifest.entry);
-        Ok(RemoteProviderPreview {
-            id: manifest.id,
-            name: manifest.display_name,
-            description: manifest.description,
-            runtime: manifest.runtime,
-            source_url,
-            required_env_vars: manifest.required_env_vars,
-            checksum: manifest.checksums.source,
-        })
-    })
-    .await
-    .map_err(|error| error.to_string())?
 }
 
 fn install_remote_provider_from_manifest(
@@ -169,36 +141,6 @@ fn install_remote_provider_from_manifest(
     loaded.config.providers.push(config.clone());
     save_config_to_path(path, &loaded.config)?;
     Ok(config)
-}
-
-#[tauri::command]
-pub async fn add_remote_provider(
-    app: AppHandle,
-    url: String,
-    proxy_url: Option<String>,
-    auto_update: bool,
-) -> Result<ProviderConfig, String> {
-    let path = config_path_for_app(&app)?;
-    let app_handle = app.clone();
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let loaded = load_or_create_config(&path)?;
-        let global_proxy = loaded.config.network_proxy.clone();
-        let manifest_text =
-            fetch_manifest_text(&url, proxy_url.as_deref(), global_proxy.as_ref(), FETCH_TIMEOUT)
-                .map_err(|e| e.to_string())?;
-        let manifest = parse_manifest(&manifest_text).map_err(|e| e.to_string())?;
-        install_remote_provider_from_manifest(
-            &app_handle,
-            &path,
-            &url,
-            proxy_url.as_deref(),
-            auto_update,
-            manifest,
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

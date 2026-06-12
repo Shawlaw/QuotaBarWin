@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { RemoteProviderSettings } from "./RemoteProviderSettings";
 import type { RemoteProviderConfig } from "../types";
-import type { RemoteProviderPreview, UpdateInfo } from "../lib/api";
+import type { RegistryInstallResult, UpdateInfo } from "../lib/api";
 
 const remoteProvider: RemoteProviderConfig = {
   id: "remote-kimi",
@@ -16,13 +16,10 @@ const remoteProvider: RemoteProviderConfig = {
   updateIntervalSeconds: 3600
 };
 
-const preview: RemoteProviderPreview = {
-  id: "remote-kimi",
-  name: "Remote Kimi",
-  runtime: "node",
-  sourceUrl: "https://example.com/provider.cjs",
-  requiredEnvVars: ["KIMI_API_KEY"],
-  checksum: "sha256:abc"
+const emptyResult: RegistryInstallResult = {
+  installed: [],
+  skipped: [],
+  failed: []
 };
 
 describe("RemoteProviderSettings", () => {
@@ -31,9 +28,7 @@ describe("RemoteProviderSettings", () => {
     render(
       <RemoteProviderSettings
         providers={[]}
-        onPreview={vi.fn()}
-        onAdd={vi.fn()}
-        onInstallRegistry={vi.fn()}
+        onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
         onCheckUpdates={vi.fn()}
@@ -50,9 +45,7 @@ describe("RemoteProviderSettings", () => {
     render(
       <RemoteProviderSettings
         providers={[]}
-        onPreview={vi.fn()}
-        onAdd={vi.fn()}
-        onInstallRegistry={vi.fn()}
+        onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
         onCheckUpdates={vi.fn()}
@@ -63,18 +56,16 @@ describe("RemoteProviderSettings", () => {
 
     expect(screen.getByText("Remote Providers")).toBeInTheDocument();
     expect(screen.getByTestId("remote-provider-url-input")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Install Registry" })).toBeInTheDocument();
     expect(screen.getByText("No remote providers installed")).toBeInTheDocument();
   });
 
-  test("preview_button_calls_handler_with_form_values", () => {
-    const onPreview = vi.fn(async () => preview);
+  test("install_registry_button_calls_handler_with_form_values", () => {
+    const onInstallRegistry = vi.fn(async (): Promise<RegistryInstallResult> => emptyResult);
     render(
       <RemoteProviderSettings
         providers={[]}
-        onPreview={onPreview}
-        onAdd={vi.fn()}
-        onInstallRegistry={vi.fn()}
+        onInstallRegistry={onInstallRegistry}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
         onCheckUpdates={vi.fn()}
@@ -84,16 +75,16 @@ describe("RemoteProviderSettings", () => {
     );
 
     fireEvent.change(screen.getByTestId("remote-provider-url-input"), {
-      target: { value: "https://example.com/provider.json" }
+      target: { value: "https://example.com/registry.json" }
     });
     fireEvent.change(screen.getByTestId("remote-provider-proxy-url-input"), {
       target: { value: "http://proxy:8080" }
     });
     fireEvent.change(screen.getByRole("checkbox"), { target: { checked: true } });
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Install Registry" }));
 
-    expect(onPreview).toHaveBeenCalledWith(
-      "https://example.com/provider.json",
+    expect(onInstallRegistry).toHaveBeenCalledWith(
+      "https://example.com/registry.json",
       "http://proxy:8080",
       true
     );
@@ -103,9 +94,7 @@ describe("RemoteProviderSettings", () => {
     render(
       <RemoteProviderSettings
         providers={[remoteProvider]}
-        onPreview={vi.fn()}
-        onAdd={vi.fn()}
-        onInstallRegistry={vi.fn()}
+        onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
         onCheckUpdates={vi.fn()}
@@ -124,9 +113,7 @@ describe("RemoteProviderSettings", () => {
     render(
       <RemoteProviderSettings
         providers={[remoteProvider]}
-        onPreview={vi.fn()}
-        onAdd={vi.fn()}
-        onInstallRegistry={vi.fn()}
+        onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={onRemove}
         onRefresh={vi.fn()}
         onCheckUpdates={vi.fn()}
@@ -145,9 +132,7 @@ describe("RemoteProviderSettings", () => {
     render(
       <RemoteProviderSettings
         providers={[remoteProvider]}
-        onPreview={vi.fn()}
-        onAdd={vi.fn()}
-        onInstallRegistry={vi.fn()}
+        onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
         onCheckUpdates={onCheckUpdates}
@@ -166,9 +151,7 @@ describe("RemoteProviderSettings", () => {
     render(
       <RemoteProviderSettings
         providers={[remoteProvider]}
-        onPreview={vi.fn()}
-        onAdd={vi.fn()}
-        onInstallRegistry={vi.fn()}
+        onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
         onCheckUpdates={vi.fn(async () => [

@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { InstallRemoteProviderDialog } from "./InstallRemoteProviderDialog";
 import type { RemoteProviderConfig } from "../types";
-import type { RegistryInstallResult, RemoteProviderPreview, UpdateInfo } from "../lib/api";
+import type { RegistryInstallResult, UpdateInfo } from "../lib/api";
 
 type RemoteProviderSettingsProps = {
   providers: RemoteProviderConfig[];
-  onPreview: (url: string, proxyUrl: string | null, autoUpdate: boolean) => Promise<RemoteProviderPreview>;
-  onAdd: (url: string, proxyUrl: string | null, autoUpdate: boolean) => Promise<RemoteProviderConfig>;
-  onInstallRegistry: (url: string, proxyUrl: string | null, autoUpdate: boolean) => Promise<RegistryInstallResult>;
+  onInstallRegistry: (
+    url: string,
+    proxyUrl: string | null,
+    autoUpdate: boolean
+  ) => Promise<RegistryInstallResult>;
   onRemove: (id: string) => Promise<void>;
   onRefresh: (id: string) => Promise<UpdateInfo>;
   onCheckUpdates: () => Promise<UpdateInfo[]>;
@@ -17,8 +18,6 @@ type RemoteProviderSettingsProps = {
 
 export function RemoteProviderSettings({
   providers,
-  onPreview,
-  onAdd,
   onInstallRegistry,
   onRemove,
   onRefresh,
@@ -29,39 +28,9 @@ export function RemoteProviderSettings({
   const [url, setUrl] = useState("");
   const [proxyUrl, setProxyUrl] = useState("");
   const [autoUpdate, setAutoUpdate] = useState(true);
-  const [preview, setPreview] = useState<RemoteProviderPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-
-  async function handlePreview() {
-    setMessage(null);
-    setLoading(true);
-    try {
-      const result = await onPreview(url.trim(), proxyUrl.trim() || null, autoUpdate);
-      setPreview(result);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to preview provider");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleConfirmInstall() {
-    setLoading(true);
-    try {
-      await onAdd(url.trim(), proxyUrl.trim() || null, autoUpdate);
-      setPreview(null);
-      setUrl("");
-      setProxyUrl("");
-      setMessage("Provider installed");
-      setUpdates([]);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to install provider");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleInstallRegistry() {
     setMessage(null);
@@ -83,7 +52,6 @@ export function RemoteProviderSettings({
         parts.push(`${result.failed.length} failed`);
       }
       setMessage(parts.join(", ") || "No providers installed from registry");
-      setPreview(null);
       setUrl("");
       setProxyUrl("");
       setUpdates([]);
@@ -171,13 +139,13 @@ export function RemoteProviderSettings({
 
       <div className="settings-grid remote-provider-add-form">
         <label>
-          Manifest / Registry URL
+          Registry URL
           <input
             data-testid="remote-provider-url-input"
             type="text"
             value={url}
             onChange={(event) => setUrl(event.currentTarget.value)}
-            placeholder="https://... or file:///... or local path (provider.json / registry.json)"
+            placeholder="https://... or file:///... or local path to registry.json"
           />
         </label>
         <label>
@@ -198,14 +166,6 @@ export function RemoteProviderSettings({
           />
           Auto-update when available
         </label>
-        <button
-          type="button"
-          className="button-secondary"
-          onClick={handlePreview}
-          disabled={loading || !url.trim()}
-        >
-          {loading && preview === null ? "Loading..." : "Preview"}
-        </button>
         <button
           type="button"
           className="button-secondary"
@@ -271,13 +231,6 @@ export function RemoteProviderSettings({
           })}
         </ul>
       )}
-
-      <InstallRemoteProviderDialog
-        preview={preview}
-        loading={loading}
-        onConfirm={() => void handleConfirmInstall()}
-        onCancel={() => setPreview(null)}
-      />
     </section>
   );
 }

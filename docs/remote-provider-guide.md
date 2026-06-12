@@ -4,10 +4,10 @@ Remote providers let you install quota providers from a hosted manifest + script
 
 ## How it works
 
-1. You provide a manifest URL or local file path (a JSON file that describes the provider). Both `https://` and `file://` URLs, as well as plain local paths like `C:\Providers\provider.json`, are supported.
-2. QuotaBarWin reads the manifest, computes/verifies the source checksum, and downloads the source script referenced by the manifest.
-3. The script is cached locally and executed with the declared runtime (for example `node`, `python`, or an absolute path).
-4. On every refresh QuotaBarWin runs the cached script and parses the output into quota windows.
+1. You provide a registry URL or local file path (`registry.json`) that lists one or more providers. Both `https://` and `file://` URLs, as well as plain local paths like `C:\Providers\registry.json`, are supported.
+2. QuotaBarWin reads the registry, fetches each referenced provider manifest, verifies optional checksums, and downloads the source scripts.
+3. Each script is cached locally and executed with its declared runtime (for example `node`, `python`, or an absolute path).
+4. On every refresh QuotaBarWin runs the cached scripts and parses the output into quota windows.
 
 ## Manifest format (`provider.json`)
 
@@ -38,7 +38,7 @@ Field descriptions:
 | `description` | no | Short description. |
 | `runtime` | yes | Runtime used to execute `entry`. Common values: `node`, `python`, `pwsh`, `bash`. Can also be an absolute path like `C:\Tools\node\node.exe`. |
 | `entry` | yes | Source file name. Can be a relative path (resolved against the manifest URL/directory), an absolute HTTPS URL, a `file://` URL, or a local file path. |
-| `requiredEnvVars` | no | Environment variables that the script needs. Shown in the install confirmation dialog. |
+| `requiredEnvVars` | no | Environment variables that the script needs. Displayed in the registry install summary. |
 | `output` | yes | Output contract. Only `provider-snapshot-v1` is supported for remote providers at the moment. |
 | `permissions` | no | Declared capabilities (currently informational). Use `env:<NAME>` to document required env vars. |
 | `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. |
@@ -114,7 +114,8 @@ Window fields:
 ## Security checklist
 
 - Only install remote providers from sources you trust.
-- Review the manifest `sourceUrl`, `runtime`, and `requiredEnvVars` in the confirmation dialog.
+- Review each provider's `sourceUrl`, `runtime`, and `requiredEnvVars` before installing a registry.
+- Prefer registries that include `providers[].checksum` so QuotaBarWin can verify the manifest before installing.
 - Prefer manifests that include `checksums.source`; without it QuotaBarWin cannot auto-update safely.
 - The cached source file lives in the app data directory under `providers/remote/<id>/`.
 

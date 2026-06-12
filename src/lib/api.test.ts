@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
-  addRemoteProvider,
   checkRemoteUpdates,
   getCachedSnapshot,
+  installRemoteProviderRegistry,
   getConfig,
   getNetworkProxy,
   refreshProvider,
@@ -143,21 +143,27 @@ test("api_invokes_network_proxy_commands", async () => {
 
 test("api_invokes_remote_provider_commands", async () => {
   const payloads: Record<string, unknown> = {};
-  const remoteProvider = {
-    kind: "remote" as const,
-    id: "remote-kimi",
-    name: "Remote Kimi",
-    enabled: true,
-    manifestUrl: "https://example.com/provider.json",
-    sourceUrl: "https://example.com/provider.cjs",
-    runtime: "node",
-    autoUpdate: true,
-    updateIntervalSeconds: 3600
+  const registryResult = {
+    installed: [
+      {
+        kind: "remote" as const,
+        id: "remote-kimi",
+        name: "Remote Kimi",
+        enabled: true,
+        manifestUrl: "https://example.com/provider.json",
+        sourceUrl: "https://example.com/provider.cjs",
+        runtime: "node",
+        autoUpdate: true,
+        updateIntervalSeconds: 3600
+      }
+    ],
+    skipped: [],
+    failed: []
   };
   mockIPC((cmd, payload) => {
     payloads[cmd] = payload;
-    if (cmd === "add_remote_provider") {
-      return remoteProvider;
+    if (cmd === "install_remote_provider_registry") {
+      return registryResult;
     }
     if (cmd === "remove_remote_provider") {
       return null;
@@ -172,8 +178,12 @@ test("api_invokes_remote_provider_commands", async () => {
   });
 
   await expect(
-    addRemoteProvider("https://example.com/provider.json", "http://proxy.example.com:8080", true)
-  ).resolves.toEqual(remoteProvider);
+    installRemoteProviderRegistry(
+      "https://example.com/registry.json",
+      "http://proxy.example.com:8080",
+      true
+    )
+  ).resolves.toEqual(registryResult);
   await expect(removeRemoteProvider("remote-kimi")).resolves.toBeNull();
   await expect(refreshRemoteProvider("remote-kimi")).resolves.toEqual({
     id: "remote-kimi",
@@ -184,8 +194,8 @@ test("api_invokes_remote_provider_commands", async () => {
     { id: "remote-kimi", available: true, newChecksum: "sha256:abc" }
   ]);
 
-  expect(payloads.add_remote_provider).toEqual({
-    url: "https://example.com/provider.json",
+  expect(payloads.install_remote_provider_registry).toEqual({
+    url: "https://example.com/registry.json",
     proxyUrl: "http://proxy.example.com:8080",
     autoUpdate: true
   });

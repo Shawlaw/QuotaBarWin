@@ -35,9 +35,9 @@ pub use quota::{
     QuotaWindow,
 };
 pub use remote_provider_commands::{
-    add_remote_provider, apply_remote_update, check_remote_updates, get_network_proxy,
-    install_remote_provider_registry, preview_remote_provider, refresh_remote_provider,
-    remove_remote_provider, set_network_proxy, RegistryInstallFailure, RegistryInstallResult,
+    apply_remote_update, check_remote_updates, get_network_proxy, install_remote_provider_registry,
+    refresh_remote_provider, remove_remote_provider, set_network_proxy, RegistryInstallFailure,
+    RegistryInstallResult,
 };
 
 fn window_title(version: &str) -> String {
@@ -107,8 +107,6 @@ pub fn run() {
             test_provider,
             get_network_proxy,
             set_network_proxy,
-            preview_remote_provider,
-            add_remote_provider,
             install_remote_provider_registry,
             remove_remote_provider,
             refresh_remote_provider,

@@ -57,12 +57,6 @@ const mocks = vi.hoisted(() => {
     openConfigFolder: vi.fn(async () => undefined),
     openCustomProviderGuide: vi.fn(async () => undefined),
     openRemoteProviderGuide: vi.fn(async () => undefined),
-    previewRemoteProvider: vi.fn(async () => {
-      throw new Error("Preview not available in browser preview");
-    }),
-    addRemoteProvider: vi.fn(async () => {
-      throw new Error("Add remote provider not available in browser preview");
-    }),
     installRemoteProviderRegistry: vi.fn(async () => {
       throw new Error("Install remote provider registry not available in browser preview");
     }),
