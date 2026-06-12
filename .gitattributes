@@ -1,0 +1,4 @@
+# Keep remote provider source/manifest files in LF so checksums stay stable
+# regardless of Windows autocrlf settings in CI or local checkouts.
+examples/remote-providers/**/*.cjs text eol=lf
+examples/remote-providers/**/*.json text eol=lf
