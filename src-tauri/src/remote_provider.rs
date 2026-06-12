@@ -663,3 +663,31 @@ mod tests {
         }
     }
 }
+
+    #[test]
+    fn example_remote_provider_manifests_are_valid() {
+        let cargo_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = cargo_dir.parent().expect("repo root");
+        let examples_dir = repo_root.join("examples").join("remote-providers");
+
+        for provider_id in ["kimi-coding", "bigmodel-coding-plan", "codex-usage"] {
+            let dir = examples_dir.join(provider_id);
+            let manifest_path = dir.join("provider.json");
+            let source_path = dir.join("provider.cjs");
+
+            let manifest_json = fs::read_to_string(&manifest_path)
+                .unwrap_or_else(|error| panic!("failed to read {} manifest: {error}", provider_id));
+            let manifest: ProviderManifest = serde_json::from_str(&manifest_json)
+                .unwrap_or_else(|error| panic!("failed to parse {} manifest: {error}", provider_id));
+            validate_manifest(&manifest)
+                .unwrap_or_else(|error| panic!("{} manifest invalid: {error}", provider_id));
+
+            let source = fs::read_to_string(&source_path)
+                .unwrap_or_else(|error| panic!("failed to read {} source: {error}", provider_id));
+            let expected_checksum = manifest.checksums.source.as_deref().unwrap_or_else(|| {
+                panic!("{} manifest is missing checksums.source", provider_id)
+            });
+            verify_checksum(&source, expected_checksum)
+                .unwrap_or_else(|error| panic!("{} checksum mismatch: {error}", provider_id));
+        }
+    }

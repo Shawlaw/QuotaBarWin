@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { RemoteProviderSettings } from "./RemoteProviderSettings";
 import type { RemoteProviderConfig } from "../types";
