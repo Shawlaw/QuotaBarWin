@@ -9,6 +9,8 @@ Each subdirectory contains:
 - `provider.json` — the remote provider manifest.
 - `provider.cjs` — the source script executed by QuotaBarWin.
 
+`manifest.example.json` is a standalone, minimal manifest template you can copy when creating your own provider.
+
 ## Providers
 
 | Provider | Required env var | Description |
