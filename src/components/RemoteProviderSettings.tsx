@@ -142,7 +142,7 @@ export function RemoteProviderSettings({
             type="text"
             value={url}
             onChange={(event) => setUrl(event.currentTarget.value)}
-            placeholder="https://example.com/provider.json"
+            placeholder="https://... or file:///... or C:\\path\\provider.json"
           />
         </label>
         <label>

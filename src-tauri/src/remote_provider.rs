@@ -139,25 +139,54 @@ fn validate_manifest(manifest: &ProviderManifest) -> Result<(), RemoteProviderEr
     Ok(())
 }
 
+fn fetch_text(
+    url: &str,
+    per_provider_proxy: Option<&str>,
+    global_proxy: Option<&ProxyConfig>,
+    timeout: Duration,
+) -> Result<String, RemoteProviderError> {
+    let url = url.trim();
+
+    if url.starts_with("http://") || url.starts_with("https://") {
+        let client = build_http_client(per_provider_proxy, global_proxy, timeout)
+            .map_err(RemoteProviderError::Network)?;
+        let response = client
+            .get(url)
+            .send()
+            .map_err(|error| RemoteProviderError::Network(redact_sensitive(&error.to_string())))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(RemoteProviderError::Http(status.as_u16()));
+        }
+        return response
+            .text()
+            .map_err(|error| RemoteProviderError::Network(error.to_string()));
+    }
+
+    if url.starts_with("file://") {
+        let path = Path::new(&url[7..]);
+        return fs::read_to_string(path)
+            .map_err(|error| RemoteProviderError::Io(error.to_string()));
+    }
+
+    let path = Path::new(url);
+    if path.is_file() {
+        return fs::read_to_string(path)
+            .map_err(|error| RemoteProviderError::Io(error.to_string()));
+    }
+
+    Err(RemoteProviderError::Network(format!(
+        "unsupported URL or file path: {url}"
+    )))
+}
+
 pub fn fetch_manifest(
     url: &str,
     per_provider_proxy: Option<&str>,
     global_proxy: Option<&ProxyConfig>,
     timeout: Duration,
 ) -> Result<ProviderManifest, RemoteProviderError> {
-    let client = build_http_client(per_provider_proxy, global_proxy, timeout)
-        .map_err(RemoteProviderError::Network)?;
-    let response = client
-        .get(url)
-        .send()
-        .map_err(|error| RemoteProviderError::Network(error.to_string()))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(RemoteProviderError::Http(status.as_u16()));
-    }
-    let text = response
-        .text()
-        .map_err(|error| RemoteProviderError::Network(error.to_string()))?;
+    let text = fetch_text(url, per_provider_proxy, global_proxy, timeout)?;
     let manifest: ProviderManifest = serde_json::from_str(&text)
         .map_err(|error| RemoteProviderError::InvalidManifest(error.to_string()))?;
     validate_manifest(&manifest)?;
@@ -170,31 +199,38 @@ pub fn fetch_source(
     global_proxy: Option<&ProxyConfig>,
     timeout: Duration,
 ) -> Result<String, RemoteProviderError> {
-    let client = build_http_client(per_provider_proxy, global_proxy, timeout)
-        .map_err(RemoteProviderError::Network)?;
-    let response = client
-        .get(url)
-        .send()
-        .map_err(|error| RemoteProviderError::Network(redact_sensitive(&error.to_string())))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(RemoteProviderError::Http(status.as_u16()));
-    }
-    response
-        .text()
-        .map_err(|error| RemoteProviderError::Network(error.to_string()))
+    fetch_text(url, per_provider_proxy, global_proxy, timeout)
 }
 
 pub fn resolve_source_url(manifest_url: &str, entry: &str) -> String {
     let entry = entry.trim();
-    if entry.starts_with("http://") || entry.starts_with("https://") {
+    if entry.starts_with("http://")
+        || entry.starts_with("https://")
+        || entry.starts_with("file://")
+    {
         return entry.to_string();
     }
-    let base = manifest_url
-        .rfind('/')
-        .map(|index| &manifest_url[..index + 1])
-        .unwrap_or(manifest_url);
-    format!("{base}{entry}")
+
+    if manifest_url.starts_with("http://") || manifest_url.starts_with("https://") {
+        let base = manifest_url
+            .rfind('/')
+            .map(|index| &manifest_url[..index + 1])
+            .unwrap_or(manifest_url);
+        return format!("{base}{entry}");
+    }
+
+    let manifest_path = if manifest_url.starts_with("file://") {
+        Path::new(&manifest_url[7..])
+    } else {
+        Path::new(manifest_url)
+    };
+
+    manifest_path
+        .parent()
+        .map(|parent| parent.join(entry))
+        .unwrap_or_else(|| PathBuf::from(entry))
+        .to_string_lossy()
+        .to_string()
 }
 
 fn source_file_name(entry: &str) -> String {
@@ -691,3 +727,48 @@ mod tests {
                 .unwrap_or_else(|error| panic!("{} checksum mismatch: {error}", provider_id));
         }
     }
+
+#[test]
+fn fetch_manifest_reads_local_file_url() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let manifest_path = temp.path().join("provider.json");
+    fs::write(
+        &manifest_path,
+        r#"{"schemaVersion":1,"id":"local","displayName":"Local","runtime":"node","entry":"provider.cjs","output":"provider-snapshot-v1"}"#,
+    )
+    .expect("write manifest");
+
+    let file_url = format!("file://{}", manifest_path.to_string_lossy().replace('\\', "/"));
+    let manifest = fetch_manifest(&file_url, None, None, Duration::from_secs(1))
+        .expect("fetch manifest from file URL");
+    assert_eq!(manifest.id, "local");
+}
+
+#[test]
+fn fetch_source_reads_local_file_path() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let source_path = temp.path().join("provider.cjs");
+    fs::write(&source_path, "// local source").expect("write source");
+
+    let source =
+        fetch_source(&source_path.to_string_lossy(), None, None, Duration::from_secs(1))
+            .expect("fetch source from local path");
+    assert_eq!(source, "// local source");
+}
+
+#[test]
+fn resolve_source_url_with_local_file_manifest_and_relative_entry() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let manifest_path = temp.path().join("provider.json");
+    let file_url = format!("file://{}", manifest_path.to_string_lossy().replace('\\', "/"));
+
+    let resolved = resolve_source_url(&file_url, "provider.cjs");
+    assert!(
+        resolved.ends_with("provider.cjs"),
+        "resolved should end with provider.cjs: {resolved}"
+    );
+    assert!(
+        resolved.contains(&temp.path().to_string_lossy().replace('\\', "/")),
+        "resolved should be under temp dir: {resolved}"
+    );
+}

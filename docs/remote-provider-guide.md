@@ -4,8 +4,8 @@ Remote providers let you install quota providers from a hosted manifest + script
 
 ## How it works
 
-1. You provide a manifest URL (a JSON file that describes the provider).
-2. QuotaBarWin fetches the manifest, computes/verifies the source checksum, and downloads the source script referenced by the manifest.
+1. You provide a manifest URL or local file path (a JSON file that describes the provider). Both `https://` and `file://` URLs, as well as plain local paths like `C:\Providers\provider.json`, are supported.
+2. QuotaBarWin reads the manifest, computes/verifies the source checksum, and downloads the source script referenced by the manifest.
 3. The script is cached locally and executed with the declared runtime (for example `node`, `python`, or an absolute path).
 4. On every refresh QuotaBarWin runs the cached script and parses the output into quota windows.
 
@@ -37,7 +37,7 @@ Field descriptions:
 | `displayName` | yes | Human-readable name shown in the UI. |
 | `description` | no | Short description. |
 | `runtime` | yes | Runtime used to execute `entry`. Common values: `node`, `python`, `pwsh`, `bash`. Can also be an absolute path like `C:\Tools\node\node.exe`. |
-| `entry` | yes | Source file name. Can be a relative path (resolved against the manifest URL) or an absolute HTTPS URL. |
+| `entry` | yes | Source file name. Can be a relative path (resolved against the manifest URL/directory), an absolute HTTPS URL, a `file://` URL, or a local file path. |
 | `requiredEnvVars` | no | Environment variables that the script needs. Shown in the install confirmation dialog. |
 | `output` | yes | Output contract. Only `provider-snapshot-v1` is supported for remote providers at the moment. |
 | `permissions` | no | Declared capabilities (currently informational). Use `env:<NAME>` to document required env vars. |
