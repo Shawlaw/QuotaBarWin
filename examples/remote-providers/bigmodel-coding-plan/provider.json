@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "bigmodel-coding-plan",
+  "displayName": "BigModel Coding Plan",
+  "description": "Zhipu/BigModel coding plan quota via remote provider script.",
+  "runtime": "node",
+  "entry": "provider.cjs",
+  "requiredEnvVars": ["BIGMODEL_API_KEY"],
+  "output": "provider-snapshot-v1",
+  "permissions": ["env:BIGMODEL_API_KEY"],
+  "checksums": {
+    "source": "sha256:322b26d1062ffdba639694dd18cb7d0916df3281264eb0f32e50baac80399a0a"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "codex-usage",
+  "displayName": "Codex Usage",
+  "description": "ChatGPT/Codex 5h and weekly usage via remote provider script.",
+  "runtime": "node",
+  "entry": "provider.cjs",
+  "requiredEnvVars": ["CODEX_ACCESS_TOKEN"],
+  "output": "provider-snapshot-v1",
+  "permissions": ["env:CODEX_ACCESS_TOKEN"],
+  "checksums": {
+    "source": "sha256:9543ffe455f25743ae57d981390b16111d972a1a6e6285fccc674638c9dfd1ec"
+  }
+}
