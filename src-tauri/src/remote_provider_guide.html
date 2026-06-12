@@ -146,10 +146,10 @@
       <section>
         <h2>How it works</h2>
         <ol>
-          <li>You provide a manifest URL (a JSON file that describes the provider).</li>
-          <li>QuotaBarWin fetches the manifest, verifies the source checksum, and downloads the source script referenced by the manifest.</li>
-          <li>The script is cached locally and executed with the declared runtime (for example <code>node</code>, <code>python</code>, or an absolute path).</li>
-          <li>On every refresh QuotaBarWin runs the cached script and parses the output into quota windows.</li>
+          <li>You provide a registry URL or local file path (<code>registry.json</code>) that lists one or more providers.</li>
+          <li>QuotaBarWin reads the registry, fetches each referenced provider manifest, verifies optional checksums, and downloads the source scripts.</li>
+          <li>Each script is cached locally and executed with its declared runtime (for example <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path).</li>
+          <li>On every refresh QuotaBarWin runs the cached scripts and parses the output into quota windows.</li>
         </ol>
       </section>
 
@@ -182,10 +182,37 @@
             <tr><td><code>description</code></td><td>no</td><td>Short description.</td></tr>
             <tr><td><code>runtime</code></td><td>yes</td><td>Runtime used to execute <code>entry</code>. Common values: <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path.</td></tr>
             <tr><td><code>entry</code></td><td>yes</td><td>Source file name. Relative paths are resolved against the manifest URL; absolute HTTPS URLs are also supported.</td></tr>
-            <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script. Shown in the install confirmation dialog.</td></tr>
+            <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script. Shown in the registry install summary.</td></tr>
             <tr><td><code>output</code></td><td>yes</td><td>Output contract. Use <code>provider-snapshot-v1</code>.</td></tr>
             <tr><td><code>permissions</code></td><td>no</td><td>Declared capabilities (informational). Use <code>env:&lt;NAME&gt;</code> to document env vars.</td></tr>
             <tr><td><code>checksums.source</code></td><td>no</td><td>SHA-256 checksum of the source file. Required for auto-update. Format: <code>sha256:&lt;hex&gt;</code>.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Provider registry format</h2>
+        <p>Save the registry as <code>registry.json</code>. It points to one or more provider manifests.</p>
+        <pre>{
+  "schemaVersion": 1,
+  "providers": [
+    {
+      "id": "kimi-coding",
+      "providerUrl": "kimi-coding/provider.json",
+      "checksum": "sha256:&lt;manifest-sha256&gt;"
+    }
+  ]
+}</pre>
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>schemaVersion</code></td><td>yes</td><td>Must be <code>1</code>.</td></tr>
+            <tr><td><code>providers</code></td><td>yes</td><td>Array of provider entries.</td></tr>
+            <tr><td><code>providers[].id</code></td><td>yes</td><td>Provider id. Must match the id declared in the referenced manifest.</td></tr>
+            <tr><td><code>providers[].providerUrl</code></td><td>yes</td><td>URL or local path to the provider's <code>provider.json</code>. Relative paths are resolved against the registry URL/path.</td></tr>
+            <tr><td><code>providers[].checksum</code></td><td>no</td><td>SHA-256 checksum of the referenced manifest text. If provided, QuotaBarWin verifies the manifest before installing.</td></tr>
           </tbody>
         </table>
       </section>
@@ -234,10 +261,163 @@
       </section>
 
       <section>
+        <h2>Implementation examples (Zhipu/BigModel)</h2>
+        <p>These examples call the Zhipu/BigModel quota endpoint and print a <code>provider-snapshot-v1</code> response. They all read the API key from <code>BIGMODEL_API_KEY</code>.</p>
+
+        <h3>Node.js</h3>
+        <pre>const token = process.env.BIGMODEL_API_KEY;
+if (!token) {
+  console.error("BIGMODEL_API_KEY is required");
+  process.exit(1);
+}
+
+fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
+  headers: { Authorization: `Bearer ${token}` }
+})
+  .then((res) => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  })
+  .then((body) => {
+    const limits = body.data?.limits ?? [];
+    const windows = limits.map((l) => ({
+      id: `${l.type}-${l.unit}-${l.number}`.toLowerCase(),
+      label: `${l.type} / ${l.unit}`,
+      used: l.currentValue ?? null,
+      limit: l.usage ?? null,
+      unit: l.type === "TOKENS_LIMIT" ? "tokens" : null,
+      usedPercent: l.percentage ?? null,
+      remainingPercent: l.percentage == null ? null : Math.max(0, 100 - l.percentage),
+      resetAt: l.nextResetTime ? new Date(l.nextResetTime).toISOString() : null,
+      resetText: null,
+      confidence: "exact"
+    }));
+    console.log(JSON.stringify({
+      status: "ok",
+      updatedAt: new Date().toISOString(),
+      windows,
+      metadata: {}
+    }));
+  })
+  .catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });</pre>
+
+        <h3>Python</h3>
+        <pre>import json, os, sys, urllib.request, datetime
+
+token = os.environ.get("BIGMODEL_API_KEY")
+if not token:
+    sys.exit("BIGMODEL_API_KEY is required")
+
+req = urllib.request.Request(
+    "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+    headers={"Authorization": f"Bearer {token}"}
+)
+
+with urllib.request.urlopen(req) as res:
+    body = json.load(res)
+
+limits = body.get("data", {}).get("limits", [])
+windows = []
+for l in limits:
+    pct = l.get("percentage")
+    windows.append({
+        "id": f"{l['type']}-{l['unit']}-{l['number']}".lower(),
+        "label": f"{l['type']} / {l['unit']}",
+        "used": l.get("currentValue"),
+        "limit": l.get("usage"),
+        "unit": "tokens" if l.get("type") == "TOKENS_LIMIT" else None,
+        "usedPercent": pct,
+        "remainingPercent": None if pct is None else max(0, 100 - pct),
+        "resetAt": datetime.datetime.fromtimestamp(
+            l["nextResetTime"] / 1000, tz=datetime.timezone.utc
+        ).isoformat() if l.get("nextResetTime") else None,
+        "resetText": None,
+        "confidence": "exact"
+    })
+
+print(json.dumps({
+    "status": "ok",
+    "updatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "windows": windows,
+    "metadata": {}
+}, ensure_ascii=False))</pre>
+
+        <h3>PowerShell</h3>
+        <pre>$token = $env:BIGMODEL_API_KEY
+if (-not $token) { throw "BIGMODEL_API_KEY is required" }
+
+$res = Invoke-RestMethod -Uri "https://open.bigmodel.cn/api/monitor/usage/quota/limit" -Headers @{
+  Authorization = "Bearer $token"
+}
+
+$windows = @()
+foreach ($l in $res.data.limits) {
+  $pct = $l.percentage
+  $windows += @{
+    id = "$($l.type)-$($l.unit)-$($l.number)".ToLower()
+    label = "$($l.type) / $($l.unit)"
+    used = $l.currentValue
+    limit = $l.usage
+    unit = if ($l.type -eq "TOKENS_LIMIT") { "tokens" } else { $null }
+    usedPercent = $pct
+    remainingPercent = if ($null -eq $pct) { $null } else { [math]::Max(0, 100 - $pct) }
+    resetAt = if ($l.nextResetTime) {
+      ([DateTimeOffset]::FromUnixTimeMilliseconds($l.nextResetTime).UtcDateTime).ToString("o")
+    } else { $null }
+    resetText = $null
+    confidence = "exact"
+  }
+}
+
+@{
+  status = "ok"
+  updatedAt = (Get-Date).ToString("o")
+  windows = $windows
+  metadata = @{}
+} | ConvertTo-Json -Depth 10</pre>
+
+        <h3>Bash (Git Bash)</h3>
+        <pre>#!/usr/bin/env bash
+set -euo pipefail
+
+TOKEN="${BIGMODEL_API_KEY:-}"
+[ -z "$TOKEN" ] &amp;&amp; { echo "BIGMODEL_API_KEY is required" &gt;&amp;2; exit 1; }
+
+RESPONSE=$(curl -fsS -H "Authorization: Bearer $TOKEN" \
+  "https://open.bigmodel.cn/api/monitor/usage/quota/limit")
+
+UPDATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+WINDOWS=$(echo "$RESPONSE" | jq '[.data.limits[] | {
+  id: "\(.type)-\(.unit)-\(.number)" | ascii_downcase,
+  label: "\(.type) / \(.unit)",
+  used: .currentValue,
+  limit: .usage,
+  unit: (if .type == "TOKENS_LIMIT" then "tokens" else null end),
+  usedPercent: .percentage,
+  remainingPercent: (if .percentage == null then null else [0, 100 - .percentage] | max end),
+  resetAt: (if .nextResetTime == null then null else (.nextResetTime / 1000 | strflocaltime("%Y-%m-%dT%H:%M:%SZ")) end),
+  resetText: null,
+  confidence: "exact"
+}]')
+
+jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
+  '{status: "ok", updatedAt: $updatedAt, windows: $windows, metadata: {}}'</pre>
+
+        <div class="note">
+          For Bash, <code>jq</code> must be available. On Windows, Git Bash usually ships with it.
+        </div>
+      </section>
+
+      <section>
         <h2>Security checklist</h2>
         <ul>
           <li>Only install remote providers from sources you trust.</li>
-          <li>Review the source URL, runtime, and required env vars in the confirmation dialog.</li>
+          <li>Review each provider's source URL, runtime, and required env vars before installing a registry.</li>
+          <li>Prefer registries that include <code>providers[].checksum</code> so QuotaBarWin can verify each manifest before installing.</li>
           <li>Prefer manifests that include <code>checksums.source</code>; without it QuotaBarWin cannot auto-update safely.</li>
           <li>The cached source file lives in the app data directory under <code>providers/remote/&lt;id&gt;/</code>.</li>
         </ul>
@@ -246,9 +426,9 @@
       <section>
         <h2>Examples</h2>
         <p>
-          The <code>examples/remote-providers/</code> directory in the QuotaBarWin repository contains complete sample providers for Kimi, BigModel (Zhipu), and Codex usage.
+          The <code>examples/remote-providers/</code> directory in the QuotaBarWin repository contains a sample <code>registry.json</code> and complete providers for Kimi, BigModel (Zhipu), and Codex usage.
         </p>
-        <p>To host your own provider, upload a directory containing <code>provider.json</code> plus the source file and paste the raw <code>provider.json</code> URL into QuotaBarWin.</p>
+        <p>To host your own set of providers, upload the directory containing <code>registry.json</code> and the provider subdirectories, then paste the raw <code>registry.json</code> URL into QuotaBarWin.</p>
       </section>
 
       <section>
