@@ -11,6 +11,8 @@ Each subdirectory contains:
 
 `manifest.example.json` is a standalone, minimal manifest template you can copy when creating your own provider.
 
+`registry.json` is a provider registry that lists all three example providers. Paste its URL/path into **Settings → Remote Providers → Manifest / Registry URL** and click **Install Registry** to install them all at once.
+
 ## Providers
 
 | Provider | Required env var | Description |
@@ -21,9 +23,9 @@ Each subdirectory contains:
 
 ## Usage
 
-1. Upload a provider directory to a static host (e.g., GitHub Raw).
+1. Upload a provider directory (or the whole `remote-providers/` directory) to a static host (e.g., GitHub Raw).
 2. In QuotaBarWin, go to **Settings → Remote Providers**.
-3. Paste the raw URL of `provider.json` and click **Preview**.
+3. Paste the raw URL of `provider.json` and click **Preview**, or paste the URL of `registry.json` and click **Install Registry**.
 4. Review the confirmation dialog and install.
 
 For the manifest format and output contract, see [`docs/remote-provider-guide.md`](../../docs/remote-provider-guide.md).

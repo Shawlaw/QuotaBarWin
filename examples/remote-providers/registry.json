@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "providers": [
+    {
+      "id": "kimi-coding",
+      "providerUrl": "kimi-coding/provider.json",
+      "checksum": "sha256:960e076b00bddd63d68609dedc4131fe248bc23a13b3a4d29efe8ec1fc1e285d"
+    },
+    {
+      "id": "bigmodel-coding-plan",
+      "providerUrl": "bigmodel-coding-plan/provider.json",
+      "checksum": "sha256:a857cc76bb116d79ce0dc5694928ccebc65b05156f90c69be70ad519d8c7e9b4"
+    },
+    {
+      "id": "codex-usage",
+      "providerUrl": "codex-usage/provider.json",
+      "checksum": "sha256:24ec41b587a60713ce33b617b4b615fce5eefb735ceeaa3ceedd5d8371ccf2b4"
+    }
+  ]
+}

@@ -305,6 +305,36 @@ export async function addRemoteProvider(
   return invoke<RemoteProviderConfig>("add_remote_provider", { url, proxyUrl, autoUpdate });
 }
 
+export type RegistryInstallFailure = {
+  id: string;
+  error: string;
+};
+
+export type RegistryInstallResult = {
+  installed: RemoteProviderConfig[];
+  skipped: string[];
+  failed: RegistryInstallFailure[];
+};
+
+export async function installRemoteProviderRegistry(
+  url: string,
+  proxyUrl: string | null,
+  autoUpdate: boolean
+): Promise<RegistryInstallResult> {
+  if (!hasTauriInternals()) {
+    void url;
+    void proxyUrl;
+    void autoUpdate;
+    throw new Error("Installing remote provider registry is not available in browser preview");
+  }
+
+  return invoke<RegistryInstallResult>("install_remote_provider_registry", {
+    url,
+    proxyUrl,
+    autoUpdate
+  });
+}
+
 export async function removeRemoteProvider(id: string): Promise<void> {
   if (!hasTauriInternals()) {
     void id;

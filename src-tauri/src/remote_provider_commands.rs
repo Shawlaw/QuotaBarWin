@@ -1,5 +1,6 @@
-use std::{fs, path::PathBuf, time::Duration};
+use std::{fs, path::{Path, PathBuf}, time::Duration};
 
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::{
@@ -8,9 +9,11 @@ use crate::{
     },
     proxy::ProxyConfig,
     remote_provider::{
-        cache_remote_provider, check_update, compute_checksum, fetch_manifest, fetch_source,
-        load_cached_manifest, load_cached_meta, resolve_runtime, resolve_source_url,
-        validate_runtime_executable, RemoteProviderPreview, UpdateInfo,
+        cache_remote_provider, check_update, compute_checksum, fetch_manifest, fetch_manifest_text,
+        fetch_provider_registry, fetch_source, load_cached_manifest, load_cached_meta,
+        parse_manifest, resolve_provider_url, resolve_runtime, resolve_source_url,
+        validate_runtime_executable,
+        ProviderManifest, RemoteProviderPreview, UpdateInfo,
     },
 };
 
@@ -89,6 +92,85 @@ pub async fn preview_remote_provider(
     .map_err(|error| error.to_string())?
 }
 
+fn install_remote_provider_from_manifest(
+    app_handle: &AppHandle,
+    path: &Path,
+    url: &str,
+    proxy_url: Option<&str>,
+    auto_update: bool,
+    manifest: ProviderManifest,
+) -> Result<ProviderConfig, String> {
+    let mut loaded = load_or_create_config(path)?;
+    let global_proxy = loaded.config.network_proxy.clone();
+
+    if loaded
+        .config
+        .providers
+        .iter()
+        .any(|p| provider_id(p) == manifest.id)
+    {
+        return Err(format!(
+            "id conflict: a provider with id '{}' already exists",
+            manifest.id
+        ));
+    }
+
+    let source_url = resolve_source_url(url, &manifest.entry);
+    let source = fetch_source(&source_url, proxy_url, global_proxy.as_ref(), FETCH_TIMEOUT)
+        .map_err(|e| e.to_string())?;
+
+    let actual_auto_update = manifest.checksums.source.is_some() && auto_update;
+
+    if let Some(expected) = manifest.checksums.source.as_ref() {
+        crate::remote_provider::verify_checksum(&source, expected).map_err(|e| e.to_string())?;
+    }
+
+    let resolved_runtime_path = resolve_runtime(&manifest.runtime)
+        .and_then(|path| {
+            validate_runtime_executable(&path)?;
+            Ok(path)
+        })
+        .map_err(|e| e.to_string())?;
+
+    let provider_dir = remote_provider_dir(app_handle, &manifest.id)
+        .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
+
+    let parent = provider_dir
+        .parent()
+        .expect("provider dir has parent")
+        .to_path_buf();
+    cache_remote_provider(
+        &parent,
+        &manifest.id,
+        url,
+        &manifest,
+        &source,
+        Some(&resolved_runtime_path),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let config = ProviderConfig::Remote {
+        id: manifest.id.clone(),
+        name: manifest.display_name.clone(),
+        enabled: true,
+        manifest_url: url.to_string(),
+        source_url,
+        provider_dir: Some(provider_dir.clone()),
+        runtime: manifest.runtime.clone(),
+        resolved_runtime: Some(resolved_runtime_path.display().to_string()),
+        proxy_url: proxy_url.map(|s| s.to_string()),
+        auto_update: actual_auto_update,
+        update_interval_seconds: 3600,
+        trusted_checksum: Some(compute_checksum(&source)),
+        window_label_overrides: Default::default(),
+        visible_window_ids: Default::default(),
+    };
+
+    loaded.config.providers.push(config.clone());
+    save_config_to_path(path, &loaded.config)?;
+    Ok(config)
+}
+
 #[tauri::command]
 pub async fn add_remote_provider(
     app: AppHandle,
@@ -100,84 +182,137 @@ pub async fn add_remote_provider(
     let app_handle = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        let mut loaded = load_or_create_config(&path)?;
+        let loaded = load_or_create_config(&path)?;
         let global_proxy = loaded.config.network_proxy.clone();
-
-        let manifest =
-            fetch_manifest(&url, proxy_url.as_deref(), global_proxy.as_ref(), FETCH_TIMEOUT)
+        let manifest_text =
+            fetch_manifest_text(&url, proxy_url.as_deref(), global_proxy.as_ref(), FETCH_TIMEOUT)
                 .map_err(|e| e.to_string())?;
-
-        if loaded
-            .config
-            .providers
-            .iter()
-            .any(|p| provider_id(p) == manifest.id)
-        {
-            return Err(format!(
-                "id conflict: a provider with id '{}' already exists",
-                manifest.id
-            ));
-        }
-
-        let source_url = resolve_source_url(&url, &manifest.entry);
-        let source = fetch_source(
-            &source_url,
+        let manifest = parse_manifest(&manifest_text).map_err(|e| e.to_string())?;
+        install_remote_provider_from_manifest(
+            &app_handle,
+            &path,
+            &url,
             proxy_url.as_deref(),
+            auto_update,
+            manifest,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryInstallFailure {
+    pub id: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryInstallResult {
+    pub installed: Vec<ProviderConfig>,
+    pub skipped: Vec<String>,
+    pub failed: Vec<RegistryInstallFailure>,
+}
+
+#[tauri::command]
+pub async fn install_remote_provider_registry(
+    app: AppHandle,
+    url: String,
+    proxy_url: Option<String>,
+    auto_update: bool,
+) -> Result<RegistryInstallResult, String> {
+    let path = config_path_for_app(&app)?;
+    let app_handle = app.clone();
+    let proxy_url_ref = proxy_url.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let loaded = load_or_create_config(&path)?;
+        let global_proxy = loaded.config.network_proxy.clone();
+        let registry = fetch_provider_registry(
+            &url,
+            proxy_url_ref.as_deref(),
             global_proxy.as_ref(),
             FETCH_TIMEOUT,
         )
         .map_err(|e| e.to_string())?;
 
-        let actual_auto_update = manifest.checksums.source.is_some() && auto_update;
-
-        if let Some(expected) = manifest.checksums.source.as_ref() {
-            crate::remote_provider::verify_checksum(&source, expected).map_err(|e| e.to_string())?;
-        }
-
-        let resolved_runtime_path = resolve_runtime(&manifest.runtime)
-            .and_then(|path| {
-                validate_runtime_executable(&path)?;
-                Ok(path)
-            })
-            .map_err(|e| e.to_string())?;
-
-        let provider_dir = remote_provider_dir(&app_handle, &manifest.id)
-            .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
-
-        let parent = provider_dir
-            .parent()
-            .expect("provider dir has parent")
-            .to_path_buf();
-        cache_remote_provider(
-            &parent,
-            &manifest.id,
-            &url,
-            &manifest,
-            &source,
-            Some(&resolved_runtime_path),
-        )
-        .map_err(|e| e.to_string())?;
-
-        let config = ProviderConfig::Remote {
-            id: manifest.id.clone(),
-            name: manifest.display_name.clone(),
-            enabled: true,
-            manifest_url: url,
-            source_url,
-            provider_dir: Some(provider_dir.clone()),
-            runtime: manifest.runtime.clone(),
-            resolved_runtime: Some(resolved_runtime_path.display().to_string()),
-            proxy_url,
-            auto_update: actual_auto_update,
-            update_interval_seconds: 3600,
-            trusted_checksum: Some(compute_checksum(&source)),
-            window_label_overrides: Default::default(),
-            visible_window_ids: Default::default(),
+        let mut result = RegistryInstallResult {
+            installed: Vec::new(),
+            skipped: Vec::new(),
+            failed: Vec::new(),
         };
 
-        loaded.config.providers.push(config.clone());
-        save_config_to_path(&path, &loaded.config)?;
-        Ok(config)
+        for entry in registry.providers {
+            if loaded
+                .config
+                .providers
+                .iter()
+                .any(|p| provider_id(p) == entry.id)
+            {
+                result.skipped.push(entry.id);
+                continue;
+            }
+
+            let provider_url = resolve_provider_url(&url, &entry.provider_url);
+
+            let manifest_text = match fetch_manifest_text(
+                &provider_url,
+                proxy_url_ref.as_deref(),
+                global_proxy.as_ref(),
+                FETCH_TIMEOUT,
+            ) {
+                Ok(text) => text,
+                Err(error) => {
+                    result.failed.push(RegistryInstallFailure {
+                        id: entry.id,
+                        error: error.to_string(),
+                    });
+                    continue;
+                }
+            };
+
+            if let Some(expected) = entry.checksum.as_ref() {
+                if let Err(error) =
+                    crate::remote_provider::verify_checksum(&manifest_text, expected)
+                {
+                    result.failed.push(RegistryInstallFailure {
+                        id: entry.id,
+                        error: error.to_string(),
+                    });
+                    continue;
+                }
+            }
+
+            let manifest = match parse_manifest(&manifest_text) {
+                Ok(manifest) => manifest,
+                Err(error) => {
+                    result.failed.push(RegistryInstallFailure {
+                        id: entry.id,
+                        error: error.to_string(),
+                    });
+                    continue;
+                }
+            };
+
+            match install_remote_provider_from_manifest(
+                &app_handle,
+                &path,
+                &provider_url,
+                proxy_url_ref.as_deref(),
+                auto_update,
+                manifest,
+            ) {
+                Ok(config) => result.installed.push(config),
+                Err(error) => result.failed.push(RegistryInstallFailure {
+                    id: entry.id,
+                    error,
+                }),
+            }
+        }
+
+        Ok(result)
     })
     .await
     .map_err(|e| e.to_string())?

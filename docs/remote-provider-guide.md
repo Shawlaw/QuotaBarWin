@@ -43,6 +43,33 @@ Field descriptions:
 | `permissions` | no | Declared capabilities (currently informational). Use `env:<NAME>` to document required env vars. |
 | `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. |
 
+## Provider registry (`registry.json`)
+
+A registry lets you install multiple providers with one URL. It is useful for distributing a curated set of providers.
+
+```json
+{
+  "schemaVersion": 1,
+  "providers": [
+    {
+      "id": "kimi-coding",
+      "providerUrl": "kimi-coding/provider.json",
+      "checksum": "sha256:<manifest-sha256>"
+    }
+  ]
+}
+```
+
+Field descriptions:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `schemaVersion` | yes | Must be `1`. |
+| `providers` | yes | Array of provider entries. |
+| `providers[].id` | yes | Provider id. Must match the id declared in the referenced manifest. |
+| `providers[].providerUrl` | yes | URL or local path to the provider's `provider.json`. Relative paths are resolved against the registry URL/path. |
+| `providers[].checksum` | no | SHA-256 checksum of the referenced manifest text. If provided, QuotaBarWin verifies the manifest before installing. |
+
 ## Source script output contract
 
 When `output` is `provider-snapshot-v1`, the script must print a single JSON object to stdout. `id`, `name`, and `source` are optional and default to the values from the manifest/config.

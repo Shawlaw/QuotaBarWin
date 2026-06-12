@@ -73,6 +73,22 @@ pub struct RemoteProviderPreview {
     pub checksum: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderRegistry {
+    pub schema_version: u8,
+    pub providers: Vec<ProviderRegistryEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderRegistryEntry {
+    pub id: String,
+    pub provider_url: String,
+    #[serde(default)]
+    pub checksum: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RemoteProviderError {
     Network(String),
@@ -180,17 +196,47 @@ fn fetch_text(
     )))
 }
 
+pub fn fetch_manifest_text(
+    url: &str,
+    per_provider_proxy: Option<&str>,
+    global_proxy: Option<&ProxyConfig>,
+    timeout: Duration,
+) -> Result<String, RemoteProviderError> {
+    fetch_text(url, per_provider_proxy, global_proxy, timeout)
+}
+
+pub fn parse_manifest(text: &str) -> Result<ProviderManifest, RemoteProviderError> {
+    let manifest: ProviderManifest = serde_json::from_str(text)
+        .map_err(|error| RemoteProviderError::InvalidManifest(error.to_string()))?;
+    validate_manifest(&manifest)?;
+    Ok(manifest)
+}
+
 pub fn fetch_manifest(
     url: &str,
     per_provider_proxy: Option<&str>,
     global_proxy: Option<&ProxyConfig>,
     timeout: Duration,
 ) -> Result<ProviderManifest, RemoteProviderError> {
+    let text = fetch_manifest_text(url, per_provider_proxy, global_proxy, timeout)?;
+    parse_manifest(&text)
+}
+
+pub fn fetch_provider_registry(
+    url: &str,
+    per_provider_proxy: Option<&str>,
+    global_proxy: Option<&ProxyConfig>,
+    timeout: Duration,
+) -> Result<ProviderRegistry, RemoteProviderError> {
     let text = fetch_text(url, per_provider_proxy, global_proxy, timeout)?;
-    let manifest: ProviderManifest = serde_json::from_str(&text)
+    let registry: ProviderRegistry = serde_json::from_str(&text)
         .map_err(|error| RemoteProviderError::InvalidManifest(error.to_string()))?;
-    validate_manifest(&manifest)?;
-    Ok(manifest)
+    if registry.schema_version != 1 {
+        return Err(RemoteProviderError::UnsupportedSchemaVersion(
+            registry.schema_version,
+        ));
+    }
+    Ok(registry)
 }
 
 pub fn fetch_source(
@@ -200,6 +246,41 @@ pub fn fetch_source(
     timeout: Duration,
 ) -> Result<String, RemoteProviderError> {
     fetch_text(url, per_provider_proxy, global_proxy, timeout)
+}
+
+fn resolve_relative_url(base_url: &str, relative: &str) -> String {
+    let relative = relative.trim();
+    if relative.starts_with("http://")
+        || relative.starts_with("https://")
+        || relative.starts_with("file://")
+    {
+        return relative.to_string();
+    }
+
+    if base_url.starts_with("http://") || base_url.starts_with("https://") {
+        let base = base_url
+            .rfind('/')
+            .map(|index| &base_url[..index + 1])
+            .unwrap_or(base_url);
+        return format!("{base}{relative}");
+    }
+
+    let base_path = if base_url.starts_with("file://") {
+        Path::new(&base_url[7..])
+    } else {
+        Path::new(base_url)
+    };
+
+    base_path
+        .parent()
+        .map(|parent| parent.join(relative))
+        .unwrap_or_else(|| PathBuf::from(relative))
+        .to_string_lossy()
+        .to_string()
+}
+
+pub fn resolve_provider_url(registry_url: &str, provider_url: &str) -> String {
+    resolve_relative_url(registry_url, provider_url)
 }
 
 pub fn resolve_source_url(manifest_url: &str, entry: &str) -> String {
@@ -771,4 +852,38 @@ fn resolve_source_url_with_local_file_manifest_and_relative_entry() {
         resolved.contains(&temp.path().to_string_lossy().replace('\\', "/")),
         "resolved should be under temp dir: {resolved}"
     );
+}
+
+#[test]
+fn resolve_provider_url_with_relative_path() {
+    assert_eq!(
+        resolve_provider_url("https://example.com/registry.json", "kimi/provider.json"),
+        "https://example.com/kimi/provider.json"
+    );
+}
+
+#[test]
+fn resolve_provider_url_with_local_registry_and_relative_path() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let registry_path = temp.path().join("registry.json");
+    let resolved = resolve_provider_url(&registry_path.to_string_lossy(), "kimi/provider.json");
+    let resolved_path = Path::new(&resolved);
+    assert!(resolved_path.ends_with("kimi/provider.json"));
+    assert_eq!(resolved_path.parent().unwrap().parent().unwrap(), temp.path());
+}
+
+#[test]
+fn fetch_provider_registry_reads_local_registry_file() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let registry_path = temp.path().join("registry.json");
+    fs::write(
+        &registry_path,
+        r#"{"schemaVersion":1,"providers":[{"id":"local","providerUrl":"provider.json"}]}"#,
+    )
+    .expect("write registry");
+
+    let registry = fetch_provider_registry(&registry_path.to_string_lossy(), None, None, Duration::from_secs(1))
+        .expect("fetch registry");
+    assert_eq!(registry.providers.len(), 1);
+    assert_eq!(registry.providers[0].id, "local");
 }

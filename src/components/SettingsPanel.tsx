@@ -17,6 +17,7 @@ import {
   applyRemoteUpdate,
   checkRemoteUpdates,
   getConfig,
+  installRemoteProviderRegistry,
   openRemoteProviderGuide,
   previewRemoteProvider,
   refreshRemoteProvider,
@@ -833,6 +834,16 @@ export function SettingsPanel({
           const updated = await getConfig();
           onChange(updated);
           return added;
+        }}
+        onInstallRegistry={async (url, providerProxyUrl, providerAutoUpdate) => {
+          const result = await installRemoteProviderRegistry(
+            url,
+            providerProxyUrl,
+            providerAutoUpdate
+          );
+          const updated = await getConfig();
+          onChange(updated);
+          return result;
         }}
         onRemove={async (id) => {
           await removeRemoteProvider(id);

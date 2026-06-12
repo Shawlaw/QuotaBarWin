@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { InstallRemoteProviderDialog } from "./InstallRemoteProviderDialog";
 import type { RemoteProviderConfig } from "../types";
-import type { RemoteProviderPreview, UpdateInfo } from "../lib/api";
+import type { RegistryInstallResult, RemoteProviderPreview, UpdateInfo } from "../lib/api";
 
 type RemoteProviderSettingsProps = {
   providers: RemoteProviderConfig[];
   onPreview: (url: string, proxyUrl: string | null, autoUpdate: boolean) => Promise<RemoteProviderPreview>;
   onAdd: (url: string, proxyUrl: string | null, autoUpdate: boolean) => Promise<RemoteProviderConfig>;
+  onInstallRegistry: (url: string, proxyUrl: string | null, autoUpdate: boolean) => Promise<RegistryInstallResult>;
   onRemove: (id: string) => Promise<void>;
   onRefresh: (id: string) => Promise<UpdateInfo>;
   onCheckUpdates: () => Promise<UpdateInfo[]>;
@@ -18,6 +19,7 @@ export function RemoteProviderSettings({
   providers,
   onPreview,
   onAdd,
+  onInstallRegistry,
   onRemove,
   onRefresh,
   onCheckUpdates,
@@ -56,6 +58,39 @@ export function RemoteProviderSettings({
       setUpdates([]);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to install provider");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleInstallRegistry() {
+    setMessage(null);
+    setLoading(true);
+    try {
+      const result = await onInstallRegistry(
+        url.trim(),
+        proxyUrl.trim() || null,
+        autoUpdate
+      );
+      const parts: string[] = [];
+      if (result.installed.length > 0) {
+        parts.push(`${result.installed.length} installed`);
+      }
+      if (result.skipped.length > 0) {
+        parts.push(`${result.skipped.length} skipped`);
+      }
+      if (result.failed.length > 0) {
+        parts.push(`${result.failed.length} failed`);
+      }
+      setMessage(parts.join(", ") || "No providers installed from registry");
+      setPreview(null);
+      setUrl("");
+      setProxyUrl("");
+      setUpdates([]);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Failed to install registry"
+      );
     } finally {
       setLoading(false);
     }
@@ -136,13 +171,13 @@ export function RemoteProviderSettings({
 
       <div className="settings-grid remote-provider-add-form">
         <label>
-          Manifest URL
+          Manifest / Registry URL
           <input
             data-testid="remote-provider-url-input"
             type="text"
             value={url}
             onChange={(event) => setUrl(event.currentTarget.value)}
-            placeholder="https://... or file:///... or C:\\path\\provider.json"
+            placeholder="https://... or file:///... or local path (provider.json / registry.json)"
           />
         </label>
         <label>
@@ -170,6 +205,15 @@ export function RemoteProviderSettings({
           disabled={loading || !url.trim()}
         >
           {loading && preview === null ? "Loading..." : "Preview"}
+        </button>
+        <button
+          type="button"
+          className="button-secondary"
+          onClick={() => void handleInstallRegistry()}
+          disabled={loading || !url.trim()}
+          data-testid="install-remote-provider-registry"
+        >
+          {loading ? "Loading..." : "Install Registry"}
         </button>
       </div>
 
