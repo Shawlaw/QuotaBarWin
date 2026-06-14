@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::Path,
     process::{Command, Stdio},
     thread,
@@ -351,8 +351,8 @@ fn parse_remote_output(
     match parsed {
         Ok(mut providers) => {
             for provider in &mut providers {
-                apply_window_label_overrides(provider, window_label_overrides);
                 apply_visible_windows(provider, visible_window_ids);
+                apply_window_label_overrides(provider, window_label_overrides);
                 provider.source = "remote".to_string();
                 if provider.diagnostics.is_none() {
                     provider.diagnostics = Some(diagnostics.clone());
@@ -410,12 +410,34 @@ fn apply_visible_windows(provider: &mut ProviderSnapshot, visible_window_ids: &[
         return;
     }
 
-    provider.windows.retain(|window| {
-        visible_window_ids.iter().any(|visible| {
-            let visible = visible.trim();
-            !visible.is_empty() && (visible == window.id || visible == window.label)
-        })
-    });
+    let original_windows = provider.windows.clone();
+    let mut selected_indexes = HashSet::new();
+    let mut visible_windows = Vec::new();
+
+    for visible in visible_window_ids {
+        let visible = visible.trim();
+        if visible.is_empty() {
+            continue;
+        }
+
+        for (index, window) in original_windows.iter().enumerate() {
+            if selected_indexes.contains(&index) || visible != window.id {
+                continue;
+            }
+            visible_windows.push(window.clone());
+            selected_indexes.insert(index);
+        }
+
+        for (index, window) in original_windows.iter().enumerate() {
+            if selected_indexes.contains(&index) || visible != window.label {
+                continue;
+            }
+            visible_windows.push(window.clone());
+            selected_indexes.insert(index);
+        }
+    }
+
+    provider.windows = visible_windows;
 }
 
 fn apply_window_label_overrides(
@@ -553,11 +575,34 @@ mod tests {
             &node_command(script),
             &RemoteOutputSpec::ProviderSnapshotV1,
             &overrides,
-            &["Team weekly".to_string()],
+            &["Weekly".to_string()],
         );
 
         assert_eq!(providers[0].windows.len(), 1);
         assert_eq!(providers[0].windows[0].label, "Team weekly");
+    }
+
+    #[test]
+    fn visible_windows_follow_config_order_and_original_labels() {
+        let script = r#"console.log(JSON.stringify({windows:[{id:'five',label:'5h',remainingPercent:80,confidence:'exact'},{id:'weekly',label:'Weekly',remainingPercent:70,confidence:'exact'},{id:'daily',label:'Weekly',remainingPercent:60,confidence:'exact'}]}));"#;
+        let providers = run_remote_command(
+            "remote-fixture",
+            "Remote Fixture",
+            &node_command(script),
+            &RemoteOutputSpec::ProviderSnapshotV1,
+            &HashMap::new(),
+            &[
+                "Weekly".to_string(),
+                "five".to_string(),
+                "Weekly".to_string(),
+            ],
+        );
+
+        let windows = &providers[0].windows;
+        assert_eq!(windows.len(), 3);
+        assert_eq!(windows[0].id, "weekly");
+        assert_eq!(windows[1].id, "daily");
+        assert_eq!(windows[2].id, "five");
     }
 
     #[test]

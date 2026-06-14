@@ -5,6 +5,13 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
 };
 
+use crate::config::{self, TrayPopupPosition};
+
+use std::{
+    sync::Mutex,
+    time::{Duration, Instant},
+};
+
 pub const SHOW_ID: &str = "show";
 pub const REFRESH_ID: &str = "refresh";
 pub const QUIT_ID: &str = "quit";
@@ -13,6 +20,10 @@ pub const TRAY_POPUP_VIEW: &str = "index.html?view=tray";
 const TRAY_POPUP_WIDTH: f64 = 380.0;
 const TRAY_POPUP_HEIGHT: f64 = 520.0;
 const TRAY_POPUP_OFFSET: f64 = 12.0;
+const TRAY_POPUP_DRAG_FOCUS_GRACE: Duration = Duration::from_secs(2);
+const TRAY_POPUP_POSITION_SAVE_GRACE: Duration = Duration::from_secs(30);
+static TRAY_POPUP_FOCUS_HIDE_SUPPRESSED_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+static TRAY_POPUP_POSITION_SAVE_ALLOWED_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
 
 #[cfg(test)]
 pub fn tray_menu_ids() -> [&'static str; 3] {
@@ -118,6 +129,74 @@ pub fn hide_tray_popup(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn start_tray_popup_dragging(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
+        suppress_focus_hide_for_drag();
+        allow_position_save_for_drag();
+        window.start_dragging().map_err(|error| error.to_string())?;
+        suppress_focus_hide_for_drag();
+        allow_position_save_for_drag();
+        if let Ok(position) = window.outer_position() {
+            save_tray_popup_position_after_user_move(&app, position);
+        }
+    }
+
+    Ok(())
+}
+
+pub fn should_hide_tray_popup_on_focus_lost() -> bool {
+    match TRAY_POPUP_FOCUS_HIDE_SUPPRESSED_UNTIL.lock() {
+        Ok(mut suppressed_until) => match *suppressed_until {
+            Some(until) if Instant::now() < until => false,
+            Some(_) => {
+                *suppressed_until = None;
+                true
+            }
+            None => true,
+        },
+        Err(_) => true,
+    }
+}
+
+fn suppress_focus_hide_for_drag() {
+    if let Ok(mut suppressed_until) = TRAY_POPUP_FOCUS_HIDE_SUPPRESSED_UNTIL.lock() {
+        *suppressed_until = Some(Instant::now() + TRAY_POPUP_DRAG_FOCUS_GRACE);
+    }
+}
+
+fn allow_position_save_for_drag() {
+    if let Ok(mut allowed_until) = TRAY_POPUP_POSITION_SAVE_ALLOWED_UNTIL.lock() {
+        *allowed_until = Some(Instant::now() + TRAY_POPUP_POSITION_SAVE_GRACE);
+    }
+}
+
+fn should_save_tray_popup_position_on_move() -> bool {
+    match TRAY_POPUP_POSITION_SAVE_ALLOWED_UNTIL.lock() {
+        Ok(mut allowed_until) => match *allowed_until {
+            Some(until) if Instant::now() < until => true,
+            Some(_) => {
+                *allowed_until = None;
+                false
+            }
+            None => false,
+        },
+        Err(_) => false,
+    }
+}
+
+pub fn save_tray_popup_position_after_user_move(app: &AppHandle, position: PhysicalPosition<i32>) {
+    if should_save_tray_popup_position_on_move() {
+        let _ = config::save_tray_popup_position_for_app(
+            app,
+            TrayPopupPosition {
+                x: position.x,
+                y: position.y,
+            },
+        );
+    }
+}
+
 fn handle_menu_event(app: &AppHandle, id: &MenuId) {
     match id.as_ref() {
         SHOW_ID => {
@@ -148,7 +227,10 @@ fn handle_tray_event(app: &AppHandle, event: TrayIconEvent) {
 
 fn show_tray_popup(app: &AppHandle, anchor: PhysicalPosition<f64>) {
     if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
-        let position = tray_popup_position(anchor);
+        let position = tray_popup_position_from_saved_or_anchor(
+            config::load_tray_popup_position_for_app(app),
+            anchor,
+        );
         let _ = window.set_position(PhysicalPosition::new(position.0, position.1));
         let _ = window.set_always_on_top(true);
         let _ = window.show();
@@ -161,6 +243,15 @@ fn tray_popup_position(anchor: PhysicalPosition<f64>) -> (i32, i32) {
     let x = (anchor.x - TRAY_POPUP_WIDTH + TRAY_POPUP_OFFSET).max(0.0);
     let y = (anchor.y - TRAY_POPUP_HEIGHT - TRAY_POPUP_OFFSET).max(0.0);
     (x.round() as i32, y.round() as i32)
+}
+
+fn tray_popup_position_from_saved_or_anchor(
+    saved: Option<TrayPopupPosition>,
+    anchor: PhysicalPosition<f64>,
+) -> (i32, i32) {
+    saved
+        .map(|position| (position.x, position.y))
+        .unwrap_or_else(|| tray_popup_position(anchor))
 }
 
 #[cfg(test)]
@@ -191,5 +282,30 @@ mod tests {
             tray_popup_position(PhysicalPosition::new(120.0, 80.0)),
             (0, 0)
         );
+    }
+
+    #[test]
+    fn tray_popup_position_uses_saved_position_when_present() {
+        assert_eq!(
+            tray_popup_position_from_saved_or_anchor(
+                Some(TrayPopupPosition { x: -120, y: 240 }),
+                PhysicalPosition::new(800.0, 900.0),
+            ),
+            (-120, 240)
+        );
+    }
+
+    #[test]
+    fn focus_loss_hide_is_suppressed_after_drag_starts() {
+        suppress_focus_hide_for_drag();
+
+        assert!(!should_hide_tray_popup_on_focus_lost());
+    }
+
+    #[test]
+    fn position_save_requires_drag_window() {
+        assert!(!should_save_tray_popup_position_on_move());
+        allow_position_save_for_drag();
+        assert!(should_save_tray_popup_position_on_move());
     }
 }

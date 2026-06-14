@@ -11,7 +11,7 @@ import {
   refreshSnapshot,
   removeRemoteProvider,
   saveConfig,
-  setNetworkProxy
+  setNetworkProxy,
 } from "./api";
 import type { AppConfig, AppSnapshot } from "../types";
 
@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 const config: AppConfig = {
-  schemaVersion: 8,
+  schemaVersion: 9,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -31,15 +31,15 @@ const config: AppConfig = {
       kind: "mock",
       id: "mock-codex",
       name: "Codex Mock",
-      enabled: true
-    }
-  ]
+      enabled: true,
+    },
+  ],
 };
 
 const snapshot: AppSnapshot = {
   schemaVersion: 1,
   refreshedAt: "2026-06-09T10:00:00+08:00",
-  providers: []
+  providers: [],
 };
 
 test("api_invokes_core_snapshot_and_config_commands", async () => {
@@ -64,7 +64,7 @@ test("api_invokes_core_snapshot_and_config_commands", async () => {
   expect(calls.map((call) => call.cmd)).toEqual([
     "refresh_snapshot",
     "get_cached_snapshot",
-    "get_config"
+    "get_config",
   ]);
 });
 
@@ -102,11 +102,14 @@ test("api_invokes_network_proxy_commands", async () => {
   });
 
   const proxy = await getNetworkProxy();
-  await setNetworkProxy({ kind: "socks5", url: "socks5://proxy.example.com:1080" });
+  await setNetworkProxy({
+    kind: "socks5",
+    url: "socks5://proxy.example.com:1080",
+  });
 
   expect(proxy).toEqual({ kind: "http", url: "http://proxy.example.com:8080" });
   expect(payloads.set_network_proxy).toEqual({
-    proxy: { kind: "socks5", url: "socks5://proxy.example.com:1080" }
+    proxy: { kind: "socks5", url: "socks5://proxy.example.com:1080" },
   });
 });
 
@@ -123,11 +126,11 @@ test("api_invokes_remote_provider_commands", async () => {
         sourceUrl: "https://example.com/provider.cjs",
         runtime: "node",
         autoUpdate: true,
-        updateIntervalSeconds: 3600
-      }
+        updateIntervalSeconds: 3600,
+      },
     ],
     skipped: [],
-    failed: []
+    failed: [],
   };
   mockIPC((cmd, payload) => {
     payloads[cmd] = payload;
@@ -141,7 +144,9 @@ test("api_invokes_remote_provider_commands", async () => {
       return { id: "remote-kimi", available: true, newChecksum: "sha256:abc" };
     }
     if (cmd === "check_remote_updates") {
-      return [{ id: "remote-kimi", available: true, newChecksum: "sha256:abc" }];
+      return [
+        { id: "remote-kimi", available: true, newChecksum: "sha256:abc" },
+      ];
     }
     throw new Error(`unexpected command ${cmd}`);
   });
@@ -150,23 +155,23 @@ test("api_invokes_remote_provider_commands", async () => {
     installRemoteProviderRegistry(
       "https://example.com/registry.json",
       "http://proxy.example.com:8080",
-      true
-    )
+      true,
+    ),
   ).resolves.toEqual(registryResult);
   await expect(removeRemoteProvider("remote-kimi")).resolves.toBeNull();
   await expect(refreshRemoteProvider("remote-kimi")).resolves.toEqual({
     id: "remote-kimi",
     available: true,
-    newChecksum: "sha256:abc"
+    newChecksum: "sha256:abc",
   });
   await expect(checkRemoteUpdates()).resolves.toEqual([
-    { id: "remote-kimi", available: true, newChecksum: "sha256:abc" }
+    { id: "remote-kimi", available: true, newChecksum: "sha256:abc" },
   ]);
 
   expect(payloads.install_remote_provider_registry).toEqual({
     url: "https://example.com/registry.json",
     proxyUrl: "http://proxy.example.com:8080",
-    autoUpdate: true
+    autoUpdate: true,
   });
   expect(payloads.remove_remote_provider).toEqual({ id: "remote-kimi" });
   expect(payloads.refresh_remote_provider).toEqual({ id: "remote-kimi" });

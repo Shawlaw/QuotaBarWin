@@ -100,8 +100,8 @@ Window fields:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `id` | yes | Stable window identifier. |
-| `label` | yes | Display label. |
+| `id` | yes | Stable window identifier used by user configuration. |
+| `label` | yes | Display label. Can be friendly or localized, but must not be the only stable identity. |
 | `used` | no | Used amount. |
 | `limit` | no | Total limit. |
 | `unit` | no | Unit string, e.g. `requests`, `tokens`, `percent`. |
@@ -110,6 +110,31 @@ Window fields:
 | `resetAt` | no | ISO 8601 timestamp. |
 | `resetText` | no | Human-readable reset text. |
 | `confidence` | no | `exact`, `estimated`, or `unknown`. |
+
+### Stable window IDs and user customization
+
+Treat every `windows[].id` value as part of your provider's compatibility contract. Users can customize per-window display order, visibility, and names by referring to these IDs in local provider config, so changing an ID can silently break their preferences.
+
+Example installed provider config:
+
+```json
+{
+  "kind": "remote",
+  "id": "kimi-coding",
+  "visibleWindowIds": ["300-minute", "usage", "total-quota"],
+  "windowLabelOverrides": {
+    "300-minute": "5h",
+    "usage": "Weekly"
+  },
+  "envVars": {
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+  }
+}
+```
+
+- `visibleWindowIds` controls which windows are displayed. When it is set, QuotaBarWin displays only those windows and uses the configured order.
+- `windowLabelOverrides` controls display names. Overrides are matched by `window.id` first, so stable IDs let users keep custom names even if provider labels change. Legacy label matching may work for existing configs, but provider authors should document and preserve IDs.
+- `label` should be friendly text for the UI and may change for clarity or localization. Do not derive `id` from translated labels, marketing copy, or other wording that might change. Prefer semantic provider API keys such as `weekly`, `300-minute`, `tokens-limit-6-1`, or `total-quota`.
 
 ## Parsing raw API responses
 

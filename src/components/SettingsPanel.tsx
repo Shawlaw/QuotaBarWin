@@ -5,6 +5,7 @@ import type {
   ConfigStorageInfo,
   ProviderConfig,
   ProviderPreset,
+  ProviderSnapshot,
   RemoteProviderConfig
 } from "../types";
 import {
@@ -18,6 +19,11 @@ import {
 } from "../lib/api";
 import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
+import {
+  ProviderWindowSettings,
+  type WindowConfigProvider,
+  type WindowDisplayPatch
+} from "./ProviderWindowSettings";
 import { RemoteProviderSettings } from "./RemoteProviderSettings";
 
 type SettingsPanelProps = {
@@ -26,19 +32,13 @@ type SettingsPanelProps = {
   isConfigStorageBusy: boolean;
   isSaving: boolean;
   presets: ProviderPreset[];
+  snapshotProviders?: ProviderSnapshot[];
   onChange: (config: AppConfig) => void;
   onOpenConfigFolder: () => Promise<void>;
   onResetConfig: () => Promise<void>;
   onSave: () => void | Promise<void>;
   onSetPortableMode: (enabled: boolean) => void;
 };
-
-type ProviderTextDraft = {
-  windowLabelOverrides?: string;
-  visibleWindowIds?: string;
-};
-
-type WindowConfigProvider = CodexProviderConfig;
 
 function updateProvider(
   config: AppConfig,
@@ -92,42 +92,6 @@ function uniqueProviderId(config: AppConfig, providerId: string): string {
   return `${providerId}-${index}`;
 }
 
-function visibleWindowsToText(windowIds: string[] | undefined): string {
-  return (windowIds ?? []).join("\n");
-}
-
-function textToVisibleWindows(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-function labelOverridesToText(overrides: Record<string, string> | undefined): string {
-  return Object.entries(overrides ?? {})
-    .map(([id, label]) => `${id}=${label}`)
-    .join("\n");
-}
-
-function textToLabelOverrides(text: string): Record<string, string> {
-  return Object.fromEntries(
-    text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const separator = line.indexOf("=");
-        if (separator === -1) {
-          return null;
-        }
-        return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()] as const;
-      })
-      .filter((entry): entry is readonly [string, string] =>
-        Boolean(entry && entry[0].length > 0 && entry[1].length > 0)
-      )
-  );
-}
-
 function cloneProvider(provider: ProviderConfig): ProviderConfig {
   return JSON.parse(JSON.stringify(provider)) as ProviderConfig;
 }
@@ -138,6 +102,7 @@ export function SettingsPanel({
   isConfigStorageBusy,
   isSaving,
   presets,
+  snapshotProviders = [],
   onChange,
   onOpenConfigFolder,
   onResetConfig,
@@ -145,7 +110,6 @@ export function SettingsPanel({
   onSetPortableMode
 }: SettingsPanelProps) {
   const { t } = useI18n();
-  const [textDrafts, setTextDrafts] = useState<Record<string, ProviderTextDraft>>({});
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
   const [expandedProviderActions, setExpandedProviderActions] = useState<Record<string, boolean>>({});
   const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
@@ -159,31 +123,6 @@ export function SettingsPanel({
       ? null
       : t.settings.lowQuotaWarningError;
   const canSave = hasChanges && !refreshIntervalError && !lowQuotaWarningError && !isSaving;
-
-  function setProviderTextDraft(
-    providerId: string,
-    field: keyof ProviderTextDraft,
-    value: string
-  ) {
-    setTextDrafts((current) => ({
-      ...current,
-      [providerId]: {
-        ...current[providerId],
-        [field]: value
-      }
-    }));
-  }
-
-  function windowLabelOverridesText(provider: WindowConfigProvider): string {
-    return (
-      textDrafts[provider.id]?.windowLabelOverrides ??
-      labelOverridesToText(provider.windowLabelOverrides)
-    );
-  }
-
-  function visibleWindowIdsText(provider: WindowConfigProvider): string {
-    return textDrafts[provider.id]?.visibleWindowIds ?? visibleWindowsToText(provider.visibleWindowIds);
-  }
 
   function addPreset(preset: ProviderPreset) {
     const provider = cloneProvider(preset.providerConfigTemplate);
@@ -222,6 +161,32 @@ export function SettingsPanel({
         current.kind === "codex" ? { ...current, ...patch } : current
       )
     );
+  }
+
+  function updateWindowConfigProvider(
+    provider: WindowConfigProvider,
+    patch: WindowDisplayPatch
+  ) {
+    onChange(
+      updateProvider(config, provider.id, (current) =>
+        current.kind === "codex" || current.kind === "remote"
+          ? { ...current, ...patch }
+          : current
+      )
+    );
+  }
+
+  function updateProviderName(providerId: string, name: string) {
+    onChange(
+      updateProvider(config, providerId, (current) => ({
+        ...current,
+        name
+      }))
+    );
+  }
+
+  function snapshotWindowsForProvider(providerId: string) {
+    return snapshotProviders.find((provider) => provider.id === providerId)?.windows ?? [];
   }
 
   return (
@@ -504,38 +469,27 @@ export function SettingsPanel({
                         }
                       />
                     </label>
-                    <label className="args-field">
-                      {t.settings.windowLabelOverrides}
-                      <textarea
-                        rows={4}
-                        placeholder={t.settings.windowLabelOverridesPlaceholder}
-                        value={windowLabelOverridesText(provider)}
-                        onChange={(event) => {
-                          setProviderTextDraft(
-                            provider.id,
-                            "windowLabelOverrides",
-                            event.currentTarget.value
-                          );
-                          updateCodexProvider(provider, {
-                            windowLabelOverrides: textToLabelOverrides(event.currentTarget.value)
-                          });
-                        }}
+                    <ProviderWindowSettings
+                      provider={provider}
+                      snapshotWindows={snapshotWindowsForProvider(provider.id)}
+                      onChange={(patch) => updateWindowConfigProvider(provider, patch)}
+                    />
+                  </div>
+                ) : null}
+                {provider.kind === "remote" ? (
+                  <div className="command-fields">
+                    <label>
+                      {t.settings.name}
+                      <input
+                        value={provider.name}
+                        onChange={(event) => updateProviderName(provider.id, event.currentTarget.value)}
                       />
                     </label>
-                    <label className="args-field">
-                      {t.settings.displayedWindows}
-                      <textarea
-                        rows={3}
-                        placeholder={t.settings.displayedWindowsPlaceholder}
-                        value={visibleWindowIdsText(provider)}
-                        onChange={(event) => {
-                          setProviderTextDraft(provider.id, "visibleWindowIds", event.currentTarget.value);
-                          updateCodexProvider(provider, {
-                            visibleWindowIds: textToVisibleWindows(event.currentTarget.value)
-                          });
-                        }}
-                      />
-                    </label>
+                    <ProviderWindowSettings
+                      provider={provider}
+                      snapshotWindows={snapshotWindowsForProvider(provider.id)}
+                      onChange={(patch) => updateWindowConfigProvider(provider, patch)}
+                    />
                   </div>
                 ) : null}
               </>

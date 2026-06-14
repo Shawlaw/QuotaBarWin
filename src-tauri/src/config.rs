@@ -12,7 +12,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 8;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 9;
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
 const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
@@ -34,7 +34,16 @@ pub struct AppConfig {
     pub language: AppLanguage,
     #[serde(default)]
     pub network_proxy: Option<ProxyConfig>,
+    #[serde(default)]
+    pub tray_popup_position: Option<TrayPopupPosition>,
     pub providers: Vec<ProviderConfig>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TrayPopupPosition {
+    pub x: i32,
+    pub y: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -194,6 +203,7 @@ pub fn default_config() -> AppConfig {
         log_level: default_log_level(),
         language: default_language(),
         network_proxy: None,
+        tray_popup_position: None,
         providers: vec![ProviderConfig::Mock {
             id: "mock-codex".to_string(),
             name: "Codex Mock".to_string(),
@@ -452,6 +462,15 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(8);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(8);
+    if version < 9 {
+        value["trayPopupPosition"] = serde_json::json!(null);
+        value["schemaVersion"] = serde_json::json!(9);
+    }
+
     Ok(value)
 }
 
@@ -494,6 +513,27 @@ pub fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(), String
 
     let contents = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
     fs::write(path, contents).map_err(|error| error.to_string())
+}
+
+pub fn load_tray_popup_position_for_app(app: &AppHandle) -> Option<TrayPopupPosition> {
+    let path = config_path_for_app(app).ok()?;
+    load_or_create_config(&path)
+        .ok()?
+        .config
+        .tray_popup_position
+}
+
+pub fn save_tray_popup_position_for_app(
+    app: &AppHandle,
+    position: TrayPopupPosition,
+) -> Result<(), String> {
+    let path = config_path_for_app(app)?;
+    let mut config = load_or_create_config(&path)?.config;
+    if config.tray_popup_position == Some(position) {
+        return Ok(());
+    }
+    config.tray_popup_position = Some(position);
+    save_config_to_path(&path, &config)
 }
 
 pub fn resolve_secret_value(value: &str, config_dir: &Path) -> Result<String, String> {
@@ -768,6 +808,7 @@ mod tests {
             log_level: "debug".to_string(),
             language: AppLanguage::System,
             network_proxy: None,
+            tray_popup_position: Some(TrayPopupPosition { x: 111, y: 222 }),
             providers: vec![ProviderConfig::Mock {
                 id: "mock".to_string(),
                 name: "Mock".to_string(),
@@ -846,6 +887,7 @@ mod tests {
         assert_eq!(migrated["launchAtStartup"], serde_json::json!(false));
         assert_eq!(migrated["logLevel"], serde_json::json!("info"));
         assert_eq!(migrated["language"], serde_json::json!("system"));
+        assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
     }
 
     #[test]
@@ -894,6 +936,30 @@ mod tests {
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
         assert_eq!(migrated["language"], serde_json::json!("system"));
+        assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
+    }
+
+    #[test]
+    fn config_migration_v8_to_current_adds_tray_popup_position() {
+        let value = serde_json::json!({
+            "schemaVersion": 8,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "launchAtStartup": false,
+            "logLevel": "info",
+            "language": "system",
+            "networkProxy": null,
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
     }
 
     #[test]
@@ -926,6 +992,7 @@ mod tests {
             log_level: "info".to_string(),
             language: AppLanguage::System,
             network_proxy: None,
+            tray_popup_position: None,
             providers: vec![ProviderConfig::Remote {
                 id: "provider".to_string(),
                 name: "Provider".to_string(),

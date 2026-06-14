@@ -7,7 +7,7 @@ import type {
   ConfigStorageInfo,
   ProviderPreset,
   ProxyConfig,
-  RemoteProviderConfig
+  RemoteProviderConfig,
 } from "../types";
 
 function hasTauriInternals(): boolean {
@@ -15,7 +15,7 @@ function hasTauriInternals(): boolean {
 }
 
 const fallbackConfig: AppConfig = {
-  schemaVersion: 8,
+  schemaVersion: 9,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -28,9 +28,9 @@ const fallbackConfig: AppConfig = {
       id: "browser-preview",
       name: "Browser Preview",
       enabled: true,
-      kind: "mock"
-    }
-  ]
+      kind: "mock",
+    },
+  ],
 };
 
 const fallbackSnapshot: AppSnapshot = {
@@ -57,7 +57,7 @@ const fallbackSnapshot: AppSnapshot = {
           remainingPercent: 72,
           resetAt: null,
           resetText: "resets in 2h 30m",
-          confidence: "estimated"
+          confidence: "estimated",
         },
         {
           id: "weekly",
@@ -69,7 +69,7 @@ const fallbackSnapshot: AppSnapshot = {
           remainingPercent: 88,
           resetAt: null,
           resetText: "resets Fri 10:01",
-          confidence: "estimated"
+          confidence: "estimated",
         },
         {
           id: "daily",
@@ -81,7 +81,7 @@ const fallbackSnapshot: AppSnapshot = {
           remainingPercent: 45,
           resetAt: null,
           resetText: "resets tomorrow",
-          confidence: "estimated"
+          confidence: "estimated",
         },
         {
           id: "monthly",
@@ -93,7 +93,7 @@ const fallbackSnapshot: AppSnapshot = {
           remainingPercent: 30,
           resetAt: null,
           resetText: "resets 2026/06/30",
-          confidence: "estimated"
+          confidence: "estimated",
         },
         {
           id: "token",
@@ -105,20 +105,21 @@ const fallbackSnapshot: AppSnapshot = {
           remainingPercent: 8,
           resetAt: null,
           resetText: "resets soon",
-          confidence: "estimated"
-        }
-      ]
-    }
-  ]
+          confidence: "estimated",
+        },
+      ],
+    },
+  ],
 };
 
 const fallbackStorageInfo: ConfigStorageInfo = {
   mode: "app-data",
-  configPath: "Browser preview: Tauri config path is available in the desktop app",
+  configPath:
+    "Browser preview: Tauri config path is available in the desktop app",
   configDir: "Browser preview",
   appDataConfigPath: "Browser preview AppData path",
   portableConfigPath: "Browser preview portable path",
-  portableMarkerPath: "Browser preview portable marker"
+  portableMarkerPath: "Browser preview portable marker",
 };
 
 export async function refreshSnapshot(): Promise<AppSnapshot> {
@@ -129,11 +130,15 @@ export async function refreshSnapshot(): Promise<AppSnapshot> {
   return invoke<AppSnapshot>("refresh_snapshot");
 }
 
-export async function refreshProvider(providerId: string): Promise<AppSnapshot> {
+export async function refreshProvider(
+  providerId: string,
+): Promise<AppSnapshot> {
   if (!hasTauriInternals()) {
     return {
       ...fallbackSnapshot,
-      providers: fallbackSnapshot.providers.filter((provider) => provider.id === providerId)
+      providers: fallbackSnapshot.providers.filter(
+        (provider) => provider.id === providerId,
+      ),
     };
   }
 
@@ -181,7 +186,9 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   return invoke<void>("save_config", { config });
 }
 
-export async function setPortableMode(enabled: boolean): Promise<ConfigStorageInfo> {
+export async function setPortableMode(
+  enabled: boolean,
+): Promise<ConfigStorageInfo> {
   if (!hasTauriInternals()) {
     void enabled;
     return fallbackStorageInfo;
@@ -237,7 +244,9 @@ export async function getNetworkProxy(): Promise<ProxyConfig | null> {
   return invoke<ProxyConfig | null>("get_network_proxy");
 }
 
-export async function setNetworkProxy(proxy: ProxyConfig | null): Promise<void> {
+export async function setNetworkProxy(
+  proxy: ProxyConfig | null,
+): Promise<void> {
   if (!hasTauriInternals()) {
     void proxy;
     return;
@@ -260,19 +269,21 @@ export type RegistryInstallResult = {
 export async function installRemoteProviderRegistry(
   url: string,
   proxyUrl: string | null,
-  autoUpdate: boolean
+  autoUpdate: boolean,
 ): Promise<RegistryInstallResult> {
   if (!hasTauriInternals()) {
     void url;
     void proxyUrl;
     void autoUpdate;
-    throw new Error("Installing remote provider registry is not available in browser preview");
+    throw new Error(
+      "Installing remote provider registry is not available in browser preview",
+    );
   }
 
   return invoke<RegistryInstallResult>("install_remote_provider_registry", {
     url,
     proxyUrl,
-    autoUpdate
+    autoUpdate,
   });
 }
 
@@ -320,7 +331,9 @@ export async function exportDiagnostics(outputPath: string): Promise<void> {
   return invoke<void>("export_diagnostics", { outputPath });
 }
 
-export async function listenForRefreshRequests(onRefresh: () => void): Promise<() => void> {
+export async function listenForRefreshRequests(
+  onRefresh: () => void,
+): Promise<() => void> {
   if (!hasTauriInternals()) {
     void onRefresh;
     return () => undefined;
@@ -329,7 +342,9 @@ export async function listenForRefreshRequests(onRefresh: () => void): Promise<(
   return listen("refresh-requested", onRefresh);
 }
 
-export async function listenForTrayPopupShown(onShown: () => void): Promise<() => void> {
+export async function listenForTrayPopupShown(
+  onShown: () => void,
+): Promise<() => void> {
   if (!hasTauriInternals()) {
     void onShown;
     return () => undefined;
@@ -338,13 +353,17 @@ export async function listenForTrayPopupShown(onShown: () => void): Promise<() =
   return listen("tray-popup-shown", onShown);
 }
 
-export async function listenForSingleInstance(onSecondInstance: (message: string) => void): Promise<() => void> {
+export async function listenForSingleInstance(
+  onSecondInstance: (message: string) => void,
+): Promise<() => void> {
   if (!hasTauriInternals()) {
     void onSecondInstance;
     return () => undefined;
   }
 
-  return listen<string>("single-instance", (event) => onSecondInstance(event.payload));
+  return listen<string>("single-instance", (event) =>
+    onSecondInstance(event.payload),
+  );
 }
 
 export async function hideCurrentWindow(): Promise<void> {
@@ -368,5 +387,5 @@ export async function startDraggingCurrentWindow(): Promise<void> {
     return;
   }
 
-  return getCurrentWindow().startDragging();
+  return invoke<void>("start_tray_popup_dragging");
 }

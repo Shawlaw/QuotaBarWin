@@ -476,6 +476,7 @@ mod tests {
             log_level: "info".to_string(),
             language: AppLanguage::System,
             network_proxy: None,
+            tray_popup_position: None,
             providers: vec![ProviderConfig::Mock {
                 id: "disabled".to_string(),
                 name: "Disabled".to_string(),
@@ -503,6 +504,7 @@ mod tests {
             log_level: "info".to_string(),
             language: AppLanguage::System,
             network_proxy: None,
+            tray_popup_position: None,
             providers: vec![
                 ProviderConfig::Mock {
                     id: "stale-a".to_string(),
@@ -592,6 +594,7 @@ mod tests {
             log_level: "info".to_string(),
             language: AppLanguage::System,
             network_proxy: None,
+            tray_popup_position: None,
             providers: vec![
                 ProviderConfig::Mock {
                     id: "stale-a".to_string(),
@@ -620,6 +623,7 @@ mod tests {
             log_level: "info".to_string(),
             language: AppLanguage::System,
             network_proxy: None,
+            tray_popup_position: None,
             providers: vec![
                 broken_remote_provider("stale-a", "Stale A"),
                 ProviderConfig::Mock {
@@ -676,6 +680,7 @@ mod tests {
             log_level: "info".to_string(),
             language: AppLanguage::System,
             network_proxy: None,
+            tray_popup_position: None,
             providers: vec![
                 ProviderConfig::Mock {
                     id: "stale-a".to_string(),
@@ -703,6 +708,7 @@ mod tests {
             log_level: "info".to_string(),
             language: AppLanguage::System,
             network_proxy: None,
+            tray_popup_position: None,
             providers: vec![
                 broken_remote_provider("stale-a", "Stale A"),
                 ProviderConfig::Mock {
@@ -758,6 +764,7 @@ mod tests {
             log_level: "info".to_string(),
             language: AppLanguage::System,
             network_proxy: None,
+            tray_popup_position: None,
             providers: vec![broken_provider],
         };
         save_config_to_path(&path, &config).expect("save config");

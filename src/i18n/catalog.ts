@@ -95,6 +95,22 @@ export type I18nCatalog = {
     windowLabelOverridesPlaceholder: string;
     displayedWindows: string;
     displayedWindowsPlaceholder: string;
+    windowDisplay: string;
+    windowDisplayNoSnapshot: string;
+    windowDisplayNoRows: string;
+    show: string;
+    windowId: string;
+    defaultLabel: string;
+    customLabel: string;
+    customLabelFor: (windowId: string) => string;
+    order: string;
+    showWindow: (windowId: string) => string;
+    showAllWindows: string;
+    resetWindowNames: string;
+    resetWindowOrder: string;
+    moveWindowUp: (windowId: string) => string;
+    moveWindowDown: (windowId: string) => string;
+    advancedWindowText: string;
     advanced: string;
     configurationStorage: string;
     portableMode: string;
@@ -267,6 +283,22 @@ export const en: I18nCatalog = {
     windowLabelOverridesPlaceholder: "window-id=Display name\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "Displayed windows",
     displayedWindowsPlaceholder: "Leave empty to show all\n5h\nweekly\nWeekly limit",
+    windowDisplay: "Window display",
+    windowDisplayNoSnapshot: "No recent snapshot windows yet.",
+    windowDisplayNoRows: "Add window ids below to create editable rows.",
+    show: "Show",
+    windowId: "Window id",
+    defaultLabel: "Default label",
+    customLabel: "Custom label",
+    customLabelFor: (windowId) => `Custom label for ${windowId}`,
+    order: "Order",
+    showWindow: (windowId) => `Show ${windowId}`,
+    showAllWindows: "Show all",
+    resetWindowNames: "Reset names",
+    resetWindowOrder: "Default order",
+    moveWindowUp: (windowId) => `Move ${windowId} up`,
+    moveWindowDown: (windowId) => `Move ${windowId} down`,
+    advancedWindowText: "Advanced window text",
     advanced: "Advanced",
     configurationStorage: "Configuration storage",
     portableMode: "Portable mode",
@@ -440,6 +472,22 @@ export const zhCN: I18nCatalog = {
     windowLabelOverridesPlaceholder: "window-id=显示名称\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "显示的窗口",
     displayedWindowsPlaceholder: "留空显示全部\n5h\nweekly\nWeekly limit",
+    windowDisplay: "窗口显示",
+    windowDisplayNoSnapshot: "暂无最近快照窗口。",
+    windowDisplayNoRows: "可在下方添加窗口 ID 生成可编辑行。",
+    show: "显示",
+    windowId: "窗口 ID",
+    defaultLabel: "默认名称",
+    customLabel: "自定义名称",
+    customLabelFor: (windowId) => `${windowId} 的自定义名称`,
+    order: "顺序",
+    showWindow: (windowId) => `显示 ${windowId}`,
+    showAllWindows: "显示全部",
+    resetWindowNames: "重置名称",
+    resetWindowOrder: "默认顺序",
+    moveWindowUp: (windowId) => `上移 ${windowId}`,
+    moveWindowDown: (windowId) => `下移 ${windowId}`,
+    advancedWindowText: "高级窗口文本",
     advanced: "高级",
     configurationStorage: "配置存储",
     portableMode: "便携模式",

@@ -246,8 +246,8 @@
             <tr><th>Field</th><th>Required</th><th>Description</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>id</code></td><td>yes</td><td>Stable window identifier.</td></tr>
-            <tr><td><code>label</code></td><td>yes</td><td>Display label.</td></tr>
+            <tr><td><code>id</code></td><td>yes</td><td>Stable window identifier used by user configuration.</td></tr>
+            <tr><td><code>label</code></td><td>yes</td><td>Display label. Can be friendly or localized, but must not be the only stable identity.</td></tr>
             <tr><td><code>used</code></td><td>no</td><td>Used amount.</td></tr>
             <tr><td><code>limit</code></td><td>no</td><td>Total limit.</td></tr>
             <tr><td><code>unit</code></td><td>no</td><td>Unit string, e.g. <code>requests</code>, <code>tokens</code>, <code>percent</code>.</td></tr>
@@ -258,6 +258,28 @@
             <tr><td><code>confidence</code></td><td>no</td><td><code>exact</code>, <code>estimated</code>, or <code>unknown</code>.</td></tr>
           </tbody>
         </table>
+
+        <h3>Stable window IDs and user customization</h3>
+        <p>
+          Treat every <code>windows[].id</code> value as part of your provider's compatibility contract. Users can customize per-window display order, visibility, and names by referring to these IDs in local provider config, so changing an ID can silently break their preferences.
+        </p>
+        <pre>{
+  "kind": "remote",
+  "id": "kimi-coding",
+  "visibleWindowIds": ["300-minute", "usage", "total-quota"],
+  "windowLabelOverrides": {
+    "300-minute": "5h",
+    "usage": "Weekly"
+  },
+  "envVars": {
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+  }
+}</pre>
+        <ul>
+          <li><code>visibleWindowIds</code> controls which windows are displayed. When it is set, QuotaBarWin displays only those windows and uses the configured order.</li>
+          <li><code>windowLabelOverrides</code> controls display names. Overrides are matched by <code>window.id</code> first, so stable IDs let users keep custom names even if provider labels change. Legacy label matching may work for existing configs, but provider authors should document and preserve IDs.</li>
+          <li><code>label</code> should be friendly text for the UI and may change for clarity or localization. Do not derive <code>id</code> from translated labels, marketing copy, or other wording that might change. Prefer semantic provider API keys such as <code>weekly</code>, <code>300-minute</code>, <code>tokens-limit-6-1</code>, or <code>total-quota</code>.</li>
+        </ul>
       </section>
 
       <section>

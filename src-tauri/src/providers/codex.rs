@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    time::Duration,
+};
 
 use chrono::{SecondsFormat, TimeDelta, Utc};
 use serde_json::{json, Map, Value};
@@ -38,8 +42,8 @@ pub fn provider_snapshot(
                     stderr: None,
                 }),
             );
-            apply_window_label_overrides(&mut provider, window_label_overrides);
             apply_visible_windows(&mut provider, visible_window_ids);
+            apply_window_label_overrides(&mut provider, window_label_overrides);
             provider
         }
         Err(error) => error_provider(id, name, error, started.elapsed().as_millis() as u64),
@@ -232,8 +236,9 @@ fn apply_window_label_overrides(
         if let Some(label) = overrides
             .get(&window.id)
             .or_else(|| overrides.get(&window.label))
+            .filter(|label| !label.trim().is_empty())
         {
-            window.label = label.clone();
+            window.label = label.trim().to_string();
         }
     }
 }
@@ -243,12 +248,34 @@ fn apply_visible_windows(provider: &mut ProviderSnapshot, visible_window_ids: &[
         return;
     }
 
-    provider.windows.retain(|window| {
-        visible_window_ids.iter().any(|visible| {
-            let visible = visible.trim();
-            !visible.is_empty() && (visible == window.id || visible == window.label)
-        })
-    });
+    let original_windows = provider.windows.clone();
+    let mut selected_indexes = HashSet::new();
+    let mut visible_windows = Vec::new();
+
+    for visible in visible_window_ids {
+        let visible = visible.trim();
+        if visible.is_empty() {
+            continue;
+        }
+
+        for (index, window) in original_windows.iter().enumerate() {
+            if selected_indexes.contains(&index) || visible != window.id {
+                continue;
+            }
+            visible_windows.push(window.clone());
+            selected_indexes.insert(index);
+        }
+
+        for (index, window) in original_windows.iter().enumerate() {
+            if selected_indexes.contains(&index) || visible != window.label {
+                continue;
+            }
+            visible_windows.push(window.clone());
+            selected_indexes.insert(index);
+        }
+    }
+
+    provider.windows = visible_windows;
 }
 
 fn merge_diagnostics(
@@ -358,5 +385,42 @@ mod tests {
             .expect("http proxy client");
         build_codex_client(1000, Some("socks5h://127.0.0.1:7890"), temp.path())
             .expect("socks proxy client");
+    }
+
+    #[test]
+    fn visible_windows_follow_config_order_before_label_overrides() {
+        let input = json!({
+            "rate_limit": {
+                "primary_window": {
+                    "used_percent": 36,
+                    "reset_at": 1780981200
+                },
+                "secondary_window": {
+                    "used_percent": 12.5,
+                    "reset_after_seconds": 3600
+                }
+            }
+        });
+        let mut provider = provider_from_usage_response("codex", "Codex", &input);
+        let overrides = HashMap::from([
+            ("5h".to_string(), "Five hour".to_string()),
+            ("Weekly limit".to_string(), "Team weekly".to_string()),
+        ]);
+
+        apply_visible_windows(
+            &mut provider,
+            &[
+                "Weekly limit".to_string(),
+                "5h".to_string(),
+                "Weekly limit".to_string(),
+            ],
+        );
+        apply_window_label_overrides(&mut provider, &overrides);
+
+        assert_eq!(provider.windows.len(), 2);
+        assert_eq!(provider.windows[0].id, "weekly");
+        assert_eq!(provider.windows[0].label, "Team weekly");
+        assert_eq!(provider.windows[1].id, "5h");
+        assert_eq!(provider.windows[1].label, "Five hour");
     }
 }

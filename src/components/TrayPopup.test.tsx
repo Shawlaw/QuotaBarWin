@@ -1,11 +1,18 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { TrayPopup } from "./TrayPopup";
 import type { AppConfig, AppSnapshot } from "../types";
 
 const mocks = vi.hoisted(() => {
   const listeners: { trayShown?: () => void } = {};
   const config: AppConfig = {
-    schemaVersion: 8,
+    schemaVersion: 9,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -20,15 +27,15 @@ const mocks = vi.hoisted(() => {
         sourceUrl: "https://example.test/kimi/provider.cjs",
         runtime: "node",
         autoUpdate: false,
-        updateIntervalSeconds: 3600
+        updateIntervalSeconds: 3600,
       },
       {
         id: "mock-codex",
         name: "Codex Mock",
         enabled: true,
-        kind: "mock"
-      }
-    ]
+        kind: "mock",
+      },
+    ],
   };
 
   const snapshot: AppSnapshot = {
@@ -55,7 +62,7 @@ const mocks = vi.hoisted(() => {
             remainingPercent: 28,
             resetAt: null,
             resetText: "resets tomorrow",
-            confidence: "estimated"
+            confidence: "estimated",
           },
           {
             id: "weekly",
@@ -67,7 +74,7 @@ const mocks = vi.hoisted(() => {
             remainingPercent: 88,
             resetAt: null,
             resetText: "resets Friday",
-            confidence: "estimated"
+            confidence: "estimated",
           },
           {
             id: "monthly",
@@ -79,7 +86,7 @@ const mocks = vi.hoisted(() => {
             remainingPercent: 49,
             resetAt: null,
             resetText: "resets month end",
-            confidence: "estimated"
+            confidence: "estimated",
           },
           {
             id: "token",
@@ -91,7 +98,7 @@ const mocks = vi.hoisted(() => {
             remainingPercent: 95,
             resetAt: null,
             resetText: "resets soon",
-            confidence: "estimated"
+            confidence: "estimated",
           },
           {
             id: "extra",
@@ -103,9 +110,9 @@ const mocks = vi.hoisted(() => {
             remainingPercent: 10,
             resetAt: null,
             resetText: "resets later",
-            confidence: "estimated"
-          }
-        ]
+            confidence: "estimated",
+          },
+        ],
       },
       {
         id: "remote-kimi",
@@ -127,11 +134,11 @@ const mocks = vi.hoisted(() => {
             remainingPercent: 60,
             resetAt: null,
             resetText: "resets tonight",
-            confidence: "estimated"
-          }
-        ]
-      }
-    ]
+            confidence: "estimated",
+          },
+        ],
+      },
+    ],
   };
 
   return {
@@ -145,7 +152,7 @@ const mocks = vi.hoisted(() => {
     }),
     listeners,
     refreshSnapshot: vi.fn(async () => snapshot),
-    startDraggingCurrentWindow: vi.fn(async () => undefined)
+    startDraggingCurrentWindow: vi.fn(async () => undefined),
   };
 });
 
@@ -198,5 +205,7 @@ test("tray_popup_starts_native_dragging_from_titlebar", async () => {
 
   fireEvent.mouseDown(screen.getByTestId("tray-popup-titlebar"), { button: 0 });
 
-  await waitFor(() => expect(mocks.startDraggingCurrentWindow).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(mocks.startDraggingCurrentWindow).toHaveBeenCalledTimes(1),
+  );
 });

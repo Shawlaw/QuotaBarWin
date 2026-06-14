@@ -42,11 +42,17 @@ Use this pattern when adapting the examples:
 4. Move provider-specific details such as plan level, model usage, account metadata, or raw status codes into `metadata`.
 5. Keep credentials local. These examples read `process.env.NAME`; QuotaBarWin can inject values from installed provider `envVars`, `${secret:NAME}` files under `<config-dir>/secrets/NAME.txt`, or environment fallback instead of embedding secrets in remote source.
 
+## Stable window IDs
+
+Provider window IDs are user-facing configuration keys. QuotaBarWin supports `visibleWindowIds` to choose which windows are shown and to display them in the configured order, and `windowLabelOverrides` to rename windows. Label overrides match `window.id` first, so keep IDs stable across provider releases.
+
+Use `label` for friendly UI text only. It can be clearer, localized, or renamed later; it should not be the only stable identity. Prefer IDs derived from provider API semantics, such as `5h`, `weekly`, `300-minute`, `tokens-limit-6-1`, or `total-quota`, and avoid deriving IDs from translated labels or marketing copy.
+
 Examples:
 
-- BigModel maps `data.limits[]` to `windows[]`, with `currentValue -> used`, `usage -> limit`, `percentage -> usedPercent`, and `nextResetTime -> resetAt`.
-- Kimi maps the 300-minute `limits[].detail` entry to `5h`, maps `usage` to the weekly window, and derives total quota usage from `totalQuota.limit - totalQuota.remaining`.
-- Codex maps `rate_limit.primary_window` to `5h` and `rate_limit.secondary_window` to `Weekly limit`; because the API reports percentages, `used` and `limit` remain `null`.
+- BigModel maps `data.limits[]` to `windows[]`, with stable IDs like `tokens-limit-6-1`, plus `currentValue -> used`, `usage -> limit`, `percentage -> usedPercent`, and `nextResetTime -> resetAt`.
+- Kimi maps the 300-minute `limits[].detail` entry to id `300-minute` with label `5h`, maps `usage` to id `usage` with label `Weekly limit`, and derives total quota usage from `totalQuota.limit - totalQuota.remaining`.
+- Codex maps `rate_limit.primary_window` to id/label `5h` and `rate_limit.secondary_window` to id `weekly` with label `Weekly limit`; because the API reports percentages, `used` and `limit` remain `null`.
 
 ## Updating checksums
 

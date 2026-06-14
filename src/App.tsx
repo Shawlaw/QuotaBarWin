@@ -266,6 +266,7 @@ function MainApp({ onLanguageChange }: MainAppProps) {
           configStorageInfo={configStorageInfo}
           isConfigStorageBusy={isConfigStorageBusy}
           isSaving={isSaving}
+          snapshotProviders={snapshot?.providers ?? []}
           onChange={setConfig}
           onOpenConfigFolder={openConfigFolder}
           onResetConfig={restoreDefaultConfig}

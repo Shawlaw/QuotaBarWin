@@ -146,7 +146,6 @@ export function TrayPopup() {
       <header className="tray-popup__header">
         <div
           className="tray-popup__titlebar"
-          data-tauri-drag-region
           data-testid="tray-popup-titlebar"
           onMouseDown={onTitleMouseDown}
         >

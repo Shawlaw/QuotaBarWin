@@ -616,6 +616,109 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
+.window-settings {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.window-settings__header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.window-settings__header h4 {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 650;
+  margin: 0;
+}
+
+.window-settings__actions,
+.window-settings__order-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.window-settings__table {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.window-settings__head,
+.window-settings__row {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 56px minmax(110px, 1fr) minmax(120px, 1fr) minmax(180px, 1.2fr) auto;
+  padding: 8px 10px;
+}
+
+.window-settings__head {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.window-settings__row + .window-settings__row {
+  border-top: 1px solid #e2e8f0;
+}
+
+.window-settings__row code {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #334155;
+  font-size: 12px;
+  overflow: hidden;
+  padding: 4px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.window-settings__checkbox {
+  justify-content: center;
+}
+
+.window-settings__custom-label span {
+  position: absolute;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.window-settings__fallback-label {
+  color: #64748b;
+}
+
+.window-settings__advanced {
+  display: grid;
+  gap: 10px;
+}
+
+.window-settings__advanced > summary {
+  color: #475569;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.window-settings__advanced-fields {
+  display: grid;
+  gap: 10px;
+}
+
 .env-hint {
   background: #fef3c7;
   border: 1px solid #fde68a;
@@ -735,6 +838,25 @@ button:disabled {
 
   .network-proxy-settings {
     grid-template-columns: 1fr;
+  }
+
+  .window-settings__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .window-settings__head {
+    display: none;
+  }
+
+  .window-settings__row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .window-settings__checkbox,
+  .window-settings__order-actions {
+    justify-content: flex-start;
   }
 
   .fixed-save-bar {

@@ -53,7 +53,13 @@ export type AppConfig = {
   logLevel?: "debug" | "info" | "warn" | "error" | string;
   language: AppLanguage;
   networkProxy?: ProxyConfig | null;
+  trayPopupPosition?: TrayPopupPosition | null;
   providers: ProviderConfig[];
+};
+
+export type TrayPopupPosition = {
+  x: number;
+  y: number;
 };
 
 export type ConfigStorageInfo = {
