@@ -868,7 +868,9 @@ button:disabled {
   color: #1f2937;
   display: grid;
   gap: 12px;
-  min-height: 100vh;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  min-height: 0;
   overflow: hidden;
   padding: 14px;
 }
@@ -878,6 +880,22 @@ button:disabled {
   display: flex;
   gap: 10px;
   justify-content: space-between;
+  min-width: 0;
+  user-select: none;
+}
+
+.tray-popup__titlebar {
+  cursor: move;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.tray-popup__content {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .tray-popup__header h1 {
@@ -885,6 +903,9 @@ button:disabled {
   font-size: 17px;
   line-height: 1.2;
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tray-popup__header p,
@@ -901,6 +922,10 @@ button:disabled {
   display: flex;
   flex-shrink: 0;
   gap: 6px;
+}
+
+.tray-popup__actions button {
+  -webkit-app-region: no-drag;
 }
 
 .tray-popup__providers,

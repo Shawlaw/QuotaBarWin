@@ -10,8 +10,8 @@ pub const REFRESH_ID: &str = "refresh";
 pub const QUIT_ID: &str = "quit";
 pub const TRAY_POPUP_LABEL: &str = "tray-popup";
 pub const TRAY_POPUP_VIEW: &str = "index.html?view=tray";
-const TRAY_POPUP_WIDTH: f64 = 340.0;
-const TRAY_POPUP_HEIGHT: f64 = 420.0;
+const TRAY_POPUP_WIDTH: f64 = 380.0;
+const TRAY_POPUP_HEIGHT: f64 = 520.0;
 const TRAY_POPUP_OFFSET: f64 = 12.0;
 
 #[cfg(test)]
@@ -109,6 +109,15 @@ pub fn create_tray_popup_window(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn hide_tray_popup(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
+        window.hide().map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
+}
+
 fn handle_menu_event(app: &AppHandle, id: &MenuId) {
     match id.as_ref() {
         SHOW_ID => {
@@ -172,7 +181,7 @@ mod tests {
     fn tray_popup_position_anchors_above_click() {
         assert_eq!(
             tray_popup_position(PhysicalPosition::new(800.0, 900.0)),
-            (472, 468)
+            (432, 368)
         );
     }
 

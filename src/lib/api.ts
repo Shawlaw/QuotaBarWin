@@ -354,3 +354,11 @@ export async function hideCurrentWindow(): Promise<void> {
 
   await getCurrentWindow().hide();
 }
+
+export async function hideTrayPopup(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  return invoke<void>("hide_tray_popup");
+}

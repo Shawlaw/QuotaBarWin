@@ -37,6 +37,7 @@ pub use remote_provider_commands::{
     refresh_remote_provider, remove_remote_provider, set_network_proxy, RegistryInstallFailure,
     RegistryInstallResult,
 };
+pub use tray::hide_tray_popup;
 
 fn window_title(version: &str) -> String {
     format!("QuotaBarWin V{version}")
@@ -108,7 +109,8 @@ pub fn run() {
             remove_remote_provider,
             refresh_remote_provider,
             check_remote_updates,
-            apply_remote_update
+            apply_remote_update,
+            hide_tray_popup
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {

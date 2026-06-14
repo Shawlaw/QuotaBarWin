@@ -3,6 +3,7 @@ import {
   getCachedSnapshot,
   getConfig,
   hideCurrentWindow,
+  hideTrayPopup,
   listenForTrayPopupShown,
   refreshSnapshot
 } from "../lib/api";
@@ -34,11 +35,29 @@ function progressTone(status: ProviderSnapshot["status"]): "normal" | "warning" 
   return "normal";
 }
 
-function importantWindows(providers: ProviderSnapshot[]): WindowRow[] {
-  return providers
-    .flatMap((provider) => provider.windows.map((window) => ({ provider, window })))
-    .sort((a, b) => (a.window.remainingPercent ?? 101) - (b.window.remainingPercent ?? 101))
-    .slice(0, 4);
+function orderedProviders(providers: ProviderSnapshot[], config: AppConfig | null): ProviderSnapshot[] {
+  if (!config) {
+    return providers;
+  }
+
+  const providersById = new Map(providers.map((provider) => [provider.id, provider]));
+  const orderedIds = new Set<string>();
+  const configuredProviders = config.providers.flatMap((providerConfig) => {
+    const provider = providersById.get(providerConfig.id);
+    if (!provider) {
+      return [];
+    }
+
+    orderedIds.add(provider.id);
+    return [provider];
+  });
+  const remainingProviders = providers.filter((provider) => !orderedIds.has(provider.id));
+
+  return [...configuredProviders, ...remainingProviders];
+}
+
+function orderedWindows(providers: ProviderSnapshot[]): WindowRow[] {
+  return providers.flatMap((provider) => provider.windows.map((window) => ({ provider, window })));
 }
 
 export function TrayPopup() {
@@ -100,7 +119,7 @@ export function TrayPopup() {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        void hideCurrentWindow();
+        void hideTrayPopup().catch(() => hideCurrentWindow());
       }
     }
 
@@ -108,15 +127,15 @@ export function TrayPopup() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const providers = snapshot?.providers ?? [];
+  const providers = orderedProviders(snapshot?.providers ?? [], config);
   const lowQuotaWarningThreshold = config?.lowQuotaWarningThreshold ?? 20;
   const displayMode = config?.displayMode ?? "remaining";
-  const rows = importantWindows(providers);
+  const rows = orderedWindows(providers);
 
   return (
     <main className="tray-popup" data-testid="tray-popup">
       <header className="tray-popup__header">
-        <div>
+        <div className="tray-popup__titlebar" data-tauri-drag-region>
           <h1>QuotaBarWin</h1>
           <p>{formatShortDateTime(snapshot?.refreshedAt) ?? t.tray.waitingForData}</p>
         </div>
@@ -124,61 +143,67 @@ export function TrayPopup() {
           <button className="button-compact button-secondary" type="button" onClick={() => void loadSnapshot()}>
             {isLoading ? t.tray.refreshingShort : t.tray.refresh}
           </button>
-          <button className="button-compact button-ghost" type="button" onClick={() => void hideCurrentWindow()}>
+          <button
+            className="button-compact button-ghost"
+            type="button"
+            onClick={() => void hideTrayPopup().catch(() => hideCurrentWindow())}
+          >
             {t.tray.close}
           </button>
         </div>
       </header>
 
-      {providers.length === 0 ? (
-        <section className="tray-popup__empty">{t.tray.noProviders}</section>
-      ) : (
-        <section className="tray-popup__providers" aria-label={t.tray.providerStatusLabel}>
-          {providers.slice(0, 4).map((provider) => {
-            const status = calculateProviderStatus(provider, lowQuotaWarningThreshold);
-            return (
-              <article className="tray-popup__provider" key={provider.id}>
-                <div>
-                  <strong>{provider.name}</strong>
-                  <span className={`status status--${status}`}>{t.tray.status[status]}</span>
-                </div>
-                {provider.error ? <p>{provider.error}</p> : null}
-              </article>
-            );
-          })}
-        </section>
-      )}
+      <div className="tray-popup__content">
+        {providers.length === 0 ? (
+          <section className="tray-popup__empty">{t.tray.noProviders}</section>
+        ) : (
+          <section className="tray-popup__providers" aria-label={t.tray.providerStatusLabel}>
+            {providers.map((provider) => {
+              const status = calculateProviderStatus(provider, lowQuotaWarningThreshold);
+              return (
+                <article className="tray-popup__provider" key={provider.id}>
+                  <div>
+                    <strong>{provider.name}</strong>
+                    <span className={`status status--${status}`}>{t.tray.status[status]}</span>
+                  </div>
+                  {provider.error ? <p>{provider.error}</p> : null}
+                </article>
+              );
+            })}
+          </section>
+        )}
 
-      {rows.length > 0 ? (
-        <section className="tray-popup__windows" aria-label={t.tray.quotaWindowsLabel}>
-          {rows.map(({ provider, window }) => {
-            const status = calculateProviderStatus(provider, lowQuotaWarningThreshold);
-            const displayedPercent = displayPercentForWindow(window, displayMode);
-            const remainingPercent =
-              window.remainingPercent ??
-              (window.usedPercent !== null && window.usedPercent !== undefined ? 100 - window.usedPercent : null);
-            const resetText = formatQuotaReset(window, new Date(), t);
-            return (
-              <article className="tray-popup__window" key={`${provider.id}-${window.id}`}>
-                <div className="tray-popup__window-title">
-                  <strong>{window.label}</strong>
-                  <span>{formatDisplayValue(window, displayMode, t)}</span>
-                </div>
-                <ProgressBar
-                  percent={displayedPercent}
-                  opacityPercent={remainingPercent}
-                  label={`${provider.name} ${window.label} ${displayMode}`}
-                  tone={progressTone(status)}
-                />
-                <p>
-                  {provider.name}
-                  {resetText ? ` - ${resetText}` : ""}
-                </p>
-              </article>
-            );
-          })}
-        </section>
-      ) : null}
+        {rows.length > 0 ? (
+          <section className="tray-popup__windows" aria-label={t.tray.quotaWindowsLabel}>
+            {rows.map(({ provider, window }) => {
+              const status = calculateProviderStatus(provider, lowQuotaWarningThreshold);
+              const displayedPercent = displayPercentForWindow(window, displayMode);
+              const remainingPercent =
+                window.remainingPercent ??
+                (window.usedPercent !== null && window.usedPercent !== undefined ? 100 - window.usedPercent : null);
+              const resetText = formatQuotaReset(window, new Date(), t);
+              return (
+                <article className="tray-popup__window" key={`${provider.id}-${window.id}`}>
+                  <div className="tray-popup__window-title">
+                    <strong>{window.label}</strong>
+                    <span>{formatDisplayValue(window, displayMode, t)}</span>
+                  </div>
+                  <ProgressBar
+                    percent={displayedPercent}
+                    opacityPercent={remainingPercent}
+                    label={`${provider.name} ${window.label} ${displayMode}`}
+                    tone={progressTone(status)}
+                  />
+                  <p>
+                    {provider.name}
+                    {resetText ? ` - ${resetText}` : ""}
+                  </p>
+                </article>
+              );
+            })}
+          </section>
+        ) : null}
+      </div>
     </main>
   );
 }
