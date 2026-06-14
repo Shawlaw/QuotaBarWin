@@ -3,6 +3,7 @@ import { Header } from "./components/Header";
 import { GlobalStatusStrip } from "./components/GlobalStatusStrip";
 import { ProviderCard } from "./components/ProviderCard";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { TrayPopup } from "./components/TrayPopup";
 import {
   getCachedSnapshot,
   getAppVersion,
@@ -12,14 +13,13 @@ import {
   listenForRefreshRequests,
   listenForSingleInstance,
   openConfigFolder,
-  openCustomProviderGuide,
   refreshProvider,
   refreshSnapshot,
   resetConfig,
   saveConfig,
-  setPortableMode,
-  testProvider
+  setPortableMode
 } from "./lib/api";
+import { I18nProvider, useI18n } from "./i18n";
 import type { AppConfig, AppSnapshot, ConfigStorageInfo, ProviderPreset } from "./types";
 
 function fallbackSnapshot(error: unknown): AppSnapshot {
@@ -42,7 +42,44 @@ function fallbackSnapshot(error: unknown): AppSnapshot {
   };
 }
 
+function isTrayView(): boolean {
+  return new URLSearchParams(window.location.search).get("view") === "tray";
+}
+
 export function App() {
+  const [frontendLanguage, setFrontendLanguage] = useState<AppConfig["language"]>("system");
+  const trayView = isTrayView();
+
+  useEffect(() => {
+    if (!trayView) {
+      return;
+    }
+
+    let isMounted = true;
+    void getConfig().then((config) => {
+      if (isMounted) {
+        setFrontendLanguage(config.language);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [trayView]);
+
+  return (
+    <I18nProvider language={frontendLanguage}>
+      {trayView ? <TrayPopup /> : <MainApp onLanguageChange={setFrontendLanguage} />}
+    </I18nProvider>
+  );
+}
+
+type MainAppProps = {
+  onLanguageChange: (language: AppConfig["language"]) => void;
+};
+
+function MainApp({ onLanguageChange }: MainAppProps) {
+  const { t } = useI18n();
   const refreshInFlight = useRef(false);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -84,6 +121,7 @@ export function App() {
         if (!isMounted) {
           return;
         }
+        onLanguageChange(loadedConfig.language);
         setConfig(loadedConfig);
         setConfigStorageInfo(loadedStorageInfo);
         setAppVersion(loadedVersion);
@@ -105,6 +143,12 @@ export function App() {
       isMounted = false;
     };
   }, [loadSnapshot]);
+
+  useEffect(() => {
+    if (config) {
+      onLanguageChange(config.language);
+    }
+  }, [config, onLanguageChange]);
 
   useEffect(() => {
     if (!config) {
@@ -224,22 +268,20 @@ export function App() {
           isSaving={isSaving}
           onChange={setConfig}
           onOpenConfigFolder={openConfigFolder}
-          onOpenCustomProviderGuide={openCustomProviderGuide}
           onResetConfig={restoreDefaultConfig}
           onSave={persistConfig}
           onSetPortableMode={(enabled) => void togglePortableMode(enabled)}
-          onTestProvider={testProvider}
           presets={presets}
         />
       ) : (
-        <section className="overview-page" aria-label="Overview" data-testid="overview-page">
+        <section className="overview-page" aria-label={t.app.overviewLabel} data-testid="overview-page">
           <GlobalStatusStrip
             providers={snapshot?.providers ?? []}
             refreshedAt={snapshot?.refreshedAt ?? null}
             refreshIntervalSeconds={config?.refreshIntervalSeconds}
             lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
           />
-          <section className="provider-list" aria-label="Providers">
+          <section className="provider-list" aria-label={t.app.providersLabel}>
             {snapshot?.providers.map((provider) => (
               <ProviderCard
                 key={provider.id}

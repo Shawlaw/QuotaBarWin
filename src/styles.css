@@ -358,6 +358,28 @@ button:disabled {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.general-settings-grid {
+  align-items: end;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.network-proxy-settings {
+  align-items: end;
+  display: grid;
+  gap: 10px 12px;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(180px, 240px) minmax(240px, 1fr);
+}
+
+.network-proxy-settings label {
+  min-width: 0;
+}
+
+.settings-toggle-row {
+  align-self: center;
+  min-height: 34px;
+}
+
 .settings-grid,
 .preset-list {
   border-radius: 8px;
@@ -711,6 +733,10 @@ button:disabled {
     flex-direction: column;
   }
 
+  .network-proxy-settings {
+    grid-template-columns: 1fr;
+  }
+
   .fixed-save-bar {
     align-items: stretch;
     flex-direction: column;
@@ -835,4 +861,84 @@ button:disabled {
   align-items: center;
   display: flex;
   gap: 12px;
+}
+
+.tray-popup {
+  background: #ffffff;
+  color: #1f2937;
+  display: grid;
+  gap: 12px;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 14px;
+}
+
+.tray-popup__header {
+  align-items: start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.tray-popup__header h1 {
+  color: #0f172a;
+  font-size: 17px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.tray-popup__header p,
+.tray-popup__provider p,
+.tray-popup__window p,
+.tray-popup__empty {
+  color: #64748b;
+  font-size: 12px;
+  margin: 3px 0 0;
+}
+
+.tray-popup__actions {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.tray-popup__providers,
+.tray-popup__windows {
+  display: grid;
+  gap: 8px;
+}
+
+.tray-popup__provider,
+.tray-popup__window {
+  border: 1px solid #d9e2ec;
+  border-radius: 7px;
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+}
+
+.tray-popup__provider > div,
+.tray-popup__window-title {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.tray-popup__provider strong,
+.tray-popup__window-title strong {
+  color: #0f172a;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tray-popup__window-title span {
+  color: #334155;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 650;
 }

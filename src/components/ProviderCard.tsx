@@ -8,6 +8,7 @@ import {
   formatShortDateTime,
   windowStatus
 } from "../lib/providerStatus";
+import { useI18n } from "../i18n";
 import { ProgressBar } from "./ProgressBar";
 
 type ProviderCardProps = {
@@ -27,11 +28,12 @@ export function ProviderCard({
   isRefreshing = false,
   onRefresh
 }: ProviderCardProps) {
+  const { t } = useI18n();
   const [statusOpen, setStatusOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const refreshedAt = provider.updatedAt ?? provider.diagnostics?.checkedAt ?? null;
   const effectiveStatus = calculateProviderStatus(provider, lowQuotaWarningThreshold);
-  const statusLabel = `status ${effectiveStatus}`;
+  const statusLabel = t.providerCard.statusLabel(effectiveStatus);
   const canOpenStatus = effectiveStatus === "warning" || effectiveStatus === "error" || effectiveStatus === "stale";
   const hiddenWindowCount = Math.max(0, provider.windows.length - MAX_COLLAPSED_WINDOWS);
   const visibleWindows = expanded
@@ -45,8 +47,10 @@ export function ProviderCard({
           <h2>{provider.name}</h2>
           <p>
             {refreshedAt
-              ? `Last updated ${formatShortDateTime(refreshedAt) ?? "recently"}`
-              : `${provider.source} provider`}
+              ? t.providerCard.lastUpdated(
+                  formatShortDateTime(refreshedAt) ?? t.globalStatus.recently
+                )
+              : t.providerCard.providerSource(provider.source)}
           </p>
         </div>
         <div className="provider-card__badges">
@@ -72,14 +76,16 @@ export function ProviderCard({
               disabled={isRefreshing}
               data-testid={`provider-refresh-${provider.id}`}
             >
-              {isRefreshing ? "Refreshing" : "Refresh"}
+              {isRefreshing ? t.providerCard.refreshing : t.providerCard.refresh}
             </button>
           ) : null}
         </div>
       </div>
       {provider.error ? (
         <p className="provider-error">
-          {effectiveStatus === "stale" ? "Showing cached data · " : "Refresh failed · "}
+          {effectiveStatus === "stale"
+            ? t.providerCard.showingCachedDataPrefix
+            : t.providerCard.refreshFailedPrefix}
           {provider.error}
         </p>
       ) : null}
@@ -97,7 +103,7 @@ export function ProviderCard({
             />
           ))
         ) : (
-          <p className="provider-empty">No quota windows reported yet.</p>
+          <p className="provider-empty">{t.providerCard.noQuotaWindows}</p>
         )}
       </div>
       {hiddenWindowCount > 0 ? (
@@ -106,7 +112,7 @@ export function ProviderCard({
           className="button-ghost quota-more-button"
           onClick={() => setExpanded((current) => !current)}
         >
-          {expanded ? "Show less" : `+ ${hiddenWindowCount} more quota windows`}
+          {expanded ? t.providerCard.showLess : t.providerCard.moreQuotaWindows(hiddenWindowCount)}
         </button>
       ) : null}
     </article>
@@ -126,6 +132,7 @@ function QuotaWindowRow({
   displayMode: "remaining" | "used";
   lowQuotaWarningThreshold: number;
 }) {
+  const { t } = useI18n();
   const displayedPercent = displayPercentForWindow(window, displayMode);
   const opacityPercent =
     window.remainingPercent !== null && window.remainingPercent !== undefined
@@ -134,7 +141,7 @@ function QuotaWindowRow({
         ? 100 - window.usedPercent
         : null;
   const status = windowStatus(window, lowQuotaWarningThreshold);
-  const resetText = formatQuotaReset(window);
+  const resetText = formatQuotaReset(window, new Date(), t);
 
   return (
     <section
@@ -144,11 +151,11 @@ function QuotaWindowRow({
       <div className="quota-window__meta">
         <strong>{window.label}</strong>
         <span className={status === "warning" ? "quota-window__warning" : undefined}>
-          {formatDisplayValue(window, displayMode)}
+          {formatDisplayValue(window, displayMode, t)}
         </span>
       </div>
       <div className="quota-window__details">
-        {resetText ? <span>{resetText}</span> : <span>No reset time</span>}
+        {resetText ? <span>{resetText}</span> : <span>{t.providerCard.noResetTime}</span>}
       </div>
       {displayedPercent !== null ? (
         <ProgressBar
@@ -158,7 +165,7 @@ function QuotaWindowRow({
           tone={status === "warning" ? "warning" : "normal"}
         />
       ) : (
-        <div className="quota-window__no-progress">Progress unavailable</div>
+        <div className="quota-window__no-progress">{t.providerCard.progressUnavailable}</div>
       )}
     </section>
   );
@@ -171,6 +178,7 @@ function StatusDetails({
   error?: string | null;
   diagnostics?: ProviderDiagnostics | null;
 }) {
+  const { t } = useI18n();
   const messages = diagnostics?.messages ?? [];
 
   return (
@@ -187,13 +195,13 @@ function StatusDetails({
         <dl>
           {diagnostics.exitCode !== null && diagnostics.exitCode !== undefined ? (
             <>
-              <dt>Exit code</dt>
+              <dt>{t.providerCard.exitCode}</dt>
               <dd>{diagnostics.exitCode}</dd>
             </>
           ) : null}
           {diagnostics.durationMs !== null && diagnostics.durationMs !== undefined ? (
             <>
-              <dt>Duration</dt>
+              <dt>{t.providerCard.duration}</dt>
               <dd>{diagnostics.durationMs}ms</dd>
             </>
           ) : null}

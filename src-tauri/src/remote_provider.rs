@@ -273,9 +273,7 @@ pub fn resolve_provider_url(registry_url: &str, provider_url: &str) -> String {
 
 pub fn resolve_source_url(manifest_url: &str, entry: &str) -> String {
     let entry = entry.trim();
-    if entry.starts_with("http://")
-        || entry.starts_with("https://")
-        || entry.starts_with("file://")
+    if entry.starts_with("http://") || entry.starts_with("https://") || entry.starts_with("file://")
     {
         return entry.to_string();
     }
@@ -350,8 +348,8 @@ pub fn cache_remote_provider(
         fs::copy(&source_path, &backup_path)?;
     }
 
-    let manifest_json =
-        serde_json::to_string_pretty(manifest).map_err(|error| RemoteProviderError::Io(error.to_string()))?;
+    let manifest_json = serde_json::to_string_pretty(manifest)
+        .map_err(|error| RemoteProviderError::Io(error.to_string()))?;
     fs::write(&manifest_path, manifest_json)?;
     fs::write(&source_path, source)?;
 
@@ -363,8 +361,8 @@ pub fn cache_remote_provider(
         resolved_runtime: resolved_runtime.map(|path| path.display().to_string()),
     };
     let meta_path = provider_dir.join(".meta.json");
-    let meta_json =
-        serde_json::to_string_pretty(&meta).map_err(|error| RemoteProviderError::Io(error.to_string()))?;
+    let meta_json = serde_json::to_string_pretty(&meta)
+        .map_err(|error| RemoteProviderError::Io(error.to_string()))?;
     fs::write(&meta_path, meta_json)?;
 
     Ok(provider_dir)
@@ -379,7 +377,9 @@ pub fn load_cached_manifest(provider_dir: &Path) -> Result<ProviderManifest, Rem
     Ok(manifest)
 }
 
-pub fn load_cached_meta(provider_dir: &Path) -> Result<Option<RemoteProviderMeta>, RemoteProviderError> {
+pub fn load_cached_meta(
+    provider_dir: &Path,
+) -> Result<Option<RemoteProviderMeta>, RemoteProviderError> {
     let meta_path = provider_dir.join(".meta.json");
     if !meta_path.exists() {
         return Ok(None);
@@ -561,8 +561,8 @@ pub fn check_update(
     meta.last_check_at = Some(chrono::Utc::now().to_rfc3339());
     meta.source_url = source_url;
 
-    let meta_json =
-        serde_json::to_string_pretty(&meta).map_err(|error| RemoteProviderError::Io(error.to_string()))?;
+    let meta_json = serde_json::to_string_pretty(&meta)
+        .map_err(|error| RemoteProviderError::Io(error.to_string()))?;
     fs::write(&meta_path, meta_json)?;
 
     Ok(UpdateInfo {
@@ -578,8 +578,7 @@ mod tests {
 
     #[test]
     fn resolve_source_url_with_relative_entry() {
-        let manifest =
-            "https://example.com/providers/kimi-coding/provider.json";
+        let manifest = "https://example.com/providers/kimi-coding/provider.json";
         assert_eq!(
             resolve_source_url(manifest, "provider.cjs"),
             "https://example.com/providers/kimi-coding/provider.cjs"
@@ -588,13 +587,9 @@ mod tests {
 
     #[test]
     fn resolve_source_url_with_absolute_entry() {
-        let manifest =
-            "https://example.com/providers/kimi-coding/provider.json";
+        let manifest = "https://example.com/providers/kimi-coding/provider.json";
         assert_eq!(
-            resolve_source_url(
-                manifest,
-                "https://other.example.com/script.js"
-            ),
+            resolve_source_url(manifest, "https://other.example.com/script.js"),
             "https://other.example.com/script.js"
         );
     }
@@ -626,7 +621,10 @@ mod tests {
     #[test]
     fn verify_checksum_mismatch() {
         let result = verify_checksum("console.log('hello');", "sha256:deadbeef");
-        assert!(matches!(result, Err(RemoteProviderError::ChecksumMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(RemoteProviderError::ChecksumMismatch { .. })
+        ));
     }
 
     #[test]
@@ -699,7 +697,9 @@ mod tests {
         let loaded = load_cached_manifest(&dir).expect("load manifest");
         assert_eq!(loaded.id, "kimi-coding");
 
-        let meta = load_cached_meta(&dir).expect("load meta").expect("meta exists");
+        let meta = load_cached_meta(&dir)
+            .expect("load meta")
+            .expect("meta exists");
         assert_eq!(meta.source_url, "https://example.com/provider.cjs");
         assert!(meta.checksum.is_some());
     }
@@ -709,11 +709,7 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let runtime_name = "quotabarwin_test_runtime";
         let script_path = temp.path().join(format!("{runtime_name}.cmd"));
-        fs::write(
-            &script_path,
-            "@echo off\necho 1.0.0\n",
-        )
-        .expect("write test runtime");
+        fs::write(&script_path, "@echo off\necho 1.0.0\n").expect("write test runtime");
 
         let original_path = std::env::var_os("PATH");
         let mut paths: Vec<PathBuf> =
@@ -757,8 +753,8 @@ mod tests {
         std::env::set_var("PATH", &new_path);
 
         let missing = temp.path().join("missing.exe");
-        let resolved =
-            ensure_runtime_resolved(runtime_name, Some(&missing.display().to_string())).expect("fallback");
+        let resolved = ensure_runtime_resolved(runtime_name, Some(&missing.display().to_string()))
+            .expect("fallback");
         assert_eq!(resolved, script_path);
 
         if let Some(path) = original_path {
@@ -769,33 +765,35 @@ mod tests {
     }
 }
 
-    #[test]
-    fn example_remote_provider_manifests_are_valid() {
-        let cargo_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let repo_root = cargo_dir.parent().expect("repo root");
-        let examples_dir = repo_root.join("examples").join("remote-providers");
+#[test]
+fn example_remote_provider_manifests_are_valid() {
+    let cargo_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = cargo_dir.parent().expect("repo root");
+    let examples_dir = repo_root.join("examples").join("remote-providers");
 
-        for provider_id in ["kimi-coding", "bigmodel-coding-plan", "codex-usage"] {
-            let dir = examples_dir.join(provider_id);
-            let manifest_path = dir.join("provider.json");
-            let source_path = dir.join("provider.cjs");
+    for provider_id in ["kimi-coding", "bigmodel-coding-plan", "codex-usage"] {
+        let dir = examples_dir.join(provider_id);
+        let manifest_path = dir.join("provider.json");
+        let source_path = dir.join("provider.cjs");
 
-            let manifest_json = fs::read_to_string(&manifest_path)
-                .unwrap_or_else(|error| panic!("failed to read {} manifest: {error}", provider_id));
-            let manifest: ProviderManifest = serde_json::from_str(&manifest_json)
-                .unwrap_or_else(|error| panic!("failed to parse {} manifest: {error}", provider_id));
-            validate_manifest(&manifest)
-                .unwrap_or_else(|error| panic!("{} manifest invalid: {error}", provider_id));
+        let manifest_json = fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|error| panic!("failed to read {} manifest: {error}", provider_id));
+        let manifest: ProviderManifest = serde_json::from_str(&manifest_json)
+            .unwrap_or_else(|error| panic!("failed to parse {} manifest: {error}", provider_id));
+        validate_manifest(&manifest)
+            .unwrap_or_else(|error| panic!("{} manifest invalid: {error}", provider_id));
 
-            let source = fs::read_to_string(&source_path)
-                .unwrap_or_else(|error| panic!("failed to read {} source: {error}", provider_id));
-            let expected_checksum = manifest.checksums.source.as_deref().unwrap_or_else(|| {
-                panic!("{} manifest is missing checksums.source", provider_id)
-            });
-            verify_checksum(&source, expected_checksum)
-                .unwrap_or_else(|error| panic!("{} checksum mismatch: {error}", provider_id));
-        }
+        let source = fs::read_to_string(&source_path)
+            .unwrap_or_else(|error| panic!("failed to read {} source: {error}", provider_id));
+        let expected_checksum = manifest
+            .checksums
+            .source
+            .as_deref()
+            .unwrap_or_else(|| panic!("{} manifest is missing checksums.source", provider_id));
+        verify_checksum(&source, expected_checksum)
+            .unwrap_or_else(|error| panic!("{} checksum mismatch: {error}", provider_id));
     }
+}
 
 #[test]
 fn fetch_manifest_reads_local_file_url() {
@@ -807,7 +805,10 @@ fn fetch_manifest_reads_local_file_url() {
     )
     .expect("write manifest");
 
-    let file_url = format!("file://{}", manifest_path.to_string_lossy().replace('\\', "/"));
+    let file_url = format!(
+        "file://{}",
+        manifest_path.to_string_lossy().replace('\\', "/")
+    );
     let manifest = fetch_manifest(&file_url, None, None, Duration::from_secs(1))
         .expect("fetch manifest from file URL");
     assert_eq!(manifest.id, "local");
@@ -819,9 +820,13 @@ fn fetch_source_reads_local_file_path() {
     let source_path = temp.path().join("provider.cjs");
     fs::write(&source_path, "// local source").expect("write source");
 
-    let source =
-        fetch_source(&source_path.to_string_lossy(), None, None, Duration::from_secs(1))
-            .expect("fetch source from local path");
+    let source = fetch_source(
+        &source_path.to_string_lossy(),
+        None,
+        None,
+        Duration::from_secs(1),
+    )
+    .expect("fetch source from local path");
     assert_eq!(source, "// local source");
 }
 
@@ -829,7 +834,10 @@ fn fetch_source_reads_local_file_path() {
 fn resolve_source_url_with_local_file_manifest_and_relative_entry() {
     let temp = tempfile::tempdir().expect("temp dir");
     let manifest_path = temp.path().join("provider.json");
-    let file_url = format!("file://{}", manifest_path.to_string_lossy().replace('\\', "/"));
+    let file_url = format!(
+        "file://{}",
+        manifest_path.to_string_lossy().replace('\\', "/")
+    );
 
     let resolved = resolve_source_url(&file_url, "provider.cjs");
     assert!(
@@ -857,7 +865,10 @@ fn resolve_provider_url_with_local_registry_and_relative_path() {
     let resolved = resolve_provider_url(&registry_path.to_string_lossy(), "kimi/provider.json");
     let resolved_path = Path::new(&resolved);
     assert!(resolved_path.ends_with("kimi/provider.json"));
-    assert_eq!(resolved_path.parent().unwrap().parent().unwrap(), temp.path());
+    assert_eq!(
+        resolved_path.parent().unwrap().parent().unwrap(),
+        temp.path()
+    );
 }
 
 #[test]
@@ -870,8 +881,13 @@ fn fetch_provider_registry_reads_local_registry_file() {
     )
     .expect("write registry");
 
-    let registry = fetch_provider_registry(&registry_path.to_string_lossy(), None, None, Duration::from_secs(1))
-        .expect("fetch registry");
+    let registry = fetch_provider_registry(
+        &registry_path.to_string_lossy(),
+        None,
+        None,
+        Duration::from_secs(1),
+    )
+    .expect("fetch registry");
     assert_eq!(registry.providers.len(), 1);
     assert_eq!(registry.providers[0].id, "local");
 }

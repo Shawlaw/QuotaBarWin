@@ -2,15 +2,10 @@ import { useRef, useState } from "react";
 import type {
   AppConfig,
   CodexProviderConfig,
-  CommandProviderConfig,
   ConfigStorageInfo,
-  ParserSpec,
   ProviderConfig,
   ProviderPreset,
-  ProviderSnapshot,
-  RemoteProviderConfig,
-  ScriptOutputSpec,
-  ScriptProviderConfig
+  RemoteProviderConfig
 } from "../types";
 import {
   applyRemoteUpdate,
@@ -21,6 +16,7 @@ import {
   refreshRemoteProvider,
   removeRemoteProvider
 } from "../lib/api";
+import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
 import { RemoteProviderSettings } from "./RemoteProviderSettings";
 
@@ -32,11 +28,9 @@ type SettingsPanelProps = {
   presets: ProviderPreset[];
   onChange: (config: AppConfig) => void;
   onOpenConfigFolder: () => Promise<void>;
-  onOpenCustomProviderGuide: () => Promise<void>;
   onResetConfig: () => Promise<void>;
   onSave: () => void | Promise<void>;
   onSetPortableMode: (enabled: boolean) => void;
-  onTestProvider: (provider: ProviderConfig) => Promise<ProviderSnapshot>;
 };
 
 type ProviderTextDraft = {
@@ -44,7 +38,7 @@ type ProviderTextDraft = {
   visibleWindowIds?: string;
 };
 
-type WindowConfigProvider = CommandProviderConfig | CodexProviderConfig | ScriptProviderConfig;
+type WindowConfigProvider = CodexProviderConfig;
 
 function updateProvider(
   config: AppConfig,
@@ -98,17 +92,6 @@ function uniqueProviderId(config: AppConfig, providerId: string): string {
   return `${providerId}-${index}`;
 }
 
-function argsToText(args: string[]): string {
-  return args.join("\n");
-}
-
-function textToArgs(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
 function visibleWindowsToText(windowIds: string[] | undefined): string {
   return (windowIds ?? []).join("\n");
 }
@@ -145,28 +128,6 @@ function textToLabelOverrides(text: string): Record<string, string> {
   );
 }
 
-function parserFromType(type: string): ParserSpec {
-  if (type === "app-snapshot") {
-    return { type };
-  }
-  if (type === "kimi-coding-usage-v1") {
-    return { type };
-  }
-  if (type === "bigmodel-quota-limit-json-v1") {
-    return { type };
-  }
-
-  return { type: "provider-snapshot" };
-}
-
-function scriptOutputFromType(type: string): ScriptOutputSpec {
-  if (type === "app-snapshot-v1") {
-    return { type };
-  }
-
-  return { type: "provider-snapshot-v1" };
-}
-
 function cloneProvider(provider: ProviderConfig): ProviderConfig {
   return JSON.parse(JSON.stringify(provider)) as ProviderConfig;
 }
@@ -179,26 +140,24 @@ export function SettingsPanel({
   presets,
   onChange,
   onOpenConfigFolder,
-  onOpenCustomProviderGuide,
   onResetConfig,
   onSave,
-  onSetPortableMode,
-  onTestProvider
+  onSetPortableMode
 }: SettingsPanelProps) {
-  const [testResults, setTestResults] = useState<Record<string, ProviderSnapshot>>({});
+  const { t } = useI18n();
   const [textDrafts, setTextDrafts] = useState<Record<string, ProviderTextDraft>>({});
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
   const [expandedProviderActions, setExpandedProviderActions] = useState<Record<string, boolean>>({});
-  const [saveMessage, setSaveMessage] = useState("No changes");
+  const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
   const initialConfigRef = useRef(JSON.stringify(config));
   const configDraft = JSON.stringify(config);
   const hasChanges = configDraft !== initialConfigRef.current;
   const refreshIntervalError =
-    config.refreshIntervalSeconds > 0 ? null : "Refresh interval must be greater than 0.";
+    config.refreshIntervalSeconds > 0 ? null : t.settings.refreshIntervalError;
   const lowQuotaWarningError =
     config.lowQuotaWarningThreshold >= 0 && config.lowQuotaWarningThreshold <= 100
       ? null
-      : "Low quota warning must be between 0 and 100.";
+      : t.settings.lowQuotaWarningError;
   const canSave = hasChanges && !refreshIntervalError && !lowQuotaWarningError && !isSaving;
 
   function setProviderTextDraft(
@@ -238,42 +197,20 @@ export function SettingsPanel({
   }
 
   async function saveSettings() {
-    setSaveMessage("Saving");
+    setSaveMessage(t.settings.saving);
     try {
       await onSave();
       initialConfigRef.current = JSON.stringify(config);
-      setSaveMessage("Saved");
-      window.setTimeout(() => setSaveMessage("No changes"), 1600);
+      setSaveMessage(t.settings.saved);
+      window.setTimeout(() => setSaveMessage(t.settings.noChanges), 1600);
     } catch (error) {
-      setSaveMessage(error instanceof Error ? error.message : "Save failed");
+      setSaveMessage(error instanceof Error ? error.message : t.settings.saveFailed);
     }
   }
 
   function resetChanges() {
     onChange(JSON.parse(initialConfigRef.current) as AppConfig);
-    setSaveMessage("No changes");
-  }
-
-  function updateCommandProvider(
-    provider: CommandProviderConfig,
-    patch: Partial<CommandProviderConfig>
-  ) {
-    onChange(
-      updateProvider(config, provider.id, (current) =>
-        current.kind === "command" ? { ...current, ...patch } : current
-      )
-    );
-  }
-
-  function updateScriptProvider(
-    provider: ScriptProviderConfig,
-    patch: Partial<ScriptProviderConfig>
-  ) {
-    onChange(
-      updateProvider(config, provider.id, (current) =>
-        current.kind === "script" ? { ...current, ...patch } : current
-      )
-    );
+    setSaveMessage(t.settings.noChanges);
   }
 
   function updateCodexProvider(
@@ -288,14 +225,14 @@ export function SettingsPanel({
   }
 
   return (
-    <section className="settings-panel" aria-label="Settings" data-testid="settings-page">
-      <section className="settings-section" aria-label="General" data-testid="general-settings-section">
+    <section className="settings-panel" aria-label={t.settings.title} data-testid="settings-page">
+      <section className="settings-section" aria-label={t.settings.general} data-testid="general-settings-section">
         <div className="settings-section-title">
-          <h3>General</h3>
+          <h3>{t.settings.general}</h3>
         </div>
-        <div className="settings-grid">
+        <div className="settings-grid general-settings-grid">
         <label>
-          Refresh interval (seconds)
+          {t.settings.refreshInterval}
           <input
             type="number"
             min={1}
@@ -311,7 +248,7 @@ export function SettingsPanel({
           {refreshIntervalError ? <span className="field-error">{refreshIntervalError}</span> : null}
         </label>
         <label>
-          Display mode
+          {t.settings.displayMode}
           <select
             data-testid="display-mode-select"
             value={config.displayMode}
@@ -322,12 +259,12 @@ export function SettingsPanel({
               })
             }
           >
-            <option value="remaining">Remaining</option>
-            <option value="used">Used</option>
+            <option value="remaining">{t.settings.displayRemaining}</option>
+            <option value="used">{t.settings.displayUsed}</option>
           </select>
         </label>
         <label>
-          Low quota warning
+          {t.settings.lowQuotaWarning}
           <input
             type="number"
             min={0}
@@ -344,7 +281,7 @@ export function SettingsPanel({
           {lowQuotaWarningError ? <span className="field-error">{lowQuotaWarningError}</span> : null}
         </label>
         <label>
-          Log level
+          {t.settings.logLevel}
           <select
             value={config.logLevel ?? "info"}
             onChange={(event) =>
@@ -354,17 +291,34 @@ export function SettingsPanel({
               })
             }
           >
-            <option value="debug">Debug</option>
-            <option value="info">Info</option>
-            <option value="warn">Warn</option>
-            <option value="error">Error</option>
+            <option value="debug">{t.settings.logDebug}</option>
+            <option value="info">{t.settings.logInfo}</option>
+            <option value="warn">{t.settings.logWarn}</option>
+            <option value="error">{t.settings.logError}</option>
+          </select>
+        </label>
+        <label>
+          {t.settings.language}
+          <select
+            data-testid="language-select"
+            value={config.language}
+            onChange={(event) =>
+              onChange({
+                ...config,
+                language: event.currentTarget.value as AppConfig["language"]
+              })
+            }
+          >
+            <option value="system">{t.settings.languageSystem}</option>
+            <option value="en">{t.settings.languageEnglish}</option>
+            <option value="zh-CN">{t.settings.languageChinese}</option>
           </select>
         </label>
         <NetworkProxySettings
           proxy={config.networkProxy}
           onChange={(proxy) => onChange({ ...config, networkProxy: proxy })}
         />
-        <label className="checkbox-row">
+        <label className="checkbox-row settings-toggle-row">
           <input
             type="checkbox"
             checked={config.launchAtStartup ?? false}
@@ -375,18 +329,18 @@ export function SettingsPanel({
               })
             }
           />
-          Launch at startup
+          {t.settings.launchAtStartup}
         </label>
         </div>
       </section>
 
-      <section className="settings-section" aria-label="Providers" data-testid="providers-settings-section">
+      <section className="settings-section" aria-label={t.settings.providers} data-testid="providers-settings-section">
         <div className="settings-section-title">
-          <h3>Providers</h3>
-          <span>{config.providers.length} configured</span>
+          <h3>{t.settings.providers}</h3>
+          <span>{t.settings.configuredCount(config.providers.length)}</span>
         </div>
-        <section className="preset-list" aria-label="Add Provider">
-          <h3>Add Provider</h3>
+        <section className="preset-list" aria-label={t.settings.addProvider}>
+          <h3>{t.settings.addProvider}</h3>
           <div className="preset-actions">
             {presets.map((preset) => (
               <button
@@ -402,7 +356,7 @@ export function SettingsPanel({
         </section>
         <div className="settings-provider-list">
         {config.providers.length === 0 ? (
-          <p className="settings-empty">No providers yet. Add one to start monitoring quota.</p>
+          <p className="settings-empty">{t.settings.noProviders}</p>
         ) : null}
         {config.providers.map((provider, providerIndex) => (
           <article className="settings-provider" key={provider.id} data-testid={`settings-provider-${provider.id}`}>
@@ -434,7 +388,7 @@ export function SettingsPanel({
                   }))
                 }
               >
-                {expandedProviders[provider.id] ? "Collapse" : "Edit"}
+                {expandedProviders[provider.id] ? t.settings.collapse : t.settings.edit}
               </button>
               <button
                 type="button"
@@ -447,7 +401,7 @@ export function SettingsPanel({
                   }))
                 }
               >
-                More
+                {t.settings.more}
               </button>
             </div>
             {expandedProviderActions[provider.id] ? (
@@ -458,7 +412,7 @@ export function SettingsPanel({
                   disabled={providerIndex === 0}
                   onClick={() => onChange(moveProvider(config, provider.id, -1))}
                 >
-                  Up
+                  {t.settings.up}
                 </button>
                 <button
                   type="button"
@@ -466,19 +420,19 @@ export function SettingsPanel({
                   disabled={providerIndex === config.providers.length - 1}
                   onClick={() => onChange(moveProvider(config, provider.id, 1))}
                 >
-                  Down
+                  {t.settings.down}
                 </button>
                 <button
                   type="button"
                   className="button-danger button-compact"
                   data-testid={`remove-provider-${provider.id}`}
                   onClick={() => {
-                    if (window.confirm(`Remove provider ${provider.name}?`)) {
+                    if (window.confirm(t.settings.removeProviderConfirm(provider.name))) {
                       onChange(removeProvider(config, provider.id));
                     }
                   }}
                 >
-                  Remove
+                  {t.settings.remove}
                 </button>
               </div>
             ) : null}
@@ -488,13 +442,13 @@ export function SettingsPanel({
                   .find((preset) => preset.providerConfigTemplate.id === provider.id)
                   ?.requiredEnvVars?.map((envVar) => (
                     <p className="env-hint" key={envVar}>
-                      Set {envVar}
+                      {t.settings.setEnvVar(envVar)}
                     </p>
                   ))}
                 {provider.kind === "codex" ? (
                   <div className="command-fields">
                     <label>
-                      Name
+                      {t.settings.name}
                       <input
                         value={provider.name}
                         onChange={(event) =>
@@ -503,10 +457,10 @@ export function SettingsPanel({
                       />
                     </label>
                     <label className="args-field">
-                      Auth token
+                      {t.settings.authToken}
                       <textarea
                         rows={3}
-                        placeholder={"Paste a token, ${env:CODEX_ACCESS_TOKEN}, or ${file:C:\\Secrets\\codex-token.txt}"}
+                        placeholder={t.settings.authTokenPlaceholder}
                         value={provider.authToken}
                         onChange={(event) =>
                           updateCodexProvider(provider, { authToken: event.currentTarget.value })
@@ -514,9 +468,9 @@ export function SettingsPanel({
                       />
                     </label>
                     <label>
-                      ChatGPT account id
+                      {t.settings.accountId}
                       <input
-                        placeholder="Optional"
+                        placeholder={t.settings.optional}
                         value={provider.accountId ?? ""}
                         onChange={(event) =>
                           updateCodexProvider(provider, {
@@ -526,9 +480,9 @@ export function SettingsPanel({
                       />
                     </label>
                     <label>
-                      Proxy URL
+                      {t.settings.proxyUrl}
                       <input
-                        placeholder="Optional, e.g. http://127.0.0.1:7890 or socks5h://127.0.0.1:7890"
+                        placeholder={t.settings.providerProxyPlaceholder}
                         value={provider.proxyUrl ?? ""}
                         onChange={(event) =>
                           updateCodexProvider(provider, {
@@ -538,7 +492,7 @@ export function SettingsPanel({
                       />
                     </label>
                     <label>
-                      Timeout
+                      {t.settings.timeout}
                       <input
                         type="number"
                         min={100}
@@ -551,10 +505,10 @@ export function SettingsPanel({
                       />
                     </label>
                     <label className="args-field">
-                      Window label overrides
+                      {t.settings.windowLabelOverrides}
                       <textarea
                         rows={4}
-                        placeholder={"window-id=Display name\n5h=5h\nweekly=Weekly limit"}
+                        placeholder={t.settings.windowLabelOverridesPlaceholder}
                         value={windowLabelOverridesText(provider)}
                         onChange={(event) => {
                           setProviderTextDraft(
@@ -569,10 +523,10 @@ export function SettingsPanel({
                       />
                     </label>
                     <label className="args-field">
-                      Displayed windows
+                      {t.settings.displayedWindows}
                       <textarea
                         rows={3}
-                        placeholder={"Leave empty to show all\n5h\nweekly\nWeekly limit"}
+                        placeholder={t.settings.displayedWindowsPlaceholder}
                         value={visibleWindowIdsText(provider)}
                         onChange={(event) => {
                           setProviderTextDraft(provider.id, "visibleWindowIds", event.currentTarget.value);
@@ -584,237 +538,6 @@ export function SettingsPanel({
                     </label>
                   </div>
                 ) : null}
-                {provider.kind === "script" ? (
-                  <div className="command-fields">
-                    <label>
-                      Name
-                      <input
-                        value={provider.name}
-                        onChange={(event) =>
-                          updateScriptProvider(provider, { name: event.currentTarget.value })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Executable
-                      <input
-                        data-testid={`script-executable-${provider.id}`}
-                        value={provider.command.executable}
-                        onChange={(event) =>
-                          updateScriptProvider(provider, {
-                            command: {
-                              ...provider.command,
-                              executable: event.currentTarget.value
-                            }
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="args-field">
-                      Args
-                      <textarea
-                        rows={5}
-                        data-testid={`script-args-${provider.id}`}
-                        value={argsToText(provider.command.args)}
-                        onChange={(event) =>
-                          updateScriptProvider(provider, {
-                            command: {
-                              ...provider.command,
-                              args: textToArgs(event.currentTarget.value)
-                            }
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Output contract
-                      <select
-                        data-testid={`script-output-${provider.id}`}
-                        value={provider.output.type}
-                        onChange={(event) =>
-                          updateScriptProvider(provider, {
-                            output: scriptOutputFromType(event.currentTarget.value)
-                          })
-                        }
-                      >
-                        <option value="provider-snapshot-v1">provider-snapshot-v1</option>
-                        <option value="app-snapshot-v1">app-snapshot-v1</option>
-                      </select>
-                    </label>
-                    <label>
-                      Timeout
-                      <input
-                        type="number"
-                        min={100}
-                        value={provider.command.timeoutMs}
-                        onChange={(event) =>
-                          updateScriptProvider(provider, {
-                            command: {
-                              ...provider.command,
-                              timeoutMs: Number(event.currentTarget.value)
-                            }
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="args-field">
-                      Window label overrides
-                      <textarea
-                        rows={4}
-                        placeholder={"window-id=Display name\n5h=5h\nweekly=Weekly limit"}
-                        value={windowLabelOverridesText(provider)}
-                        onChange={(event) => {
-                          setProviderTextDraft(
-                            provider.id,
-                            "windowLabelOverrides",
-                            event.currentTarget.value
-                          );
-                          updateScriptProvider(provider, {
-                            windowLabelOverrides: textToLabelOverrides(event.currentTarget.value)
-                          });
-                        }}
-                      />
-                    </label>
-                    <label className="args-field">
-                      Displayed windows
-                      <textarea
-                        rows={3}
-                        placeholder={"Leave empty to show all\n5h\nweekly\nWeekly limit"}
-                        value={visibleWindowIdsText(provider)}
-                        onChange={(event) => {
-                          setProviderTextDraft(provider.id, "visibleWindowIds", event.currentTarget.value);
-                          updateScriptProvider(provider, {
-                            visibleWindowIds: textToVisibleWindows(event.currentTarget.value)
-                          });
-                        }}
-                      />
-                    </label>
-                  </div>
-                ) : null}
-                {provider.kind === "command" ? (
-                  <div className="command-fields">
-                <label>
-                  Name
-                  <input
-                    value={provider.name}
-                    onChange={(event) =>
-                      updateCommandProvider(provider, { name: event.currentTarget.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Executable
-                  <input
-                    value={provider.command.executable}
-                    onChange={(event) =>
-                      updateCommandProvider(provider, {
-                        command: {
-                          ...provider.command,
-                          executable: event.currentTarget.value
-                        }
-                      })
-                    }
-                  />
-                </label>
-                <label className="args-field">
-                  Args
-                  <textarea
-                    rows={5}
-                    value={argsToText(provider.command.args)}
-                    onChange={(event) =>
-                      updateCommandProvider(provider, {
-                        command: {
-                          ...provider.command,
-                          args: textToArgs(event.currentTarget.value)
-                        }
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Timeout
-                  <input
-                    type="number"
-                    min={100}
-                    value={provider.command.timeoutMs}
-                    onChange={(event) =>
-                      updateCommandProvider(provider, {
-                        command: {
-                          ...provider.command,
-                          timeoutMs: Number(event.currentTarget.value)
-                        }
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Parser
-                  <select
-                    value={provider.parser.type}
-                    onChange={(event) =>
-                      updateCommandProvider(provider, {
-                        parser: parserFromType(event.currentTarget.value)
-                      })
-                    }
-                  >
-                    <option value="provider-snapshot">provider-snapshot</option>
-                    <option value="app-snapshot">app-snapshot</option>
-                    <option value="kimi-coding-usage-v1">kimi-coding-usage-v1</option>
-                    <option value="bigmodel-quota-limit-json-v1">
-                      bigmodel-quota-limit-json-v1
-                    </option>
-                  </select>
-                </label>
-                <label className="args-field">
-                  Window label overrides
-                  <textarea
-                    rows={4}
-                    placeholder={"window-id=Display name\n300-minute=5h\ntokens-limit-6-1=Weekly limit"}
-                    value={windowLabelOverridesText(provider)}
-                    onChange={(event) => {
-                      setProviderTextDraft(
-                        provider.id,
-                        "windowLabelOverrides",
-                        event.currentTarget.value
-                      );
-                      updateCommandProvider(provider, {
-                        windowLabelOverrides: textToLabelOverrides(event.currentTarget.value)
-                      });
-                    }}
-                  />
-                </label>
-                <label className="args-field">
-                  Displayed windows
-                  <textarea
-                    rows={3}
-                    placeholder={"Leave empty to show all\n5h\ntokens-limit-3-5\nWeekly limit"}
-                    value={visibleWindowIdsText(provider)}
-                    onChange={(event) => {
-                      setProviderTextDraft(provider.id, "visibleWindowIds", event.currentTarget.value);
-                      updateCommandProvider(provider, {
-                        visibleWindowIds: textToVisibleWindows(event.currentTarget.value)
-                      });
-                    }}
-                  />
-                </label>
-                  </div>
-                ) : null}
-                <div className="provider-test">
-                  <button
-                    type="button"
-                    className="button-secondary"
-                    data-testid={`test-provider-${provider.id}`}
-                    onClick={async () => {
-                      const result = await onTestProvider(provider);
-                      setTestResults((current) => ({ ...current, [provider.id]: result }));
-                    }}
-                  >
-                    Test Provider
-                  </button>
-                  {testResults[provider.id] ? (
-                    <pre>{JSON.stringify(testResults[provider.id], null, 2)}</pre>
-                  ) : null}
-                </div>
               </>
             ) : null}
           </article>
@@ -852,27 +575,27 @@ export function SettingsPanel({
       />
 
       <details className="settings-advanced" data-testid="advanced-settings-section">
-        <summary>Advanced</summary>
+        <summary>{t.settings.advanced}</summary>
         <div className="settings-section">
-        <details className="settings-info" aria-label="Configuration storage">
+        <details className="settings-info" aria-label={t.settings.configurationStorage}>
           <summary>
-            Configuration storage
-            <span>{configStorageInfo?.mode === "portable" ? "Portable mode" : "AppData mode"}</span>
+            {t.settings.configurationStorage}
+            <span>{configStorageInfo?.mode === "portable" ? t.settings.portableMode : t.settings.appDataMode}</span>
           </summary>
           <div className="config-paths">
-            <span>Config file</span>
+            <span>{t.settings.configFile}</span>
             <button
               type="button"
               className="path-chip"
               title={configStorageInfo?.configPath}
               onClick={() => void navigator.clipboard?.writeText(configStorageInfo?.configPath ?? "")}
             >
-              {configStorageInfo?.configPath ?? "Loading config path..."}
+              {configStorageInfo?.configPath ?? t.settings.loadingConfigPath}
             </button>
-            <span>AppData</span>
-            <code title={configStorageInfo?.appDataConfigPath}>{configStorageInfo?.appDataConfigPath ?? "Loading..."}</code>
-            <span>Portable</span>
-            <code title={configStorageInfo?.portableConfigPath}>{configStorageInfo?.portableConfigPath ?? "Loading..."}</code>
+            <span>{t.settings.appData}</span>
+            <code title={configStorageInfo?.appDataConfigPath}>{configStorageInfo?.appDataConfigPath ?? t.settings.loading}</code>
+            <span>{t.settings.portable}</span>
+            <code title={configStorageInfo?.portableConfigPath}>{configStorageInfo?.portableConfigPath ?? t.settings.loading}</code>
           </div>
           <label className="checkbox-row">
             <input
@@ -881,11 +604,10 @@ export function SettingsPanel({
               disabled={!configStorageInfo || isConfigStorageBusy}
               onChange={(event) => onSetPortableMode(event.currentTarget.checked)}
             />
-            Portable mode
+            {t.settings.portableMode}
           </label>
           <div className="settings-hint">
-            Portable mode stores config beside the app executable and uses quotabarwin.portable as
-            the marker file.
+            {t.settings.portableModeHint}
           </div>
           <div className="settings-actions settings-actions--inline">
             <button
@@ -894,46 +616,33 @@ export function SettingsPanel({
               disabled={!configStorageInfo || isConfigStorageBusy}
               onClick={() => void onOpenConfigFolder()}
             >
-              Open folder
+              {t.settings.openFolder}
             </button>
             <button
               type="button"
               className="button-danger"
               disabled={isConfigStorageBusy}
               onClick={() => {
-                if (window.confirm("Reset QuotaBarWin config to defaults? A backup will be created first.")) {
+                if (window.confirm(t.settings.resetConfigConfirm)) {
                   void onResetConfig();
                 }
               }}
             >
-              Reset config
+              {t.settings.resetConfig}
             </button>
           </div>
         </details>
-        <section className="settings-guide" aria-label="Custom Provider Guide">
-          <div>
-            <h3>Custom Provider Guide</h3>
-            <p>Open the full local guide in your browser for examples and the output contract.</p>
-          </div>
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={() => void onOpenCustomProviderGuide()}
-          >
-            Open Guide
-          </button>
-        </section>
         </div>
       </details>
 
       <div className="fixed-save-bar" data-testid="fixed-save-bar">
-        <span>{hasChanges ? "Unsaved changes" : saveMessage}</span>
+        <span>{hasChanges ? t.settings.unsavedChanges : saveMessage}</span>
         <div className="settings-actions">
           <button type="button" className="button-secondary" onClick={resetChanges} disabled={!hasChanges || isSaving}>
-            Reset changes
+            {t.settings.resetChanges}
           </button>
           <button type="button" onClick={() => void saveSettings()} disabled={!canSave} data-testid="save-settings-button">
-            {isSaving ? "Saving" : "Save"}
+            {isSaving ? t.settings.saving : t.settings.save}
           </button>
         </div>
       </div>

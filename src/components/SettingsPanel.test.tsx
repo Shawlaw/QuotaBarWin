@@ -2,44 +2,33 @@ import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { SettingsPanel } from "./SettingsPanel";
-import type { AppConfig, ConfigStorageInfo, ProviderPreset, ProviderSnapshot } from "../types";
+import type { AppConfig, ConfigStorageInfo, ProviderPreset } from "../types";
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const commandProvider = {
-  id: "command-1",
-  name: "Local Command",
+const codexProvider = {
+  id: "codex",
+  name: "Codex",
   enabled: true,
-  kind: "command" as const,
-  command: {
-    executable: "node",
-    args: ["-H", "Authorization: Bearer ${file:C:\\Secrets\\kimi.key}", "fixtures/fake_provider_snapshot.js"],
-    cwd: null,
-    env: {},
-    timeoutMs: 15000
+  kind: "codex" as const,
+  authToken: "${env:CODEX_ACCESS_TOKEN}",
+  accountId: null,
+  proxyUrl: null,
+  timeoutMs: 15000,
+  windowLabelOverrides: {
+    "5h": "5h",
+    weekly: "Weekly limit"
   },
-  parser: { type: "provider-snapshot" as const },
-  windowLabelOverrides: {},
-  visibleWindowIds: []
+  visibleWindowIds: ["5h", "Weekly limit"]
 };
 
-const scriptProvider = {
-  id: "script-1",
-  name: "Local Script",
+const mockProvider = {
+  id: "mock-codex",
+  name: "Codex Mock",
   enabled: true,
-  kind: "script" as const,
-  command: {
-    executable: "node",
-    args: ["providers/custom/provider.cjs"],
-    cwd: null,
-    env: {},
-    timeoutMs: 15000
-  },
-  output: { type: "provider-snapshot-v1" as const },
-  windowLabelOverrides: {},
-  visibleWindowIds: []
+  kind: "mock" as const
 };
 
 const presets: ProviderPreset[] = [
@@ -48,90 +37,7 @@ const presets: ProviderPreset[] = [
     displayName: "Codex Usage",
     description: "Codex usage",
     requiredEnvVars: ["CODEX_ACCESS_TOKEN"],
-    providerConfigTemplate: {
-      id: "codex",
-      name: "Codex",
-      enabled: true,
-      kind: "codex",
-      authToken: "${env:CODEX_ACCESS_TOKEN}",
-      accountId: null,
-      proxyUrl: null,
-      timeoutMs: 15000,
-      windowLabelOverrides: {
-        "5h": "5h",
-        weekly: "Weekly limit"
-      },
-      visibleWindowIds: ["5h", "Weekly limit"]
-    }
-  },
-  {
-    id: "kimi-coding-usage",
-    displayName: "Kimi Coding Usage",
-    description: "Kimi usage",
-    requiredEnvVars: ["KIMI_API_KEY"],
-    providerConfigTemplate: {
-      id: "kimi-coding",
-      name: "Kimi Coding",
-      enabled: true,
-      kind: "script",
-      command: {
-        executable: "node",
-        args: ["C:\\QuotaBarWin\\providers\\builtin\\kimi-coding\\provider.cjs"],
-        timeoutMs: 15000
-      },
-      output: { type: "provider-snapshot-v1" },
-      windowLabelOverrides: {},
-      visibleWindowIds: []
-    }
-  },
-  {
-    id: "bigmodel-coding-plan",
-    displayName: "BigModel Coding Plan",
-    description: "BigModel usage",
-    requiredEnvVars: ["BIGMODEL_API_KEY"],
-    providerConfigTemplate: {
-      id: "bigmodel-coding-plan",
-      name: "BigModel Coding Plan",
-      enabled: true,
-      kind: "script",
-      command: {
-        executable: "node",
-        args: ["C:\\QuotaBarWin\\providers\\builtin\\bigmodel-coding-plan\\provider.cjs"],
-        timeoutMs: 15000
-      },
-      output: { type: "provider-snapshot-v1" },
-      windowLabelOverrides: {
-        "tokens-limit-3-5": "5h",
-        "tokens-limit-6-1": "Weekly limit",
-        "time-limit-5-1": "Monthly time limit"
-      },
-      visibleWindowIds: []
-    }
-  },
-  {
-    id: "opencode-quota-command",
-    displayName: "OpenCode Quota Command",
-    description: "OpenCode quota",
-    providerConfigTemplate: {
-      id: "opencode-quota",
-      name: "OpenCode Quota",
-      enabled: true,
-      kind: "script",
-      command: {
-        executable: "opencode-quota",
-        args: ["show", "--json"],
-        timeoutMs: 15000
-      },
-      output: { type: "app-snapshot-v1" },
-      windowLabelOverrides: {},
-      visibleWindowIds: []
-    }
-  },
-  {
-    id: "custom-script-provider",
-    displayName: "Custom Script Provider",
-    description: "Custom script",
-    providerConfigTemplate: scriptProvider
+    providerConfigTemplate: codexProvider
   }
 ];
 
@@ -146,35 +52,17 @@ const configStorageInfo: ConfigStorageInfo = {
 
 function configWithProviders(providers: AppConfig["providers"]): AppConfig {
   return {
-    schemaVersion: 1,
+    schemaVersion: 8,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
+    language: "system",
     networkProxy: null,
     providers
   };
 }
 
-function renderSettings(initialConfig = configWithProviders([commandProvider])) {
-  const testProvider = async (provider: AppConfig["providers"][number]): Promise<ProviderSnapshot> => ({
-    id: provider.id,
-    name: provider.name,
-    status: "ok",
-    source:
-      provider.kind === "codex"
-        ? "native"
-        : provider.kind === "command"
-          ? "command"
-          : provider.kind === "script"
-            ? "script"
-            : "mock",
-    updatedAt: null,
-    windows: [],
-    error: null,
-    diagnostics: null,
-    metadata: null
-  });
-
+function renderSettings(initialConfig = configWithProviders([codexProvider])) {
   function Harness() {
     const [config, setConfig] = useState(initialConfig);
     return (
@@ -185,11 +73,9 @@ function renderSettings(initialConfig = configWithProviders([commandProvider])) 
         isSaving={false}
         onChange={setConfig}
         onOpenConfigFolder={async () => undefined}
-        onOpenCustomProviderGuide={async () => undefined}
         onResetConfig={async () => undefined}
         onSave={() => undefined}
         onSetPortableMode={() => undefined}
-        onTestProvider={testProvider}
         presets={presets}
       />
     );
@@ -198,60 +84,32 @@ function renderSettings(initialConfig = configWithProviders([commandProvider])) 
   return render(<Harness />);
 }
 
-test("settings_can_render_command_provider", () => {
+test("settings_can_render_codex_provider", () => {
   renderSettings();
 
   expect(screen.getByLabelText("Refresh interval (seconds)")).toHaveValue(300);
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  expect(screen.getByDisplayValue("Local Command")).toBeInTheDocument();
-  expect(screen.getByDisplayValue("node")).toBeInTheDocument();
-  expect(screen.getByLabelText("Args")).toHaveValue(
-    "-H\nAuthorization: Bearer ${file:C:\\Secrets\\kimi.key}\nfixtures/fake_provider_snapshot.js"
+  expect(screen.getByDisplayValue("Codex")).toBeInTheDocument();
+  expect(screen.getByLabelText("Auth token")).toHaveValue("${env:CODEX_ACCESS_TOKEN}");
+  expect(screen.getByLabelText("ChatGPT account id")).toHaveValue("");
+  expect(screen.getByLabelText("Proxy URL")).toHaveValue("");
+  expect(screen.getByLabelText("Window label overrides")).toHaveValue(
+    "5h=5h\nweekly=Weekly limit"
   );
-  expect(screen.getByDisplayValue("provider-snapshot")).toBeInTheDocument();
-});
-
-test("settings_can_render_script_provider_contract", () => {
-  renderSettings(configWithProviders([scriptProvider]));
-
-  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-
-  expect(screen.getByDisplayValue("Local Script")).toBeInTheDocument();
-  expect(screen.getByTestId("script-executable-script-1")).toHaveValue("node");
-  expect(screen.getByLabelText("Args")).toHaveValue("providers/custom/provider.cjs");
-  expect(screen.getByLabelText("Output contract")).toHaveValue("provider-snapshot-v1");
-
-  fireEvent.change(screen.getByLabelText("Output contract"), {
-    target: { value: "app-snapshot-v1" }
-  });
-
-  expect(screen.getByLabelText("Output contract")).toHaveValue("app-snapshot-v1");
-  expect(screen.queryByLabelText("Parser")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Displayed windows")).toHaveValue("5h\nWeekly limit");
 });
 
 test("settings_edits_window_label_overrides", () => {
-  renderSettings({
-    ...configWithProviders([commandProvider]),
-    providers: [
-      {
-        ...commandProvider,
-        windowLabelOverrides: {
-          weekly: "Weekly limit"
-        }
-      }
-    ]
-  });
+  renderSettings();
 
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   const overrides = screen.getByLabelText("Window label overrides");
-  expect(overrides).toHaveValue("weekly=Weekly limit");
-
   fireEvent.change(overrides, {
-    target: { value: "weekly=Team weekly limit\n300-minute=5h" }
+    target: { value: "weekly=Team weekly limit\n5h=5h" }
   });
 
   expect(screen.getByLabelText("Window label overrides")).toHaveValue(
-    "weekly=Team weekly limit\n300-minute=5h"
+    "weekly=Team weekly limit\n5h=5h"
   );
 });
 
@@ -269,27 +127,14 @@ test("settings_keeps_label_override_newlines_while_editing", () => {
   );
 });
 
-test("settings_shows_mapping_and_displayed_window_hints", () => {
-  renderSettings();
-
-  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  expect(screen.getByLabelText("Window label overrides")).toHaveAttribute(
-    "placeholder",
-    "window-id=Display name\n300-minute=5h\ntokens-limit-6-1=Weekly limit"
-  );
-  expect(screen.getByLabelText("Displayed windows")).toHaveAttribute(
-    "placeholder",
-    "Leave empty to show all\n5h\ntokens-limit-3-5\nWeekly limit"
-  );
-});
-
-test("settings_shows_add_provider", () => {
+test("settings_shows_add_provider_without_local_script_presets", () => {
   renderSettings();
 
   expect(screen.getByRole("heading", { name: "Add Provider" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Codex Usage" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Kimi Coding Usage" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "OpenCode Quota Command" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Kimi Coding Usage" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "OpenCode Quota Command" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Custom Script Provider" })).not.toBeInTheDocument();
 });
 
 test("add_codex_preset_shows_token_fields", () => {
@@ -299,12 +144,9 @@ test("add_codex_preset_shows_token_fields", () => {
 
   expect(screen.getByText("Set CODEX_ACCESS_TOKEN")).toBeInTheDocument();
   expect(screen.getByLabelText("Auth token")).toHaveValue("${env:CODEX_ACCESS_TOKEN}");
-  expect(screen.getByLabelText("ChatGPT account id")).toHaveValue("");
-  expect(screen.getByLabelText("Proxy URL")).toHaveValue("");
   expect(screen.getByLabelText("Window label overrides")).toHaveValue(
     "5h=5h\nweekly=Weekly limit"
   );
-  expect(screen.getByLabelText("Displayed windows")).toHaveValue("5h\nWeekly limit");
 });
 
 test("codex_provider_proxy_url_is_editable", () => {
@@ -318,7 +160,7 @@ test("codex_provider_proxy_url_is_editable", () => {
   expect(screen.getByLabelText("Proxy URL")).toHaveValue("socks5h://127.0.0.1:7890");
 });
 
-test("settings_shows_config_storage_info_and_provider_guide_entry", () => {
+test("settings_shows_config_storage_info_and_remote_guide_entry", () => {
   renderSettings();
 
   expect(screen.getByTestId("general-settings-section")).toBeInTheDocument();
@@ -327,36 +169,17 @@ test("settings_shows_config_storage_info_and_provider_guide_entry", () => {
   expect(screen.getByLabelText("Configuration storage")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: configStorageInfo.configPath })).toBeInTheDocument();
   expect(screen.getByText("AppData mode")).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "Custom Provider Guide" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Custom Provider Guide" })).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Remote Providers" })).toBeInTheDocument();
-  expect(screen.getAllByRole("button", { name: "Open Guide" })).toHaveLength(2);
-});
-
-test("add_kimi_preset_shows_env_hint", () => {
-  renderSettings(configWithProviders([]));
-
-  fireEvent.click(screen.getByRole("button", { name: "Kimi Coding Usage" }));
-
-  expect(screen.getByText("Set KIMI_API_KEY")).toBeInTheDocument();
-});
-
-test("add_bigmodel_preset_shows_env_hint", () => {
-  renderSettings(configWithProviders([]));
-
-  fireEvent.click(screen.getByRole("button", { name: "BigModel Coding Plan" }));
-
-  expect(screen.getByText("Set BIGMODEL_API_KEY")).toBeInTheDocument();
-  expect(screen.getByLabelText("Window label overrides")).toHaveValue(
-    "tokens-limit-3-5=5h\ntokens-limit-6-1=Weekly limit\ntime-limit-5-1=Monthly time limit"
-  );
+  expect(screen.getByRole("button", { name: "Open Guide" })).toBeInTheDocument();
 });
 
 test("settings_edits_visible_windows", () => {
   renderSettings({
-    ...configWithProviders([commandProvider]),
+    ...configWithProviders([codexProvider]),
     providers: [
       {
-        ...commandProvider,
+        ...codexProvider,
         visibleWindowIds: ["weekly"]
       }
     ]
@@ -367,32 +190,20 @@ test("settings_edits_visible_windows", () => {
   expect(visibleWindows).toHaveValue("weekly");
 
   fireEvent.change(visibleWindows, {
-    target: { value: "weekly\n300-minute" }
+    target: { value: "weekly\n5h" }
   });
 
-  expect(screen.getByLabelText("Displayed windows")).toHaveValue("weekly\n300-minute");
-});
-
-test("settings_keeps_displayed_window_newlines_while_editing", () => {
-  renderSettings();
-
-  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  const visibleWindows = screen.getByLabelText("Displayed windows");
-  fireEvent.change(visibleWindows, {
-    target: { value: "5h\n" }
-  });
-
-  expect(screen.getByLabelText("Displayed windows")).toHaveValue("5h\n");
+  expect(screen.getByLabelText("Displayed windows")).toHaveValue("weekly\n5h");
 });
 
 test("settings_reorders_providers", () => {
   renderSettings(
     configWithProviders([
-      commandProvider,
+      codexProvider,
       {
-        ...commandProvider,
-        id: "command-2",
-        name: "Second Command"
+        ...codexProvider,
+        id: "codex-2",
+        name: "Second Codex"
       }
     ])
   );
@@ -400,16 +211,7 @@ test("settings_reorders_providers", () => {
   fireEvent.click(screen.getAllByRole("button", { name: "More" })[1]);
   fireEvent.click(screen.getByRole("button", { name: "Up" }));
 
-  expect(screen.getByText("Second Command")).toBeInTheDocument();
-});
-
-test("add_custom_script_provider", () => {
-  renderSettings(configWithProviders([]));
-
-  fireEvent.click(screen.getByRole("button", { name: "Custom Script Provider" }));
-
-  expect(screen.getByDisplayValue("Local Script")).toBeInTheDocument();
-  expect(screen.getByLabelText("Output contract")).toHaveValue("provider-snapshot-v1");
+  expect(screen.getByText("Second Codex")).toBeInTheDocument();
 });
 
 test("remove_provider_deletes_provider_from_settings", () => {
@@ -419,7 +221,7 @@ test("remove_provider_deletes_provider_from_settings", () => {
   fireEvent.click(screen.getByRole("button", { name: "More" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
-  expect(screen.queryByText("Local Command")).not.toBeInTheDocument();
+  expect(screen.queryByText("Codex")).not.toBeInTheDocument();
 });
 
 test("settings_save_bar_tracks_dirty_state_and_validation", () => {
@@ -443,15 +245,23 @@ test("settings_save_bar_tracks_dirty_state_and_validation", () => {
   expect(screen.getByTestId("save-settings-button")).toBeEnabled();
 });
 
-
 test("network_proxy_section_renders_and_switches_proxy_kind", () => {
-  renderSettings(configWithProviders([commandProvider]));
+  renderSettings(configWithProviders([mockProvider]));
 
   expect(screen.getByTestId("proxy-kind-select")).toBeInTheDocument();
 
   fireEvent.change(screen.getByTestId("proxy-kind-select"), { target: { value: "http" } });
 
   expect(screen.getByTestId("proxy-url-input")).toBeInTheDocument();
+});
+
+test("settings_edits_language_choice", () => {
+  renderSettings(configWithProviders([mockProvider]));
+
+  fireEvent.change(screen.getByTestId("language-select"), { target: { value: "zh-CN" } });
+
+  expect(screen.getByTestId("language-select")).toHaveValue("zh-CN");
+  expect(screen.getByTestId("fixed-save-bar")).toHaveTextContent("Unsaved changes");
 });
 
 test("remote_providers_section_renders_installed_remote_providers", () => {
@@ -467,7 +277,7 @@ test("remote_providers_section_renders_installed_remote_providers", () => {
     updateIntervalSeconds: 3600
   };
 
-  renderSettings(configWithProviders([commandProvider, remoteProvider]));
+  renderSettings(configWithProviders([mockProvider, remoteProvider]));
 
   const section = screen.getByTestId("remote-providers-section");
   expect(section).toBeInTheDocument();

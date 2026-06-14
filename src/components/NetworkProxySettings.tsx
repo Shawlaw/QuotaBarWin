@@ -1,26 +1,29 @@
 import type { ProxyConfig, ProxyKind } from "../types";
+import { useI18n } from "../i18n";
+import type { I18nCatalog } from "../i18n";
 
 type NetworkProxySettingsProps = {
   proxy: ProxyConfig | null | undefined;
   onChange: (proxy: ProxyConfig | null) => void;
 };
 
-const proxyKinds: { value: ProxyKind; label: string; needsUrl: boolean }[] = [
-  { value: "none", label: "No proxy", needsUrl: false },
-  { value: "system", label: "System proxy", needsUrl: false },
-  { value: "http", label: "HTTP proxy", needsUrl: true },
-  { value: "socks5", label: "SOCKS5 proxy", needsUrl: true }
+const proxyKinds: { value: ProxyKind; labelKey: keyof I18nCatalog["networkProxy"]; needsUrl: boolean }[] = [
+  { value: "none", labelKey: "noProxy", needsUrl: false },
+  { value: "system", labelKey: "systemProxy", needsUrl: false },
+  { value: "http", labelKey: "httpProxy", needsUrl: true },
+  { value: "socks5", labelKey: "socks5Proxy", needsUrl: true }
 ];
 
 export function NetworkProxySettings({ proxy, onChange }: NetworkProxySettingsProps) {
+  const { t } = useI18n();
   const kind = proxy?.kind ?? "none";
   const url = proxy?.url ?? "";
   const needsUrl = proxyKinds.find((option) => option.value === kind)?.needsUrl ?? false;
 
   return (
-    <div className="network-proxy-settings settings-grid">
+    <div className="network-proxy-settings">
       <label>
-        Network proxy
+        {t.networkProxy.label}
         <select
           data-testid="proxy-kind-select"
           value={kind}
@@ -35,19 +38,19 @@ export function NetworkProxySettings({ proxy, onChange }: NetworkProxySettingsPr
         >
           {proxyKinds.map((option) => (
             <option key={option.value} value={option.value}>
-              {option.label}
+              {t.networkProxy[option.labelKey]}
             </option>
           ))}
         </select>
       </label>
       {needsUrl ? (
         <label>
-          Proxy URL
+          {t.networkProxy.proxyUrl}
           <input
             data-testid="proxy-url-input"
             type="text"
             value={url}
-            placeholder="http://host:port or socks5://host:port"
+            placeholder={t.networkProxy.proxyUrlPlaceholder}
             onChange={(event) => onChange({ kind, url: event.currentTarget.value })}
           />
         </label>

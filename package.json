@@ -1,12 +1,14 @@
 {
   "name": "quotabarwin",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "e2e": "node e2e/tauri.e2e.mjs",
+    "icons:generate": "node scripts/generate-icons.mjs",
+    "icons:check": "node scripts/generate-icons.mjs --check",
     "test": "vitest",
     "smoke": "vitest --run src/smoke.test.tsx",
     "tauri": "tauri"

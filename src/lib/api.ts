@@ -1,12 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   AppConfig,
   AppSnapshot,
   ConfigStorageInfo,
-  ProviderConfig,
   ProviderPreset,
-  ProviderSnapshot,
   ProxyConfig,
   RemoteProviderConfig
 } from "../types";
@@ -16,12 +15,13 @@ function hasTauriInternals(): boolean {
 }
 
 const fallbackConfig: AppConfig = {
-  schemaVersion: 6,
+  schemaVersion: 8,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
   launchAtStartup: false,
   logLevel: "info",
+  language: "system",
   networkProxy: null,
   providers: [
     {
@@ -206,15 +206,6 @@ export async function openConfigFolder(): Promise<void> {
   return invoke<void>("open_config_folder");
 }
 
-export async function openCustomProviderGuide(): Promise<void> {
-  if (!hasTauriInternals()) {
-    window.open("/custom-provider-guide.html", "_blank", "noopener,noreferrer");
-    return;
-  }
-
-  return invoke<void>("open_custom_provider_guide");
-}
-
 export async function openRemoteProviderGuide(): Promise<void> {
   if (!hasTauriInternals()) {
     window.open("/remote-provider-guide.html", "_blank", "noopener,noreferrer");
@@ -230,18 +221,6 @@ export async function getProviderPresets(): Promise<ProviderPreset[]> {
   }
 
   return invoke<ProviderPreset[]>("get_provider_presets");
-}
-
-export async function testProvider(provider: ProviderConfig): Promise<ProviderSnapshot> {
-  if (!hasTauriInternals()) {
-    return {
-      ...fallbackSnapshot.providers[0],
-      id: provider.id,
-      name: provider.name
-    };
-  }
-
-  return invoke<ProviderSnapshot>("test_provider", { provider });
 }
 
 export type UpdateInfo = {
@@ -350,6 +329,15 @@ export async function listenForRefreshRequests(onRefresh: () => void): Promise<(
   return listen("refresh-requested", onRefresh);
 }
 
+export async function listenForTrayPopupShown(onShown: () => void): Promise<() => void> {
+  if (!hasTauriInternals()) {
+    void onShown;
+    return () => undefined;
+  }
+
+  return listen("tray-popup-shown", onShown);
+}
+
 export async function listenForSingleInstance(onSecondInstance: (message: string) => void): Promise<() => void> {
   if (!hasTauriInternals()) {
     void onSecondInstance;
@@ -357,4 +345,12 @@ export async function listenForSingleInstance(onSecondInstance: (message: string
   }
 
   return listen<string>("single-instance", (event) => onSecondInstance(event.payload));
+}
+
+export async function hideCurrentWindow(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  await getCurrentWindow().hide();
 }

@@ -11,20 +11,20 @@ import {
   refreshSnapshot,
   removeRemoteProvider,
   saveConfig,
-  setNetworkProxy,
-  testProvider
+  setNetworkProxy
 } from "./api";
-import type { AppConfig, AppSnapshot, ProviderConfig, ProviderSnapshot } from "../types";
+import type { AppConfig, AppSnapshot } from "../types";
 
 afterEach(() => {
   clearMocks();
 });
 
 const config: AppConfig = {
-  schemaVersion: 6,
+  schemaVersion: 8,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
+  language: "system",
   networkProxy: null,
   providers: [
     {
@@ -40,18 +40,6 @@ const snapshot: AppSnapshot = {
   schemaVersion: 1,
   refreshedAt: "2026-06-09T10:00:00+08:00",
   providers: []
-};
-
-const provider: ProviderSnapshot = {
-  id: "mock-codex",
-  name: "Codex Mock",
-  status: "ok",
-  source: "mock",
-  updatedAt: null,
-  windows: [],
-  error: null,
-  diagnostics: null,
-  metadata: null
 };
 
 test("api_invokes_core_snapshot_and_config_commands", async () => {
@@ -80,22 +68,8 @@ test("api_invokes_core_snapshot_and_config_commands", async () => {
   ]);
 });
 
-test("api_passes_provider_and_config_payloads_to_ipc", async () => {
+test("api_passes_refresh_provider_and_config_payloads_to_ipc", async () => {
   const payloads: Record<string, unknown> = {};
-  const commandProvider: ProviderConfig = {
-    kind: "command",
-    id: "command",
-    name: "Command",
-    enabled: true,
-    command: {
-      executable: "node",
-      args: ["fixtures/fake_provider_snapshot.js"],
-      timeoutMs: 15000
-    },
-    parser: { type: "provider-snapshot" },
-    windowLabelOverrides: {},
-    visibleWindowIds: []
-  };
   mockIPC((cmd, payload) => {
     payloads[cmd] = payload;
     if (cmd === "refresh_provider") {
@@ -104,19 +78,14 @@ test("api_passes_provider_and_config_payloads_to_ipc", async () => {
     if (cmd === "save_config") {
       return null;
     }
-    if (cmd === "test_provider") {
-      return provider;
-    }
     throw new Error(`unexpected command ${cmd}`);
   });
 
-  await expect(refreshProvider("command")).resolves.toEqual(snapshot);
+  await expect(refreshProvider("mock-codex")).resolves.toEqual(snapshot);
   await expect(saveConfig(config)).resolves.toBeNull();
-  await expect(testProvider(commandProvider)).resolves.toEqual(provider);
 
-  expect(payloads.refresh_provider).toEqual({ providerId: "command" });
+  expect(payloads.refresh_provider).toEqual({ providerId: "mock-codex" });
   expect(payloads.save_config).toEqual({ config });
-  expect(payloads.test_provider).toEqual({ provider: commandProvider });
 });
 
 test("api_invokes_network_proxy_commands", async () => {

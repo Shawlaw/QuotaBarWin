@@ -1,5 +1,6 @@
 import type { ProviderSnapshot } from "../types";
 import { calculateProviderStatus, formatShortDateTime } from "../lib/providerStatus";
+import { useI18n } from "../i18n";
 
 type GlobalStatusStripProps = {
   providers: ProviderSnapshot[];
@@ -14,10 +15,12 @@ export function GlobalStatusStrip({
   refreshedAt,
   lowQuotaWarningThreshold = 20
 }: GlobalStatusStripProps) {
+  const { t } = useI18n();
+
   if (providers.length === 0) {
     return (
       <section className="global-status global-status--empty" data-testid="global-status-strip">
-        No providers configured. Add a provider in Settings.
+        {t.globalStatus.noProviders}
       </section>
     );
   }
@@ -33,7 +36,7 @@ export function GlobalStatusStrip({
   if (error) {
     return (
       <section className="global-status global-status--error" data-testid="global-status-strip">
-        {error.provider.name} refresh failed
+        {t.globalStatus.refreshFailed(error.provider.name)}
       </section>
     );
   }
@@ -48,7 +51,10 @@ export function GlobalStatusStrip({
 
     return (
       <section className="global-status global-status--warning" data-testid="global-status-strip">
-        {warning.provider.name} needs attention{window ? ` · ${window.label} below ${lowQuotaWarningThreshold}%` : ""}
+        {t.globalStatus.needsAttention(
+          warning.provider.name,
+          window ? t.globalStatus.belowThreshold(window.label, lowQuotaWarningThreshold) : undefined
+        )}
       </section>
     );
   }
@@ -56,15 +62,18 @@ export function GlobalStatusStrip({
   if (stale) {
     return (
       <section className="global-status global-status--stale" data-testid="global-status-strip">
-        {stale.provider.name} data is stale
+        {t.globalStatus.dataStale(stale.provider.name)}
       </section>
     );
   }
 
   return (
     <section className="global-status" data-testid="global-status-strip">
-      {providers.length} providers active · Last updated {formatShortDateTime(refreshedAt) ?? "recently"} · Auto refresh
-      every {refreshIntervalSeconds}s
+      {t.globalStatus.summary(
+        providers.length,
+        formatShortDateTime(refreshedAt) ?? t.globalStatus.recently,
+        refreshIntervalSeconds
+      )}
     </section>
   );
 }

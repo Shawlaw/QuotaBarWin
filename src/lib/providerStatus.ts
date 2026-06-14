@@ -1,4 +1,5 @@
 import type { ProviderSnapshot, QuotaWindow } from "../types";
+import { en, type I18nCatalog } from "../i18n/catalog";
 
 export type DisplayMode = "remaining" | "used";
 
@@ -21,7 +22,7 @@ export function normalizeProviderStatus(raw: unknown): ProviderSnapshot {
     id: provider.id ?? "unknown-provider",
     name: provider.name ?? "Unknown provider",
     status: provider.status ?? (provider.error || provider.errorMessage ? "error" : "unknown"),
-    source: provider.source ?? "command",
+    source: provider.source ?? "mock",
     updatedAt: provider.updatedAt ?? null,
     windows,
     error: provider.error ?? provider.errorMessage ?? null,
@@ -84,13 +85,17 @@ export function displayPercentForWindow(window: QuotaWindow, displayMode: Displa
   return null;
 }
 
-export function formatDisplayValue(window: QuotaWindow, displayMode: DisplayMode): string {
+export function formatDisplayValue(
+  window: QuotaWindow,
+  displayMode: DisplayMode,
+  catalog: I18nCatalog = en
+): string {
   const percent = displayPercentForWindow(window, displayMode);
   if (percent === null) {
-    return displayMode === "remaining" ? "Remaining unknown" : "Usage unknown";
+    return displayMode === "remaining" ? catalog.format.remainingUnknown : catalog.format.usageUnknown;
   }
 
-  return `${Math.round(Math.min(100, Math.max(0, percent)))}% ${displayMode}`;
+  return catalog.format.displayValue(Math.round(Math.min(100, Math.max(0, percent))), displayMode);
 }
 
 export function formatShortDateTime(value: string | null | undefined, now = new Date()): string | null {
@@ -128,10 +133,14 @@ export function formatShortDateTime(value: string | null | undefined, now = new 
   });
 }
 
-export function formatQuotaReset(window: QuotaWindow, now = new Date()): string | null {
+export function formatQuotaReset(
+  window: QuotaWindow,
+  now = new Date(),
+  catalog: I18nCatalog = en
+): string | null {
   const resetAt = formatShortDateTime(window.resetAt, now);
   if (resetAt) {
-    return `resets ${resetAt}`;
+    return catalog.format.resets(resetAt);
   }
 
   return window.resetText ?? null;

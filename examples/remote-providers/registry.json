@@ -4,17 +4,17 @@
     {
       "id": "kimi-coding",
       "providerUrl": "kimi-coding/provider.json",
-      "checksum": "sha256:960e076b00bddd63d68609dedc4131fe248bc23a13b3a4d29efe8ec1fc1e285d"
+      "checksum": "sha256:b2d4ad5daf59e9011d5c83e8f9954ae1e563645d6da698ad5c90233d6b6c3392"
     },
     {
       "id": "bigmodel-coding-plan",
       "providerUrl": "bigmodel-coding-plan/provider.json",
-      "checksum": "sha256:a857cc76bb116d79ce0dc5694928ccebc65b05156f90c69be70ad519d8c7e9b4"
+      "checksum": "sha256:8f70d3833da8985dd265275dc60d18e1b06971e7517bd1525aaa94505ca83bb5"
     },
     {
       "id": "codex-usage",
       "providerUrl": "codex-usage/provider.json",
-      "checksum": "sha256:24ec41b587a60713ce33b617b4b615fce5eefb735ceeaa3ceedd5d8371ccf2b4"
+      "checksum": "sha256:c2f027f2f36ea1e1458e2ebf6d3091e03df2006e08545aa9c25cc73d49351b76"
     }
   ]
 }

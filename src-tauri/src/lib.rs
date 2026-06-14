@@ -1,20 +1,19 @@
 #![allow(dependency_on_unit_never_type_fallback)]
 
 mod app_info;
-mod command_provider;
 mod config;
 mod diagnostics;
 pub mod logger;
-mod parser;
 mod presets;
 #[cfg(test)]
 mod productization;
-mod proxy;
 mod providers;
+mod proxy;
 mod quota;
 mod redact;
 mod remote_provider;
 mod remote_provider_commands;
+mod remote_provider_runner;
 mod tray;
 
 use tauri::{Emitter, Manager};
@@ -24,11 +23,10 @@ const HIDDEN_STARTUP_ARG: &str = "--hidden";
 pub use app_info::get_app_version;
 pub use config::{
     get_config, get_config_storage_info, migrate_config_file, open_config_folder,
-    open_custom_provider_guide, open_remote_provider_guide, reset_config, save_config,
-    set_portable_mode, AppConfig,
+    open_remote_provider_guide, reset_config, save_config, set_portable_mode, AppConfig,
 };
 pub use diagnostics::export_diagnostics;
-pub use presets::{get_provider_presets, test_provider};
+pub use presets::get_provider_presets;
 pub use proxy::{ProxyConfig, ProxyKind};
 pub use quota::{
     get_cached_snapshot, refresh_provider, refresh_snapshot, AppSnapshot, ProviderSnapshot,
@@ -73,6 +71,7 @@ pub fn run() {
                     let _ = window.hide();
                 }
             }
+            tray::create_tray_popup_window(app.handle())?;
             tray::create_tray(app.handle())?;
             let app_handle = app.handle().clone();
             match config::config_path_for_app(&app_handle)
@@ -96,7 +95,6 @@ pub fn run() {
             get_app_version,
             export_diagnostics,
             open_config_folder,
-            open_custom_provider_guide,
             open_remote_provider_guide,
             reset_config,
             save_config,
@@ -104,7 +102,6 @@ pub fn run() {
             refresh_snapshot,
             refresh_provider,
             get_cached_snapshot,
-            test_provider,
             get_network_proxy,
             set_network_proxy,
             install_remote_provider_registry,
@@ -113,11 +110,15 @@ pub fn run() {
             check_remote_updates,
             apply_remote_update
         ])
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            tauri::WindowEvent::Focused(false) if window.label() == tray::TRAY_POPUP_LABEL => {
+                let _ = window.hide();
+            }
+            _ => {}
         })
         .run(tauri::generate_context!())
         .expect("error while running QuotaBarWin");

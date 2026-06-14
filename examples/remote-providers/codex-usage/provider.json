@@ -9,6 +9,6 @@
   "output": "provider-snapshot-v1",
   "permissions": ["env:CODEX_ACCESS_TOKEN"],
   "checksums": {
-    "source": "sha256:9543ffe455f25743ae57d981390b16111d972a1a6e6285fccc674638c9dfd1ec"
+    "source": "sha256:61fdc62dd54a1d71844cea46cb3a17cbe3ebbcd9b85f55476bc3f4f75206392e"
   }
 }

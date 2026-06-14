@@ -38,7 +38,7 @@ Field descriptions:
 | `description` | no | Short description. |
 | `runtime` | yes | Runtime used to execute `entry`. Common values: `node`, `python`, `pwsh`, `bash`. Can also be an absolute path like `C:\Tools\node\node.exe`. |
 | `entry` | yes | Source file name. Can be a relative path (resolved against the manifest URL/directory), an absolute HTTPS URL, a `file://` URL, or a local file path. |
-| `requiredEnvVars` | no | Environment variables that the script needs. Displayed in the registry install summary. |
+| `requiredEnvVars` | no | Environment variables that the script needs. On refresh, QuotaBarWin resolves each name from provider `envVars`, then `${secret:NAME}`. |
 | `output` | yes | Output contract. Only `provider-snapshot-v1` is supported for remote providers at the moment. |
 | `permissions` | no | Declared capabilities (currently informational). Use `env:<NAME>` to document required env vars. |
 | `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. |
@@ -111,6 +111,111 @@ Window fields:
 | `resetText` | no | Human-readable reset text. |
 | `confidence` | no | `exact`, `estimated`, or `unknown`. |
 
+## Parsing raw API responses
+
+Remote providers should keep provider-specific parsing inside the source script. The app only needs the normalized `provider-snapshot-v1` JSON printed to stdout.
+
+Recommended parsing flow:
+
+1. Fetch or read the provider's raw API response.
+2. Select the quota records that represent user-visible windows.
+3. Convert provider-specific field names into stable window fields.
+4. Put useful extra provider fields in `metadata`, not in `windows`.
+5. Print exactly one JSON object to stdout; write diagnostics to stderr.
+
+Example raw BigModel response:
+
+```json
+{
+  "success": true,
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "level": "pro",
+    "limits": [
+      {
+        "type": "TOKENS_LIMIT",
+        "unit": 6,
+        "number": 1,
+        "currentValue": 12345,
+        "usage": 100000,
+        "percentage": 12.35,
+        "nextResetTime": 1781654400000,
+        "usageDetails": [
+          { "modelCode": "glm-4.5", "usage": 1000 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Mapping into `provider-snapshot-v1`:
+
+| Raw field | Snapshot field | Notes |
+|-----------|----------------|-------|
+| `data.limits[]` | `windows[]` | One raw limit becomes one quota window. |
+| `type`, `unit`, `number` | `id`, `label` | Build a stable id and a readable label. |
+| `currentValue` | `used` | Normalize strings/numbers to numbers when possible. |
+| `usage` | `limit` | Leave as `null` if the API omits it. |
+| `percentage` | `usedPercent` | Clamp or validate into the 0-100 range if the API is not trusted. |
+| `100 - percentage` | `remainingPercent` | Use `null` when `percentage` is missing. |
+| `nextResetTime` | `resetAt` | Convert epoch milliseconds to ISO 8601. |
+| `level`, `usageDetails`, raw status fields | `metadata` | Preserve useful details without changing the window contract. |
+
+Example raw Kimi response:
+
+```json
+{
+  "limits": [
+    {
+      "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+      "detail": { "used": 42, "limit": 100, "resetTime": "2026-06-13T15:00:00Z" }
+    }
+  ],
+  "usage": { "used": 120, "limit": 500, "resetTime": "2026-06-17T00:00:00Z" },
+  "totalQuota": { "limit": 1000, "remaining": 830 },
+  "user": { "region": "us", "membership": { "level": "pro" } }
+}
+```
+
+The Kimi example maps the 300-minute `limits[].detail` entry to a `5h` window, maps `usage` to a weekly window, and derives total quota usage from `totalQuota.limit - totalQuota.remaining`.
+
+Example raw Codex usage response:
+
+```json
+{
+  "plan_type": "plus",
+  "credits": { "granted": 100, "used": 12 },
+  "rate_limit": {
+    "primary_window": { "used_percent": 32, "reset_after_seconds": 7200 },
+    "secondary_window": { "used_percent": 18, "reset_at": 1781913600 }
+  }
+}
+```
+
+The Codex example reports percentages rather than absolute counters, so `used` and `limit` stay `null`, `used_percent` becomes `usedPercent`, and reset values are converted from seconds or relative seconds into ISO timestamps.
+
+### Local config and secrets
+
+Remote provider source should not contain credentials. The script still reads `process.env.NAME`, but QuotaBarWin injects required environment variables only into the child process. For each manifest `requiredEnvVars` entry, the app first checks the installed provider config `envVars` map; if a key is absent, it resolves `${secret:NAME}`.
+
+`${secret:NAME}` reads `<config-dir>/secrets/NAME.txt` first and falls back to environment variable `NAME`. Existing `${file:C:\path\secret.txt}` and `${env:NAME}` placeholders are still supported.
+
+Example installed provider config:
+
+```json
+{
+  "kind": "remote",
+  "id": "kimi-coding",
+  "envVars": {
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+  }
+}
+```
+
+Treat the remote script as shared code and keep user-specific tokens in local config, local secret files, or environment variables on the local machine.
+
 ## Security checklist
 
 - Only install remote providers from sources you trust.
@@ -125,7 +230,7 @@ See [`examples/remote-providers/`](../examples/remote-providers) for complete sa
 
 - `kimi-coding` — Kimi coding quota via `KIMI_API_KEY`.
 - `bigmodel-coding-plan` — Zhipu/BigModel quota via `BIGMODEL_API_KEY`.
-- `codex-usage` — ChatGPT/Codex 5h and weekly usage via `CODEX_ACCESS_TOKEN`.
+- `codex-usage` — ChatGPT/Codex 5h and weekly usage via `${secret:CODEX_ACCESS_TOKEN}`.
 
 To host your own, upload a directory containing `provider.json` + the source file and paste the raw `provider.json` URL into QuotaBarWin.
 

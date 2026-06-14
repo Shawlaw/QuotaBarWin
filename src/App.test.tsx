@@ -4,10 +4,11 @@ import type { AppConfig, AppSnapshot } from "./types";
 
 const mocks = vi.hoisted(() => {
   const config: AppConfig = {
-    schemaVersion: 1,
+    schemaVersion: 8,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
+    language: "system",
     providers: [
       {
         id: "mock-codex",
@@ -47,15 +48,16 @@ const mocks = vi.hoisted(() => {
 
   return {
     getCachedSnapshot: vi.fn(async () => null),
-    getAppVersion: vi.fn(async () => "0.0.0"),
+    getAppVersion: vi.fn(async () => "1.0.0"),
     getConfig: vi.fn(async () => config),
     getConfigStorageInfo: vi.fn(async () => configStorageInfo),
     getNetworkProxy: vi.fn(async () => null),
     getProviderPresets: vi.fn(async () => []),
     listenForRefreshRequests: vi.fn(async () => () => undefined),
+    listenForTrayPopupShown: vi.fn(async () => () => undefined),
     listenForSingleInstance: vi.fn(async () => () => undefined),
+    hideCurrentWindow: vi.fn(async () => undefined),
     openConfigFolder: vi.fn(async () => undefined),
-    openCustomProviderGuide: vi.fn(async () => undefined),
     openRemoteProviderGuide: vi.fn(async () => undefined),
     installRemoteProviderRegistry: vi.fn(async () => {
       throw new Error("Install remote provider registry not available in browser preview");
@@ -69,8 +71,7 @@ const mocks = vi.hoisted(() => {
     resetConfig: vi.fn(async () => config),
     saveConfig: vi.fn(async () => undefined),
     setNetworkProxy: vi.fn(async () => undefined),
-    setPortableMode: vi.fn(async () => configStorageInfo),
-    testProvider: vi.fn(async () => snapshot.providers[0])
+    setPortableMode: vi.fn(async () => configStorageInfo)
   };
 });
 

@@ -1,9 +1,10 @@
-use std::{collections::HashMap, fs, time::Duration};
+use std::{collections::HashMap, path::Path, time::Duration};
 
 use chrono::{SecondsFormat, TimeDelta, Utc};
 use serde_json::{json, Map, Value};
 
 use crate::{
+    config::resolve_secret_value,
     quota::{clamp_percent, ProviderDiagnostics, ProviderSnapshot, QuotaWindow},
     redact::redact_sensitive,
 };
@@ -17,11 +18,12 @@ pub fn provider_snapshot(
     account_id: Option<&str>,
     proxy_url: Option<&str>,
     timeout_ms: u64,
+    config_dir: &Path,
     window_label_overrides: &HashMap<String, String>,
     visible_window_ids: &[String],
 ) -> ProviderSnapshot {
     let started = std::time::Instant::now();
-    match fetch_codex_usage(auth_token, account_id, proxy_url, timeout_ms) {
+    match fetch_codex_usage(auth_token, account_id, proxy_url, timeout_ms, config_dir) {
         Ok(value) => {
             let mut provider = provider_from_usage_response(id, name, &value);
             provider.diagnostics = merge_diagnostics(
@@ -49,8 +51,9 @@ fn fetch_codex_usage(
     account_id: Option<&str>,
     proxy_url: Option<&str>,
     timeout_ms: u64,
+    config_dir: &Path,
 ) -> Result<Value, String> {
-    let token = resolve_secret_value(auth_token)?;
+    let token = resolve_secret_value(auth_token, config_dir)?;
     let token = token
         .trim()
         .strip_prefix("Bearer ")
@@ -60,7 +63,7 @@ fn fetch_codex_usage(
         return Err("Codex access token is empty".to_string());
     }
 
-    let client = build_codex_client(timeout_ms, proxy_url)?;
+    let client = build_codex_client(timeout_ms, proxy_url, config_dir)?;
     let mut request = client
         .get(CODEX_USAGE_URL)
         .header("Authorization", format!("Bearer {token}"))
@@ -89,12 +92,13 @@ fn fetch_codex_usage(
 fn build_codex_client(
     timeout_ms: u64,
     proxy_url: Option<&str>,
+    config_dir: &Path,
 ) -> Result<reqwest::blocking::Client, String> {
     let mut builder =
         reqwest::blocking::Client::builder().timeout(Duration::from_millis(timeout_ms.max(1)));
 
     if let Some(proxy_url) = proxy_url.map(str::trim).filter(|value| !value.is_empty()) {
-        let proxy_url = resolve_secret_value(proxy_url)?;
+        let proxy_url = resolve_secret_value(proxy_url, config_dir)?;
         let proxy_url = proxy_url.trim();
         let proxy = reqwest::Proxy::all(proxy_url).map_err(|error| {
             format!(
@@ -214,40 +218,6 @@ fn reset_iso_from_now_seconds(seconds: f64) -> Option<String> {
     Utc::now()
         .checked_add_signed(TimeDelta::milliseconds(millis))
         .map(|datetime| datetime.to_rfc3339_opts(SecondsFormat::Micros, true))
-}
-
-fn resolve_secret_value(value: &str) -> Result<String, String> {
-    if let Some(name) = value
-        .strip_prefix("${env:")
-        .and_then(|remaining| remaining.strip_suffix('}'))
-    {
-        return std::env::var(name).map_err(|_| format!("Missing environment variable {name}"));
-    }
-
-    if let Some(raw_path) = value
-        .strip_prefix("${file:")
-        .and_then(|remaining| remaining.strip_suffix('}'))
-    {
-        let path = normalize_file_placeholder_path(raw_path);
-        return fs::read_to_string(path)
-            .map(|secret| secret.trim().to_string())
-            .map_err(|error| format!("Unable to read secret file {path}: {error}"));
-    }
-
-    Ok(value.to_string())
-}
-
-fn normalize_file_placeholder_path(raw_path: &str) -> &str {
-    let path = raw_path.trim();
-    if path.len() >= 2 {
-        let first = path.as_bytes()[0];
-        let last = path.as_bytes()[path.len() - 1];
-        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
-            return &path[1..path.len() - 1];
-        }
-    }
-
-    path
 }
 
 fn apply_window_label_overrides(
@@ -372,15 +342,21 @@ mod tests {
         let secret_path = secret_dir.join("access token.txt");
         std::fs::write(&secret_path, "token-from-file\n").expect("write secret");
 
-        let actual =
-            resolve_secret_value(&format!("${{file:\"{}\"}}", secret_path.display())).unwrap();
+        let actual = resolve_secret_value(
+            &format!("${{file:\"{}\"}}", secret_path.display()),
+            temp.path(),
+        )
+        .unwrap();
 
         assert_eq!(actual, "token-from-file");
     }
 
     #[test]
     fn codex_client_accepts_http_and_socks_proxy_urls() {
-        build_codex_client(1000, Some("http://127.0.0.1:7890")).expect("http proxy client");
-        build_codex_client(1000, Some("socks5h://127.0.0.1:7890")).expect("socks proxy client");
+        let temp = tempfile::tempdir().expect("temp dir");
+        build_codex_client(1000, Some("http://127.0.0.1:7890"), temp.path())
+            .expect("http proxy client");
+        build_codex_client(1000, Some("socks5h://127.0.0.1:7890"), temp.path())
+            .expect("socks proxy client");
     }
 }

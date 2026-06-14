@@ -12,12 +12,10 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 7;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 8;
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
 const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
-const CUSTOM_PROVIDER_GUIDE_FILE_NAME: &str = "custom-provider-guide.html";
-const CUSTOM_PROVIDER_GUIDE_HTML: &str = include_str!("custom_provider_guide.html");
 const REMOTE_PROVIDER_GUIDE_FILE_NAME: &str = "remote-provider-guide.html";
 const REMOTE_PROVIDER_GUIDE_HTML: &str = include_str!("remote_provider_guide.html");
 
@@ -32,9 +30,21 @@ pub struct AppConfig {
     pub launch_at_startup: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_language")]
+    pub language: AppLanguage,
     #[serde(default)]
     pub network_proxy: Option<ProxyConfig>,
     pub providers: Vec<ProviderConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AppLanguage {
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "en")]
+    En,
+    #[serde(rename = "zh-CN")]
+    ZhCn,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -79,50 +89,6 @@ pub enum ProviderConfig {
         )]
         visible_window_ids: Vec<String>,
     },
-    #[serde(rename = "command")]
-    Command {
-        id: String,
-        name: String,
-        enabled: bool,
-        command: CommandSpec,
-        parser: ParserSpec,
-        #[serde(
-            default,
-            rename = "windowLabelOverrides",
-            alias = "window_label_overrides",
-            alias = "window-label-overrides"
-        )]
-        window_label_overrides: HashMap<String, String>,
-        #[serde(
-            default,
-            rename = "visibleWindowIds",
-            alias = "visible_window_ids",
-            alias = "visible-window-ids"
-        )]
-        visible_window_ids: Vec<String>,
-    },
-    #[serde(rename = "script")]
-    Script {
-        id: String,
-        name: String,
-        enabled: bool,
-        command: CommandSpec,
-        output: ScriptOutputSpec,
-        #[serde(
-            default,
-            rename = "windowLabelOverrides",
-            alias = "window_label_overrides",
-            alias = "window-label-overrides"
-        )]
-        window_label_overrides: HashMap<String, String>,
-        #[serde(
-            default,
-            rename = "visibleWindowIds",
-            alias = "visible_window_ids",
-            alias = "visible-window-ids"
-        )]
-        visible_window_ids: Vec<String>,
-    },
     #[serde(rename = "remote")]
     Remote {
         id: String,
@@ -132,18 +98,43 @@ pub enum ProviderConfig {
         manifest_url: String,
         #[serde(rename = "sourceUrl", alias = "source_url", alias = "source-url")]
         source_url: String,
-        #[serde(default, rename = "providerDir", alias = "provider_dir", alias = "provider-dir")]
+        #[serde(
+            default,
+            rename = "providerDir",
+            alias = "provider_dir",
+            alias = "provider-dir"
+        )]
         provider_dir: Option<PathBuf>,
         runtime: String,
-        #[serde(default, rename = "resolvedRuntime", alias = "resolved_runtime", alias = "resolved-runtime")]
+        #[serde(
+            default,
+            rename = "resolvedRuntime",
+            alias = "resolved_runtime",
+            alias = "resolved-runtime"
+        )]
         resolved_runtime: Option<String>,
         #[serde(default, rename = "proxyUrl", alias = "proxy_url", alias = "proxy-url")]
         proxy_url: Option<String>,
-        #[serde(default, rename = "autoUpdate", alias = "auto_update", alias = "auto-update")]
+        #[serde(
+            default,
+            rename = "autoUpdate",
+            alias = "auto_update",
+            alias = "auto-update"
+        )]
         auto_update: bool,
-        #[serde(rename = "updateIntervalSeconds", alias = "update_interval_seconds", alias = "update-interval-seconds", default = "default_update_interval_seconds")]
+        #[serde(
+            rename = "updateIntervalSeconds",
+            alias = "update_interval_seconds",
+            alias = "update-interval-seconds",
+            default = "default_update_interval_seconds"
+        )]
         update_interval_seconds: u64,
-        #[serde(default, rename = "trustedChecksum", alias = "trusted_checksum", alias = "trusted-checksum")]
+        #[serde(
+            default,
+            rename = "trustedChecksum",
+            alias = "trusted_checksum",
+            alias = "trusted-checksum"
+        )]
         trusted_checksum: Option<String>,
         #[serde(
             default,
@@ -159,39 +150,9 @@ pub enum ProviderConfig {
             alias = "visible-window-ids"
         )]
         visible_window_ids: Vec<String>,
+        #[serde(default, rename = "envVars", alias = "env_vars", alias = "env-vars")]
+        env_vars: HashMap<String, String>,
     },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct CommandSpec {
-    pub executable: String,
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub cwd: Option<String>,
-    #[serde(default)]
-    pub env: Option<HashMap<String, String>>,
-    pub timeout_ms: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-pub enum ParserSpec {
-    AppSnapshot,
-    ProviderSnapshot,
-    KimiCodingUsageV1,
-    BigmodelQuotaLimitJsonV1,
-    JsonMapping { mapping: serde_json::Value },
-    RegexBlocks { rules: Vec<serde_json::Value> },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-pub enum ScriptOutputSpec {
-    #[serde(rename = "provider-snapshot-v1")]
-    ProviderSnapshotV1,
-    #[serde(rename = "app-snapshot-v1")]
-    AppSnapshotV1,
 }
 
 #[derive(Debug, Clone)]
@@ -215,6 +176,10 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
+fn default_language() -> AppLanguage {
+    AppLanguage::System
+}
+
 fn default_update_interval_seconds() -> u64 {
     3600
 }
@@ -227,6 +192,7 @@ pub fn default_config() -> AppConfig {
         low_quota_warning_threshold: 20.0,
         launch_at_startup: false,
         log_level: default_log_level(),
+        language: default_language(),
         network_proxy: None,
         providers: vec![ProviderConfig::Mock {
             id: "mock-codex".to_string(),
@@ -449,7 +415,6 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(3);
     if version < 4 {
-        add_default_window_label_overrides(&mut value);
         value["schemaVersion"] = serde_json::json!(4);
     }
 
@@ -458,7 +423,6 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(4);
     if version < 5 {
-        add_default_visible_windows(&mut value);
         value["schemaVersion"] = serde_json::json!(5);
     }
 
@@ -479,64 +443,16 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(7);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(7);
+    if version < 8 {
+        value["language"] = serde_json::json!("system");
+        value["schemaVersion"] = serde_json::json!(8);
+    }
+
     Ok(value)
-}
-
-fn add_default_window_label_overrides(value: &mut serde_json::Value) {
-    let Some(providers) = value
-        .get_mut("providers")
-        .and_then(serde_json::Value::as_array_mut)
-    else {
-        return;
-    };
-
-    for provider in providers {
-        if provider.get("kind").and_then(serde_json::Value::as_str) != Some("command") {
-            continue;
-        }
-
-        if provider.get("windowLabelOverrides").is_none() {
-            provider["windowLabelOverrides"] = serde_json::json!({});
-        }
-
-        if provider
-            .pointer("/parser/type")
-            .and_then(serde_json::Value::as_str)
-            == Some("bigmodel-quota-limit-json-v1")
-        {
-            let Some(overrides) = provider
-                .get_mut("windowLabelOverrides")
-                .and_then(serde_json::Value::as_object_mut)
-            else {
-                continue;
-            };
-            overrides
-                .entry("tokens-limit-3-5".to_string())
-                .or_insert_with(|| serde_json::json!("5h"));
-            overrides
-                .entry("tokens-limit-6-1".to_string())
-                .or_insert_with(|| serde_json::json!("Weekly limit"));
-        }
-    }
-}
-
-fn add_default_visible_windows(value: &mut serde_json::Value) {
-    let Some(providers) = value
-        .get_mut("providers")
-        .and_then(serde_json::Value::as_array_mut)
-    else {
-        return;
-    };
-
-    for provider in providers {
-        if provider.get("kind").and_then(serde_json::Value::as_str) != Some("command") {
-            continue;
-        }
-
-        if provider.get("visibleWindowIds").is_none() {
-            provider["visibleWindowIds"] = serde_json::json!([]);
-        }
-    }
 }
 
 pub fn migrate_config_file(path: &Path) -> Result<AppConfig, String> {
@@ -578,6 +494,81 @@ pub fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(), String
 
     let contents = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
     fs::write(path, contents).map_err(|error| error.to_string())
+}
+
+pub fn resolve_secret_value(value: &str, config_dir: &Path) -> Result<String, String> {
+    if let Some(name) = value
+        .strip_prefix("${env:")
+        .and_then(|remaining| remaining.strip_suffix('}'))
+    {
+        return std::env::var(name).map_err(|_| format!("Missing environment variable {name}"));
+    }
+
+    if let Some(raw_path) = value
+        .strip_prefix("${file:")
+        .and_then(|remaining| remaining.strip_suffix('}'))
+    {
+        let path = normalize_file_placeholder_path(raw_path);
+        return fs::read_to_string(path)
+            .map(|secret| secret.trim().to_string())
+            .map_err(|error| format!("Unable to read secret file {path}: {error}"));
+    }
+
+    if let Some(name) = value
+        .strip_prefix("${secret:")
+        .and_then(|remaining| remaining.strip_suffix('}'))
+    {
+        return resolve_named_secret(name, config_dir);
+    }
+
+    Ok(value.to_string())
+}
+
+pub fn resolve_named_secret(name: &str, config_dir: &Path) -> Result<String, String> {
+    let name = name.trim();
+    if !is_valid_secret_name(name) {
+        return Err(format!("Invalid secret name {name}"));
+    }
+
+    let secret_path = config_dir.join("secrets").join(format!("{name}.txt"));
+    match fs::read_to_string(&secret_path) {
+        Ok(secret) => {
+            let secret = secret.trim().to_string();
+            if !secret.is_empty() {
+                return Ok(secret);
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "Unable to read secret {name} from local secret file: {error}"
+            ));
+        }
+    }
+
+    std::env::var(name).map_err(|_| {
+        format!("Missing secret {name}; create secrets/{name}.txt in the config folder or set environment variable {name}")
+    })
+}
+
+fn is_valid_secret_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn normalize_file_placeholder_path(raw_path: &str) -> &str {
+    let path = raw_path.trim();
+    if path.len() >= 2 {
+        let first = path.as_bytes()[0];
+        let last = path.as_bytes()[path.len() - 1];
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            return &path[1..path.len() - 1];
+        }
+    }
+
+    path
 }
 
 #[tauri::command]
@@ -667,25 +658,6 @@ pub async fn open_config_folder(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || reveal_path(&path))
         .await
         .map_err(|error| error.to_string())?
-}
-
-#[tauri::command]
-pub async fn open_custom_provider_guide(app: AppHandle) -> Result<(), String> {
-    let guide_path = config_path_for_app(&app)?.with_file_name(CUSTOM_PROVIDER_GUIDE_FILE_NAME);
-    tauri::async_runtime::spawn_blocking(move || {
-        write_custom_provider_guide(&guide_path)?;
-        open_path_external(&guide_path)
-    })
-    .await
-    .map_err(|error| error.to_string())?
-}
-
-fn write_custom_provider_guide(path: &Path) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-
-    fs::write(path, CUSTOM_PROVIDER_GUIDE_HTML).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -794,6 +766,7 @@ mod tests {
             low_quota_warning_threshold: 15.0,
             launch_at_startup: true,
             log_level: "debug".to_string(),
+            language: AppLanguage::System,
             network_proxy: None,
             providers: vec![ProviderConfig::Mock {
                 id: "mock".to_string(),
@@ -831,34 +804,6 @@ mod tests {
                 "visibleWindowIds": ["5h", "weekly"]
             },
             {
-                "kind": "command",
-                "id": "command",
-                "name": "Command",
-                "enabled": true,
-                "command": {
-                    "executable": "node",
-                    "args": ["fixtures/fake_provider_snapshot.js"],
-                    "timeoutMs": 15000
-                },
-                "parser": { "type": "provider-snapshot" },
-                "windowLabelOverrides": {},
-                "visibleWindowIds": []
-            },
-            {
-                "kind": "script",
-                "id": "script",
-                "name": "Script",
-                "enabled": true,
-                "command": {
-                    "executable": "node",
-                    "args": ["providers/custom/provider.cjs"],
-                    "timeoutMs": 15000
-                },
-                "output": { "type": "provider-snapshot-v1" },
-                "windowLabelOverrides": {},
-                "visibleWindowIds": []
-            },
-            {
                 "kind": "remote",
                 "id": "remote-kimi",
                 "name": "Remote Kimi",
@@ -879,9 +824,7 @@ mod tests {
 
         assert!(matches!(parsed[0], ProviderConfig::Mock { .. }));
         assert!(matches!(parsed[1], ProviderConfig::Codex { .. }));
-        assert!(matches!(parsed[2], ProviderConfig::Command { .. }));
-        assert!(matches!(parsed[3], ProviderConfig::Script { .. }));
-        assert!(matches!(parsed[4], ProviderConfig::Remote { .. }));
+        assert!(matches!(parsed[2], ProviderConfig::Remote { .. }));
     }
 
     #[test]
@@ -902,10 +845,11 @@ mod tests {
         );
         assert_eq!(migrated["launchAtStartup"], serde_json::json!(false));
         assert_eq!(migrated["logLevel"], serde_json::json!("info"));
+        assert_eq!(migrated["language"], serde_json::json!("system"));
     }
 
     #[test]
-    fn config_migration_v3_to_v4_adds_window_label_overrides() {
+    fn config_migration_v3_to_current_preserves_supported_providers() {
         let value = serde_json::json!({
             "schemaVersion": 3,
             "refreshIntervalSeconds": 300,
@@ -914,18 +858,10 @@ mod tests {
             "launchAtStartup": false,
             "logLevel": "info",
             "providers": [{
-                "kind": "command",
-                "id": "bigmodel",
-                "name": "BigModel",
-                "enabled": true,
-                "command": {
-                    "executable": "curl",
-                    "args": [],
-                    "timeoutMs": 15000
-                },
-                "parser": {
-                    "type": "bigmodel-quota-limit-json-v1"
-                }
+                "kind": "mock",
+                "id": "mock",
+                "name": "Mock",
+                "enabled": true
             }]
         });
 
@@ -935,60 +871,52 @@ mod tests {
             migrated["schemaVersion"],
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
-        assert_eq!(
-            migrated["providers"][0]["visibleWindowIds"],
-            serde_json::json!([])
-        );
-        assert_eq!(
-            migrated["providers"][0]["windowLabelOverrides"],
-            serde_json::json!({
-                "tokens-limit-3-5": "5h",
-                "tokens-limit-6-1": "Weekly limit"
-            })
-        );
+        assert_eq!(migrated["providers"][0]["kind"], serde_json::json!("mock"));
     }
 
     #[test]
-    fn config_migration_v4_preserves_custom_window_label_overrides() {
+    fn config_migration_v7_to_current_adds_system_language() {
         let value = serde_json::json!({
-            "schemaVersion": 3,
+            "schemaVersion": 7,
             "refreshIntervalSeconds": 300,
             "displayMode": "remaining",
             "lowQuotaWarningThreshold": 20,
             "launchAtStartup": false,
             "logLevel": "info",
-            "providers": [{
-                "kind": "command",
-                "id": "bigmodel",
-                "name": "BigModel",
-                "enabled": true,
-                "command": {
-                    "executable": "curl",
-                    "args": [],
-                    "timeoutMs": 15000
-                },
-                "parser": {
-                    "type": "bigmodel-quota-limit-json-v1"
-                },
-                "windowLabelOverrides": {
-                    "tokens-limit-3-5": "Five hour custom"
-                }
-            }]
+            "networkProxy": null,
+            "providers": []
         });
 
         let migrated = migrate_config_value(value).expect("migrates");
 
         assert_eq!(
-            migrated["providers"][0]["windowLabelOverrides"],
-            serde_json::json!({
-                "tokens-limit-3-5": "Five hour custom",
-                "tokens-limit-6-1": "Weekly limit"
-            })
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
+        assert_eq!(migrated["language"], serde_json::json!("system"));
     }
 
     #[test]
-    fn command_provider_fields_serialize_as_frontend_camel_case() {
+    fn local_command_and_script_provider_configs_are_rejected() {
+        let command = serde_json::json!({
+            "kind": "command",
+            "id": "command",
+            "name": "Command",
+            "enabled": true
+        });
+        let script = serde_json::json!({
+            "kind": "script",
+            "id": "script",
+            "name": "Script",
+            "enabled": true
+        });
+
+        assert!(serde_json::from_value::<ProviderConfig>(command).is_err());
+        assert!(serde_json::from_value::<ProviderConfig>(script).is_err());
+    }
+
+    #[test]
+    fn remote_provider_fields_serialize_as_frontend_camel_case() {
         let config = AppConfig {
             schema_version: CURRENT_CONFIG_SCHEMA_VERSION,
             refresh_interval_seconds: 300,
@@ -996,24 +924,30 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            language: AppLanguage::System,
             network_proxy: None,
-            providers: vec![ProviderConfig::Command {
+            providers: vec![ProviderConfig::Remote {
                 id: "provider".to_string(),
                 name: "Provider".to_string(),
                 enabled: true,
-                command: CommandSpec {
-                    executable: "node".to_string(),
-                    args: Vec::new(),
-                    cwd: None,
-                    env: None,
-                    timeout_ms: 15000,
-                },
-                parser: ParserSpec::ProviderSnapshot,
+                manifest_url: "https://example.com/provider.json".to_string(),
+                source_url: "https://example.com/provider.cjs".to_string(),
+                provider_dir: None,
+                runtime: "node".to_string(),
+                resolved_runtime: None,
+                proxy_url: None,
+                auto_update: true,
+                update_interval_seconds: 3600,
+                trusted_checksum: None,
                 window_label_overrides: HashMap::from([(
                     "300-minute".to_string(),
                     "5h".to_string(),
                 )]),
                 visible_window_ids: vec!["5h".to_string()],
+                env_vars: HashMap::from([(
+                    "KIMI_API_KEY".to_string(),
+                    "${secret:KIMI_API_KEY}".to_string(),
+                )]),
             }],
         };
 
@@ -1027,6 +961,10 @@ mod tests {
             value["providers"][0]["visibleWindowIds"],
             serde_json::json!(["5h"])
         );
+        assert_eq!(
+            value["providers"][0]["envVars"],
+            serde_json::json!({ "KIMI_API_KEY": "${secret:KIMI_API_KEY}" })
+        );
         assert!(value["providers"][0]
             .get("window_label_overrides")
             .is_none());
@@ -1034,29 +972,30 @@ mod tests {
     }
 
     #[test]
-    fn command_provider_fields_deserialize_from_frontend_camel_case() {
+    fn remote_provider_fields_deserialize_from_frontend_camel_case() {
         let value = serde_json::json!({
-            "kind": "command",
+            "kind": "remote",
             "id": "provider",
             "name": "Provider",
             "enabled": true,
-            "command": {
-                "executable": "node",
-                "args": [],
-                "timeoutMs": 15000
-            },
-            "parser": { "type": "provider-snapshot" },
+            "manifestUrl": "https://example.com/provider.json",
+            "sourceUrl": "https://example.com/provider.cjs",
+            "runtime": "node",
+            "autoUpdate": true,
+            "updateIntervalSeconds": 3600,
             "windowLabelOverrides": { "300-minute": "5h" },
-            "visibleWindowIds": ["5h"]
+            "visibleWindowIds": ["5h"],
+            "envVars": { "KIMI_API_KEY": "${secret:KIMI_API_KEY}" }
         });
 
         let provider =
             serde_json::from_value::<ProviderConfig>(value).expect("deserialize provider");
 
         match provider {
-            ProviderConfig::Command {
+            ProviderConfig::Remote {
                 window_label_overrides,
                 visible_window_ids,
+                env_vars,
                 ..
             } => {
                 assert_eq!(
@@ -1064,8 +1003,12 @@ mod tests {
                     Some(&"5h".to_string())
                 );
                 assert_eq!(visible_window_ids, vec!["5h".to_string()]);
+                assert_eq!(
+                    env_vars.get("KIMI_API_KEY"),
+                    Some(&"${secret:KIMI_API_KEY}".to_string())
+                );
             }
-            _ => panic!("expected command provider"),
+            _ => panic!("expected remote provider"),
         }
     }
 
@@ -1160,7 +1103,6 @@ mod tests {
         assert!(preferred_path.exists());
         assert!(!legacy_path.exists());
     }
-}
 
     #[test]
     fn write_remote_provider_guide_creates_html_file() {
@@ -1173,3 +1115,61 @@ mod tests {
         assert!(contents.contains("Remote Provider Guide"));
         assert!(contents.contains("Manifest format"));
     }
+
+    #[test]
+    fn secret_placeholder_prefers_local_secret_file_over_env() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let secret_dir = temp.path().join("secrets");
+        fs::create_dir(&secret_dir).expect("create secrets dir");
+        fs::write(secret_dir.join("QBWIN_TEST_PRECEDENCE.txt"), "from-file\n")
+            .expect("write secret");
+        std::env::set_var("QBWIN_TEST_PRECEDENCE", "from-env");
+
+        let actual = resolve_secret_value("${secret:QBWIN_TEST_PRECEDENCE}", temp.path())
+            .expect("resolve secret");
+
+        assert_eq!(actual, "from-file");
+        std::env::remove_var("QBWIN_TEST_PRECEDENCE");
+    }
+
+    #[test]
+    fn secret_placeholder_falls_back_to_env() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        std::env::set_var("QBWIN_TEST_ENV_FALLBACK", "from-env");
+
+        let actual = resolve_secret_value("${secret:QBWIN_TEST_ENV_FALLBACK}", temp.path())
+            .expect("resolve secret");
+
+        assert_eq!(actual, "from-env");
+        std::env::remove_var("QBWIN_TEST_ENV_FALLBACK");
+    }
+
+    #[test]
+    fn missing_secret_error_does_not_include_secret_values() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        std::env::remove_var("QBWIN_TEST_MISSING_SECRET");
+
+        let error = resolve_secret_value("${secret:QBWIN_TEST_MISSING_SECRET}", temp.path())
+            .expect_err("missing secret");
+
+        assert!(error.contains("QBWIN_TEST_MISSING_SECRET"));
+        assert!(!error.contains("super-secret-token"));
+    }
+
+    #[test]
+    fn file_placeholder_still_accepts_quoted_paths_with_spaces() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let secret_dir = temp.path().join("codex secrets");
+        fs::create_dir(&secret_dir).expect("create secret dir");
+        let secret_path = secret_dir.join("access token.txt");
+        fs::write(&secret_path, "token-from-file\n").expect("write secret");
+
+        let actual = resolve_secret_value(
+            &format!("${{file:\"{}\"}}", secret_path.display()),
+            temp.path(),
+        )
+        .expect("resolve file placeholder");
+
+        assert_eq!(actual, "token-from-file");
+    }
+}

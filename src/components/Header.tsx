@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n";
+
 type HeaderProps = {
   activeView: "overview" | "settings";
   appVersion: string;
@@ -15,10 +17,12 @@ export function Header({
   onRefresh,
   onOpenSettings
 }: HeaderProps) {
+  const { t } = useI18n();
+
   return (
     <header className="app-header">
       <div>
-        <h1 title={`Version ${appVersion}`}>QuotaBarWin</h1>
+        <h1 title={t.app.versionTitle(appVersion)}>QuotaBarWin</h1>
       </div>
       <div className="header-actions">
         <button
@@ -26,14 +30,14 @@ export function Header({
           className={activeView === "overview" ? "button-secondary" : undefined}
           onClick={onOpenOverview}
         >
-          Overview
+          {t.header.overview}
         </button>
         <button
           type="button"
           className={activeView === "settings" ? "button-secondary" : undefined}
           onClick={onOpenSettings}
         >
-          Settings
+          {t.header.settings}
         </button>
         <button
           type="button"
@@ -42,7 +46,7 @@ export function Header({
           disabled={isLoading}
         >
           <span className="button-refresh__text">
-            {isLoading ? "Refreshing" : "Refresh"}
+            {isLoading ? t.header.refreshing : t.header.refresh}
           </span>
         </button>
         <a

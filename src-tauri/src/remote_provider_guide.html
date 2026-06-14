@@ -182,7 +182,7 @@
             <tr><td><code>description</code></td><td>no</td><td>Short description.</td></tr>
             <tr><td><code>runtime</code></td><td>yes</td><td>Runtime used to execute <code>entry</code>. Common values: <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path.</td></tr>
             <tr><td><code>entry</code></td><td>yes</td><td>Source file name. Relative paths are resolved against the manifest URL; absolute HTTPS URLs are also supported.</td></tr>
-            <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script. Shown in the registry install summary.</td></tr>
+            <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script. On refresh, QuotaBarWin resolves each name from provider <code>envVars</code>, then <code>${secret:NAME}</code>.</td></tr>
             <tr><td><code>output</code></td><td>yes</td><td>Output contract. Use <code>provider-snapshot-v1</code>.</td></tr>
             <tr><td><code>permissions</code></td><td>no</td><td>Declared capabilities (informational). Use <code>env:&lt;NAME&gt;</code> to document env vars.</td></tr>
             <tr><td><code>checksums.source</code></td><td>no</td><td>SHA-256 checksum of the source file. Required for auto-update. Format: <code>sha256:&lt;hex&gt;</code>.</td></tr>
@@ -258,6 +258,87 @@
             <tr><td><code>confidence</code></td><td>no</td><td><code>exact</code>, <code>estimated</code>, or <code>unknown</code>.</td></tr>
           </tbody>
         </table>
+      </section>
+
+      <section>
+        <h2>Parsing raw API responses</h2>
+        <p>Remote providers should keep provider-specific parsing inside the source script. The app only needs the normalized <code>provider-snapshot-v1</code> JSON printed to stdout.</p>
+        <ol>
+          <li>Fetch or read the provider's raw API response.</li>
+          <li>Select the quota records that represent user-visible windows.</li>
+          <li>Convert provider-specific field names into stable window fields.</li>
+          <li>Put useful extra provider fields in <code>metadata</code>, not in <code>windows</code>.</li>
+          <li>Print exactly one JSON object to stdout; write diagnostics to stderr.</li>
+        </ol>
+
+        <h3>BigModel raw response</h3>
+        <pre>{
+  "success": true,
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "level": "pro",
+    "limits": [
+      {
+        "type": "TOKENS_LIMIT",
+        "unit": 6,
+        "number": 1,
+        "currentValue": 12345,
+        "usage": 100000,
+        "percentage": 12.35,
+        "nextResetTime": 1781654400000,
+        "usageDetails": [
+          { "modelCode": "glm-4.5", "usage": 1000 }
+        ]
+      }
+    ]
+  }
+}</pre>
+
+        <table>
+          <thead>
+            <tr><th>Raw field</th><th>Snapshot field</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>data.limits[]</code></td><td><code>windows[]</code></td><td>One raw limit becomes one quota window.</td></tr>
+            <tr><td><code>type</code>, <code>unit</code>, <code>number</code></td><td><code>id</code>, <code>label</code></td><td>Build a stable id and a readable label.</td></tr>
+            <tr><td><code>currentValue</code></td><td><code>used</code></td><td>Normalize strings/numbers to numbers when possible.</td></tr>
+            <tr><td><code>usage</code></td><td><code>limit</code></td><td>Leave as <code>null</code> if the API omits it.</td></tr>
+            <tr><td><code>percentage</code></td><td><code>usedPercent</code></td><td>Use a 0-100 value.</td></tr>
+            <tr><td><code>100 - percentage</code></td><td><code>remainingPercent</code></td><td>Use <code>null</code> when <code>percentage</code> is missing.</td></tr>
+            <tr><td><code>nextResetTime</code></td><td><code>resetAt</code></td><td>Convert epoch milliseconds to ISO 8601.</td></tr>
+            <tr><td><code>level</code>, <code>usageDetails</code>, raw status fields</td><td><code>metadata</code></td><td>Preserve useful details without changing the window contract.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Kimi raw response</h3>
+        <pre>{
+  "limits": [
+    {
+      "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+      "detail": { "used": 42, "limit": 100, "resetTime": "2026-06-13T15:00:00Z" }
+    }
+  ],
+  "usage": { "used": 120, "limit": 500, "resetTime": "2026-06-17T00:00:00Z" },
+  "totalQuota": { "limit": 1000, "remaining": 830 },
+  "user": { "region": "us", "membership": { "level": "pro" } }
+}</pre>
+        <p>The Kimi example maps the 300-minute <code>limits[].detail</code> entry to a <code>5h</code> window, maps <code>usage</code> to a weekly window, and derives total quota usage from <code>totalQuota.limit - totalQuota.remaining</code>.</p>
+
+        <h3>Codex raw response</h3>
+        <pre>{
+  "plan_type": "plus",
+  "credits": { "granted": 100, "used": 12 },
+  "rate_limit": {
+    "primary_window": { "used_percent": 32, "reset_after_seconds": 7200 },
+    "secondary_window": { "used_percent": 18, "reset_at": 1781913600 }
+  }
+}</pre>
+        <p>The Codex example reports percentages rather than absolute counters, so <code>used</code> and <code>limit</code> stay <code>null</code>, <code>used_percent</code> becomes <code>usedPercent</code>, and reset values are converted from seconds or relative seconds into ISO timestamps.</p>
+
+        <div class="note">
+          Remote provider source should not contain credentials. The script still reads <code>process.env.NAME</code>, but QuotaBarWin injects required environment variables only into the child process. For each manifest <code>requiredEnvVars</code> entry, the app first checks the installed provider config <code>envVars</code> map; if a key is absent, it resolves <code>${secret:NAME}</code>. <code>${secret:NAME}</code> reads <code>&lt;config-dir&gt;/secrets/NAME.txt</code> first and falls back to environment variable <code>NAME</code>.
+        </div>
       </section>
 
       <section>

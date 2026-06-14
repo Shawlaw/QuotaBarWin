@@ -9,8 +9,21 @@ const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
   }
   const accountId = process.env.CODEX_ACCOUNT_ID || "";
 
+  // Keep secrets local. This example reads an access token from the environment
+  // because remote providers are source-only; real deployments should prefer
+  // app-managed local config or a local secret-file path passed at runtime.
   const raw = await fetchCodexUsage(token.trim(), accountId.trim());
 
+  // Raw Codex usage shape used here:
+  // {
+  //   plan_type, credits,
+  //   rate_limit: {
+  //     primary_window: { used_percent, reset_at, reset_after_seconds },
+  //     secondary_window: { used_percent, reset_at, reset_after_seconds }
+  //   }
+  // }
+  // The two rate-limit windows become provider-snapshot-v1 windows; account and
+  // plan details stay in metadata.
   const windows = [];
   const primary = raw?.rate_limit?.primary_window;
   if (primary && typeof primary.used_percent === "number") {
@@ -76,6 +89,8 @@ function fetchCodexUsage(token, accountId) {
 
 function windowFromUsage(id, label, usage) {
   const usedPercent = numberOrNull(usage.used_percent);
+  // Codex reports percentages rather than absolute counters, so used/limit stay
+  // null and the snapshot carries usedPercent/remainingPercent for the UI.
   return {
     id,
     label,

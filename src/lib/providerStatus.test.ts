@@ -12,7 +12,7 @@ const provider: ProviderSnapshot = {
   id: "provider",
   name: "Provider",
   status: "ok",
-  source: "command",
+  source: "remote",
   updatedAt: null,
   error: null,
   diagnostics: null,

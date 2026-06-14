@@ -7,7 +7,7 @@ const provider = (status: ProviderSnapshot['status']): ProviderSnapshot => ({
   id: 'test',
   name: 'Test Provider',
   status,
-  source: 'command',
+  source: 'remote',
   updatedAt: '2026-06-08T00:00:00.000Z',
   windows: [
     {

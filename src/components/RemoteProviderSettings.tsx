@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RemoteProviderConfig } from "../types";
 import type { RegistryInstallResult, UpdateInfo } from "../lib/api";
+import { useI18n } from "../i18n";
 
 type RemoteProviderSettingsProps = {
   providers: RemoteProviderConfig[];
@@ -25,6 +26,7 @@ export function RemoteProviderSettings({
   onApplyUpdate,
   onOpenGuide
 }: RemoteProviderSettingsProps) {
+  const { t } = useI18n();
   const [url, setUrl] = useState("");
   const [proxyUrl, setProxyUrl] = useState("");
   const [autoUpdate, setAutoUpdate] = useState(true);
@@ -43,21 +45,21 @@ export function RemoteProviderSettings({
       );
       const parts: string[] = [];
       if (result.installed.length > 0) {
-        parts.push(`${result.installed.length} installed`);
+        parts.push(t.remoteProviders.installedResult(result.installed.length));
       }
       if (result.skipped.length > 0) {
-        parts.push(`${result.skipped.length} skipped`);
+        parts.push(t.remoteProviders.skippedResult(result.skipped.length));
       }
       if (result.failed.length > 0) {
-        parts.push(`${result.failed.length} failed`);
+        parts.push(t.remoteProviders.failedResult(result.failed.length));
       }
-      setMessage(parts.join(", ") || "No providers installed from registry");
+      setMessage(parts.join(", ") || t.remoteProviders.noProvidersInstalledFromRegistry);
       setUrl("");
       setProxyUrl("");
       setUpdates([]);
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : "Failed to install registry"
+        error instanceof Error ? error.message : t.remoteProviders.failedToInstallRegistry
       );
     } finally {
       setLoading(false);
@@ -69,9 +71,9 @@ export function RemoteProviderSettings({
     try {
       await onRemove(id);
       setUpdates((current) => current.filter((update) => update.id !== id));
-      setMessage("Provider removed");
+      setMessage(t.remoteProviders.providerRemoved);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to remove provider");
+      setMessage(error instanceof Error ? error.message : t.remoteProviders.failedToRemoveProvider);
     }
   }
 
@@ -84,12 +86,12 @@ export function RemoteProviderSettings({
           ...current.filter((update) => update.id !== id),
           result
         ]);
-        setMessage("Update available");
+        setMessage(t.remoteProviders.updateAvailable);
       } else {
-        setMessage("Provider refreshed");
+        setMessage(t.remoteProviders.providerRefreshed);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to refresh provider");
+      setMessage(error instanceof Error ? error.message : t.remoteProviders.failedToRefreshProvider);
     }
   }
 
@@ -100,12 +102,12 @@ export function RemoteProviderSettings({
       setUpdates(result);
       const availableCount = result.filter((update) => update.available).length;
       if (availableCount > 0) {
-        setMessage(`${availableCount} update(s) available`);
+        setMessage(t.remoteProviders.updatesAvailable(availableCount));
       } else {
-        setMessage("All providers are up to date");
+        setMessage(t.remoteProviders.allProvidersUpToDate);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to check updates");
+      setMessage(error instanceof Error ? error.message : t.remoteProviders.failedToCheckUpdates);
     }
   }
 
@@ -114,48 +116,48 @@ export function RemoteProviderSettings({
     try {
       await onApplyUpdate(id);
       setUpdates((current) => current.filter((update) => update.id !== id));
-      setMessage("Update applied");
+      setMessage(t.remoteProviders.updateApplied);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to apply update");
+      setMessage(error instanceof Error ? error.message : t.remoteProviders.failedToApplyUpdate);
     }
   }
 
   return (
-    <section className="settings-section" aria-label="Remote Providers" data-testid="remote-providers-section">
+    <section className="settings-section" aria-label={t.remoteProviders.title} data-testid="remote-providers-section">
       <div className="settings-section-title">
-        <h3>Remote Providers</h3>
+        <h3>{t.remoteProviders.title}</h3>
         <div className="settings-section-actions">
-          <span>{providers.length} installed</span>
+          <span>{t.remoteProviders.installedCount(providers.length)}</span>
           <button
             type="button"
             className="button-secondary"
             onClick={() => void onOpenGuide()}
-            data-testid="open-remote-provider-guide"
+          data-testid="open-remote-provider-guide"
           >
-            Open Guide
+            {t.remoteProviders.openGuide}
           </button>
         </div>
       </div>
 
       <div className="settings-grid remote-provider-add-form">
         <label>
-          Registry URL
+          {t.remoteProviders.registryUrl}
           <input
             data-testid="remote-provider-url-input"
             type="text"
             value={url}
             onChange={(event) => setUrl(event.currentTarget.value)}
-            placeholder="https://... or file:///... or local path to registry.json"
+            placeholder={t.remoteProviders.registryUrlPlaceholder}
           />
         </label>
         <label>
-          Provider proxy URL (optional)
+          {t.remoteProviders.providerProxyUrl}
           <input
             data-testid="remote-provider-proxy-url-input"
             type="text"
             value={proxyUrl}
             onChange={(event) => setProxyUrl(event.currentTarget.value)}
-            placeholder="http://proxy:8080"
+            placeholder={t.remoteProviders.providerProxyPlaceholder}
           />
         </label>
         <label className="checkbox-row">
@@ -164,7 +166,7 @@ export function RemoteProviderSettings({
             checked={autoUpdate}
             onChange={(event) => setAutoUpdate(event.currentTarget.checked)}
           />
-          Auto-update when available
+          {t.remoteProviders.autoUpdateWhenAvailable}
         </label>
         <button
           type="button"
@@ -173,14 +175,14 @@ export function RemoteProviderSettings({
           disabled={loading || !url.trim()}
           data-testid="install-remote-provider-registry"
         >
-          {loading ? "Loading..." : "Install Registry"}
+          {loading ? t.remoteProviders.loading : t.remoteProviders.installRegistry}
         </button>
       </div>
 
       {message ? <div className="settings-message">{message}</div> : null}
 
       {providers.length === 0 ? (
-        <p>No remote providers installed</p>
+        <p>{t.remoteProviders.noRemoteProvidersInstalled}</p>
       ) : (
         <ul className="remote-provider-list">
           {providers.map((provider) => {
@@ -191,7 +193,7 @@ export function RemoteProviderSettings({
                   <strong>{provider.name}</strong>
                   <span>{provider.id}</span>
                   <span>{provider.runtime}</span>
-                  {provider.autoUpdate ? <span>auto-update</span> : null}
+                  {provider.autoUpdate ? <span>{t.remoteProviders.autoUpdate}</span> : null}
                 </div>
                 <div className="remote-provider-url">{provider.manifestUrl}</div>
                 <div className="remote-provider-actions">
@@ -200,14 +202,14 @@ export function RemoteProviderSettings({
                     className="button-secondary"
                     onClick={() => void handleRefresh(provider.id)}
                   >
-                    Refresh
+                    {t.remoteProviders.refresh}
                   </button>
                   <button
                     type="button"
                     className="button-secondary"
                     onClick={() => void handleCheckUpdates()}
                   >
-                    Check Updates
+                    {t.remoteProviders.checkUpdates}
                   </button>
                   {update?.available ? (
                     <button
@@ -215,7 +217,7 @@ export function RemoteProviderSettings({
                       className="button-primary"
                       onClick={() => void handleApplyUpdate(provider.id)}
                     >
-                      Apply Update
+                      {t.remoteProviders.applyUpdate}
                     </button>
                   ) : null}
                   <button
@@ -223,7 +225,7 @@ export function RemoteProviderSettings({
                     className="button-danger"
                     onClick={() => void handleRemove(provider.id)}
                   >
-                    Remove
+                    {t.remoteProviders.remove}
                   </button>
                 </div>
               </li>

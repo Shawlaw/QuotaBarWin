@@ -3,6 +3,14 @@ const fs = require("node:fs/promises");
 (async function main() {
   const fixturePath = process.env.QUOTABARWIN_BIGMODEL_FIXTURE;
   const raw = fixturePath ? await readJson(fixturePath) : await fetchBigModelQuota();
+
+  // Raw BigModel shape used here:
+  // {
+  //   success, code, msg,
+  //   data: { level, limits: [{ type, unit, number, currentValue, usage, percentage, nextResetTime, usageDetails }] }
+  // }
+  // Each data.limits[] entry becomes one provider-snapshot-v1 window. Extra
+  // provider-specific values, such as model-level usageDetails, stay in metadata.
   const limits = raw.data?.limits ?? [];
 
   console.log(
@@ -30,6 +38,9 @@ async function fetchBigModelQuota() {
     throw new Error("BIGMODEL_API_KEY is required");
   }
 
+  // Keep secrets local. This example reads an env var because remote providers
+  // are source-only; real deployments should prefer app-managed local config or
+  // a local secret-file path passed at runtime instead of hard-coded credentials.
   const response = await fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -45,6 +56,8 @@ async function readJson(filePath) {
 
 function limitToWindow(limit) {
   const usedPercent = numberOrNull(limit.percentage);
+  // provider-snapshot-v1 normalizes the raw API names into UI-facing quota
+  // fields: currentValue -> used, usage -> limit, percentage -> usedPercent.
   return {
     id: `${dash(limit.type)}-${limit.unit}-${limit.number}`.toLowerCase(),
     label: `${durationLabel(limit.unit, limit.number)} - ${titleCase(limit.type)}`,

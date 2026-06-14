@@ -4,6 +4,15 @@ const fs = require("node:fs/promises");
   const fixturePath = process.env.QUOTABARWIN_KIMI_FIXTURE;
   const raw = fixturePath ? await readJson(fixturePath) : await fetchKimiUsage();
 
+  // Raw Kimi shape used here:
+  // {
+  //   limits: [{ window: { duration, timeUnit }, detail: { used, limit, resetTime } }],
+  //   usage: { used, limit, resetTime },
+  //   totalQuota: { limit, remaining },
+  //   user: { region, membership: { level } }
+  // }
+  // The provider maps each quota window into provider-snapshot-v1.windows[] so
+  // QuotaBarWin never needs provider-specific API field names.
   const windows = [];
   const fiveHour = raw.limits?.find(
     (limit) => Number(limit?.window?.duration) === 300 && limit?.window?.timeUnit === "TIME_UNIT_MINUTE"
@@ -56,6 +65,9 @@ async function fetchKimiUsage() {
     throw new Error("KIMI_API_KEY is required");
   }
 
+  // Keep secrets local. This example reads an env var because remote providers
+  // are source-only; real deployments should prefer app-managed local config or
+  // a local secret-file path passed at runtime instead of hard-coded credentials.
   const response = await fetch("https://api.kimi.com/coding/v1/usages", {
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -70,6 +82,8 @@ async function readJson(filePath) {
 }
 
 function windowFromUsage(id, label, usage) {
+  // provider-snapshot-v1 keeps the UI fields stable: used/limit/resetAt are
+  // normalized here, while provider-specific fields stay in metadata.
   return {
     id,
     label,

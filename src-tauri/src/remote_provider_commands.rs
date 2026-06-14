@@ -1,4 +1,8 @@
-use std::{fs, path::{Path, PathBuf}, time::Duration};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -12,8 +16,7 @@ use crate::{
         cache_remote_provider, check_update, compute_checksum, fetch_manifest, fetch_manifest_text,
         fetch_provider_registry, fetch_source, load_cached_manifest, load_cached_meta,
         parse_manifest, resolve_provider_url, resolve_runtime, resolve_source_url,
-        validate_runtime_executable,
-        ProviderManifest, UpdateInfo,
+        validate_runtime_executable, ProviderManifest, UpdateInfo,
     },
 };
 
@@ -29,13 +32,14 @@ fn provider_id(provider: &ProviderConfig) -> &str {
     match provider {
         ProviderConfig::Mock { id, .. }
         | ProviderConfig::Codex { id, .. }
-        | ProviderConfig::Command { id, .. }
-        | ProviderConfig::Script { id, .. }
         | ProviderConfig::Remote { id, .. } => id,
     }
 }
 
-fn find_provider_config_mut<'a>(config: &'a mut AppConfig, id: &str) -> Option<&'a mut ProviderConfig> {
+fn find_provider_config_mut<'a>(
+    config: &'a mut AppConfig,
+    id: &str,
+) -> Option<&'a mut ProviderConfig> {
     config
         .providers
         .iter_mut()
@@ -136,6 +140,7 @@ fn install_remote_provider_from_manifest(
         trusted_checksum: Some(compute_checksum(&source)),
         window_label_overrides: Default::default(),
         visible_window_ids: Default::default(),
+        env_vars: Default::default(),
     };
 
     loaded.config.providers.push(config.clone());
@@ -361,7 +366,8 @@ async fn check_remote_updates_inner(
                     crate::remote_provider::verify_checksum(&source, new_checksum)
                         .map_err(|e| e.to_string())?;
 
-                    let manifest = load_cached_manifest(&provider_dir).map_err(|e| e.to_string())?;
+                    let manifest =
+                        load_cached_manifest(&provider_dir).map_err(|e| e.to_string())?;
                     let parent = provider_dir
                         .parent()
                         .expect("provider dir has parent")
@@ -399,7 +405,8 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
         let mut loaded = load_or_create_config(&path)?;
         let global_proxy = loaded.config.network_proxy.clone();
 
-        let provider = find_provider_config_mut(&mut loaded.config, &id).ok_or("provider not found")?;
+        let provider =
+            find_provider_config_mut(&mut loaded.config, &id).ok_or("provider not found")?;
         let ProviderConfig::Remote {
             manifest_url,
             proxy_url,
@@ -431,7 +438,8 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
         .map_err(|e| e.to_string())?;
 
         if let Some(expected) = manifest.checksums.source.as_ref() {
-            crate::remote_provider::verify_checksum(&source, expected).map_err(|e| e.to_string())?;
+            crate::remote_provider::verify_checksum(&source, expected)
+                .map_err(|e| e.to_string())?;
         } else {
             return Err("manifest does not contain a source checksum".to_string());
         }

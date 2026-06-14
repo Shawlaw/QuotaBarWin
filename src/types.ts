@@ -1,6 +1,7 @@
 export type ProviderStatus = "ok" | "warning" | "error" | "stale" | "unknown";
 export type ConfidenceLevel = "exact" | "estimated" | "unknown";
-export type ProviderSource = "mock" | "command" | "native" | "script" | "remote";
+export type ProviderSource = "mock" | "native" | "remote";
+export type AppLanguage = "system" | "en" | "zh-CN";
 
 export type QuotaWindow = {
   id: string;
@@ -50,6 +51,7 @@ export type AppConfig = {
   lowQuotaWarningThreshold: number;
   launchAtStartup?: boolean;
   logLevel?: "debug" | "info" | "warn" | "error" | string;
+  language: AppLanguage;
   networkProxy?: ProxyConfig | null;
   providers: ProviderConfig[];
 };
@@ -66,8 +68,6 @@ export type ConfigStorageInfo = {
 export type ProviderConfig =
   | MockProviderConfig
   | CodexProviderConfig
-  | CommandProviderConfig
-  | ScriptProviderConfig
   | RemoteProviderConfig;
 
 export type MockProviderConfig = {
@@ -86,28 +86,6 @@ export type CodexProviderConfig = {
   accountId?: string | null;
   proxyUrl?: string | null;
   timeoutMs: number;
-  windowLabelOverrides?: Record<string, string>;
-  visibleWindowIds?: string[];
-};
-
-export type CommandProviderConfig = {
-  id: string;
-  name: string;
-  enabled: boolean;
-  kind: "command";
-  command: CommandSpec;
-  parser: ParserSpec;
-  windowLabelOverrides?: Record<string, string>;
-  visibleWindowIds?: string[];
-};
-
-export type ScriptProviderConfig = {
-  id: string;
-  name: string;
-  enabled: boolean;
-  kind: "script";
-  command: CommandSpec;
-  output: ScriptOutputSpec;
   windowLabelOverrides?: Record<string, string>;
   visibleWindowIds?: string[];
 };
@@ -135,27 +113,8 @@ export type RemoteProviderConfig = {
   trustedChecksum?: string | null;
   windowLabelOverrides?: Record<string, string>;
   visibleWindowIds?: string[];
+  envVars?: Record<string, string>;
 };
-
-export type CommandSpec = {
-  executable: string;
-  args: string[];
-  cwd?: string | null;
-  env?: Record<string, string>;
-  timeoutMs: number;
-};
-
-export type ParserSpec =
-  | { type: "app-snapshot" }
-  | { type: "provider-snapshot" }
-  | { type: "kimi-coding-usage-v1" }
-  | { type: "bigmodel-quota-limit-json-v1" }
-  | { type: "json-mapping"; mapping: Record<string, unknown> }
-  | { type: "regex-blocks"; rules: Record<string, unknown>[] };
-
-export type ScriptOutputSpec =
-  | { type: "provider-snapshot-v1" }
-  | { type: "app-snapshot-v1" };
 
 export type ProviderPreset = {
   id: string;
