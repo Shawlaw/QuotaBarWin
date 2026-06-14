@@ -362,3 +362,11 @@ export async function hideTrayPopup(): Promise<void> {
 
   return invoke<void>("hide_tray_popup");
 }
+
+export async function startDraggingCurrentWindow(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  return getCurrentWindow().startDragging();
+}

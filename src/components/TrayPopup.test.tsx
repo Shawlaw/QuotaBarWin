@@ -144,7 +144,8 @@ const mocks = vi.hoisted(() => {
       return () => undefined;
     }),
     listeners,
-    refreshSnapshot: vi.fn(async () => snapshot)
+    refreshSnapshot: vi.fn(async () => snapshot),
+    startDraggingCurrentWindow: vi.fn(async () => undefined)
   };
 });
 
@@ -187,4 +188,15 @@ test("tray_popup_follows_configured_provider_order", async () => {
 
   expect(providerHeadings[0]).toBe("Kimi");
   expect(providerHeadings[1]).toBe("Codex Mock");
+});
+
+test("tray_popup_starts_native_dragging_from_titlebar", async () => {
+  render(<TrayPopup />);
+
+  fireEvent.mouseDown(screen.getByTestId("tray-popup-titlebar"), { button: 2 });
+  expect(mocks.startDraggingCurrentWindow).not.toHaveBeenCalled();
+
+  fireEvent.mouseDown(screen.getByTestId("tray-popup-titlebar"), { button: 0 });
+
+  await waitFor(() => expect(mocks.startDraggingCurrentWindow).toHaveBeenCalledTimes(1));
 });

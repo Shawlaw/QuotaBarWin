@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import {
   getCachedSnapshot,
   getConfig,
   hideCurrentWindow,
   hideTrayPopup,
   listenForTrayPopupShown,
-  refreshSnapshot
+  refreshSnapshot,
+  startDraggingCurrentWindow
 } from "../lib/api";
 import {
   calculateProviderStatus,
@@ -132,10 +133,23 @@ export function TrayPopup() {
   const displayMode = config?.displayMode ?? "remaining";
   const rows = orderedWindows(providers);
 
+  function onTitleMouseDown(event: MouseEvent<HTMLElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    void startDraggingCurrentWindow();
+  }
+
   return (
     <main className="tray-popup" data-testid="tray-popup">
       <header className="tray-popup__header">
-        <div className="tray-popup__titlebar" data-tauri-drag-region>
+        <div
+          className="tray-popup__titlebar"
+          data-tauri-drag-region
+          data-testid="tray-popup-titlebar"
+          onMouseDown={onTitleMouseDown}
+        >
           <h1>QuotaBarWin</h1>
           <p>{formatShortDateTime(snapshot?.refreshedAt) ?? t.tray.waitingForData}</p>
         </div>
