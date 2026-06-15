@@ -6,11 +6,13 @@ export type AppLanguage = "system" | "en" | "zh-CN";
 export type QuotaWindow = {
   id: string;
   label: string;
+  remaining?: number | null;
   used: number | null;
   limit: number | null;
   unit?: string | null;
   usedPercent: number | null;
   remainingPercent: number | null;
+  warningRemaining?: number | null;
   resetAt: string | null;
   resetText?: string | null;
   confidence: ConfidenceLevel;
@@ -54,7 +56,14 @@ export type AppConfig = {
   language: AppLanguage;
   networkProxy?: ProxyConfig | null;
   trayPopupPosition?: TrayPopupPosition | null;
+  remoteProviderRegistry?: RemoteProviderRegistrySettings;
   providers: ProviderConfig[];
+};
+
+export type RemoteProviderRegistrySettings = {
+  registryUrl?: string | null;
+  providerProxyUrl?: string | null;
+  autoUpdate: boolean;
 };
 
 export type TrayPopupPosition = {

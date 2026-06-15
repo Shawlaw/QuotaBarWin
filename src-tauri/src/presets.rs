@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tauri::{command, AppHandle};
 
 use crate::config::ProviderConfig;
@@ -18,30 +17,7 @@ pub struct ProviderPreset {
 }
 
 pub fn builtin_provider_presets() -> Vec<ProviderPreset> {
-    vec![ProviderPreset {
-        id: "codex-usage".to_string(),
-        display_name: "Codex Usage".to_string(),
-        description: "Codex/OpenAI 5h and weekly quota via ChatGPT usage API".to_string(),
-        provider_config_template: ProviderConfig::Codex {
-            id: "codex".to_string(),
-            name: "Codex".to_string(),
-            enabled: true,
-            auth_token: "${secret:CODEX_ACCESS_TOKEN}".to_string(),
-            account_id: None,
-            proxy_url: None,
-            timeout_ms: 15000,
-            window_label_overrides: HashMap::from([
-                ("5h".to_string(), "5h".to_string()),
-                ("weekly".to_string(), "Weekly limit".to_string()),
-            ]),
-            visible_window_ids: vec!["5h".to_string(), "Weekly limit".to_string()],
-        },
-        required_env_vars: vec!["CODEX_ACCESS_TOKEN".to_string()],
-        docs: Some(
-            "Provide a ChatGPT/Codex access token in secrets/CODEX_ACCESS_TOKEN.txt, or set CODEX_ACCESS_TOKEN in the environment."
-                .to_string(),
-        ),
-    }]
+    Vec::new()
 }
 
 #[cfg(test)]
@@ -62,58 +38,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preset_codex_uses_native_token_provider() {
-        let preset = builtin_provider_presets()
-            .into_iter()
-            .find(|preset| preset.id == "codex-usage")
-            .expect("codex preset");
-
-        assert!(preset
-            .required_env_vars
-            .contains(&"CODEX_ACCESS_TOKEN".to_string()));
-        match preset.provider_config_template {
-            ProviderConfig::Codex {
-                auth_token,
-                account_id,
-                proxy_url,
-                window_label_overrides,
-                visible_window_ids,
-                ..
-            } => {
-                assert_eq!(auth_token, "${secret:CODEX_ACCESS_TOKEN}");
-                assert_eq!(account_id, None);
-                assert_eq!(proxy_url, None);
-                assert_eq!(window_label_overrides.get("5h"), Some(&"5h".to_string()));
-                assert_eq!(
-                    window_label_overrides.get("weekly"),
-                    Some(&"Weekly limit".to_string())
-                );
-                assert_eq!(
-                    visible_window_ids,
-                    vec!["5h".to_string(), "Weekly limit".to_string()]
-                );
-            }
-            _ => panic!("expected codex provider"),
-        }
-    }
-
-    #[test]
-    fn presets_do_not_include_local_script_or_command_providers() {
+    fn presets_do_not_include_builtin_providers() {
         let presets = builtin_provider_presets();
 
-        assert_eq!(presets.len(), 1);
-        assert!(presets.iter().all(|preset| {
-            matches!(
-                preset.provider_config_template,
-                ProviderConfig::Codex { .. }
-            )
-        }));
+        assert!(presets.is_empty());
     }
 
     #[test]
-    fn preset_add_creates_codex_provider_config() {
-        let provider = provider_config_from_preset("codex-usage").expect("provider");
-
-        assert!(matches!(provider, ProviderConfig::Codex { .. }));
+    fn preset_add_returns_none_without_builtin_provider_config() {
+        assert!(provider_config_from_preset("codex-usage").is_none());
     }
 }

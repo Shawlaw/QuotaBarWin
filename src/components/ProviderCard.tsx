@@ -5,6 +5,7 @@ import {
   displayPercentForWindow,
   formatDisplayValue,
   formatQuotaReset,
+  remainingAmountForWindow,
   formatShortDateTime,
   windowStatus
 } from "../lib/providerStatus";
@@ -134,6 +135,7 @@ function QuotaWindowRow({
 }) {
   const { t } = useI18n();
   const displayedPercent = displayPercentForWindow(window, displayMode);
+  const amountDetail = formatAmountDetail(window);
   const opacityPercent =
     window.remainingPercent !== null && window.remainingPercent !== undefined
       ? window.remainingPercent
@@ -155,7 +157,8 @@ function QuotaWindowRow({
         </span>
       </div>
       <div className="quota-window__details">
-        {resetText ? <span>{resetText}</span> : <span>{t.providerCard.noResetTime}</span>}
+        {amountDetail ? <span>{amountDetail}</span> : null}
+        {resetText ? <span>{resetText}</span> : amountDetail ? null : <span>{t.providerCard.noResetTime}</span>}
       </div>
       {displayedPercent !== null ? (
         <ProgressBar
@@ -169,6 +172,40 @@ function QuotaWindowRow({
       )}
     </section>
   );
+}
+
+function formatAmountDetail(window: QuotaWindow): string | null {
+  const unit = window.unit?.trim();
+  const shouldShowAmount =
+    Boolean(unit && unit !== "percent") ||
+    window.warningRemaining !== null && window.warningRemaining !== undefined;
+  if (!shouldShowAmount) {
+    return null;
+  }
+
+  const remaining = remainingAmountForWindow(window);
+  if (remaining === null) {
+    return null;
+  }
+
+  const suffix = unit ? ` ${unit}` : "";
+  const parts = [`Remaining ${formatAmount(remaining)}${suffix}`];
+  if (typeof window.limit === "number" && Number.isFinite(window.limit)) {
+    parts[0] += ` / ${formatAmount(window.limit)}${suffix}`;
+  }
+  if (
+    window.warningRemaining !== null &&
+    window.warningRemaining !== undefined &&
+    Number.isFinite(window.warningRemaining)
+  ) {
+    parts.push(`warning ${formatAmount(window.warningRemaining)}${suffix}`);
+  }
+
+  return parts.join(" · ");
+}
+
+function formatAmount(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
 function StatusDetails({

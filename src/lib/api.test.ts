@@ -20,12 +20,17 @@ afterEach(() => {
 });
 
 const config: AppConfig = {
-  schemaVersion: 9,
+  schemaVersion: 10,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
   language: "system",
   networkProxy: null,
+  remoteProviderRegistry: {
+    registryUrl: null,
+    providerProxyUrl: null,
+    autoUpdate: true,
+  },
   providers: [
     {
       kind: "mock",

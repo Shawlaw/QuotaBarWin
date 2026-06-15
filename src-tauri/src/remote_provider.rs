@@ -259,12 +259,12 @@ fn resolve_relative_url(base_url: &str, relative: &str) -> String {
         Path::new(base_url)
     };
 
-    base_path
-        .parent()
-        .map(|parent| parent.join(relative))
-        .unwrap_or_else(|| PathBuf::from(relative))
-        .to_string_lossy()
-        .to_string()
+    local_path_to_string(
+        base_path
+            .parent()
+            .map(|parent| parent.join(relative))
+            .unwrap_or_else(|| PathBuf::from(relative)),
+    )
 }
 
 pub fn resolve_provider_url(registry_url: &str, provider_url: &str) -> String {
@@ -292,12 +292,21 @@ pub fn resolve_source_url(manifest_url: &str, entry: &str) -> String {
         Path::new(manifest_url)
     };
 
-    manifest_path
-        .parent()
-        .map(|parent| parent.join(entry))
-        .unwrap_or_else(|| PathBuf::from(entry))
-        .to_string_lossy()
-        .to_string()
+    local_path_to_string(
+        manifest_path
+            .parent()
+            .map(|parent| parent.join(entry))
+            .unwrap_or_else(|| PathBuf::from(entry)),
+    )
+}
+
+fn local_path_to_string(path: PathBuf) -> String {
+    let path = path.to_string_lossy().to_string();
+    if cfg!(windows) {
+        path.replace('/', "\\")
+    } else {
+        path
+    }
 }
 
 fn source_file_name(entry: &str) -> String {
@@ -771,7 +780,12 @@ fn example_remote_provider_manifests_are_valid() {
     let repo_root = cargo_dir.parent().expect("repo root");
     let examples_dir = repo_root.join("examples").join("remote-providers");
 
-    for provider_id in ["kimi-coding", "bigmodel-coding-plan", "codex-usage"] {
+    for provider_id in [
+        "kimi-coding",
+        "bigmodel-coding-plan",
+        "codex-usage",
+        "deepseek-balance",
+    ] {
         let dir = examples_dir.join(provider_id);
         let manifest_path = dir.join("provider.json");
         let source_path = dir.join("provider.cjs");
@@ -845,8 +859,24 @@ fn resolve_source_url_with_local_file_manifest_and_relative_entry() {
         "resolved should end with provider.cjs: {resolved}"
     );
     assert!(
-        resolved.contains(&temp.path().to_string_lossy().replace('\\', "/")),
+        resolved
+            .replace('\\', "/")
+            .contains(&temp.path().to_string_lossy().replace('\\', "/")),
         "resolved should be under temp dir: {resolved}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn resolve_source_url_with_local_manifest_uses_windows_separators() {
+    let resolved = resolve_source_url(
+        r"D:\LocalAgentWorkspace\QuotaBarWin\examples\remote-providers\bigmodel-coding-plan\provider.json",
+        "provider.cjs",
+    );
+
+    assert_eq!(
+        resolved,
+        r"D:\LocalAgentWorkspace\QuotaBarWin\examples\remote-providers\bigmodel-coding-plan\provider.cjs"
     );
 }
 
@@ -868,6 +898,20 @@ fn resolve_provider_url_with_local_registry_and_relative_path() {
     assert_eq!(
         resolved_path.parent().unwrap().parent().unwrap(),
         temp.path()
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn resolve_provider_url_with_local_registry_uses_windows_separators() {
+    let resolved = resolve_provider_url(
+        r"D:\LocalAgentWorkspace\QuotaBarWin\examples\remote-providers\registry.json",
+        "bigmodel-coding-plan/provider.json",
+    );
+
+    assert_eq!(
+        resolved,
+        r"D:\LocalAgentWorkspace\QuotaBarWin\examples\remote-providers\bigmodel-coding-plan\provider.json"
     );
 }
 

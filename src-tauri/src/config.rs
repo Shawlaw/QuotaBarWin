@@ -12,7 +12,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 9;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 10;
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
 const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
@@ -36,7 +36,30 @@ pub struct AppConfig {
     pub network_proxy: Option<ProxyConfig>,
     #[serde(default)]
     pub tray_popup_position: Option<TrayPopupPosition>,
+    #[serde(default)]
+    pub remote_provider_registry: RemoteProviderRegistrySettings,
     pub providers: Vec<ProviderConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteProviderRegistrySettings {
+    #[serde(default)]
+    pub registry_url: Option<String>,
+    #[serde(default)]
+    pub provider_proxy_url: Option<String>,
+    #[serde(default = "default_remote_provider_auto_update")]
+    pub auto_update: bool,
+}
+
+impl Default for RemoteProviderRegistrySettings {
+    fn default() -> Self {
+        Self {
+            registry_url: None,
+            provider_proxy_url: None,
+            auto_update: default_remote_provider_auto_update(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -193,6 +216,10 @@ fn default_update_interval_seconds() -> u64 {
     3600
 }
 
+fn default_remote_provider_auto_update() -> bool {
+    true
+}
+
 pub fn default_config() -> AppConfig {
     AppConfig {
         schema_version: CURRENT_CONFIG_SCHEMA_VERSION,
@@ -204,6 +231,7 @@ pub fn default_config() -> AppConfig {
         language: default_language(),
         network_proxy: None,
         tray_popup_position: None,
+        remote_provider_registry: RemoteProviderRegistrySettings::default(),
         providers: vec![ProviderConfig::Mock {
             id: "mock-codex".to_string(),
             name: "Codex Mock".to_string(),
@@ -469,6 +497,19 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
     if version < 9 {
         value["trayPopupPosition"] = serde_json::json!(null);
         value["schemaVersion"] = serde_json::json!(9);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(9);
+    if version < 10 {
+        value["remoteProviderRegistry"] = serde_json::json!({
+            "registryUrl": null,
+            "providerProxyUrl": null,
+            "autoUpdate": true
+        });
+        value["schemaVersion"] = serde_json::json!(10);
     }
 
     Ok(value)
@@ -809,6 +850,7 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: Some(TrayPopupPosition { x: 111, y: 222 }),
+            remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![ProviderConfig::Mock {
                 id: "mock".to_string(),
                 name: "Mock".to_string(),
@@ -888,6 +930,14 @@ mod tests {
         assert_eq!(migrated["logLevel"], serde_json::json!("info"));
         assert_eq!(migrated["language"], serde_json::json!("system"));
         assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
+        assert_eq!(
+            migrated["remoteProviderRegistry"],
+            serde_json::json!({
+                "registryUrl": null,
+                "providerProxyUrl": null,
+                "autoUpdate": true
+            })
+        );
     }
 
     #[test]
@@ -963,6 +1013,37 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v9_to_current_adds_remote_provider_registry_settings() {
+        let value = serde_json::json!({
+            "schemaVersion": 9,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "launchAtStartup": false,
+            "logLevel": "info",
+            "language": "system",
+            "networkProxy": null,
+            "trayPopupPosition": null,
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(
+            migrated["remoteProviderRegistry"],
+            serde_json::json!({
+                "registryUrl": null,
+                "providerProxyUrl": null,
+                "autoUpdate": true
+            })
+        );
+    }
+
+    #[test]
     fn local_command_and_script_provider_configs_are_rejected() {
         let command = serde_json::json!({
             "kind": "command",
@@ -993,6 +1074,11 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
+            remote_provider_registry: RemoteProviderRegistrySettings {
+                registry_url: Some("https://example.com/registry.json".to_string()),
+                provider_proxy_url: Some("http://proxy:8080".to_string()),
+                auto_update: false,
+            },
             providers: vec![ProviderConfig::Remote {
                 id: "provider".to_string(),
                 name: "Provider".to_string(),
@@ -1020,6 +1106,14 @@ mod tests {
 
         let value = serde_json::to_value(config).expect("serialize config");
 
+        assert_eq!(
+            value["remoteProviderRegistry"],
+            serde_json::json!({
+                "registryUrl": "https://example.com/registry.json",
+                "providerProxyUrl": "http://proxy:8080",
+                "autoUpdate": false
+            })
+        );
         assert_eq!(
             value["providers"][0]["windowLabelOverrides"],
             serde_json::json!({ "300-minute": "5h" })

@@ -82,11 +82,13 @@ When `output` is `provider-snapshot-v1`, the script must print a single JSON obj
     {
       "id": "weekly",
       "label": "Weekly limit",
+      "remaining": 88,
       "used": 12,
       "limit": 100,
       "unit": "requests",
       "usedPercent": 12,
       "remainingPercent": 88,
+      "warningRemaining": 20,
       "resetAt": "2026-06-19T10:00:00.000Z",
       "resetText": null,
       "confidence": "exact"
@@ -103,10 +105,12 @@ Window fields:
 | `id` | yes | Stable window identifier used by user configuration. |
 | `label` | yes | Display label. Can be friendly or localized, but must not be the only stable identity. |
 | `used` | no | Used amount. |
+| `remaining` | no | Remaining amount. Useful for balance providers that report the current balance directly. |
 | `limit` | no | Total limit. |
 | `unit` | no | Unit string, e.g. `requests`, `tokens`, `percent`. |
 | `usedPercent` | no | 0-100. |
 | `remainingPercent` | no | 0-100. |
+| `warningRemaining` | no | Absolute remaining amount that should put the window in warning state. |
 | `resetAt` | no | ISO 8601 timestamp. |
 | `resetText` | no | Human-readable reset text. |
 | `confidence` | no | `exact`, `estimated`, or `unknown`. |
@@ -221,9 +225,35 @@ Example raw Codex usage response:
 
 The Codex example reports percentages rather than absolute counters, so `used` and `limit` stay `null`, `used_percent` becomes `usedPercent`, and reset values are converted from seconds or relative seconds into ISO timestamps.
 
+Example raw DeepSeek balance response:
+
+```json
+{
+  "is_available": true,
+  "balance_infos": [
+    {
+      "currency": "CNY",
+      "total_balance": "110.00",
+      "granted_balance": "10.00",
+      "topped_up_balance": "100.00"
+    }
+  ]
+}
+```
+
+DeepSeek is pay-as-you-go, so the API reports the current balance instead of a quota window. The example maps each `balance_infos[]` entry to a window with `remaining` set to `total_balance` and `unit` set to the currency. Optional local env vars can provide user-specific display context:
+
+```text
+DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200
+DEEPSEEK_BALANCE_WARNING_CNY=20
+DEEPSEEK_BALANCE_CURRENCY=CNY
+```
+
+The reference total lets QuotaBarWin render a percentage progress bar. The warning amount triggers an absolute low-balance warning when the current balance is at or below that value. Currency-specific variables such as `_CNY` override the generic `DEEPSEEK_BALANCE_REFERENCE_TOTAL` and `DEEPSEEK_BALANCE_WARNING` values.
+
 ### Local config and secrets
 
-Remote provider source should not contain credentials. The script still reads `process.env.NAME`, but QuotaBarWin injects required environment variables only into the child process. For each manifest `requiredEnvVars` entry, the app first checks the installed provider config `envVars` map; if a key is absent, it resolves `${secret:NAME}`.
+Remote provider source should not contain credentials. The script still reads `process.env.NAME`, but QuotaBarWin injects configured environment variables only into the child process. For each manifest `requiredEnvVars` entry, the app first checks the installed provider config `envVars` map; if a key is absent, it resolves `${secret:NAME}`. Extra configured `envVars` are also injected, which is useful for optional provider settings such as reference totals, currency filters, or warning thresholds.
 
 `${secret:NAME}` reads `<config-dir>/secrets/NAME.txt` first and falls back to environment variable `NAME`. Existing `${file:C:\path\secret.txt}` and `${env:NAME}` placeholders are still supported.
 
@@ -256,6 +286,7 @@ See [`examples/remote-providers/`](../examples/remote-providers) for complete sa
 - `kimi-coding` — Kimi coding quota via `KIMI_API_KEY`.
 - `bigmodel-coding-plan` — Zhipu/BigModel quota via `BIGMODEL_API_KEY`.
 - `codex-usage` — ChatGPT/Codex 5h and weekly usage via `${secret:CODEX_ACCESS_TOKEN}`.
+- `deepseek-balance` — DeepSeek pay-as-you-go balance via `${secret:DEEPSEEK_API_KEY}` plus optional local balance display settings.
 
 To host your own, upload a directory containing `provider.json` + the source file and paste the raw `provider.json` URL into QuotaBarWin.
 

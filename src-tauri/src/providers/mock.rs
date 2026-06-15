@@ -9,11 +9,13 @@ fn window(id: &str, label: &str, remaining_percent: f64) -> QuotaWindow {
     QuotaWindow {
         id: id.to_string(),
         label: label.to_string(),
+        remaining: Some(remaining_percent),
         used: Some(used_percent),
         limit: Some(100.0),
         unit: Some("percent".to_string()),
         used_percent: Some(used_percent),
         remaining_percent: Some(remaining_percent),
+        warning_remaining: None,
         reset_at: None,
         reset_text: None,
         confidence: "estimated".to_string(),

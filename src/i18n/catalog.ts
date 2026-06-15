@@ -91,6 +91,8 @@ export type I18nCatalog = {
     proxyUrl: string;
     providerProxyPlaceholder: string;
     timeout: string;
+    remoteEnvVars: string;
+    remoteEnvVarsPlaceholder: string;
     windowLabelOverrides: string;
     windowLabelOverridesPlaceholder: string;
     displayedWindows: string;
@@ -279,6 +281,9 @@ export const en: I18nCatalog = {
     proxyUrl: "Proxy URL",
     providerProxyPlaceholder: "Optional, e.g. http://127.0.0.1:7890 or socks5h://127.0.0.1:7890",
     timeout: "Timeout",
+    remoteEnvVars: "Environment variables",
+    remoteEnvVarsPlaceholder:
+      "KEY=value, one per line\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",
     windowLabelOverrides: "Window label overrides",
     windowLabelOverridesPlaceholder: "window-id=Display name\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "Displayed windows",
@@ -468,6 +473,9 @@ export const zhCN: I18nCatalog = {
     proxyUrl: "代理 URL",
     providerProxyPlaceholder: "可选，例如 http://127.0.0.1:7890 或 socks5h://127.0.0.1:7890",
     timeout: "超时",
+    remoteEnvVars: "环境变量",
+    remoteEnvVarsPlaceholder:
+      "每行一个 KEY=value\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",
     windowLabelOverrides: "窗口标签覆盖",
     windowLabelOverridesPlaceholder: "window-id=显示名称\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "显示的窗口",

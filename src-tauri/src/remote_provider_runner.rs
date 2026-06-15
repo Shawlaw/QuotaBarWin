@@ -254,6 +254,17 @@ fn resolve_required_env_vars(
     config_dir: &Path,
 ) -> Result<HashMap<String, String>, String> {
     let mut env = HashMap::new();
+    for (name, source) in configured_env_vars {
+        let name = name.trim();
+        if name.is_empty() || source.trim().is_empty() {
+            continue;
+        }
+        let value = resolve_secret_value(source, config_dir).map_err(|error| {
+            format!("Unable to resolve remote provider environment variable {name}: {error}")
+        })?;
+        env.insert(name.to_string(), value);
+    }
+
     for name in required_env_vars {
         let name = name.trim();
         if name.is_empty() {
@@ -311,6 +322,8 @@ struct RemoteQuotaWindowV1 {
     id: String,
     label: String,
     #[serde(default)]
+    remaining: Option<f64>,
+    #[serde(default)]
     used: Option<f64>,
     #[serde(default)]
     limit: Option<f64>,
@@ -320,6 +333,8 @@ struct RemoteQuotaWindowV1 {
     used_percent: Option<f64>,
     #[serde(default)]
     remaining_percent: Option<f64>,
+    #[serde(default)]
+    warning_remaining: Option<f64>,
     #[serde(default)]
     reset_at: Option<String>,
     #[serde(default)]
@@ -389,11 +404,13 @@ fn parse_remote_provider_snapshot_v1(
             .map(|window| QuotaWindow {
                 id: window.id,
                 label: window.label,
+                remaining: window.remaining,
                 used: window.used,
                 limit: window.limit,
                 unit: window.unit,
                 used_percent: window.used_percent,
                 remaining_percent: window.remaining_percent,
+                warning_remaining: window.warning_remaining,
                 reset_at: window.reset_at,
                 reset_text: window.reset_text,
                 confidence: window.confidence.unwrap_or_else(|| "unknown".to_string()),
@@ -650,5 +667,52 @@ mod tests {
         assert_eq!(providers[0].status, "ok");
         assert_eq!(providers[0].windows[0].label, "from-config-map");
         assert!(std::env::var("QBWIN_REMOTE_CHILD_TOKEN").is_err());
+    }
+
+    #[test]
+    fn remote_provider_injects_optional_config_env_vars() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let provider_dir = temp.path().join("provider");
+        std::fs::create_dir(&provider_dir).expect("create provider dir");
+        std::fs::write(
+            provider_dir.join("provider.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "id": "remote-optional-env",
+                "displayName": "Remote Optional Env",
+                "runtime": "node",
+                "entry": "provider.cjs",
+                "requiredEnvVars": [],
+                "output": "provider-snapshot-v1"
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+        std::fs::write(
+            provider_dir.join("provider.cjs"),
+            r#"console.log(JSON.stringify({windows:[{id:"optional",label:process.env.QBWIN_REMOTE_OPTIONAL || "",remainingPercent:50,confidence:"exact"}]}));"#,
+        )
+        .expect("write source");
+        std::env::remove_var("QBWIN_REMOTE_OPTIONAL");
+
+        let env_vars = HashMap::from([(
+            "QBWIN_REMOTE_OPTIONAL".to_string(),
+            "from-optional-config".to_string(),
+        )]);
+        let providers = run_remote_provider(
+            "remote-optional-env",
+            "Remote Optional Env",
+            Some(&provider_dir),
+            "node",
+            None,
+            temp.path(),
+            &env_vars,
+            &HashMap::new(),
+            &[],
+        );
+
+        assert_eq!(providers[0].status, "ok");
+        assert_eq!(providers[0].windows[0].label, "from-optional-config");
+        assert!(std::env::var("QBWIN_REMOTE_OPTIONAL").is_err());
     }
 }

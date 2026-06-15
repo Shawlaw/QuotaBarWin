@@ -22,12 +22,20 @@ const emptyResult: RegistryInstallResult = {
   failed: []
 };
 
+const registrySettings = {
+  registryUrl: "",
+  providerProxyUrl: "",
+  autoUpdate: true
+};
+
 describe("RemoteProviderSettings", () => {
   test("open_guide_button_calls_handler", () => {
     const onOpenGuide = vi.fn();
     render(
       <RemoteProviderSettings
         providers={[]}
+        registrySettings={registrySettings}
+        onRegistrySettingsChange={vi.fn()}
         onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
@@ -45,6 +53,8 @@ describe("RemoteProviderSettings", () => {
     render(
       <RemoteProviderSettings
         providers={[]}
+        registrySettings={registrySettings}
+        onRegistrySettingsChange={vi.fn()}
         onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
@@ -62,9 +72,12 @@ describe("RemoteProviderSettings", () => {
 
   test("install_registry_button_calls_handler_with_form_values", () => {
     const onInstallRegistry = vi.fn(async (): Promise<RegistryInstallResult> => emptyResult);
-    render(
+    const onRegistrySettingsChange = vi.fn();
+    const { rerender } = render(
       <RemoteProviderSettings
         providers={[]}
+        registrySettings={registrySettings}
+        onRegistrySettingsChange={onRegistrySettingsChange}
         onInstallRegistry={onInstallRegistry}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
@@ -77,10 +90,53 @@ describe("RemoteProviderSettings", () => {
     fireEvent.change(screen.getByTestId("remote-provider-url-input"), {
       target: { value: "https://example.com/registry.json" }
     });
+
+    expect(onRegistrySettingsChange).toHaveBeenLastCalledWith({
+      registryUrl: "https://example.com/registry.json",
+      providerProxyUrl: "",
+      autoUpdate: true
+    });
+
+    rerender(
+      <RemoteProviderSettings
+        providers={[]}
+        registrySettings={{
+          registryUrl: "https://example.com/registry.json",
+          providerProxyUrl: "",
+          autoUpdate: true
+        }}
+        onRegistrySettingsChange={onRegistrySettingsChange}
+        onInstallRegistry={onInstallRegistry}
+        onRemove={vi.fn()}
+        onRefresh={vi.fn()}
+        onCheckUpdates={vi.fn()}
+        onApplyUpdate={vi.fn()}
+        onOpenGuide={vi.fn()}
+      />
+    );
+
     fireEvent.change(screen.getByTestId("remote-provider-proxy-url-input"), {
       target: { value: "http://proxy:8080" }
     });
-    fireEvent.change(screen.getByRole("checkbox"), { target: { checked: true } });
+
+    rerender(
+      <RemoteProviderSettings
+        providers={[]}
+        registrySettings={{
+          registryUrl: "https://example.com/registry.json",
+          providerProxyUrl: "http://proxy:8080",
+          autoUpdate: true
+        }}
+        onRegistrySettingsChange={onRegistrySettingsChange}
+        onInstallRegistry={onInstallRegistry}
+        onRemove={vi.fn()}
+        onRefresh={vi.fn()}
+        onCheckUpdates={vi.fn()}
+        onApplyUpdate={vi.fn()}
+        onOpenGuide={vi.fn()}
+      />
+    );
+
     fireEvent.click(screen.getByRole("button", { name: "Install Registry" }));
 
     expect(onInstallRegistry).toHaveBeenCalledWith(
@@ -90,10 +146,36 @@ describe("RemoteProviderSettings", () => {
     );
   });
 
+  test("renders_persisted_registry_settings", () => {
+    render(
+      <RemoteProviderSettings
+        providers={[]}
+        registrySettings={{
+          registryUrl: "https://example.com/registry.json",
+          providerProxyUrl: "http://proxy:8080",
+          autoUpdate: false
+        }}
+        onRegistrySettingsChange={vi.fn()}
+        onInstallRegistry={vi.fn(async () => emptyResult)}
+        onRemove={vi.fn()}
+        onRefresh={vi.fn()}
+        onCheckUpdates={vi.fn()}
+        onApplyUpdate={vi.fn()}
+        onOpenGuide={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId("remote-provider-url-input")).toHaveValue("https://example.com/registry.json");
+    expect(screen.getByTestId("remote-provider-proxy-url-input")).toHaveValue("http://proxy:8080");
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+  });
+
   test("lists_installed_remote_providers", () => {
     render(
       <RemoteProviderSettings
         providers={[remoteProvider]}
+        registrySettings={registrySettings}
+        onRegistrySettingsChange={vi.fn()}
         onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
@@ -113,6 +195,8 @@ describe("RemoteProviderSettings", () => {
     render(
       <RemoteProviderSettings
         providers={[remoteProvider]}
+        registrySettings={registrySettings}
+        onRegistrySettingsChange={vi.fn()}
         onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={onRemove}
         onRefresh={vi.fn()}
@@ -132,6 +216,8 @@ describe("RemoteProviderSettings", () => {
     render(
       <RemoteProviderSettings
         providers={[remoteProvider]}
+        registrySettings={registrySettings}
+        onRegistrySettingsChange={vi.fn()}
         onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}
@@ -151,6 +237,8 @@ describe("RemoteProviderSettings", () => {
     render(
       <RemoteProviderSettings
         providers={[remoteProvider]}
+        registrySettings={registrySettings}
+        onRegistrySettingsChange={vi.fn()}
         onInstallRegistry={vi.fn(async () => emptyResult)}
         onRemove={vi.fn()}
         onRefresh={vi.fn()}

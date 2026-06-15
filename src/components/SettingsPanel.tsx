@@ -96,6 +96,44 @@ function cloneProvider(provider: ProviderConfig): ProviderConfig {
   return JSON.parse(JSON.stringify(provider)) as ProviderConfig;
 }
 
+function formatEnvVars(envVars: Record<string, string> | undefined): string {
+  return Object.entries(envVars ?? {})
+    .map(([name, value]) => `${name}=${value}`)
+    .join("\n");
+}
+
+function parseEnvVarsText(text: string): Record<string, string> {
+  const envVars: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const name = trimmed.slice(0, separatorIndex).trim();
+    const value = trimmed.slice(separatorIndex + 1).trim();
+    if (name) {
+      envVars[name] = value;
+    }
+  }
+  return envVars;
+}
+
+function remoteProviderRegistrySettings(config: AppConfig) {
+  return (
+    config.remoteProviderRegistry ?? {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true
+    }
+  );
+}
+
 export function SettingsPanel({
   config,
   configStorageInfo,
@@ -112,6 +150,7 @@ export function SettingsPanel({
   const { t } = useI18n();
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
   const [expandedProviderActions, setExpandedProviderActions] = useState<Record<string, boolean>>({});
+  const [envVarDrafts, setEnvVarDrafts] = useState<Record<string, string>>({});
   const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
   const initialConfigRef = useRef(JSON.stringify(config));
   const configDraft = JSON.stringify(config);
@@ -149,6 +188,7 @@ export function SettingsPanel({
 
   function resetChanges() {
     onChange(JSON.parse(initialConfigRef.current) as AppConfig);
+    setEnvVarDrafts({});
     setSaveMessage(t.settings.noChanges);
   }
 
@@ -182,6 +222,17 @@ export function SettingsPanel({
         ...current,
         name
       }))
+    );
+  }
+
+  function updateRemoteProvider(
+    provider: RemoteProviderConfig,
+    patch: Partial<RemoteProviderConfig>
+  ) {
+    onChange(
+      updateProvider(config, provider.id, (current) =>
+        current.kind === "remote" ? { ...current, ...patch } : current
+      )
     );
   }
 
@@ -304,21 +355,23 @@ export function SettingsPanel({
           <h3>{t.settings.providers}</h3>
           <span>{t.settings.configuredCount(config.providers.length)}</span>
         </div>
-        <section className="preset-list" aria-label={t.settings.addProvider}>
-          <h3>{t.settings.addProvider}</h3>
-          <div className="preset-actions">
-            {presets.map((preset) => (
-              <button
-                type="button"
-                className="button-secondary"
-                key={preset.id}
-                onClick={() => addPreset(preset)}
-              >
-                {preset.displayName}
-              </button>
-            ))}
-          </div>
-        </section>
+        {presets.length > 0 ? (
+          <section className="preset-list" aria-label={t.settings.addProvider}>
+            <h3>{t.settings.addProvider}</h3>
+            <div className="preset-actions">
+              {presets.map((preset) => (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  key={preset.id}
+                  onClick={() => addPreset(preset)}
+                >
+                  {preset.displayName}
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
         <div className="settings-provider-list">
         {config.providers.length === 0 ? (
           <p className="settings-empty">{t.settings.noProviders}</p>
@@ -485,6 +538,24 @@ export function SettingsPanel({
                         onChange={(event) => updateProviderName(provider.id, event.currentTarget.value)}
                       />
                     </label>
+                    <label className="args-field">
+                      {t.settings.remoteEnvVars}
+                      <textarea
+                        rows={5}
+                        placeholder={t.settings.remoteEnvVarsPlaceholder}
+                        value={envVarDrafts[provider.id] ?? formatEnvVars(provider.envVars)}
+                        onChange={(event) => {
+                          const text = event.currentTarget.value;
+                          setEnvVarDrafts((current) => ({
+                            ...current,
+                            [provider.id]: text
+                          }));
+                          updateRemoteProvider(provider, {
+                            envVars: parseEnvVarsText(text)
+                          });
+                        }}
+                      />
+                    </label>
                     <ProviderWindowSettings
                       provider={provider}
                       snapshotWindows={snapshotWindowsForProvider(provider.id)}
@@ -503,6 +574,13 @@ export function SettingsPanel({
         providers={config.providers.filter(
           (provider): provider is RemoteProviderConfig => provider.kind === "remote"
         )}
+        registrySettings={remoteProviderRegistrySettings(config)}
+        onRegistrySettingsChange={(remoteProviderRegistry) =>
+          onChange({
+            ...config,
+            remoteProviderRegistry
+          })
+        }
         onInstallRegistry={async (url, providerProxyUrl, providerAutoUpdate) => {
           const result = await installRemoteProviderRegistry(
             url,

@@ -1,10 +1,12 @@
 import { useState } from "react";
-import type { RemoteProviderConfig } from "../types";
+import type { RemoteProviderConfig, RemoteProviderRegistrySettings } from "../types";
 import type { RegistryInstallResult, UpdateInfo } from "../lib/api";
 import { useI18n } from "../i18n";
 
 type RemoteProviderSettingsProps = {
   providers: RemoteProviderConfig[];
+  registrySettings: RemoteProviderRegistrySettings;
+  onRegistrySettingsChange: (settings: RemoteProviderRegistrySettings) => void;
   onInstallRegistry: (
     url: string,
     proxyUrl: string | null,
@@ -19,6 +21,8 @@ type RemoteProviderSettingsProps = {
 
 export function RemoteProviderSettings({
   providers,
+  registrySettings,
+  onRegistrySettingsChange,
   onInstallRegistry,
   onRemove,
   onRefresh,
@@ -27,20 +31,28 @@ export function RemoteProviderSettings({
   onOpenGuide
 }: RemoteProviderSettingsProps) {
   const { t } = useI18n();
-  const [url, setUrl] = useState("");
-  const [proxyUrl, setProxyUrl] = useState("");
-  const [autoUpdate, setAutoUpdate] = useState(true);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
+  const registryUrl = registrySettings.registryUrl ?? "";
+  const providerProxyUrl = registrySettings.providerProxyUrl ?? "";
+  const autoUpdate = registrySettings.autoUpdate;
+
+  function updateRegistrySettings(patch: Partial<RemoteProviderRegistrySettings>) {
+    onRegistrySettingsChange({
+      ...registrySettings,
+      ...patch,
+      autoUpdate: patch.autoUpdate ?? registrySettings.autoUpdate
+    });
+  }
 
   async function handleInstallRegistry() {
     setMessage(null);
     setLoading(true);
     try {
       const result = await onInstallRegistry(
-        url.trim(),
-        proxyUrl.trim() || null,
+        registryUrl.trim(),
+        providerProxyUrl.trim() || null,
         autoUpdate
       );
       const parts: string[] = [];
@@ -54,8 +66,6 @@ export function RemoteProviderSettings({
         parts.push(t.remoteProviders.failedResult(result.failed.length));
       }
       setMessage(parts.join(", ") || t.remoteProviders.noProvidersInstalledFromRegistry);
-      setUrl("");
-      setProxyUrl("");
       setUpdates([]);
     } catch (error) {
       setMessage(
@@ -145,8 +155,12 @@ export function RemoteProviderSettings({
           <input
             data-testid="remote-provider-url-input"
             type="text"
-            value={url}
-            onChange={(event) => setUrl(event.currentTarget.value)}
+            value={registryUrl}
+            onChange={(event) =>
+              updateRegistrySettings({
+                registryUrl: event.currentTarget.value
+              })
+            }
             placeholder={t.remoteProviders.registryUrlPlaceholder}
           />
         </label>
@@ -155,8 +169,12 @@ export function RemoteProviderSettings({
           <input
             data-testid="remote-provider-proxy-url-input"
             type="text"
-            value={proxyUrl}
-            onChange={(event) => setProxyUrl(event.currentTarget.value)}
+            value={providerProxyUrl}
+            onChange={(event) =>
+              updateRegistrySettings({
+                providerProxyUrl: event.currentTarget.value
+              })
+            }
             placeholder={t.remoteProviders.providerProxyPlaceholder}
           />
         </label>
@@ -164,7 +182,11 @@ export function RemoteProviderSettings({
           <input
             type="checkbox"
             checked={autoUpdate}
-            onChange={(event) => setAutoUpdate(event.currentTarget.checked)}
+            onChange={(event) =>
+              updateRegistrySettings({
+                autoUpdate: event.currentTarget.checked
+              })
+            }
           />
           {t.remoteProviders.autoUpdateWhenAvailable}
         </label>
@@ -172,7 +194,7 @@ export function RemoteProviderSettings({
           type="button"
           className="button-secondary"
           onClick={() => void handleInstallRegistry()}
-          disabled={loading || !url.trim()}
+          disabled={loading || !registryUrl.trim()}
           data-testid="install-remote-provider-registry"
         >
           {loading ? t.remoteProviders.loading : t.remoteProviders.installRegistry}

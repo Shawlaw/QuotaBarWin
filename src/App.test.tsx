@@ -4,11 +4,16 @@ import type { AppConfig, AppSnapshot } from "./types";
 
 const mocks = vi.hoisted(() => {
   const config: AppConfig = {
-    schemaVersion: 9,
+    schemaVersion: 10,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
     language: "system",
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
     providers: [
       {
         id: "mock-codex",

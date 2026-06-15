@@ -59,6 +59,31 @@ test("provider_card_renders_used_percent_when_display_mode_is_used", () => {
   expect(screen.queryByText(/72% remaining/)).not.toBeInTheDocument();
 });
 
+test("provider_card_renders_balance_amount_detail", () => {
+  render(
+    <ProviderCard
+      provider={{
+        ...provider,
+        windows: [
+          {
+            ...provider.windows[0],
+            id: "balance-cny",
+            label: "CNY balance",
+            remaining: 12,
+            used: 88,
+            limit: 100,
+            unit: "CNY",
+            remainingPercent: 12,
+            warningRemaining: 20
+          }
+        ]
+      }}
+    />
+  );
+
+  expect(screen.getByText("Remaining 12 CNY / 100 CNY · warning 20 CNY")).toBeInTheDocument();
+});
+
 test("provider_card_fades_used_mode_opacity_as_usage_increases", () => {
   const { rerender } = render(<ProviderCard provider={provider} displayMode="used" />);
   const fill = screen.getByRole("progressbar", { name: "Codex Mock 5h window used" }).firstElementChild;

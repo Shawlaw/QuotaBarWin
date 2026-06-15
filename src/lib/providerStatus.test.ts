@@ -77,6 +77,28 @@ describe("calculateProviderStatus", () => {
     ).toBe("warning");
   });
 
+  test("marks_warning_when_balance_is_below_absolute_warning_amount", () => {
+    expect(
+      calculateProviderStatus(
+        {
+          ...provider,
+          windows: [
+            {
+              ...provider.windows[0],
+              remaining: 12,
+              used: 88,
+              limit: 100,
+              unit: "CNY",
+              remainingPercent: 88,
+              warningRemaining: 20
+            }
+          ]
+        },
+        20
+      )
+    ).toBe("warning");
+  });
+
   test('marks_stale_when_provider_status_is_stale', () => {
     expect(calculateProviderStatus({ ...provider, status: 'stale' }, 20)).toBe('stale');
   });

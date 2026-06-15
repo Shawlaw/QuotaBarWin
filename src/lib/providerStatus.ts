@@ -62,11 +62,38 @@ export function windowStatus(
   window: QuotaWindow,
   lowQuotaWarningThreshold = 20
 ): "ok" | "warning" | "unknown" {
+  const remainingAmount = remainingAmountForWindow(window);
+  if (
+    remainingAmount !== null &&
+    window.warningRemaining !== null &&
+    window.warningRemaining !== undefined &&
+    remainingAmount <= window.warningRemaining
+  ) {
+    return "warning";
+  }
+
   if (window.remainingPercent === null || window.remainingPercent === undefined) {
     return "unknown";
   }
 
   return window.remainingPercent <= lowQuotaWarningThreshold ? "warning" : "ok";
+}
+
+export function remainingAmountForWindow(window: QuotaWindow): number | null {
+  if (typeof window.remaining === "number" && Number.isFinite(window.remaining)) {
+    return window.remaining;
+  }
+
+  if (
+    typeof window.limit === "number" &&
+    typeof window.used === "number" &&
+    Number.isFinite(window.limit) &&
+    Number.isFinite(window.used)
+  ) {
+    return Math.max(0, window.limit - window.used);
+  }
+
+  return null;
 }
 
 export function displayPercentForWindow(window: QuotaWindow, displayMode: DisplayMode): number | null {
@@ -163,6 +190,7 @@ function legacyWindow(id: string, label: string, remainingPercent: number): Quot
     id,
     label,
     used: null,
+    remaining: remainingPercent,
     limit: null,
     unit: "percent",
     usedPercent: 100 - remainingPercent,

@@ -181,11 +181,13 @@ fn quota_window_from_usage_window(id: &str, label: &str, value: &Value) -> Optio
     Some(QuotaWindow {
         id: id.to_string(),
         label: label.to_string(),
+        remaining: None,
         used: None,
         limit: None,
         unit: Some("percent".to_string()),
         used_percent: Some(used_percent),
         remaining_percent: Some(clamp_percent(100.0 - used_percent)),
+        warning_remaining: None,
         reset_at: reset_iso_from_window(value),
         reset_text: None,
         confidence: "exact".to_string(),

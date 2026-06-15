@@ -27,11 +27,15 @@ fn refresh_lock() -> &'static Mutex<()> {
 pub struct QuotaWindow {
     pub id: String,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remaining: Option<f64>,
     pub used: Option<f64>,
     pub limit: Option<f64>,
     pub unit: Option<String>,
     pub used_percent: Option<f64>,
     pub remaining_percent: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning_remaining: Option<f64>,
     pub reset_at: Option<String>,
     pub reset_text: Option<String>,
     pub confidence: String,
@@ -93,6 +97,12 @@ pub fn clamp_snapshot_percentages(provider: &mut ProviderSnapshot) {
                 let used_percent = clamp_percent((used / limit) * 100.0);
                 window.used_percent = Some(used_percent);
                 window.remaining_percent = Some(clamp_percent(100.0 - used_percent));
+            }
+        } else if let (Some(remaining), Some(limit)) = (window.remaining, window.limit) {
+            if limit > 0.0 {
+                let remaining_percent = clamp_percent((remaining / limit) * 100.0);
+                window.remaining_percent = Some(remaining_percent);
+                window.used_percent = Some(clamp_percent(100.0 - remaining_percent));
             }
         }
     }
@@ -389,7 +399,9 @@ pub fn get_cached_snapshot() -> Result<Option<AppSnapshot>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{save_config_to_path, AppConfig, AppLanguage};
+    use crate::config::{
+        save_config_to_path, AppConfig, AppLanguage, RemoteProviderRegistrySettings,
+    };
     use std::sync::{Mutex, MutexGuard};
 
     static TEST_SNAPSHOT_CACHE_LOCK: Mutex<()> = Mutex::new(());
@@ -425,11 +437,13 @@ mod tests {
         let window = QuotaWindow {
             id: "weekly".to_string(),
             label: "Weekly limit".to_string(),
+            remaining: Some(60.0),
             used: Some(40.0),
             limit: Some(100.0),
             unit: Some("requests".to_string()),
             used_percent: Some(40.0),
             remaining_percent: Some(60.0),
+            warning_remaining: Some(20.0),
             reset_at: Some("2026-06-15T00:00:00Z".to_string()),
             reset_text: Some("Monday".to_string()),
             confidence: "exact".to_string(),
@@ -439,6 +453,8 @@ mod tests {
         let parsed = serde_json::from_value::<QuotaWindow>(value.clone()).expect("round trip");
 
         assert_eq!(value["usedPercent"], serde_json::json!(40.0));
+        assert_eq!(value["remaining"], serde_json::json!(60.0));
+        assert_eq!(value["warningRemaining"], serde_json::json!(20.0));
         assert_eq!(value["remainingPercent"], serde_json::json!(60.0));
         assert_eq!(value["resetAt"], serde_json::json!("2026-06-15T00:00:00Z"));
         assert!(value.get("used_percent").is_none());
@@ -477,6 +493,7 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
+            remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![ProviderConfig::Mock {
                 id: "disabled".to_string(),
                 name: "Disabled".to_string(),
@@ -505,6 +522,7 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
+            remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![
                 ProviderConfig::Mock {
                     id: "stale-a".to_string(),
@@ -541,11 +559,13 @@ mod tests {
             windows: vec![QuotaWindow {
                 id: "window".to_string(),
                 label: "Window".to_string(),
+                remaining: None,
                 used: None,
                 limit: None,
                 unit: None,
                 used_percent: Some(140.0),
                 remaining_percent: None,
+                warning_remaining: None,
                 reset_at: None,
                 reset_text: None,
                 confidence: "estimated".to_string(),
@@ -595,6 +615,7 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
+            remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![
                 ProviderConfig::Mock {
                     id: "stale-a".to_string(),
@@ -624,6 +645,7 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
+            remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![
                 broken_remote_provider("stale-a", "Stale A"),
                 ProviderConfig::Mock {
@@ -681,6 +703,7 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
+            remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![
                 ProviderConfig::Mock {
                     id: "stale-a".to_string(),
@@ -709,6 +732,7 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
+            remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![
                 broken_remote_provider("stale-a", "Stale A"),
                 ProviderConfig::Mock {
@@ -765,6 +789,7 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
+            remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![broken_provider],
         };
         save_config_to_path(&path, &config).expect("save config");

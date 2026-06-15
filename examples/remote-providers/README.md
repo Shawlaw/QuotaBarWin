@@ -11,7 +11,7 @@ Each subdirectory contains:
 
 `manifest.example.json` is a standalone, minimal manifest template you can copy when creating your own provider.
 
-`registry.json` is a provider registry that lists all three example providers. Paste its URL/path into **Settings → Remote Providers → Registry URL** and click **Install Registry** to install them all at once.
+`registry.json` is a provider registry that lists all example providers. Paste its URL/path into **Settings → Remote Providers → Registry URL** and click **Install Registry** to install them all at once.
 
 ## Providers
 
@@ -20,6 +20,7 @@ Each subdirectory contains:
 | `kimi-coding` | `KIMI_API_KEY` | Kimi coding quota usage. |
 | `bigmodel-coding-plan` | `BIGMODEL_API_KEY` | Zhipu/BigModel coding plan quota. |
 | `codex-usage` | `CODEX_ACCESS_TOKEN` | ChatGPT/Codex 5h and weekly usage. Prefer `${secret:CODEX_ACCESS_TOKEN}` in app config. Optional `CODEX_ACCOUNT_ID` for multi-account. |
+| `deepseek-balance` | `DEEPSEEK_API_KEY` | DeepSeek pay-as-you-go balance. Optional `DEEPSEEK_BALANCE_REFERENCE_TOTAL`, `DEEPSEEK_BALANCE_WARNING`, and `DEEPSEEK_BALANCE_CURRENCY`; append `_CNY` or another currency code for per-currency overrides. |
 
 ## Usage
 
@@ -53,6 +54,7 @@ Examples:
 - BigModel maps `data.limits[]` to `windows[]`, with stable IDs like `tokens-limit-6-1`, plus `currentValue -> used`, `usage -> limit`, `percentage -> usedPercent`, and `nextResetTime -> resetAt`.
 - Kimi maps the 300-minute `limits[].detail` entry to id `300-minute` with label `5h`, maps `usage` to id `usage` with label `Weekly limit`, and derives total quota usage from `totalQuota.limit - totalQuota.remaining`.
 - Codex maps `rate_limit.primary_window` to id/label `5h` and `rate_limit.secondary_window` to id `weekly` with label `Weekly limit`; because the API reports percentages, `used` and `limit` remain `null`.
+- DeepSeek maps each `balance_infos[]` currency to a stable id like `balance-cny`. Because the API reports current balance rather than a quota limit, set optional local env vars such as `DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200` and `DEEPSEEK_BALANCE_WARNING_CNY=20` when you want a progress bar and absolute low-balance warning.
 
 ## Updating checksums
 

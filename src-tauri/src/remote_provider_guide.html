@@ -227,11 +227,13 @@
     {
       "id": "weekly",
       "label": "Weekly limit",
+      "remaining": 88,
       "used": 12,
       "limit": 100,
       "unit": "requests",
       "usedPercent": 12,
       "remainingPercent": 88,
+      "warningRemaining": 20,
       "resetAt": "2026-06-19T10:00:00.000Z",
       "resetText": null,
       "confidence": "exact"
@@ -248,11 +250,13 @@
           <tbody>
             <tr><td><code>id</code></td><td>yes</td><td>Stable window identifier used by user configuration.</td></tr>
             <tr><td><code>label</code></td><td>yes</td><td>Display label. Can be friendly or localized, but must not be the only stable identity.</td></tr>
+            <tr><td><code>remaining</code></td><td>no</td><td>Remaining amount. Useful for balance providers that report the current balance directly.</td></tr>
             <tr><td><code>used</code></td><td>no</td><td>Used amount.</td></tr>
             <tr><td><code>limit</code></td><td>no</td><td>Total limit.</td></tr>
             <tr><td><code>unit</code></td><td>no</td><td>Unit string, e.g. <code>requests</code>, <code>tokens</code>, <code>percent</code>.</td></tr>
             <tr><td><code>usedPercent</code></td><td>no</td><td>0-100.</td></tr>
             <tr><td><code>remainingPercent</code></td><td>no</td><td>0-100.</td></tr>
+            <tr><td><code>warningRemaining</code></td><td>no</td><td>Absolute remaining amount that should put the window in warning state.</td></tr>
             <tr><td><code>resetAt</code></td><td>no</td><td>ISO 8601 timestamp.</td></tr>
             <tr><td><code>resetText</code></td><td>no</td><td>Human-readable reset text.</td></tr>
             <tr><td><code>confidence</code></td><td>no</td><td><code>exact</code>, <code>estimated</code>, or <code>unknown</code>.</td></tr>
@@ -358,8 +362,22 @@
 }</pre>
         <p>The Codex example reports percentages rather than absolute counters, so <code>used</code> and <code>limit</code> stay <code>null</code>, <code>used_percent</code> becomes <code>usedPercent</code>, and reset values are converted from seconds or relative seconds into ISO timestamps.</p>
 
+        <h3>DeepSeek raw response</h3>
+        <pre>{
+  "is_available": true,
+  "balance_infos": [
+    {
+      "currency": "CNY",
+      "total_balance": "110.00",
+      "granted_balance": "10.00",
+      "topped_up_balance": "100.00"
+    }
+  ]
+}</pre>
+        <p>DeepSeek is pay-as-you-go, so the example maps each currency balance to a window with <code>remaining</code> set to <code>total_balance</code> and <code>unit</code> set to the currency. Optional local env vars such as <code>DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200</code>, <code>DEEPSEEK_BALANCE_WARNING_CNY=20</code>, and <code>DEEPSEEK_BALANCE_CURRENCY=CNY</code> provide a reference total, absolute warning balance, and currency filter.</p>
+
         <div class="note">
-          Remote provider source should not contain credentials. The script still reads <code>process.env.NAME</code>, but QuotaBarWin injects required environment variables only into the child process. For each manifest <code>requiredEnvVars</code> entry, the app first checks the installed provider config <code>envVars</code> map; if a key is absent, it resolves <code>${secret:NAME}</code>. <code>${secret:NAME}</code> reads <code>&lt;config-dir&gt;/secrets/NAME.txt</code> first and falls back to environment variable <code>NAME</code>.
+          Remote provider source should not contain credentials. The script still reads <code>process.env.NAME</code>, but QuotaBarWin injects configured environment variables only into the child process. For each manifest <code>requiredEnvVars</code> entry, the app first checks the installed provider config <code>envVars</code> map; if a key is absent, it resolves <code>${secret:NAME}</code>. Extra configured <code>envVars</code> are also injected, which is useful for optional provider settings. <code>${secret:NAME}</code> reads <code>&lt;config-dir&gt;/secrets/NAME.txt</code> first and falls back to environment variable <code>NAME</code>.
         </div>
       </section>
 
@@ -529,7 +547,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
       <section>
         <h2>Examples</h2>
         <p>
-          The <code>examples/remote-providers/</code> directory in the QuotaBarWin repository contains a sample <code>registry.json</code> and complete providers for Kimi, BigModel (Zhipu), and Codex usage.
+          The <code>examples/remote-providers/</code> directory in the QuotaBarWin repository contains a sample <code>registry.json</code> and complete providers for Kimi, BigModel (Zhipu), Codex usage, and DeepSeek balance.
         </p>
         <p>To host your own set of providers, upload the directory containing <code>registry.json</code> and the provider subdirectories, then paste the raw <code>registry.json</code> URL into QuotaBarWin.</p>
       </section>

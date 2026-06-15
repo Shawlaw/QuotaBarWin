@@ -60,12 +60,17 @@ const configStorageInfo: ConfigStorageInfo = {
 
 function configWithProviders(providers: AppConfig["providers"]): AppConfig {
   return {
-    schemaVersion: 9,
+    schemaVersion: 10,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
     language: "system",
     networkProxy: null,
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
     providers,
   };
 }
@@ -394,6 +399,25 @@ test("remote_providers_section_renders_installed_remote_providers", () => {
   const section = screen.getByTestId("remote-providers-section");
   expect(section).toBeInTheDocument();
   expect(section).toHaveTextContent("Remote Kimi");
+});
+
+test("remote_provider_registry_settings_are_loaded_from_config", () => {
+  renderSettings({
+    ...configWithProviders([]),
+    remoteProviderRegistry: {
+      registryUrl: "https://example.com/registry.json",
+      providerProxyUrl: "http://proxy:8080",
+      autoUpdate: false,
+    },
+  });
+
+  expect(screen.getByTestId("remote-provider-url-input")).toHaveValue(
+    "https://example.com/registry.json",
+  );
+  expect(screen.getByTestId("remote-provider-proxy-url-input")).toHaveValue(
+    "http://proxy:8080",
+  );
+  expect(screen.getByRole("checkbox", { name: "Auto-update when available" })).not.toBeChecked();
 });
 
 test("remote_provider_card_uses_visual_window_display_settings", () => {

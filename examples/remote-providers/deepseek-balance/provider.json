@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "deepseek-balance",
+  "displayName": "DeepSeek Balance",
+  "description": "DeepSeek pay-as-you-go account balance via remote provider script.",
+  "runtime": "node",
+  "entry": "provider.cjs",
+  "requiredEnvVars": ["DEEPSEEK_API_KEY"],
+  "output": "provider-snapshot-v1",
+  "permissions": ["env:DEEPSEEK_API_KEY"],
+  "checksums": {
+    "source": "sha256:9ea10612c34283f60e39bb7593d409b443811b2ffc898d554d5cbb57c3a77615"
+  }
+}

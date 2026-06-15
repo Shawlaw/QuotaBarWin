@@ -10,6 +10,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     config::{
         config_path_for_app, load_or_create_config, save_config_to_path, AppConfig, ProviderConfig,
+        RemoteProviderRegistrySettings,
     },
     proxy::ProxyConfig,
     remote_provider::{
@@ -184,6 +185,16 @@ pub async fn install_remote_provider_registry(
             FETCH_TIMEOUT,
         )
         .map_err(|e| e.to_string())?;
+
+        let mut persisted = load_or_create_config(&path)?;
+        persisted.config.remote_provider_registry = RemoteProviderRegistrySettings {
+            registry_url: Some(url.clone()),
+            provider_proxy_url: proxy_url_ref
+                .clone()
+                .filter(|value| !value.trim().is_empty()),
+            auto_update,
+        };
+        save_config_to_path(&path, &persisted.config)?;
 
         let mut result = RegistryInstallResult {
             installed: Vec::new(),
