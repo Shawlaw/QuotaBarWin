@@ -112,7 +112,10 @@ export function TrayPopup() {
       unlisten = cleanup;
     });
 
+    window.addEventListener("focus", loadSnapshot);
+
     return () => {
+      window.removeEventListener("focus", loadSnapshot);
       unlisten?.();
     };
   }, [loadSnapshot]);
@@ -198,7 +201,9 @@ export function TrayPopup() {
               return (
                 <article className="tray-popup__window" key={`${provider.id}-${window.id}`}>
                   <div className="tray-popup__window-title">
-                    <strong>{window.label}</strong>
+                    <strong>
+                      {provider.name} - {window.label}
+                    </strong>
                     <span>{formatDisplayValue(window, displayMode, t)}</span>
                   </div>
                   <ProgressBar
@@ -207,10 +212,7 @@ export function TrayPopup() {
                     label={`${provider.name} ${window.label} ${displayMode}`}
                     tone={progressTone(status)}
                   />
-                  <p>
-                    {provider.name}
-                    {resetText ? ` - ${resetText}` : ""}
-                  </p>
+                  {resetText ? <p>{resetText}</p> : null}
                 </article>
               );
             })}

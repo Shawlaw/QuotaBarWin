@@ -158,6 +158,11 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("../lib/api", () => mocks);
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.listeners.trayShown = undefined;
+});
+
 test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   render(<TrayPopup />);
 
@@ -165,13 +170,36 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   expect(screen.getByTestId("tray-popup")).toBeInTheDocument();
   expect(screen.getByText("Codex Mock")).toBeInTheDocument();
   expect(screen.getByText("28% remaining")).toBeInTheDocument();
-  expect(screen.getByText("Extra window")).toBeInTheDocument();
+  expect(screen.getByText("Codex Mock - Extra window")).toBeInTheDocument();
+  expect(screen.getByText("Kimi - Kimi Daily")).toBeInTheDocument();
 
   await act(async () => {
     mocks.listeners.trayShown?.();
   });
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+});
+
+test("tray_popup_refreshes_when_window_focuses", async () => {
+  render(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+
+  fireEvent.focus(window);
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+});
+
+test("tray_popup_window_title_includes_provider_name_and_reset_stays_secondary", async () => {
+  render(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
+
+  expect(screen.getByText("Codex Mock - Daily")).toBeInTheDocument();
+  expect(screen.getByText("resets tomorrow")).toBeInTheDocument();
+  expect(
+    screen.queryByText("Codex Mock - resets tomorrow"),
+  ).not.toBeInTheDocument();
 });
 
 test("tray_popup_hides_popup_on_escape_and_close_button", async () => {
