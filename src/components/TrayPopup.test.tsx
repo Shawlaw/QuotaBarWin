@@ -4,7 +4,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import { TrayPopup } from "./TrayPopup";
 import type { AppConfig, AppSnapshot } from "../types";
@@ -173,10 +172,11 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
   expect(screen.getByTestId("tray-popup")).toBeInTheDocument();
-  expect(screen.getByText("Codex Mock")).toBeInTheDocument();
+  expect(screen.getByText(/Last refreshed at/)).toBeInTheDocument();
   expect(screen.getByText("28% remaining")).toBeInTheDocument();
   expect(screen.getByText("Codex Mock - Extra window")).toBeInTheDocument();
   expect(screen.getByText("Kimi - Kimi Daily")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Provider status")).not.toBeInTheDocument();
 
   await act(async () => {
     mocks.listeners.trayShown?.();
@@ -217,17 +217,66 @@ test("tray_popup_hides_popup_on_escape_and_close_button", async () => {
   expect(mocks.hideCurrentWindow).not.toHaveBeenCalled();
 });
 
-test("tray_popup_follows_configured_provider_order", async () => {
-  render(<TrayPopup />);
+test("tray_popup_follows_configured_provider_order_for_quota_windows", async () => {
+  const { container } = render(<TrayPopup />);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
-  const providerStatus = screen.getByLabelText("Provider status");
-  const providerHeadings = within(providerStatus)
-    .getAllByText(/Kimi|Codex Mock/)
-    .map((element) => element.textContent);
+  const popupText = container.textContent ?? "";
 
-  expect(providerHeadings[0]).toBe("Kimi");
-  expect(providerHeadings[1]).toBe("Codex Mock");
+  expect(popupText.indexOf("Kimi - Kimi Daily")).toBeGreaterThanOrEqual(0);
+  expect(popupText.indexOf("Codex Mock - Daily")).toBeGreaterThanOrEqual(0);
+  expect(popupText.indexOf("Kimi - Kimi Daily")).toBeLessThan(
+    popupText.indexOf("Codex Mock - Daily"),
+  );
+});
+
+test("tray_popup_shows_unhealthy_provider_in_title", async () => {
+  mocks.refreshSnapshot.mockResolvedValueOnce({
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:00:00+08:00",
+    providers: [
+      {
+        id: "remote-kimi",
+        name: "Kimi",
+        status: "error",
+        source: "remote",
+        updatedAt: null,
+        error: "Refresh failed",
+        diagnostics: null,
+        metadata: null,
+        windows: [],
+      },
+      {
+        id: "mock-codex",
+        name: "Codex Mock",
+        status: "ok",
+        source: "mock",
+        updatedAt: "2026-06-08T10:00:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [
+          {
+            id: "daily",
+            label: "Daily",
+            used: 72,
+            limit: 100,
+            unit: "percent",
+            usedPercent: 72,
+            remainingPercent: 28,
+            resetAt: null,
+            resetText: "resets tomorrow",
+            confidence: "estimated",
+          },
+        ],
+      },
+    ],
+  });
+
+  render(<TrayPopup />);
+
+  await waitFor(() => expect(screen.getByText("Kimi Error")).toBeInTheDocument());
+  expect(screen.queryByLabelText("Provider status")).not.toBeInTheDocument();
 });
 
 test("tray_popup_starts_native_dragging_from_titlebar", async () => {

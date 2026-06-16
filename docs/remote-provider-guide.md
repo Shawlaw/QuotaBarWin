@@ -285,7 +285,7 @@ See [`examples/remote-providers/`](../examples/remote-providers) for complete sa
 
 - `kimi-coding` — Kimi coding quota via `KIMI_API_KEY`.
 - `bigmodel-coding-plan` — Zhipu/BigModel quota via `BIGMODEL_API_KEY`.
-- `codex-usage` — ChatGPT/Codex 5h and weekly usage via `${secret:CODEX_ACCESS_TOKEN}`.
+- `codex-usage` — ChatGPT/Codex 5h and weekly usage via `~/.codex/auth.json` by default, with optional `CODEX_ACCESS_TOKEN`, `CODEX_ACCOUNT_ID`, or `CODEX_AUTH_FILE` env var overrides. Supports runtime proxy injection via `QBWIN_PROXY_URL`.
 - `deepseek-balance` — DeepSeek pay-as-you-go balance via `${secret:DEEPSEEK_API_KEY}` plus optional local balance display settings.
 
 To host your own, upload a directory containing `provider.json` + the source file and paste the raw `provider.json` URL into QuotaBarWin.

@@ -1058,6 +1058,13 @@ button:disabled {
   padding: 2px 0;
 }
 
+.tray-popup__title-line {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+}
+
 .tray-popup__content {
   display: grid;
   gap: 12px;
@@ -1069,6 +1076,7 @@ button:disabled {
 .tray-popup__header h1 {
   color: #0f172a;
   font-size: 17px;
+  flex-shrink: 0;
   line-height: 1.2;
   margin: 0;
   overflow: hidden;
@@ -1094,6 +1102,13 @@ button:disabled {
 
 .tray-popup__actions button {
   -webkit-app-region: no-drag;
+}
+
+.tray-popup__title-status {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tray-popup__providers,

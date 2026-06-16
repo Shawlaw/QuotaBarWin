@@ -19,7 +19,7 @@ Each subdirectory contains:
 |----------|------------------|-------------|
 | `kimi-coding` | `KIMI_API_KEY` | Kimi coding quota usage. |
 | `bigmodel-coding-plan` | `BIGMODEL_API_KEY` | Zhipu/BigModel coding plan quota. |
-| `codex-usage` | `CODEX_ACCESS_TOKEN` | ChatGPT/Codex 5h and weekly usage. Prefer `${secret:CODEX_ACCESS_TOKEN}` in app config. Optional `CODEX_ACCOUNT_ID` for multi-account. |
+| `codex-usage` | none by default | ChatGPT/Codex 5h and weekly usage. Reads `~/.codex/auth.json` by default. Optional `CODEX_ACCESS_TOKEN`, `CODEX_ACCOUNT_ID`, or `CODEX_AUTH_FILE` env vars can override the local Codex auth file. Supports runtime proxy injection via `QBWIN_PROXY_URL`. |
 | `deepseek-balance` | `DEEPSEEK_API_KEY` | DeepSeek pay-as-you-go balance. Optional `DEEPSEEK_BALANCE_REFERENCE_TOTAL`, `DEEPSEEK_BALANCE_WARNING`, and `DEEPSEEK_BALANCE_CURRENCY`; append `_CNY` or another currency code for per-currency overrides. |
 
 ## Usage

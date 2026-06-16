@@ -76,6 +76,7 @@ pub fn run_remote_provider(
     provider_dir: Option<&Path>,
     runtime: &str,
     resolved_runtime: Option<&str>,
+    proxy_url: Option<&str>,
     config_dir: &Path,
     env_vars: &HashMap<String, String>,
     window_label_overrides: &HashMap<String, String>,
@@ -129,10 +130,25 @@ pub fn run_remote_provider(
         Err(error) => return vec![provider_error_snapshot(id, name, &error)],
     };
 
-    let env = match resolve_required_env_vars(&manifest.required_env_vars, env_vars, config_dir) {
+    let mut env = match resolve_required_env_vars(&manifest.required_env_vars, env_vars, config_dir) {
         Ok(env) => env,
         Err(error) => return vec![provider_error_snapshot(id, name, &error)],
     };
+    if let Some(proxy_url) = proxy_url.map(str::trim).filter(|value| !value.is_empty()) {
+        match resolve_secret_value(proxy_url, config_dir) {
+            Ok(proxy_url) if !proxy_url.trim().is_empty() => {
+                env.insert("QBWIN_PROXY_URL".to_string(), proxy_url.trim().to_string());
+            }
+            Ok(_) => {}
+            Err(error) => {
+                return vec![provider_error_snapshot(
+                    id,
+                    name,
+                    &format!("Unable to resolve remote provider proxy URL: {error}"),
+                )];
+            }
+        }
+    }
 
     let command = RemoteCommandSpec {
         executable: executable.display().to_string(),
@@ -658,6 +674,7 @@ mod tests {
             Some(&provider_dir),
             "node",
             None,
+            None,
             temp.path(),
             &env_vars,
             &HashMap::new(),
@@ -705,6 +722,7 @@ mod tests {
             Some(&provider_dir),
             "node",
             None,
+            None,
             temp.path(),
             &env_vars,
             &HashMap::new(),
@@ -714,5 +732,50 @@ mod tests {
         assert_eq!(providers[0].status, "ok");
         assert_eq!(providers[0].windows[0].label, "from-optional-config");
         assert!(std::env::var("QBWIN_REMOTE_OPTIONAL").is_err());
+    }
+
+    #[test]
+    fn remote_provider_injects_proxy_url_from_provider_config() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let provider_dir = temp.path().join("provider");
+        std::fs::create_dir(&provider_dir).expect("create provider dir");
+        std::fs::write(
+            provider_dir.join("provider.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "id": "remote-proxy",
+                "displayName": "Remote Proxy",
+                "runtime": "node",
+                "entry": "provider.cjs",
+                "requiredEnvVars": [],
+                "output": "provider-snapshot-v1"
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+        std::fs::write(
+            provider_dir.join("provider.cjs"),
+            r#"console.log(JSON.stringify({windows:[{id:"proxy",label:process.env.QBWIN_PROXY_URL || "",remainingPercent:50,confidence:"exact"}]}));"#,
+        )
+        .expect("write source");
+
+        let providers = run_remote_provider(
+            "remote-proxy",
+            "Remote Proxy",
+            Some(&provider_dir),
+            "node",
+            None,
+            Some("socks5h://localhost:10818"),
+            temp.path(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
+
+        assert_eq!(providers[0].status, "ok");
+        assert_eq!(
+            providers[0].windows[0].label,
+            "socks5h://localhost:10818"
+        );
     }
 }

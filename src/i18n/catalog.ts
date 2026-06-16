@@ -43,6 +43,7 @@ export type I18nCatalog = {
   };
   tray: {
     waitingForData: string;
+    lastRefreshedAt: (time: string) => string;
     refresh: string;
     refreshingShort: string;
     close: string;
@@ -50,6 +51,7 @@ export type I18nCatalog = {
     providerStatusLabel: string;
     quotaWindowsLabel: string;
     status: Record<ProviderStatus, string>;
+    healthSummary: (providerName: string, status: ProviderStatus, extraCount: number) => string;
   };
   settings: {
     title: string;
@@ -227,6 +229,7 @@ export const en: I18nCatalog = {
   },
   tray: {
     waitingForData: "Waiting for data",
+    lastRefreshedAt: (time) => `Last refreshed at ${time}`,
     refresh: "Refresh",
     refreshingShort: "...",
     close: "Close",
@@ -239,7 +242,9 @@ export const en: I18nCatalog = {
       error: "Error",
       stale: "Stale",
       unknown: "Unknown"
-    }
+    },
+    healthSummary: (providerName, status, extraCount) =>
+      `${providerName} ${en.tray.status[status]}${extraCount > 0 ? ` +${extraCount}` : ""}`
   },
   settings: {
     title: "Settings",
@@ -420,6 +425,7 @@ export const zhCN: I18nCatalog = {
   },
   tray: {
     waitingForData: "等待数据",
+    lastRefreshedAt: (time) => `上次刷新于 ${time}`,
     refresh: "刷新",
     refreshingShort: "...",
     close: "关闭",
@@ -432,7 +438,9 @@ export const zhCN: I18nCatalog = {
       error: "错误",
       stale: "过期",
       unknown: "未知"
-    }
+    },
+    healthSummary: (providerName, status, extraCount) =>
+      `${providerName} ${zhCN.tray.status[status]}${extraCount > 0 ? ` +${extraCount}` : ""}`
   },
   settings: {
     title: "设置",

@@ -24,6 +24,19 @@ type WindowRow = {
   window: QuotaWindow;
 };
 
+type ProviderIssue = {
+  provider: ProviderSnapshot;
+  status: ProviderSnapshot["status"];
+};
+
+const issueStatusPriority: Record<ProviderSnapshot["status"], number> = {
+  error: 0,
+  stale: 1,
+  warning: 2,
+  unknown: 3,
+  ok: 4
+};
+
 function progressTone(status: ProviderSnapshot["status"]): "normal" | "warning" | "error" {
   if (status === "error") {
     return "error";
@@ -59,6 +72,19 @@ function orderedProviders(providers: ProviderSnapshot[], config: AppConfig | nul
 
 function orderedWindows(providers: ProviderSnapshot[]): WindowRow[] {
   return providers.flatMap((provider) => provider.windows.map((window) => ({ provider, window })));
+}
+
+function orderedProviderIssues(
+  providers: ProviderSnapshot[],
+  lowQuotaWarningThreshold: number
+): ProviderIssue[] {
+  return providers
+    .map((provider) => ({
+      provider,
+      status: calculateProviderStatus(provider, lowQuotaWarningThreshold)
+    }))
+    .filter((issue) => issue.status !== "ok")
+    .sort((left, right) => issueStatusPriority[left.status] - issueStatusPriority[right.status]);
 }
 
 export function TrayPopup() {
@@ -135,6 +161,9 @@ export function TrayPopup() {
   const lowQuotaWarningThreshold = config?.lowQuotaWarningThreshold ?? 20;
   const displayMode = config?.displayMode ?? "remaining";
   const rows = orderedWindows(providers);
+  const providerIssues = orderedProviderIssues(providers, lowQuotaWarningThreshold);
+  const primaryIssue = providerIssues[0] ?? null;
+  const refreshedText = formatShortDateTime(snapshot?.refreshedAt);
 
   function onTitleMouseDown(event: MouseEvent<HTMLElement>) {
     if (event.button !== 0) {
@@ -152,8 +181,28 @@ export function TrayPopup() {
           data-testid="tray-popup-titlebar"
           onMouseDown={onTitleMouseDown}
         >
-          <h1>QuotaBarWin</h1>
-          <p>{formatShortDateTime(snapshot?.refreshedAt) ?? t.tray.waitingForData}</p>
+          <div className="tray-popup__title-line">
+            <h1>QuotaBarWin</h1>
+            {primaryIssue ? (
+              <span
+                className={`status status--${primaryIssue.status} tray-popup__title-status`}
+                title={providerIssues
+                  .map((issue) => `${issue.provider.name}: ${t.tray.status[issue.status]}`)
+                  .join("\n")}
+              >
+                {t.tray.healthSummary(
+                  primaryIssue.provider.name,
+                  primaryIssue.status,
+                  providerIssues.length - 1
+                )}
+              </span>
+            ) : null}
+          </div>
+          <p>
+            {refreshedText
+              ? t.tray.lastRefreshedAt(refreshedText)
+              : t.tray.waitingForData}
+          </p>
         </div>
         <div className="tray-popup__actions">
           <button className="button-compact button-secondary" type="button" onClick={() => void loadSnapshot()}>
@@ -172,22 +221,7 @@ export function TrayPopup() {
       <div className="tray-popup__content">
         {providers.length === 0 ? (
           <section className="tray-popup__empty">{t.tray.noProviders}</section>
-        ) : (
-          <section className="tray-popup__providers" aria-label={t.tray.providerStatusLabel}>
-            {providers.map((provider) => {
-              const status = calculateProviderStatus(provider, lowQuotaWarningThreshold);
-              return (
-                <article className="tray-popup__provider" key={provider.id}>
-                  <div>
-                    <strong>{provider.name}</strong>
-                    <span className={`status status--${status}`}>{t.tray.status[status]}</span>
-                  </div>
-                  {provider.error ? <p>{provider.error}</p> : null}
-                </article>
-              );
-            })}
-          </section>
-        )}
+        ) : null}
 
         {rows.length > 0 ? (
           <section className="tray-popup__windows" aria-label={t.tray.quotaWindowsLabel}>
