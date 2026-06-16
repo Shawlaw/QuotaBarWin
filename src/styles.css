@@ -391,18 +391,12 @@ button:disabled {
   gap: 12px;
 }
 
-.settings-info,
 .settings-guide,
 .preset-list {
   background: #ffffff;
   border: 1px solid #d9e2ec;
   border-radius: 8px;
   padding: 14px;
-}
-
-.settings-info {
-  display: grid;
-  gap: 10px;
 }
 
 .settings-guide {
@@ -454,19 +448,28 @@ button:disabled {
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace !important;
 }
 
-.config-paths {
+.config-storage-section {
   display: grid;
-  gap: 6px 10px;
-  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
 }
 
-.config-paths span {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 600;
+.config-storage-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
-.config-paths code {
+.config-path-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.config-path-label {
+  color: #374151;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.config-path-field code {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
@@ -474,6 +477,13 @@ button:disabled {
   font-size: 12px;
   overflow-wrap: anywhere;
   padding: 4px 6px;
+}
+
+.config-storage-controls {
+  align-content: start;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
 
 .path-chip {
@@ -494,30 +504,6 @@ button:disabled {
 
 .settings-actions--inline {
   justify-content: flex-start;
-}
-
-.settings-advanced {
-  display: grid;
-  gap: 12px;
-}
-
-.settings-advanced > summary,
-.settings-info > summary {
-  cursor: pointer;
-  color: #0f172a;
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.settings-info > summary {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-}
-
-.settings-info > summary span {
-  color: #64748b;
-  font-size: 12px;
 }
 
 .settings-panel label {
@@ -831,6 +817,16 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .remote-provider-summary {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .remote-provider-badges,
+  .remote-provider-actions {
+    justify-content: flex-start;
+  }
+
   .settings-guide {
     align-items: stretch;
     flex-direction: column;
@@ -946,31 +942,81 @@ button:disabled {
   background: #ffffff;
   border: 1px solid #d9e2ec;
   border-radius: 8px;
-  padding: 14px;
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
 }
 
 .remote-provider-summary {
   align-items: center;
-  display: flex;
-  gap: 12px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
 }
 
-.remote-provider-summary span {
+.remote-provider-identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.remote-provider-identity strong {
+  color: #0f172a;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-provider-identity span,
+.remote-provider-badges span {
   color: #64748b;
   font-size: 12px;
+}
+
+.remote-provider-identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-provider-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.remote-provider-badges span {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.remote-provider-details {
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
 }
 
 .remote-provider-url {
-  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #334155;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
   font-size: 12px;
-  margin-top: 4px;
   overflow-wrap: anywhere;
+  padding: 6px 8px;
 }
 
 .remote-provider-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  justify-content: flex-end;
 }
 
 .settings-message {

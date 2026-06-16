@@ -34,6 +34,7 @@ export function RemoteProviderSettings({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
+  const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
   const registryUrl = registrySettings.registryUrl ?? "";
   const providerProxyUrl = registrySettings.providerProxyUrl ?? "";
   const autoUpdate = registrySettings.autoUpdate;
@@ -142,7 +143,7 @@ export function RemoteProviderSettings({
             type="button"
             className="button-secondary"
             onClick={() => void onOpenGuide()}
-          data-testid="open-remote-provider-guide"
+            data-testid="open-remote-provider-guide"
           >
             {t.remoteProviders.openGuide}
           </button>
@@ -209,47 +210,70 @@ export function RemoteProviderSettings({
         <ul className="remote-provider-list">
           {providers.map((provider) => {
             const update = updates.find((u) => u.id === provider.id);
+            const expanded = expandedProviders[provider.id] ?? false;
             return (
               <li key={provider.id} className="remote-provider-item">
                 <div className="remote-provider-summary">
-                  <strong>{provider.name}</strong>
-                  <span>{provider.id}</span>
-                  <span>{provider.runtime}</span>
-                  {provider.autoUpdate ? <span>{t.remoteProviders.autoUpdate}</span> : null}
-                </div>
-                <div className="remote-provider-url">{provider.manifestUrl}</div>
-                <div className="remote-provider-actions">
+                  <div className="remote-provider-identity">
+                    <strong>{provider.name}</strong>
+                    <span>{provider.id}</span>
+                  </div>
+                  <div className="remote-provider-badges">
+                    <span>{provider.runtime}</span>
+                    {provider.autoUpdate ? <span>{t.remoteProviders.autoUpdate}</span> : null}
+                    {update?.available ? <span>{t.remoteProviders.updateAvailable}</span> : null}
+                  </div>
                   <button
                     type="button"
-                    className="button-secondary"
-                    onClick={() => void handleRefresh(provider.id)}
+                    className="button-secondary button-compact"
+                    data-testid={`remote-provider-toggle-${provider.id}`}
+                    onClick={() =>
+                      setExpandedProviders((current) => ({
+                        ...current,
+                        [provider.id]: !expanded
+                      }))
+                    }
                   >
-                    {t.remoteProviders.refresh}
-                  </button>
-                  <button
-                    type="button"
-                    className="button-secondary"
-                    onClick={() => void handleCheckUpdates()}
-                  >
-                    {t.remoteProviders.checkUpdates}
-                  </button>
-                  {update?.available ? (
-                    <button
-                      type="button"
-                      className="button-primary"
-                      onClick={() => void handleApplyUpdate(provider.id)}
-                    >
-                      {t.remoteProviders.applyUpdate}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="button-danger"
-                    onClick={() => void handleRemove(provider.id)}
-                  >
-                    {t.remoteProviders.remove}
+                    {expanded ? t.remoteProviders.collapse : t.remoteProviders.details}
                   </button>
                 </div>
+                {expanded ? (
+                  <div className="remote-provider-details">
+                    <div className="remote-provider-url">{provider.manifestUrl}</div>
+                    <div className="remote-provider-actions">
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() => void handleRefresh(provider.id)}
+                      >
+                        {t.remoteProviders.refresh}
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() => void handleCheckUpdates()}
+                      >
+                        {t.remoteProviders.checkUpdates}
+                      </button>
+                      {update?.available ? (
+                        <button
+                          type="button"
+                          className="button-primary"
+                          onClick={() => void handleApplyUpdate(provider.id)}
+                        >
+                          {t.remoteProviders.applyUpdate}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="button-danger"
+                        onClick={() => void handleRemove(provider.id)}
+                      >
+                        {t.remoteProviders.remove}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </li>
             );
           })}

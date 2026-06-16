@@ -348,6 +348,69 @@ export function SettingsPanel({
           {t.settings.launchAtStartup}
         </label>
         </div>
+        <section className="settings-section config-storage-section" aria-label={t.settings.configurationStorage}>
+          <div className="settings-section-title">
+            <h3>{t.settings.configurationStorage}</h3>
+            <span>{configStorageInfo?.mode === "portable" ? t.settings.portableMode : t.settings.appDataMode}</span>
+          </div>
+          <div className="settings-grid config-storage-grid">
+            <div className="config-path-field">
+              <span className="config-path-label">{t.settings.configFile}</span>
+              <button
+                type="button"
+                className="path-chip"
+                title={configStorageInfo?.configPath}
+                onClick={() => void navigator.clipboard?.writeText(configStorageInfo?.configPath ?? "")}
+              >
+                {configStorageInfo?.configPath ?? t.settings.loadingConfigPath}
+              </button>
+            </div>
+            <div className="config-path-field">
+              <span className="config-path-label">{t.settings.appData}</span>
+              <code title={configStorageInfo?.appDataConfigPath}>{configStorageInfo?.appDataConfigPath ?? t.settings.loading}</code>
+            </div>
+            <div className="config-path-field">
+              <span className="config-path-label">{t.settings.portable}</span>
+              <code title={configStorageInfo?.portableConfigPath}>{configStorageInfo?.portableConfigPath ?? t.settings.loading}</code>
+            </div>
+            <div className="config-storage-controls">
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={configStorageInfo?.mode === "portable"}
+                  disabled={!configStorageInfo || isConfigStorageBusy}
+                  onChange={(event) => onSetPortableMode(event.currentTarget.checked)}
+                />
+                {t.settings.portableMode}
+              </label>
+              <div className="settings-hint">
+                {t.settings.portableModeHint}
+              </div>
+            </div>
+          </div>
+          <div className="settings-actions settings-actions--inline">
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={!configStorageInfo || isConfigStorageBusy}
+              onClick={() => void onOpenConfigFolder()}
+            >
+              {t.settings.openFolder}
+            </button>
+            <button
+              type="button"
+              className="button-danger"
+              disabled={isConfigStorageBusy}
+              onClick={() => {
+                if (window.confirm(t.settings.resetConfigConfirm)) {
+                  void onResetConfig();
+                }
+              }}
+            >
+              {t.settings.resetConfig}
+            </button>
+          </div>
+        </section>
       </section>
 
       <section className="settings-section" aria-label={t.settings.providers} data-testid="providers-settings-section">
@@ -605,67 +668,6 @@ export function SettingsPanel({
         }}
         onOpenGuide={openRemoteProviderGuide}
       />
-
-      <details className="settings-advanced" data-testid="advanced-settings-section">
-        <summary>{t.settings.advanced}</summary>
-        <div className="settings-section">
-        <details className="settings-info" aria-label={t.settings.configurationStorage}>
-          <summary>
-            {t.settings.configurationStorage}
-            <span>{configStorageInfo?.mode === "portable" ? t.settings.portableMode : t.settings.appDataMode}</span>
-          </summary>
-          <div className="config-paths">
-            <span>{t.settings.configFile}</span>
-            <button
-              type="button"
-              className="path-chip"
-              title={configStorageInfo?.configPath}
-              onClick={() => void navigator.clipboard?.writeText(configStorageInfo?.configPath ?? "")}
-            >
-              {configStorageInfo?.configPath ?? t.settings.loadingConfigPath}
-            </button>
-            <span>{t.settings.appData}</span>
-            <code title={configStorageInfo?.appDataConfigPath}>{configStorageInfo?.appDataConfigPath ?? t.settings.loading}</code>
-            <span>{t.settings.portable}</span>
-            <code title={configStorageInfo?.portableConfigPath}>{configStorageInfo?.portableConfigPath ?? t.settings.loading}</code>
-          </div>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={configStorageInfo?.mode === "portable"}
-              disabled={!configStorageInfo || isConfigStorageBusy}
-              onChange={(event) => onSetPortableMode(event.currentTarget.checked)}
-            />
-            {t.settings.portableMode}
-          </label>
-          <div className="settings-hint">
-            {t.settings.portableModeHint}
-          </div>
-          <div className="settings-actions settings-actions--inline">
-            <button
-              type="button"
-              className="button-secondary"
-              disabled={!configStorageInfo || isConfigStorageBusy}
-              onClick={() => void onOpenConfigFolder()}
-            >
-              {t.settings.openFolder}
-            </button>
-            <button
-              type="button"
-              className="button-danger"
-              disabled={isConfigStorageBusy}
-              onClick={() => {
-                if (window.confirm(t.settings.resetConfigConfirm)) {
-                  void onResetConfig();
-                }
-              }}
-            >
-              {t.settings.resetConfig}
-            </button>
-          </div>
-        </details>
-        </div>
-      </details>
 
       <div className="fixed-save-bar" data-testid="fixed-save-bar">
         <span>{hasChanges ? t.settings.unsavedChanges : saveMessage}</span>

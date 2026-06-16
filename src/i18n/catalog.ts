@@ -113,7 +113,6 @@ export type I18nCatalog = {
     moveWindowUp: (windowId: string) => string;
     moveWindowDown: (windowId: string) => string;
     advancedWindowText: string;
-    advanced: string;
     configurationStorage: string;
     portableMode: string;
     appDataMode: string;
@@ -171,6 +170,8 @@ export type I18nCatalog = {
     failedToApplyUpdate: string;
     noRemoteProvidersInstalled: string;
     autoUpdate: string;
+    details: string;
+    collapse: string;
     refresh: string;
     checkUpdates: string;
     applyUpdate: string;
@@ -304,7 +305,6 @@ export const en: I18nCatalog = {
     moveWindowUp: (windowId) => `Move ${windowId} up`,
     moveWindowDown: (windowId) => `Move ${windowId} down`,
     advancedWindowText: "Advanced window text",
-    advanced: "Advanced",
     configurationStorage: "Configuration storage",
     portableMode: "Portable mode",
     appDataMode: "AppData mode",
@@ -336,7 +336,7 @@ export const en: I18nCatalog = {
     proxyUrlPlaceholder: "http://host:port or socks5://host:port"
   },
   remoteProviders: {
-    title: "Remote Providers",
+    title: "Remote Sources",
     installedCount: (count) => `${count} installed`,
     openGuide: "Open Guide",
     registryUrl: "Registry URL",
@@ -363,6 +363,8 @@ export const en: I18nCatalog = {
     failedToApplyUpdate: "Failed to apply update",
     noRemoteProvidersInstalled: "No remote providers installed",
     autoUpdate: "auto-update",
+    details: "Details",
+    collapse: "Collapse",
     refresh: "Refresh",
     checkUpdates: "Check Updates",
     applyUpdate: "Apply Update",
@@ -496,7 +498,6 @@ export const zhCN: I18nCatalog = {
     moveWindowUp: (windowId) => `上移 ${windowId}`,
     moveWindowDown: (windowId) => `下移 ${windowId}`,
     advancedWindowText: "高级窗口文本",
-    advanced: "高级",
     configurationStorage: "配置存储",
     portableMode: "便携模式",
     appDataMode: "AppData 模式",
@@ -528,7 +529,7 @@ export const zhCN: I18nCatalog = {
     proxyUrlPlaceholder: "http://host:port 或 socks5://host:port"
   },
   remoteProviders: {
-    title: "远程提供方",
+    title: "远程安装源",
     installedCount: (count) => `已安装 ${count} 个`,
     openGuide: "打开指南",
     registryUrl: "注册表 URL",
@@ -555,6 +556,8 @@ export const zhCN: I18nCatalog = {
     failedToApplyUpdate: "应用更新失败",
     noRemoteProvidersInstalled: "未安装远程提供方",
     autoUpdate: "自动更新",
+    details: "详情",
+    collapse: "收起",
     refresh: "刷新",
     checkUpdates: "检查更新",
     applyUpdate: "应用更新",

@@ -234,9 +234,7 @@ test("settings_shows_config_storage_info_and_remote_guide_entry", () => {
 
   expect(screen.getByTestId("general-settings-section")).toBeInTheDocument();
   expect(screen.getByTestId("providers-settings-section")).toBeInTheDocument();
-  expect(screen.getByTestId("advanced-settings-section")).not.toHaveAttribute(
-    "open",
-  );
+  expect(screen.queryByTestId("advanced-settings-section")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Configuration storage")).toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: configStorageInfo.configPath }),
@@ -246,7 +244,7 @@ test("settings_shows_config_storage_info_and_remote_guide_entry", () => {
     screen.queryByRole("heading", { name: "Custom Provider Guide" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.getByRole("heading", { name: "Remote Providers" }),
+    screen.getByRole("heading", { name: "Remote Sources" }),
   ).toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "Open Guide" }),

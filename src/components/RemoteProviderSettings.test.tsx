@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { RemoteProviderSettings } from "./RemoteProviderSettings";
 import type { RemoteProviderConfig } from "../types";
@@ -64,13 +64,13 @@ describe("RemoteProviderSettings", () => {
       />
     );
 
-    expect(screen.getByText("Remote Providers")).toBeInTheDocument();
+    expect(screen.getByText("Remote Sources")).toBeInTheDocument();
     expect(screen.getByTestId("remote-provider-url-input")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Install Registry" })).toBeInTheDocument();
     expect(screen.getByText("No remote providers installed")).toBeInTheDocument();
   });
 
-  test("install_registry_button_calls_handler_with_form_values", () => {
+  test("install_registry_button_calls_handler_with_form_values", async () => {
     const onInstallRegistry = vi.fn(async (): Promise<RegistryInstallResult> => emptyResult);
     const onRegistrySettingsChange = vi.fn();
     const { rerender } = render(
@@ -144,6 +144,7 @@ describe("RemoteProviderSettings", () => {
       "http://proxy:8080",
       true
     );
+    await screen.findByText("No providers installed from registry");
   });
 
   test("renders_persisted_registry_settings", () => {
@@ -188,9 +189,35 @@ describe("RemoteProviderSettings", () => {
     expect(screen.getByText("Remote Kimi")).toBeInTheDocument();
     expect(screen.getByText("remote-kimi")).toBeInTheDocument();
     expect(screen.getByText("node")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Details" })).toBeInTheDocument();
+    expect(screen.queryByText("https://example.com/provider.json")).not.toBeInTheDocument();
   });
 
-  test("remove_button_calls_handler", () => {
+  test("toggles_installed_provider_details", () => {
+    render(
+      <RemoteProviderSettings
+        providers={[remoteProvider]}
+        registrySettings={registrySettings}
+        onRegistrySettingsChange={vi.fn()}
+        onInstallRegistry={vi.fn(async () => emptyResult)}
+        onRemove={vi.fn()}
+        onRefresh={vi.fn()}
+        onCheckUpdates={vi.fn()}
+        onApplyUpdate={vi.fn()}
+        onOpenGuide={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(screen.getByText("https://example.com/provider.json")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
+    expect(screen.queryByText("https://example.com/provider.json")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+  });
+
+  test("remove_button_calls_handler", async () => {
     const onRemove = vi.fn();
     render(
       <RemoteProviderSettings
@@ -206,8 +233,10 @@ describe("RemoteProviderSettings", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     expect(onRemove).toHaveBeenCalledWith("remote-kimi");
+    await screen.findByText("Provider removed");
   });
 
   test("check_updates_button_displays_available_updates", async () => {
@@ -227,6 +256,7 @@ describe("RemoteProviderSettings", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
     fireEvent.click(screen.getByRole("button", { name: "Check Updates" }));
     await screen.findByText("1 update(s) available");
     expect(onCheckUpdates).toHaveBeenCalled();
@@ -250,9 +280,11 @@ describe("RemoteProviderSettings", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
     fireEvent.click(screen.getByRole("button", { name: "Check Updates" }));
     const applyButton = await screen.findByRole("button", { name: "Apply Update" });
     fireEvent.click(applyButton);
-    expect(onApplyUpdate).toHaveBeenCalledWith("remote-kimi");
+    await waitFor(() => expect(onApplyUpdate).toHaveBeenCalledWith("remote-kimi"));
+    await screen.findByText("Update applied");
   });
 });
