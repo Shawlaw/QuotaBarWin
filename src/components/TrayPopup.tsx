@@ -49,27 +49,6 @@ function progressTone(status: ProviderSnapshot["status"]): "normal" | "warning" 
   return "normal";
 }
 
-function orderedProviders(providers: ProviderSnapshot[], config: AppConfig | null): ProviderSnapshot[] {
-  if (!config) {
-    return providers;
-  }
-
-  const providersById = new Map(providers.map((provider) => [provider.id, provider]));
-  const orderedIds = new Set<string>();
-  const configuredProviders = config.providers.flatMap((providerConfig) => {
-    const provider = providersById.get(providerConfig.id);
-    if (!provider) {
-      return [];
-    }
-
-    orderedIds.add(provider.id);
-    return [provider];
-  });
-  const remainingProviders = providers.filter((provider) => !orderedIds.has(provider.id));
-
-  return [...configuredProviders, ...remainingProviders];
-}
-
 function orderedWindows(providers: ProviderSnapshot[]): WindowRow[] {
   return providers.flatMap((provider) => provider.windows.map((window) => ({ provider, window })));
 }
@@ -157,7 +136,7 @@ export function TrayPopup() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const providers = orderedProviders(snapshot?.providers ?? [], config);
+  const providers = snapshot?.providers ?? [];
   const lowQuotaWarningThreshold = config?.lowQuotaWarningThreshold ?? 20;
   const displayMode = config?.displayMode ?? "remaining";
   const rows = orderedWindows(providers);

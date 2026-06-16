@@ -217,7 +217,7 @@ test("tray_popup_hides_popup_on_escape_and_close_button", async () => {
   expect(mocks.hideCurrentWindow).not.toHaveBeenCalled();
 });
 
-test("tray_popup_follows_configured_provider_order_for_quota_windows", async () => {
+test("tray_popup_follows_main_snapshot_provider_order_for_quota_windows", async () => {
   const { container } = render(<TrayPopup />);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
@@ -225,8 +225,8 @@ test("tray_popup_follows_configured_provider_order_for_quota_windows", async () 
 
   expect(popupText.indexOf("Kimi - Kimi Daily")).toBeGreaterThanOrEqual(0);
   expect(popupText.indexOf("Codex Mock - Daily")).toBeGreaterThanOrEqual(0);
-  expect(popupText.indexOf("Kimi - Kimi Daily")).toBeLessThan(
-    popupText.indexOf("Codex Mock - Daily"),
+  expect(popupText.indexOf("Codex Mock - Daily")).toBeLessThan(
+    popupText.indexOf("Kimi - Kimi Daily"),
   );
 });
 
