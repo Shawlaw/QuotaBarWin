@@ -117,10 +117,7 @@ export function TrayPopup() {
       unlisten = cleanup;
     });
 
-    window.addEventListener("focus", loadSnapshot);
-
     return () => {
-      window.removeEventListener("focus", loadSnapshot);
       unlisten?.();
     };
   }, [loadSnapshot]);

@@ -669,7 +669,8 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
     tauri::async_runtime::spawn_blocking(move || save_config_to_path(&path, &config))
         .await
         .map_err(|error| error.to_string())??;
-    sync_launch_at_startup_for_app(&app, launch_at_startup)
+    sync_launch_at_startup_for_app(&app, launch_at_startup)?;
+    crate::tray::refresh_tray_menu(&app)
 }
 
 pub fn sync_launch_at_startup_for_app(app: &AppHandle, enabled: bool) -> Result<(), String> {
@@ -715,22 +716,26 @@ pub async fn set_portable_mode(app: AppHandle, enabled: bool) -> Result<ConfigSt
     .await
     .map_err(|error| error.to_string())??;
 
+    crate::tray::refresh_tray_menu(&app)?;
     config_storage_info_for_app(&app)
 }
 
 #[tauri::command]
 pub async fn reset_config(app: AppHandle) -> Result<AppConfig, String> {
     let path = config_path_for_app(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let config = tauri::async_runtime::spawn_blocking(move || {
         if path.exists() {
             backup_config(&path, "reset")?;
         }
         let config = default_config();
         save_config_to_path(&path, &config)?;
-        Ok(config)
+        Ok::<AppConfig, String>(config)
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())??;
+
+    crate::tray::refresh_tray_menu(&app)?;
+    Ok(config)
 }
 
 #[tauri::command]
@@ -739,6 +744,11 @@ pub async fn open_config_folder(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || reveal_path(&path))
         .await
         .map_err(|error| error.to_string())?
+}
+
+pub fn open_app_folder_for_app(app: &AppHandle) -> Result<(), String> {
+    let exe_dir = app_exe_dir_for_app(app)?;
+    open_path_external(&exe_dir)
 }
 
 #[tauri::command]

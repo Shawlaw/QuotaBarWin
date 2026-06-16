@@ -5,15 +5,24 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
 };
 
-use crate::config::{self, TrayPopupPosition};
+use crate::config::{self, AppLanguage, TrayPopupPosition};
 
 use std::{
+    env,
     sync::Mutex,
     time::{Duration, Instant},
 };
 
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetUserDefaultLocaleName(locale_name: *mut u16, locale_name_length: i32) -> i32;
+    fn GetUserDefaultUILanguage() -> u16;
+}
+
+pub const TRAY_ID: &str = "main";
 pub const SHOW_ID: &str = "show";
-pub const REFRESH_ID: &str = "refresh";
+pub const OPEN_APP_FOLDER_ID: &str = "open-app-folder";
 pub const QUIT_ID: &str = "quit";
 pub const TRAY_POPUP_LABEL: &str = "tray-popup";
 pub const TRAY_POPUP_VIEW: &str = "index.html?view=tray";
@@ -27,7 +36,7 @@ static TRAY_POPUP_POSITION_SAVE_ALLOWED_UNTIL: Mutex<Option<Instant>> = Mutex::n
 
 #[cfg(test)]
 pub fn tray_menu_ids() -> [&'static str; 3] {
-    [SHOW_ID, REFRESH_ID, QUIT_ID]
+    [SHOW_ID, OPEN_APP_FOLDER_ID, QUIT_ID]
 }
 
 #[cfg(test)]
@@ -36,13 +45,10 @@ pub fn tray_popup_view() -> &'static str {
 }
 
 pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, SHOW_ID, "Show", true, None::<&str>)?;
-    let refresh = MenuItem::with_id(app, REFRESH_ID, "Refresh", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, QUIT_ID, "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &refresh, &quit])?;
+    let menu = build_tray_menu(app)?;
     let icon = tray_icon_image(app)?;
 
-    TrayIconBuilder::new()
+    TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .icon(icon)
         .tooltip("QuotaBarWin")
@@ -53,6 +59,135 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
 
     Ok(())
 }
+
+pub fn refresh_tray_menu(app: &AppHandle) -> Result<(), String> {
+    let menu = build_tray_menu(app).map_err(|error| error.to_string())?;
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        tray.set_menu(Some(menu))
+            .map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let labels = tray_menu_labels_for_app(app);
+    let show = MenuItem::with_id(app, SHOW_ID, labels.show_main_window, true, None::<&str>)?;
+    let open_app_folder = MenuItem::with_id(
+        app,
+        OPEN_APP_FOLDER_ID,
+        labels.open_app_folder,
+        true,
+        None::<&str>,
+    )?;
+    let quit = MenuItem::with_id(app, QUIT_ID, labels.quit, true, None::<&str>)?;
+
+    Menu::with_items(app, &[&show, &open_app_folder, &quit])
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResolvedTrayLanguage {
+    En,
+    ZhCn,
+}
+
+struct TrayMenuLabels {
+    show_main_window: &'static str,
+    open_app_folder: &'static str,
+    quit: &'static str,
+}
+
+fn tray_menu_labels_for_app(app: &AppHandle) -> TrayMenuLabels {
+    let language = config::config_path_for_app(app)
+        .and_then(|path| config::load_or_create_config(&path).map(|loaded| loaded.config.language))
+        .unwrap_or(AppLanguage::System);
+
+    tray_menu_labels(&language)
+}
+
+fn tray_menu_labels(language: &AppLanguage) -> TrayMenuLabels {
+    match resolve_tray_language(language) {
+        ResolvedTrayLanguage::En => TrayMenuLabels {
+            show_main_window: "Show Main Window",
+            open_app_folder: "Open App Folder",
+            quit: "Quit",
+        },
+        ResolvedTrayLanguage::ZhCn => TrayMenuLabels {
+            show_main_window: "显示主窗口",
+            open_app_folder: "打开程序所在目录",
+            quit: "退出",
+        },
+    }
+}
+
+fn resolve_tray_language(language: &AppLanguage) -> ResolvedTrayLanguage {
+    match language {
+        AppLanguage::En => ResolvedTrayLanguage::En,
+        AppLanguage::ZhCn => ResolvedTrayLanguage::ZhCn,
+        AppLanguage::System => system_tray_language(),
+    }
+}
+
+fn system_tray_language() -> ResolvedTrayLanguage {
+    const LANGUAGE_ENV_VARS: [&str; 4] = ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"];
+
+    if LANGUAGE_ENV_VARS
+        .iter()
+        .filter_map(|name| env::var(name).ok())
+        .any(|language| is_chinese_language_tag(&language))
+    {
+        return ResolvedTrayLanguage::ZhCn;
+    }
+
+    #[cfg(windows)]
+    if windows_system_language_prefers_zh() {
+        return ResolvedTrayLanguage::ZhCn;
+    }
+
+    ResolvedTrayLanguage::En
+}
+
+fn is_chinese_language_tag(language: &str) -> bool {
+    language
+        .split([':', ';', ',', '.'])
+        .any(|part| part.trim().to_ascii_lowercase().starts_with("zh"))
+}
+
+#[cfg(windows)]
+fn windows_system_language_prefers_zh() -> bool {
+    windows_user_default_locale_name()
+        .as_deref()
+        .is_some_and(is_chinese_language_tag)
+        || windows_user_default_ui_language_primary() == Some(WINDOWS_LANG_CHINESE)
+}
+
+#[cfg(windows)]
+fn windows_user_default_locale_name() -> Option<String> {
+    const LOCALE_NAME_MAX_LENGTH: usize = 85;
+    let mut buffer = [0_u16; LOCALE_NAME_MAX_LENGTH];
+    let length =
+        unsafe { GetUserDefaultLocaleName(buffer.as_mut_ptr(), LOCALE_NAME_MAX_LENGTH as i32) };
+    if length <= 1 {
+        return None;
+    }
+
+    Some(String::from_utf16_lossy(&buffer[..length as usize - 1]))
+}
+
+#[cfg(windows)]
+fn windows_user_default_ui_language_primary() -> Option<u16> {
+    let language_id = unsafe { GetUserDefaultUILanguage() };
+    if language_id == 0 {
+        return None;
+    }
+
+    Some(language_id & WINDOWS_PRIMARY_LANGUAGE_MASK)
+}
+
+#[cfg(windows)]
+const WINDOWS_PRIMARY_LANGUAGE_MASK: u16 = 0x03ff;
+#[cfg(windows)]
+const WINDOWS_LANG_CHINESE: u16 = 0x04;
 
 fn tray_icon_image(app: &AppHandle) -> tauri::Result<tauri::image::Image<'static>> {
     if let Some(icon) = app.default_window_icon() {
@@ -202,11 +337,14 @@ fn handle_menu_event(app: &AppHandle, id: &MenuId) {
         SHOW_ID => {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
+                let _ = window.unminimize();
                 let _ = window.set_focus();
             }
         }
-        REFRESH_ID => {
-            let _ = app.emit("refresh-requested", ());
+        OPEN_APP_FOLDER_ID => {
+            if let Err(error) = config::open_app_folder_for_app(app) {
+                eprintln!("Failed to open app folder from tray menu: {error}");
+            }
         }
         QUIT_ID => app.exit(0),
         _ => {}
@@ -259,8 +397,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tray_menu_contains_v0_actions() {
-        assert_eq!(tray_menu_ids(), [SHOW_ID, REFRESH_ID, QUIT_ID]);
+    fn tray_menu_contains_current_actions() {
+        assert_eq!(tray_menu_ids(), [SHOW_ID, OPEN_APP_FOLDER_ID, QUIT_ID]);
+    }
+
+    #[test]
+    fn tray_menu_labels_are_localized() {
+        let en = tray_menu_labels(&AppLanguage::En);
+        assert_eq!(en.show_main_window, "Show Main Window");
+        assert_eq!(en.open_app_folder, "Open App Folder");
+        assert_eq!(en.quit, "Quit");
+
+        let zh_cn = tray_menu_labels(&AppLanguage::ZhCn);
+        assert_eq!(zh_cn.show_main_window, "显示主窗口");
+        assert_eq!(zh_cn.open_app_folder, "打开程序所在目录");
+        assert_eq!(zh_cn.quit, "退出");
+    }
+
+    #[test]
+    fn chinese_language_tags_are_detected() {
+        assert!(is_chinese_language_tag("zh-CN"));
+        assert!(is_chinese_language_tag("zh_Hans_CN.UTF-8"));
+        assert!(is_chinese_language_tag("en-US:zh-CN"));
+        assert!(!is_chinese_language_tag("en-US"));
     }
 
     #[test]
