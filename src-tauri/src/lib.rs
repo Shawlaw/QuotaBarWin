@@ -11,6 +11,7 @@ mod providers;
 mod proxy;
 mod quota;
 mod redact;
+mod refresh_scheduler;
 mod remote_provider;
 mod remote_provider_commands;
 mod remote_provider_runner;
@@ -87,6 +88,7 @@ pub fn run() {
                 }
                 Err(error) => eprintln!("Failed to load launch-at-startup setting: {error}"),
             }
+            refresh_scheduler::start(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

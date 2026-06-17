@@ -347,6 +347,19 @@ export async function listenForRefreshRequests(
   return listen("refresh-requested", onRefresh);
 }
 
+export async function listenForSnapshotUpdates(
+  onSnapshot: (snapshot: AppSnapshot) => void,
+): Promise<() => void> {
+  if (!hasTauriInternals()) {
+    void onSnapshot;
+    return () => undefined;
+  }
+
+  return listen<AppSnapshot>("snapshot-refreshed", (event) =>
+    onSnapshot(event.payload),
+  );
+}
+
 export async function listenForTrayPopupShown(
   onShown: () => void,
 ): Promise<() => void> {

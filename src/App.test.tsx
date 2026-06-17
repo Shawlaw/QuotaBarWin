@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
 import type { AppConfig, AppSnapshot } from "./types";
 
@@ -52,8 +52,12 @@ const mocks = vi.hoisted(() => {
     portableConfigPath: "C:\\Tools\\QuotaBarWin\\config.quotaBarWin.json",
     portableMarkerPath: "C:\\Tools\\QuotaBarWin\\quotabarwin.portable",
   };
+  const listeners: {
+    snapshotUpdated?: (snapshot: AppSnapshot) => void;
+  } = {};
 
   return {
+    listeners,
     getCachedSnapshot: vi.fn(async () => null),
     getAppVersion: vi.fn(async () => "1.0.0"),
     getConfig: vi.fn(async () => config),
@@ -61,6 +65,14 @@ const mocks = vi.hoisted(() => {
     getNetworkProxy: vi.fn(async () => null),
     getProviderPresets: vi.fn(async () => []),
     listenForRefreshRequests: vi.fn(async () => () => undefined),
+    listenForSnapshotUpdates: vi.fn(async (callback) => {
+      listeners.snapshotUpdated = callback;
+      return () => {
+        if (listeners.snapshotUpdated === callback) {
+          listeners.snapshotUpdated = undefined;
+        }
+      };
+    }),
     listenForTrayPopupShown: vi.fn(async () => () => undefined),
     listenForSingleInstance: vi.fn(async () => () => undefined),
     hideCurrentWindow: vi.fn(async () => undefined),
@@ -97,6 +109,44 @@ test("refresh_button_calls_refresh_snapshot", async () => {
   fireEvent.click(screen.getAllByRole("button", { name: "Refresh" })[0]);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+});
+
+test("main_app_uses_native_snapshot_updates_without_js_interval", async () => {
+  const setIntervalSpy = vi.spyOn(window, "setInterval");
+  const refreshCallsBeforeRender = mocks.refreshSnapshot.mock.calls.length;
+  render(<App />);
+
+  await waitFor(() =>
+    expect(mocks.refreshSnapshot.mock.calls.length).toBeGreaterThan(
+      refreshCallsBeforeRender,
+    ),
+  );
+  expect(
+    setIntervalSpy.mock.calls.some(([, delay]) => delay === 300_000),
+  ).toBe(false);
+
+  await act(async () => {
+    mocks.listeners.snapshotUpdated?.({
+      schemaVersion: 1,
+      refreshedAt: "2026-06-08T10:05:00+08:00",
+      providers: [
+        {
+          id: "native-refresh",
+          name: "Native Refresh",
+          status: "ok",
+          source: "mock",
+          updatedAt: "2026-06-08T10:05:00+08:00",
+          error: null,
+          diagnostics: null,
+          metadata: null,
+          windows: [],
+        },
+      ],
+    });
+  });
+
+  expect(screen.getByText("Native Refresh")).toBeInTheDocument();
+  setIntervalSpy.mockRestore();
 });
 
 test("settings_replaces_provider_overview", async () => {

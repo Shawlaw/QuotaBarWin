@@ -670,6 +670,7 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
         .await
         .map_err(|error| error.to_string())??;
     sync_launch_at_startup_for_app(&app, launch_at_startup)?;
+    crate::refresh_scheduler::signal_config_changed();
     crate::tray::refresh_tray_menu(&app)
 }
 
@@ -717,6 +718,7 @@ pub async fn set_portable_mode(app: AppHandle, enabled: bool) -> Result<ConfigSt
     .map_err(|error| error.to_string())??;
 
     crate::tray::refresh_tray_menu(&app)?;
+    crate::refresh_scheduler::signal_config_changed();
     config_storage_info_for_app(&app)
 }
 
@@ -735,6 +737,7 @@ pub async fn reset_config(app: AppHandle) -> Result<AppConfig, String> {
     .map_err(|error| error.to_string())??;
 
     crate::tray::refresh_tray_menu(&app)?;
+    crate::refresh_scheduler::signal_config_changed();
     Ok(config)
 }
 

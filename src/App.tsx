@@ -11,6 +11,7 @@ import {
   getConfigStorageInfo,
   getProviderPresets,
   listenForRefreshRequests,
+  listenForSnapshotUpdates,
   listenForSingleInstance,
   openConfigFolder,
   refreshProvider,
@@ -151,19 +152,6 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   }, [config, onLanguageChange]);
 
   useEffect(() => {
-    if (!config) {
-      return;
-    }
-
-    const interval = window.setInterval(
-      () => void loadSnapshot(),
-      Math.max(10, config.refreshIntervalSeconds) * 1000
-    );
-
-    return () => window.clearInterval(interval);
-  }, [config, loadSnapshot]);
-
-  useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listenForRefreshRequests(() => void loadSnapshot()).then((cleanup) => {
       unlisten = cleanup;
@@ -173,6 +161,17 @@ function MainApp({ onLanguageChange }: MainAppProps) {
       unlisten?.();
     };
   }, [loadSnapshot]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listenForSnapshotUpdates((updatedSnapshot) => setSnapshot(updatedSnapshot)).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
