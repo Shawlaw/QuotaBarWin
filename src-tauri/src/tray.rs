@@ -354,6 +354,7 @@ fn handle_menu_event(app: &AppHandle, id: &MenuId) {
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
+                let _ = window.emit("refresh-requested", ());
             }
         }
         OPEN_APP_FOLDER_ID => {

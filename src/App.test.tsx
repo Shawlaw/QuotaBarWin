@@ -53,6 +53,7 @@ const mocks = vi.hoisted(() => {
     portableMarkerPath: "C:\\Tools\\QuotaBarWin\\quotabarwin.portable",
   };
   const listeners: {
+    refreshRequested?: () => void;
     snapshotUpdated?: (snapshot: AppSnapshot) => void;
   } = {};
 
@@ -65,7 +66,14 @@ const mocks = vi.hoisted(() => {
     getNetworkProxy: vi.fn(async () => null),
     getProviderPresets: vi.fn(async () => []),
     getTrayPopupPresentationId: vi.fn(async () => 0),
-    listenForRefreshRequests: vi.fn(async () => () => undefined),
+    listenForRefreshRequests: vi.fn(async (callback) => {
+      listeners.refreshRequested = callback;
+      return () => {
+        if (listeners.refreshRequested === callback) {
+          listeners.refreshRequested = undefined;
+        }
+      };
+    }),
     listenForSnapshotUpdates: vi.fn(async (callback) => {
       listeners.snapshotUpdated = callback;
       return () => {
@@ -103,11 +111,29 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("./lib/api", () => mocks);
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.listeners.refreshRequested = undefined;
+  mocks.listeners.snapshotUpdated = undefined;
+});
+
 test("refresh_button_calls_refresh_snapshot", async () => {
   render(<App />);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getAllByRole("button", { name: "Refresh" })[0]);
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+});
+
+test("main_app_refreshes_when_native_refresh_requested", async () => {
+  render(<App />);
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+
+  await act(async () => {
+    mocks.listeners.refreshRequested?.();
+  });
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
 });
