@@ -50,7 +50,10 @@ fn select_proxy_url(
     per_provider_proxy: Option<&str>,
     global_proxy: Option<&ProxyConfig>,
 ) -> Option<String> {
-    if let Some(url) = per_provider_proxy.map(str::trim).filter(|url| !url.is_empty()) {
+    if let Some(url) = per_provider_proxy
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+    {
         return Some(url.to_string());
     }
 
@@ -146,7 +149,6 @@ mod tests {
             kind: ProxyKind::Socks5,
             url: "socks5h://127.0.0.1:7890".to_string(),
         };
-        build_http_client(None, Some(&global), Duration::from_secs(1))
-            .expect("socks proxy client");
+        build_http_client(None, Some(&global), Duration::from_secs(1)).expect("socks proxy client");
     }
 }

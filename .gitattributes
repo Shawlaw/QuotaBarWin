@@ -2,3 +2,8 @@
 # regardless of Windows autocrlf settings in CI or local checkouts.
 examples/remote-providers/**/*.cjs text eol=lf
 examples/remote-providers/**/*.json text eol=lf
+
+# Keep Rust sources in LF so cargo fmt does not create Windows-only line
+# ending churn when core.autocrlf is enabled.
+.gitattributes text eol=lf
+*.rs text eol=lf

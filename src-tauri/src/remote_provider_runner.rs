@@ -130,7 +130,8 @@ pub fn run_remote_provider(
         Err(error) => return vec![provider_error_snapshot(id, name, &error)],
     };
 
-    let mut env = match resolve_required_env_vars(&manifest.required_env_vars, env_vars, config_dir) {
+    let mut env = match resolve_required_env_vars(&manifest.required_env_vars, env_vars, config_dir)
+    {
         Ok(env) => env,
         Err(error) => return vec![provider_error_snapshot(id, name, &error)],
     };
@@ -773,9 +774,6 @@ mod tests {
         );
 
         assert_eq!(providers[0].status, "ok");
-        assert_eq!(
-            providers[0].windows[0].label,
-            "socks5h://localhost:10818"
-        );
+        assert_eq!(providers[0].windows[0].label, "socks5h://localhost:10818");
     }
 }
