@@ -9,7 +9,10 @@ use crate::config::{self, AppLanguage, TrayPopupPosition};
 
 use std::{
     env,
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
     time::{Duration, Instant},
 };
 
@@ -33,6 +36,13 @@ const TRAY_POPUP_DRAG_FOCUS_GRACE: Duration = Duration::from_secs(2);
 const TRAY_POPUP_POSITION_SAVE_GRACE: Duration = Duration::from_secs(30);
 static TRAY_POPUP_FOCUS_HIDE_SUPPRESSED_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
 static TRAY_POPUP_POSITION_SAVE_ALLOWED_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+static TRAY_POPUP_PRESENTATION_ID: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrayPopupShownPayload {
+    presentation_id: u64,
+}
 
 #[cfg(test)]
 pub fn tray_menu_ids() -> [&'static str; 3] {
@@ -332,6 +342,11 @@ pub fn save_tray_popup_position_after_user_move(app: &AppHandle, position: Physi
     }
 }
 
+#[tauri::command]
+pub fn get_tray_popup_presentation_id() -> u64 {
+    TRAY_POPUP_PRESENTATION_ID.load(Ordering::SeqCst)
+}
+
 fn handle_menu_event(app: &AppHandle, id: &MenuId) {
     match id.as_ref() {
         SHOW_ID => {
@@ -365,6 +380,7 @@ fn handle_tray_event(app: &AppHandle, event: TrayIconEvent) {
 
 fn show_tray_popup(app: &AppHandle, anchor: PhysicalPosition<f64>) {
     if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
+        let presentation_id = TRAY_POPUP_PRESENTATION_ID.fetch_add(1, Ordering::SeqCst) + 1;
         let position = tray_popup_position_from_saved_or_anchor(
             config::load_tray_popup_position_for_app(app),
             anchor,
@@ -373,7 +389,11 @@ fn show_tray_popup(app: &AppHandle, anchor: PhysicalPosition<f64>) {
         let _ = window.set_always_on_top(true);
         let _ = window.show();
         let _ = window.set_focus();
-        let _ = app.emit_to(TRAY_POPUP_LABEL, "tray-popup-shown", ());
+        let _ = app.emit_to(
+            TRAY_POPUP_LABEL,
+            "tray-popup-shown",
+            TrayPopupShownPayload { presentation_id },
+        );
     }
 }
 

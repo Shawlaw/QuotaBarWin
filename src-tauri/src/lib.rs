@@ -38,7 +38,7 @@ pub use remote_provider_commands::{
     refresh_remote_provider, remove_remote_provider, set_network_proxy, RegistryInstallFailure,
     RegistryInstallResult,
 };
-pub use tray::{hide_tray_popup, start_tray_popup_dragging};
+pub use tray::{get_tray_popup_presentation_id, hide_tray_popup, start_tray_popup_dragging};
 
 fn window_title(version: &str) -> String {
     format!("QuotaBarWin V{version}")
@@ -112,6 +112,7 @@ pub fn run() {
             refresh_remote_provider,
             check_remote_updates,
             apply_remote_update,
+            get_tray_popup_presentation_id,
             hide_tray_popup,
             start_tray_popup_dragging
         ])

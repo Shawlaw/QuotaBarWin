@@ -6,6 +6,7 @@ import {
   installRemoteProviderRegistry,
   getConfig,
   getNetworkProxy,
+  getTrayPopupPresentationId,
   refreshProvider,
   refreshRemoteProvider,
   refreshSnapshot,
@@ -116,6 +117,20 @@ test("api_invokes_network_proxy_commands", async () => {
   expect(payloads.set_network_proxy).toEqual({
     proxy: { kind: "socks5", url: "socks5://proxy.example.com:1080" },
   });
+});
+
+test("api_invokes_tray_popup_presentation_command", async () => {
+  const calls: string[] = [];
+  mockIPC((cmd) => {
+    calls.push(cmd);
+    if (cmd === "get_tray_popup_presentation_id") {
+      return 42;
+    }
+    throw new Error(`unexpected command ${cmd}`);
+  });
+
+  await expect(getTrayPopupPresentationId()).resolves.toBe(42);
+  expect(calls).toEqual(["get_tray_popup_presentation_id"]);
 });
 
 test("api_invokes_remote_provider_commands", async () => {

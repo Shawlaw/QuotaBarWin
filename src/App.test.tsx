@@ -64,6 +64,7 @@ const mocks = vi.hoisted(() => {
     getConfigStorageInfo: vi.fn(async () => configStorageInfo),
     getNetworkProxy: vi.fn(async () => null),
     getProviderPresets: vi.fn(async () => []),
+    getTrayPopupPresentationId: vi.fn(async () => 0),
     listenForRefreshRequests: vi.fn(async () => () => undefined),
     listenForSnapshotUpdates: vi.fn(async (callback) => {
       listeners.snapshotUpdated = callback;

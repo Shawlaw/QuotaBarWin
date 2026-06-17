@@ -361,14 +361,24 @@ export async function listenForSnapshotUpdates(
 }
 
 export async function listenForTrayPopupShown(
-  onShown: () => void,
+  onShown: (presentationId: number) => void,
 ): Promise<() => void> {
   if (!hasTauriInternals()) {
     void onShown;
     return () => undefined;
   }
 
-  return listen("tray-popup-shown", onShown);
+  return listen<{ presentationId: number }>("tray-popup-shown", (event) =>
+    onShown(event.payload.presentationId),
+  );
+}
+
+export async function getTrayPopupPresentationId(): Promise<number> {
+  if (!hasTauriInternals()) {
+    return 0;
+  }
+
+  return invoke<number>("get_tray_popup_presentation_id");
 }
 
 export async function listenForSingleInstance(

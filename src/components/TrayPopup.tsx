@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 import {
   getCachedSnapshot,
   getConfig,
+  getTrayPopupPresentationId,
   hideCurrentWindow,
   hideTrayPopup,
   listenForTrayPopupShown,
@@ -37,8 +38,6 @@ const issueStatusPriority: Record<ProviderSnapshot["status"], number> = {
   ok: 4
 };
 
-const PRESENTATION_REFRESH_DEDUPE_MS = 750;
-
 function progressTone(status: ProviderSnapshot["status"]): "normal" | "warning" | "error" {
   if (status === "error") {
     return "error";
@@ -71,7 +70,7 @@ function orderedProviderIssues(
 export function TrayPopup() {
   const { t } = useI18n();
   const refreshInFlight = useRef(false);
-  const presentationRefreshSuppressedUntil = useRef(0);
+  const lastHandledPresentationId = useRef(0);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -93,15 +92,25 @@ export function TrayPopup() {
     }
   }, []);
 
-  const refreshForPresentation = useCallback(() => {
-    const now = Date.now();
-    if (now < presentationRefreshSuppressedUntil.current) {
+  const refreshForPresentation = useCallback((presentationId: number) => {
+    if (
+      !Number.isFinite(presentationId) ||
+      presentationId <= lastHandledPresentationId.current
+    ) {
       return;
     }
 
-    presentationRefreshSuppressedUntil.current = now + PRESENTATION_REFRESH_DEDUPE_MS;
+    lastHandledPresentationId.current = presentationId;
     void loadSnapshot();
   }, [loadSnapshot]);
+
+  const syncTrayPopupPresentation = useCallback(async () => {
+    try {
+      refreshForPresentation(await getTrayPopupPresentationId());
+    } catch {
+      // Focus is only a best-effort fallback for a missed tray-popup-shown event.
+    }
+  }, [refreshForPresentation]);
 
   useEffect(() => {
     let isMounted = true;
@@ -128,22 +137,22 @@ export function TrayPopup() {
     let unlisten: (() => void) | undefined;
     void listenForTrayPopupShown(refreshForPresentation).then((cleanup) => {
       unlisten = cleanup;
+      void syncTrayPopupPresentation();
     });
 
     return () => {
       unlisten?.();
     };
-  }, [refreshForPresentation]);
+  }, [refreshForPresentation, syncTrayPopupPresentation]);
 
   useEffect(() => {
-    function onInitialFocus() {
-      window.removeEventListener("focus", onInitialFocus);
-      refreshForPresentation();
+    function onFocus() {
+      void syncTrayPopupPresentation();
     }
 
-    window.addEventListener("focus", onInitialFocus);
-    return () => window.removeEventListener("focus", onInitialFocus);
-  }, [refreshForPresentation]);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [syncTrayPopupPresentation]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

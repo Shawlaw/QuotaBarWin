@@ -9,7 +9,8 @@ import { TrayPopup } from "./TrayPopup";
 import type { AppConfig, AppSnapshot } from "../types";
 
 const mocks = vi.hoisted(() => {
-  const listeners: { trayShown?: () => void } = {};
+  const listeners: { trayShown?: (presentationId: number) => void } = {};
+  const state = { presentationId: 0 };
   const config: AppConfig = {
     schemaVersion: 10,
     refreshIntervalSeconds: 300,
@@ -148,14 +149,16 @@ const mocks = vi.hoisted(() => {
   return {
     getCachedSnapshot: vi.fn(async () => null),
     getConfig: vi.fn(async () => config),
+    getTrayPopupPresentationId: vi.fn(async () => state.presentationId),
     hideCurrentWindow: vi.fn(async () => undefined),
     hideTrayPopup: vi.fn(async () => undefined),
-    listenForTrayPopupShown: vi.fn(async (callback: () => void) => {
+    listenForTrayPopupShown: vi.fn(async (callback: (presentationId: number) => void) => {
       listeners.trayShown = callback;
       return () => undefined;
     }),
     listeners,
     refreshSnapshot: vi.fn(async () => snapshot),
+    state,
     startDraggingCurrentWindow: vi.fn(async () => undefined),
   };
 });
@@ -165,6 +168,7 @@ vi.mock("../lib/api", () => mocks);
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.listeners.trayShown = undefined;
+  mocks.state.presentationId = 0;
 });
 
 test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
@@ -179,27 +183,42 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   expect(screen.queryByLabelText("Provider status")).not.toBeInTheDocument();
 
   await act(async () => {
-    mocks.listeners.trayShown?.();
+    mocks.listeners.trayShown?.(1);
   });
-
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
-});
-
-test("tray_popup_uses_initial_window_focus_as_one_shot_refresh_fallback", async () => {
-  render(<TrayPopup />);
-
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
-
-  fireEvent.focus(window);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
 
   await act(async () => {
-    mocks.listeners.trayShown?.();
+    mocks.listeners.trayShown?.(2);
   });
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(3));
+
+  await act(async () => {
+    mocks.listeners.trayShown?.(2);
+  });
+
+  expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(3);
+});
+
+test("tray_popup_uses_window_focus_to_check_for_missed_presentation", async () => {
+  render(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+
+  mocks.state.presentationId = 1;
   fireEvent.focus(window);
 
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+
+  fireEvent.focus(window);
   expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2);
+
+  await act(async () => {
+    mocks.listeners.trayShown?.(2);
+  });
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(3));
 });
 
 test("tray_popup_window_title_includes_provider_name_and_reset_stays_secondary", async () => {
