@@ -105,13 +105,14 @@ function providerSnapshot(
 function renderSettings(
   initialConfig = configWithProviders([codexProvider]),
   snapshotProviders: ProviderSnapshot[] = [],
+  storageInfo: ConfigStorageInfo | null = configStorageInfo,
 ) {
   function Harness() {
     const [config, setConfig] = useState(initialConfig);
     return (
       <SettingsPanel
         config={config}
-        configStorageInfo={configStorageInfo}
+        configStorageInfo={storageInfo}
         isConfigStorageBusy={false}
         isSaving={false}
         onChange={setConfig}
@@ -240,6 +241,10 @@ test("settings_shows_config_storage_info_and_remote_guide_entry", () => {
     screen.getByRole("button", { name: configStorageInfo.configPath }),
   ).toBeInTheDocument();
   expect(screen.getByText("AppData mode")).toBeInTheDocument();
+  expect(screen.queryByText("Portable")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(configStorageInfo.portableConfigPath),
+  ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "Custom Provider Guide" }),
   ).not.toBeInTheDocument();
@@ -249,6 +254,29 @@ test("settings_shows_config_storage_info_and_remote_guide_entry", () => {
   expect(
     screen.getByRole("button", { name: "Open Guide" }),
   ).toBeInTheDocument();
+});
+
+test("settings_hides_app_data_path_in_portable_storage_mode", () => {
+  const portableStorageInfo: ConfigStorageInfo = {
+    ...configStorageInfo,
+    mode: "portable",
+    configPath: configStorageInfo.portableConfigPath,
+    configDir: "C:\\Tools\\QuotaBarWin",
+  };
+
+  renderSettings(configWithProviders([codexProvider]), [], portableStorageInfo);
+
+  expect(screen.getAllByText("Portable mode")).toHaveLength(2);
+  expect(screen.getByText("Marker file")).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: portableStorageInfo.configPath }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(portableStorageInfo.portableMarkerPath),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText(portableStorageInfo.appDataConfigPath),
+  ).not.toBeInTheDocument();
 });
 
 test("settings_edits_visible_windows", () => {

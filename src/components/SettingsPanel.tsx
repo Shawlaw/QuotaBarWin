@@ -162,6 +162,8 @@ export function SettingsPanel({
       ? null
       : t.settings.lowQuotaWarningError;
   const canSave = hasChanges && !refreshIntervalError && !lowQuotaWarningError && !isSaving;
+  const isPortableMode = configStorageInfo?.mode === "portable";
+  const storageModeLabel = isPortableMode ? t.settings.portableMode : t.settings.appDataMode;
 
   function addPreset(preset: ProviderPreset) {
     const provider = cloneProvider(preset.providerConfigTemplate);
@@ -351,7 +353,7 @@ export function SettingsPanel({
         <section className="settings-section config-storage-section" aria-label={t.settings.configurationStorage}>
           <div className="settings-section-title">
             <h3>{t.settings.configurationStorage}</h3>
-            <span>{configStorageInfo?.mode === "portable" ? t.settings.portableMode : t.settings.appDataMode}</span>
+            <span>{storageModeLabel}</span>
           </div>
           <div className="settings-grid config-storage-grid">
             <div className="config-path-field">
@@ -365,19 +367,19 @@ export function SettingsPanel({
                 {configStorageInfo?.configPath ?? t.settings.loadingConfigPath}
               </button>
             </div>
-            <div className="config-path-field">
-              <span className="config-path-label">{t.settings.appData}</span>
-              <code title={configStorageInfo?.appDataConfigPath}>{configStorageInfo?.appDataConfigPath ?? t.settings.loading}</code>
-            </div>
-            <div className="config-path-field">
-              <span className="config-path-label">{t.settings.portable}</span>
-              <code title={configStorageInfo?.portableConfigPath}>{configStorageInfo?.portableConfigPath ?? t.settings.loading}</code>
-            </div>
+            {isPortableMode ? (
+              <div className="config-path-field">
+                <span className="config-path-label">{t.settings.portableMarker}</span>
+                <code title={configStorageInfo?.portableMarkerPath}>
+                  {configStorageInfo?.portableMarkerPath ?? t.settings.loading}
+                </code>
+              </div>
+            ) : null}
             <div className="config-storage-controls">
               <label className="checkbox-row">
                 <input
                   type="checkbox"
-                  checked={configStorageInfo?.mode === "portable"}
+                  checked={isPortableMode}
                   disabled={!configStorageInfo || isConfigStorageBusy}
                   onChange={(event) => onSetPortableMode(event.currentTarget.checked)}
                 />
