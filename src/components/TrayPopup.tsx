@@ -37,6 +37,8 @@ const issueStatusPriority: Record<ProviderSnapshot["status"], number> = {
   ok: 4
 };
 
+const PRESENTATION_REFRESH_DEDUPE_MS = 750;
+
 function progressTone(status: ProviderSnapshot["status"]): "normal" | "warning" | "error" {
   if (status === "error") {
     return "error";
@@ -69,6 +71,7 @@ function orderedProviderIssues(
 export function TrayPopup() {
   const { t } = useI18n();
   const refreshInFlight = useRef(false);
+  const presentationRefreshSuppressedUntil = useRef(0);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -89,6 +92,16 @@ export function TrayPopup() {
       setIsLoading(false);
     }
   }, []);
+
+  const refreshForPresentation = useCallback(() => {
+    const now = Date.now();
+    if (now < presentationRefreshSuppressedUntil.current) {
+      return;
+    }
+
+    presentationRefreshSuppressedUntil.current = now + PRESENTATION_REFRESH_DEDUPE_MS;
+    void loadSnapshot();
+  }, [loadSnapshot]);
 
   useEffect(() => {
     let isMounted = true;
@@ -113,14 +126,24 @@ export function TrayPopup() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void listenForTrayPopupShown(() => void loadSnapshot()).then((cleanup) => {
+    void listenForTrayPopupShown(refreshForPresentation).then((cleanup) => {
       unlisten = cleanup;
     });
 
     return () => {
       unlisten?.();
     };
-  }, [loadSnapshot]);
+  }, [refreshForPresentation]);
+
+  useEffect(() => {
+    function onInitialFocus() {
+      window.removeEventListener("focus", onInitialFocus);
+      refreshForPresentation();
+    }
+
+    window.addEventListener("focus", onInitialFocus);
+    return () => window.removeEventListener("focus", onInitialFocus);
+  }, [refreshForPresentation]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

@@ -185,14 +185,21 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
 });
 
-test("tray_popup_does_not_refresh_on_window_focus", async () => {
+test("tray_popup_uses_initial_window_focus_as_one_shot_refresh_fallback", async () => {
   render(<TrayPopup />);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
 
   fireEvent.focus(window);
 
-  expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+
+  await act(async () => {
+    mocks.listeners.trayShown?.();
+  });
+  fireEvent.focus(window);
+
+  expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2);
 });
 
 test("tray_popup_window_title_includes_provider_name_and_reset_stays_secondary", async () => {
