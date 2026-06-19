@@ -5,38 +5,75 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuotaBarWin 远程 Provider 指南 / Remote Provider Guide</title>
     <style>
-      body {
-        background: #f6f8fb;
+      :root {
         color: #1f2937;
+        background: #f6f8fb;
         font-family:
           Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
           "Segoe UI", "Microsoft YaHei", sans-serif;
-        line-height: 1.6;
+        line-height: 1.58;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
         margin: 0;
       }
 
       main {
         margin: 0 auto;
-        max-width: 860px;
-        padding: 40px 24px;
+        max-width: 920px;
+        padding: 32px 24px 56px;
       }
 
-      section {
-        background: #ffffff;
-        border: 1px solid #d9e2ec;
-        border-radius: 8px;
-        margin-top: 16px;
-        padding: 18px;
+      header {
+        border-bottom: 1px solid #d9e2ec;
+        margin-bottom: 24px;
+        padding-bottom: 20px;
       }
 
-      a {
-        color: #0f766e;
-        font-weight: 650;
+      h1,
+      h2,
+      h3 {
+        color: #0f172a;
+        line-height: 1.2;
+        margin: 0;
       }
 
-      pre,
-      code {
-        font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      h1 {
+        font-size: 34px;
+        font-weight: 720;
+      }
+
+      h2 {
+        font-size: 22px;
+        margin-top: 30px;
+      }
+
+      h3 {
+        font-size: 16px;
+        margin-top: 18px;
+      }
+
+      p {
+        margin: 10px 0 0;
+      }
+
+      ol,
+      ul {
+        margin: 10px 0 0;
+        padding-left: 22px;
+      }
+
+      li + li {
+        margin-top: 6px;
+      }
+
+      code,
+      pre {
+        font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
       }
 
       code {
@@ -49,66 +86,697 @@
         background: #111827;
         border-radius: 8px;
         color: #e5e7eb;
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 12px 0 0;
         overflow: auto;
         padding: 16px;
+      }
+
+      section {
+        background: #ffffff;
+        border: 1px solid #d9e2ec;
+        border-radius: 8px;
+        margin-top: 16px;
+        padding: 18px;
+      }
+
+      table {
+        border-collapse: collapse;
+        margin-top: 12px;
+        width: 100%;
+      }
+
+      th,
+      td {
+        border: 1px solid #d9e2ec;
+        padding: 8px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: #f1f5f9;
+        font-weight: 700;
+      }
+
+      .lead {
+        color: #475569;
+        font-size: 16px;
+      }
+
+      .language-switch {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .language-switch a {
+        border: 1px solid #0f766e;
+        border-radius: 6px;
+        color: #0f766e;
+        font-weight: 650;
+        padding: 7px 12px;
+        text-decoration: none;
+      }
+
+      .language-switch a[aria-current="true"] {
+        background: #0f766e;
+        color: #ffffff;
+      }
+
+      .note {
+        background: #eff6ff;
+        border-left: 4px solid #3b82f6;
+        border-radius: 0 8px 8px 0;
+        color: #1e3a8a;
+        margin-top: 12px;
+        padding: 12px 16px;
       }
 
       .lang-en {
         display: none;
       }
-
-      .lang-en:target {
-        display: block;
-      }
-
-      .lang-en:target ~ .lang-zh {
-        display: none;
-      }
     </style>
+    <script>
+      function applyLanguage() {
+        const language = location.hash === "#en" ? "en" : "zh-CN";
+        document.documentElement.lang = language;
+        for (const section of document.querySelectorAll("[data-language]")) {
+          section.hidden = section.dataset.language !== language;
+          section.style.display = section.hidden ? "none" : "block";
+        }
+        for (const link of document.querySelectorAll("[data-language-link]")) {
+          link.setAttribute(
+            "aria-current",
+            link.dataset.languageLink === language ? "true" : "false",
+          );
+        }
+      }
+
+      window.addEventListener("hashchange", applyLanguage);
+      window.addEventListener("DOMContentLoaded", applyLanguage);
+    </script>
   </head>
   <body>
     <main>
-      <article id="en" class="lang-en">
-        <h1>Remote Provider Guide</h1>
-        <p><a href="#">中文</a></p>
+      <article data-language="zh-CN">
+        <header>
+          <h1>远程 Provider 指南</h1>
+          <p class="lead">
+            通过托管的 manifest 和脚本安装额度 Provider，无需把 Provider 打包进主程序。
+          </p>
+          <nav class="language-switch" aria-label="文档语言">
+            <a href="#zh-CN" data-language-link="zh-CN" aria-current="true">中文</a>
+            <a href="#en" data-language-link="en" aria-current="false">English</a>
+          </nav>
+        </header>
+
         <section>
-          <h2>Manifest format</h2>
-          <p>Remote providers are installed from a registry and a <code>provider.json</code> manifest.</p>
+          <h2>工作方式</h2>
+          <ol>
+            <li>在设置页提供 registry URL 或本地路径，例如 <code>registry.json</code>。</li>
+            <li>QuotaBarWin 读取 registry，拉取每个 Provider manifest，校验可选 checksum，并下载 source script。</li>
+            <li>脚本会缓存到本机，并使用 manifest 声明的 runtime 执行，例如 <code>node</code>、<code>python</code>、<code>pwsh</code>、<code>bash</code> 或绝对路径。</li>
+            <li>每次刷新时，QuotaBarWin 运行缓存脚本，并把 stdout 解析为标准额度窗口。</li>
+          </ol>
+        </section>
+
+        <section>
+          <h2>Manifest 格式</h2>
+          <p>将 manifest 保存为 <code>provider.json</code>，并放在 source script 旁。</p>
           <pre>{
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
   "version": "1.0.0",
+  "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "node",
   "entry": "provider.cjs",
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
-  "checksums": { "source": "sha256:&lt;hex&gt;" }
+  "permissions": ["env:KIMI_API_KEY"],
+  "checksums": {
+    "source": "sha256:&lt;hex&gt;"
+  }
 }</pre>
-          <p>For the complete English guide, see <a href="/docs/remote-provider-guide.en.md">docs/remote-provider-guide.en.md</a>.</p>
-          <p><code>version</code> is shown in Settings; <code>checksums.source</code> remains the update and verification source of truth.</p>
+          <table>
+            <thead>
+              <tr><th>字段</th><th>必填</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>schemaVersion</code></td><td>是</td><td>必须为 <code>1</code>。</td></tr>
+              <tr><td><code>id</code></td><td>是</td><td>唯一 Provider id，不能与已有 Provider 冲突。</td></tr>
+              <tr><td><code>displayName</code></td><td>是</td><td>UI 中显示的人类可读名称。</td></tr>
+              <tr><td><code>version</code></td><td>否</td><td>设置页显示的人类可读版本号；缺省时显示短 checksum。</td></tr>
+              <tr><td><code>runtime</code></td><td>是</td><td>执行 <code>entry</code> 的 runtime，可为命令名或绝对路径。</td></tr>
+              <tr><td><code>entry</code></td><td>是</td><td>Source 文件。相对路径按 manifest 所在位置解析。</td></tr>
+              <tr><td><code>requiredEnvVars</code></td><td>否</td><td>脚本需要的环境变量。</td></tr>
+              <tr><td><code>output</code></td><td>是</td><td>当前使用 <code>provider-snapshot-v1</code>。</td></tr>
+              <tr><td><code>checksums.source</code></td><td>否</td><td>Source SHA-256。启用安全 auto-update 时需要；<code>version</code> 只用于展示，不替代 checksum。</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section>
+          <h2>Registry 格式</h2>
+          <p>Registry 可以用一个 URL 安装多个 Provider。</p>
+          <pre>{
+  "schemaVersion": 1,
+  "providers": [
+    {
+      "id": "kimi-coding",
+      "providerUrl": "kimi-coding/provider.json",
+      "checksum": "sha256:&lt;manifest-sha256&gt;"
+    }
+  ]
+}</pre>
+          <p>
+            <code>providerUrl</code> 可以是 HTTPS URL、<code>file://</code> URL 或本地路径；相对路径会按 registry 所在位置解析。
+          </p>
+        </section>
+
+        <section>
+          <h2>Source Script 输出协议</h2>
+          <p>脚本必须向 stdout 输出一个 JSON 对象。诊断信息请写 stderr。</p>
+          <pre>{
+  "status": "ok",
+  "updatedAt": "2026-06-12T10:00:00.000Z",
+  "windows": [
+    {
+      "id": "weekly",
+      "label": "Weekly limit",
+      "remaining": 88,
+      "used": 12,
+      "limit": 100,
+      "unit": "requests",
+      "usedPercent": 12,
+      "remainingPercent": 88,
+      "warningRemaining": 20,
+      "resetAt": "2026-06-19T10:00:00.000Z",
+      "resetText": null,
+      "confidence": "exact"
+    }
+  ],
+  "metadata": {}
+}</pre>
+          <div class="note">
+            请保持 <code>windows[].id</code> 稳定。用户会用它配置窗口顺序、可见性和自定义名称。
+          </div>
+        </section>
+
+        <section>
+          <h2>本地配置与 Secret</h2>
+          <p>
+            远程脚本不应该包含凭据。脚本读取 <code>process.env.NAME</code>，QuotaBarWin 会把配置中的 env vars 注入子进程。
+          </p>
+          <pre>{
+  "kind": "remote",
+  "id": "kimi-coding",
+  "envVars": {
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+  }
+}</pre>
+          <p>
+            <code>${secret:NAME}</code> 会优先读取 <code>&lt;config-dir&gt;/secrets/NAME.txt</code>，找不到时回退到环境变量 <code>NAME</code>。
+          </p>
+        </section>
+
+        <section>
+          <h2>实现示例：Zhipu / BigModel</h2>
+          <p>
+            以下示例调用 Zhipu / BigModel quota endpoint，并输出 <code>provider-snapshot-v1</code>。
+            它们都从 <code>BIGMODEL_API_KEY</code> 读取 API key。
+          </p>
+
+          <h3>Node.js</h3>
+          <pre>const token = process.env.BIGMODEL_API_KEY;
+if (!token) {
+  console.error("BIGMODEL_API_KEY is required");
+  process.exit(1);
+}
+
+fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
+  headers: { Authorization: `Bearer ${token}` }
+})
+  .then((res) => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  })
+  .then((body) => {
+    const limits = body.data?.limits ?? [];
+    const windows = limits.map((l) => ({
+      id: `${l.type}-${l.unit}-${l.number}`.toLowerCase(),
+      label: `${l.type} / ${l.unit}`,
+      used: l.currentValue ?? null,
+      limit: l.usage ?? null,
+      unit: l.type === "TOKENS_LIMIT" ? "tokens" : null,
+      usedPercent: l.percentage ?? null,
+      remainingPercent: l.percentage == null ? null : Math.max(0, 100 - l.percentage),
+      resetAt: l.nextResetTime ? new Date(l.nextResetTime).toISOString() : null,
+      resetText: null,
+      confidence: "exact"
+    }));
+    console.log(JSON.stringify({
+      status: "ok",
+      updatedAt: new Date().toISOString(),
+      windows,
+      metadata: {}
+    }));
+  })
+  .catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });</pre>
+
+          <h3>Python</h3>
+          <pre>import json, os, sys, urllib.request, datetime
+
+token = os.environ.get("BIGMODEL_API_KEY")
+if not token:
+    sys.exit("BIGMODEL_API_KEY is required")
+
+req = urllib.request.Request(
+    "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+    headers={"Authorization": f"Bearer {token}"}
+)
+
+with urllib.request.urlopen(req) as res:
+    body = json.load(res)
+
+limits = body.get("data", {}).get("limits", [])
+windows = []
+for l in limits:
+    pct = l.get("percentage")
+    windows.append({
+        "id": f"{l['type']}-{l['unit']}-{l['number']}".lower(),
+        "label": f"{l['type']} / {l['unit']}",
+        "used": l.get("currentValue"),
+        "limit": l.get("usage"),
+        "unit": "tokens" if l.get("type") == "TOKENS_LIMIT" else None,
+        "usedPercent": pct,
+        "remainingPercent": None if pct is None else max(0, 100 - pct),
+        "resetAt": datetime.datetime.fromtimestamp(
+            l["nextResetTime"] / 1000, tz=datetime.timezone.utc
+        ).isoformat() if l.get("nextResetTime") else None,
+        "resetText": None,
+        "confidence": "exact"
+    })
+
+print(json.dumps({
+    "status": "ok",
+    "updatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "windows": windows,
+    "metadata": {}
+}, ensure_ascii=False))</pre>
+
+          <h3>PowerShell</h3>
+          <pre>$token = $env:BIGMODEL_API_KEY
+if (-not $token) { throw "BIGMODEL_API_KEY is required" }
+
+$res = Invoke-RestMethod -Uri "https://open.bigmodel.cn/api/monitor/usage/quota/limit" -Headers @{
+  Authorization = "Bearer $token"
+}
+
+$windows = @()
+foreach ($l in $res.data.limits) {
+  $pct = $l.percentage
+  $windows += @{
+    id = "$($l.type)-$($l.unit)-$($l.number)".ToLower()
+    label = "$($l.type) / $($l.unit)"
+    used = $l.currentValue
+    limit = $l.usage
+    unit = if ($l.type -eq "TOKENS_LIMIT") { "tokens" } else { $null }
+    usedPercent = $pct
+    remainingPercent = if ($null -eq $pct) { $null } else { [math]::Max(0, 100 - $pct) }
+    resetAt = if ($l.nextResetTime) {
+      ([DateTimeOffset]::FromUnixTimeMilliseconds($l.nextResetTime).UtcDateTime).ToString("o")
+    } else { $null }
+    resetText = $null
+    confidence = "exact"
+  }
+}
+
+@{
+  status = "ok"
+  updatedAt = (Get-Date).ToString("o")
+  windows = $windows
+  metadata = @{}
+} | ConvertTo-Json -Depth 10</pre>
+
+          <h3>Bash（Git Bash）</h3>
+          <pre>#!/usr/bin/env bash
+set -euo pipefail
+
+TOKEN="${BIGMODEL_API_KEY:-}"
+[ -z "$TOKEN" ] &amp;&amp; { echo "BIGMODEL_API_KEY is required" &gt;&amp;2; exit 1; }
+
+RESPONSE=$(curl -fsS -H "Authorization: Bearer $TOKEN" \
+  "https://open.bigmodel.cn/api/monitor/usage/quota/limit")
+
+UPDATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+WINDOWS=$(echo "$RESPONSE" | jq '[.data.limits[] | {
+  id: "\(.type)-\(.unit)-\(.number)" | ascii_downcase,
+  label: "\(.type) / \(.unit)",
+  used: .currentValue,
+  limit: .usage,
+  unit: (if .type == "TOKENS_LIMIT" then "tokens" else null end),
+  usedPercent: .percentage,
+  remainingPercent: (if .percentage == null then null else [0, 100 - .percentage] | max end),
+  resetAt: (if .nextResetTime == null then null else (.nextResetTime / 1000 | strflocaltime("%Y-%m-%dT%H:%M:%SZ")) end),
+  resetText: null,
+  confidence: "exact"
+}]')
+
+jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
+  '{status: "ok", updatedAt: $updatedAt, windows: $windows, metadata: {}}'</pre>
+
+          <div class="note">
+            Bash 示例需要 <code>jq</code>。Windows 上 Git Bash 通常会随附它。
+          </div>
+        </section>
+
+        <section>
+          <h2>安全检查清单</h2>
+          <ul>
+            <li>只安装你信任来源的远程 Provider。</li>
+            <li>安装前检查 source URL、runtime 和 required env vars。</li>
+            <li>优先使用带 <code>providers[].checksum</code> 的 registry。</li>
+            <li>优先使用带 <code>checksums.source</code> 的 manifest；否则无法安全自动更新。</li>
+            <li>缓存 source 位于 app data 目录下的 <code>providers/remote/&lt;id&gt;/</code>。</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>示例与更新</h2>
+          <p>
+            仓库中的 <code>examples/remote-providers/</code> 包含 Kimi、BigModel、Codex usage 和 DeepSeek balance 示例。
+          </p>
+          <p>
+            如果 manifest 包含 <code>checksums.source</code>，可在设置页使用自动更新或手动 “检查更新 / 应用更新”。设置页会显示版本、安装时间、更新时间和上次检查时间。缺少 checksum 时，需要移除后重新添加 Provider。
+          </p>
         </section>
       </article>
 
-      <article class="lang-zh">
-        <h1>远程 Provider 指南</h1>
-        <p><a href="#en">English</a></p>
+      <article class="lang-en" data-language="en" hidden>
+        <header>
+          <h1>Remote Provider Guide</h1>
+          <p class="lead">
+            Install quota providers from a hosted manifest and script, without bundling them into the app.
+          </p>
+          <nav class="language-switch" aria-label="Document language">
+            <a href="#zh-CN" data-language-link="zh-CN" aria-current="false">中文</a>
+            <a href="#en" data-language-link="en" aria-current="true">English</a>
+          </nav>
+        </header>
+
         <section>
-          <h2>Manifest 格式</h2>
-          <p>远程 Provider 通过 registry 和 <code>provider.json</code> manifest 安装。</p>
+          <h2>How it works</h2>
+          <ol>
+            <li>You provide a registry URL or local file path such as <code>registry.json</code>.</li>
+            <li>QuotaBarWin reads the registry, fetches each provider manifest, verifies optional checksums, and downloads source scripts.</li>
+            <li>Each script is cached locally and executed with its declared runtime, such as <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path.</li>
+            <li>On every refresh, QuotaBarWin runs the cached scripts and parses stdout into quota windows.</li>
+          </ol>
+        </section>
+
+        <section>
+          <h2>Manifest format</h2>
+          <p>Save the manifest as <code>provider.json</code> next to your source script.</p>
           <pre>{
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
   "version": "1.0.0",
+  "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "node",
   "entry": "provider.cjs",
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
-  "checksums": { "source": "sha256:&lt;hex&gt;" }
+  "permissions": ["env:KIMI_API_KEY"],
+  "checksums": {
+    "source": "sha256:&lt;hex&gt;"
+  }
 }</pre>
-          <p>完整中文指南见 <a href="/docs/remote-provider-guide.md">docs/remote-provider-guide.md</a>。</p>
-          <p><code>version</code> 会显示在设置页；更新判断和安全校验仍以 <code>checksums.source</code> 为准。</p>
+          <table>
+            <thead>
+              <tr><th>Field</th><th>Required</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>schemaVersion</code></td><td>yes</td><td>Must be <code>1</code>.</td></tr>
+              <tr><td><code>id</code></td><td>yes</td><td>Unique provider id. Must not conflict with an existing provider.</td></tr>
+              <tr><td><code>displayName</code></td><td>yes</td><td>Human-readable name shown in the UI.</td></tr>
+              <tr><td><code>version</code></td><td>no</td><td>Human-readable version shown in Settings; if omitted, a short checksum is shown.</td></tr>
+              <tr><td><code>runtime</code></td><td>yes</td><td>Runtime used to execute <code>entry</code>. It can be a command name or absolute path.</td></tr>
+              <tr><td><code>entry</code></td><td>yes</td><td>Source file. Relative paths are resolved against the manifest URL/path.</td></tr>
+              <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script.</td></tr>
+              <tr><td><code>output</code></td><td>yes</td><td>Use <code>provider-snapshot-v1</code>.</td></tr>
+              <tr><td><code>checksums.source</code></td><td>no</td><td>Source SHA-256. Required for safe auto-update; <code>version</code> is display metadata and does not replace checksum verification.</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section>
+          <h2>Provider registry format</h2>
+          <p>A registry installs multiple providers from one URL.</p>
+          <pre>{
+  "schemaVersion": 1,
+  "providers": [
+    {
+      "id": "kimi-coding",
+      "providerUrl": "kimi-coding/provider.json",
+      "checksum": "sha256:&lt;manifest-sha256&gt;"
+    }
+  ]
+}</pre>
+          <p>
+            <code>providerUrl</code> may be an HTTPS URL, <code>file://</code> URL, or local path. Relative paths are resolved against the registry URL/path.
+          </p>
+        </section>
+
+        <section>
+          <h2>Source script output contract</h2>
+          <p>The script must print one JSON object to stdout. Write diagnostics to stderr.</p>
+          <pre>{
+  "status": "ok",
+  "updatedAt": "2026-06-12T10:00:00.000Z",
+  "windows": [
+    {
+      "id": "weekly",
+      "label": "Weekly limit",
+      "remaining": 88,
+      "used": 12,
+      "limit": 100,
+      "unit": "requests",
+      "usedPercent": 12,
+      "remainingPercent": 88,
+      "warningRemaining": 20,
+      "resetAt": "2026-06-19T10:00:00.000Z",
+      "resetText": null,
+      "confidence": "exact"
+    }
+  ],
+  "metadata": {}
+}</pre>
+          <div class="note">
+            Keep <code>windows[].id</code> stable. User customization depends on it for display order, visibility, and labels.
+          </div>
+        </section>
+
+        <section>
+          <h2>Local config and secrets</h2>
+          <p>
+            Remote provider source should not contain credentials. Scripts read <code>process.env.NAME</code>; QuotaBarWin injects configured env vars into the child process.
+          </p>
+          <pre>{
+  "kind": "remote",
+  "id": "kimi-coding",
+  "envVars": {
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+  }
+}</pre>
+          <p>
+            <code>${secret:NAME}</code> reads <code>&lt;config-dir&gt;/secrets/NAME.txt</code> first and falls back to environment variable <code>NAME</code>.
+          </p>
+        </section>
+
+        <section>
+          <h2>Implementation examples (Zhipu/BigModel)</h2>
+          <p>
+            These examples call the Zhipu/BigModel quota endpoint and print a
+            <code>provider-snapshot-v1</code> response. They all read the API key from
+            <code>BIGMODEL_API_KEY</code>.
+          </p>
+
+          <h3>Node.js</h3>
+          <pre>const token = process.env.BIGMODEL_API_KEY;
+if (!token) {
+  console.error("BIGMODEL_API_KEY is required");
+  process.exit(1);
+}
+
+fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
+  headers: { Authorization: `Bearer ${token}` }
+})
+  .then((res) => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  })
+  .then((body) => {
+    const limits = body.data?.limits ?? [];
+    const windows = limits.map((l) => ({
+      id: `${l.type}-${l.unit}-${l.number}`.toLowerCase(),
+      label: `${l.type} / ${l.unit}`,
+      used: l.currentValue ?? null,
+      limit: l.usage ?? null,
+      unit: l.type === "TOKENS_LIMIT" ? "tokens" : null,
+      usedPercent: l.percentage ?? null,
+      remainingPercent: l.percentage == null ? null : Math.max(0, 100 - l.percentage),
+      resetAt: l.nextResetTime ? new Date(l.nextResetTime).toISOString() : null,
+      resetText: null,
+      confidence: "exact"
+    }));
+    console.log(JSON.stringify({
+      status: "ok",
+      updatedAt: new Date().toISOString(),
+      windows,
+      metadata: {}
+    }));
+  })
+  .catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });</pre>
+
+          <h3>Python</h3>
+          <pre>import json, os, sys, urllib.request, datetime
+
+token = os.environ.get("BIGMODEL_API_KEY")
+if not token:
+    sys.exit("BIGMODEL_API_KEY is required")
+
+req = urllib.request.Request(
+    "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+    headers={"Authorization": f"Bearer {token}"}
+)
+
+with urllib.request.urlopen(req) as res:
+    body = json.load(res)
+
+limits = body.get("data", {}).get("limits", [])
+windows = []
+for l in limits:
+    pct = l.get("percentage")
+    windows.append({
+        "id": f"{l['type']}-{l['unit']}-{l['number']}".lower(),
+        "label": f"{l['type']} / {l['unit']}",
+        "used": l.get("currentValue"),
+        "limit": l.get("usage"),
+        "unit": "tokens" if l.get("type") == "TOKENS_LIMIT" else None,
+        "usedPercent": pct,
+        "remainingPercent": None if pct is None else max(0, 100 - pct),
+        "resetAt": datetime.datetime.fromtimestamp(
+            l["nextResetTime"] / 1000, tz=datetime.timezone.utc
+        ).isoformat() if l.get("nextResetTime") else None,
+        "resetText": None,
+        "confidence": "exact"
+    })
+
+print(json.dumps({
+    "status": "ok",
+    "updatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "windows": windows,
+    "metadata": {}
+}, ensure_ascii=False))</pre>
+
+          <h3>PowerShell</h3>
+          <pre>$token = $env:BIGMODEL_API_KEY
+if (-not $token) { throw "BIGMODEL_API_KEY is required" }
+
+$res = Invoke-RestMethod -Uri "https://open.bigmodel.cn/api/monitor/usage/quota/limit" -Headers @{
+  Authorization = "Bearer $token"
+}
+
+$windows = @()
+foreach ($l in $res.data.limits) {
+  $pct = $l.percentage
+  $windows += @{
+    id = "$($l.type)-$($l.unit)-$($l.number)".ToLower()
+    label = "$($l.type) / $($l.unit)"
+    used = $l.currentValue
+    limit = $l.usage
+    unit = if ($l.type -eq "TOKENS_LIMIT") { "tokens" } else { $null }
+    usedPercent = $pct
+    remainingPercent = if ($null -eq $pct) { $null } else { [math]::Max(0, 100 - $pct) }
+    resetAt = if ($l.nextResetTime) {
+      ([DateTimeOffset]::FromUnixTimeMilliseconds($l.nextResetTime).UtcDateTime).ToString("o")
+    } else { $null }
+    resetText = $null
+    confidence = "exact"
+  }
+}
+
+@{
+  status = "ok"
+  updatedAt = (Get-Date).ToString("o")
+  windows = $windows
+  metadata = @{}
+} | ConvertTo-Json -Depth 10</pre>
+
+          <h3>Bash (Git Bash)</h3>
+          <pre>#!/usr/bin/env bash
+set -euo pipefail
+
+TOKEN="${BIGMODEL_API_KEY:-}"
+[ -z "$TOKEN" ] &amp;&amp; { echo "BIGMODEL_API_KEY is required" &gt;&amp;2; exit 1; }
+
+RESPONSE=$(curl -fsS -H "Authorization: Bearer $TOKEN" \
+  "https://open.bigmodel.cn/api/monitor/usage/quota/limit")
+
+UPDATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+WINDOWS=$(echo "$RESPONSE" | jq '[.data.limits[] | {
+  id: "\(.type)-\(.unit)-\(.number)" | ascii_downcase,
+  label: "\(.type) / \(.unit)",
+  used: .currentValue,
+  limit: .usage,
+  unit: (if .type == "TOKENS_LIMIT" then "tokens" else null end),
+  usedPercent: .percentage,
+  remainingPercent: (if .percentage == null then null else [0, 100 - .percentage] | max end),
+  resetAt: (if .nextResetTime == null then null else (.nextResetTime / 1000 | strflocaltime("%Y-%m-%dT%H:%M:%SZ")) end),
+  resetText: null,
+  confidence: "exact"
+}]')
+
+jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
+  '{status: "ok", updatedAt: $updatedAt, windows: $windows, metadata: {}}'</pre>
+
+          <div class="note">
+            For Bash, <code>jq</code> must be available. On Windows, Git Bash usually ships with it.
+          </div>
+        </section>
+
+        <section>
+          <h2>Security checklist</h2>
+          <ul>
+            <li>Only install remote providers from sources you trust.</li>
+            <li>Review source URL, runtime, and required env vars before installing.</li>
+            <li>Prefer registries that include <code>providers[].checksum</code>.</li>
+            <li>Prefer manifests that include <code>checksums.source</code>; without it QuotaBarWin cannot auto-update safely.</li>
+            <li>The cached source lives under <code>providers/remote/&lt;id&gt;/</code> in the app data directory.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Examples and updates</h2>
+          <p>
+            The repository's <code>examples/remote-providers/</code> directory contains Kimi, BigModel, Codex usage, and DeepSeek balance examples.
+          </p>
+          <p>
+            If the manifest contains <code>checksums.source</code>, use auto-update or the Settings page's Check Updates / Apply Update actions. Settings shows the version, install time, update time, and last check time. Without a checksum, remove and re-add the provider to update it.
+          </p>
         </section>
       </article>
     </main>

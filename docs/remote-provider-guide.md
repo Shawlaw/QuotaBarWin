@@ -195,6 +195,171 @@ Registry 可以用一个 URL 安装多个 Provider：
 }
 ```
 
+## 实现示例：Zhipu / BigModel
+
+以下示例调用 Zhipu / BigModel quota endpoint，并输出 `provider-snapshot-v1`。
+它们都从 `BIGMODEL_API_KEY` 读取 API key。
+
+### Node.js
+
+```js
+const token = process.env.BIGMODEL_API_KEY;
+if (!token) {
+  console.error("BIGMODEL_API_KEY is required");
+  process.exit(1);
+}
+
+fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
+  headers: { Authorization: `Bearer ${token}` },
+})
+  .then((res) => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  })
+  .then((body) => {
+    const limits = body.data?.limits ?? [];
+    const windows = limits.map((l) => ({
+      id: `${l.type}-${l.unit}-${l.number}`.toLowerCase(),
+      label: `${l.type} / ${l.unit}`,
+      used: l.currentValue ?? null,
+      limit: l.usage ?? null,
+      unit: l.type === "TOKENS_LIMIT" ? "tokens" : null,
+      usedPercent: l.percentage ?? null,
+      remainingPercent:
+        l.percentage == null ? null : Math.max(0, 100 - l.percentage),
+      resetAt: l.nextResetTime
+        ? new Date(l.nextResetTime).toISOString()
+        : null,
+      resetText: null,
+      confidence: "exact",
+    }));
+    console.log(JSON.stringify({
+      status: "ok",
+      updatedAt: new Date().toISOString(),
+      windows,
+      metadata: {},
+    }));
+  })
+  .catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });
+```
+
+### Python
+
+```python
+import json, os, sys, urllib.request, datetime
+
+token = os.environ.get("BIGMODEL_API_KEY")
+if not token:
+    sys.exit("BIGMODEL_API_KEY is required")
+
+req = urllib.request.Request(
+    "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+    headers={"Authorization": f"Bearer {token}"}
+)
+
+with urllib.request.urlopen(req) as res:
+    body = json.load(res)
+
+limits = body.get("data", {}).get("limits", [])
+windows = []
+for l in limits:
+    pct = l.get("percentage")
+    windows.append({
+        "id": f"{l['type']}-{l['unit']}-{l['number']}".lower(),
+        "label": f"{l['type']} / {l['unit']}",
+        "used": l.get("currentValue"),
+        "limit": l.get("usage"),
+        "unit": "tokens" if l.get("type") == "TOKENS_LIMIT" else None,
+        "usedPercent": pct,
+        "remainingPercent": None if pct is None else max(0, 100 - pct),
+        "resetAt": datetime.datetime.fromtimestamp(
+            l["nextResetTime"] / 1000, tz=datetime.timezone.utc
+        ).isoformat() if l.get("nextResetTime") else None,
+        "resetText": None,
+        "confidence": "exact"
+    })
+
+print(json.dumps({
+    "status": "ok",
+    "updatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "windows": windows,
+    "metadata": {}
+}, ensure_ascii=False))
+```
+
+### PowerShell
+
+```powershell
+$token = $env:BIGMODEL_API_KEY
+if (-not $token) { throw "BIGMODEL_API_KEY is required" }
+
+$res = Invoke-RestMethod -Uri "https://open.bigmodel.cn/api/monitor/usage/quota/limit" -Headers @{
+  Authorization = "Bearer $token"
+}
+
+$windows = @()
+foreach ($l in $res.data.limits) {
+  $pct = $l.percentage
+  $windows += @{
+    id = "$($l.type)-$($l.unit)-$($l.number)".ToLower()
+    label = "$($l.type) / $($l.unit)"
+    used = $l.currentValue
+    limit = $l.usage
+    unit = if ($l.type -eq "TOKENS_LIMIT") { "tokens" } else { $null }
+    usedPercent = $pct
+    remainingPercent = if ($null -eq $pct) { $null } else { [math]::Max(0, 100 - $pct) }
+    resetAt = if ($l.nextResetTime) {
+      ([DateTimeOffset]::FromUnixTimeMilliseconds($l.nextResetTime).UtcDateTime).ToString("o")
+    } else { $null }
+    resetText = $null
+    confidence = "exact"
+  }
+}
+
+@{
+  status = "ok"
+  updatedAt = (Get-Date).ToString("o")
+  windows = $windows
+  metadata = @{}
+} | ConvertTo-Json -Depth 10
+```
+
+### Bash（Git Bash）
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+TOKEN="${BIGMODEL_API_KEY:-}"
+[ -z "$TOKEN" ] && { echo "BIGMODEL_API_KEY is required" >&2; exit 1; }
+
+RESPONSE=$(curl -fsS -H "Authorization: Bearer $TOKEN" \
+  "https://open.bigmodel.cn/api/monitor/usage/quota/limit")
+
+UPDATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+WINDOWS=$(echo "$RESPONSE" | jq '[.data.limits[] | {
+  id: "\(.type)-\(.unit)-\(.number)" | ascii_downcase,
+  label: "\(.type) / \(.unit)",
+  used: .currentValue,
+  limit: .usage,
+  unit: (if .type == "TOKENS_LIMIT" then "tokens" else null end),
+  usedPercent: .percentage,
+  remainingPercent: (if .percentage == null then null else [0, 100 - .percentage] | max end),
+  resetAt: (if .nextResetTime == null then null else (.nextResetTime / 1000 | strflocaltime("%Y-%m-%dT%H:%M:%SZ")) end),
+  resetText: null,
+  confidence: "exact"
+}]')
+
+jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
+  '{status: "ok", updatedAt: $updatedAt, windows: $windows, metadata: {}}'
+```
+
+Bash 示例需要 `jq`。Windows 上 Git Bash 通常会随附它。
+
 ## 安全检查清单
 
 - 只安装你信任来源的远程 Provider。

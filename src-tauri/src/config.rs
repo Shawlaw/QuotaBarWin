@@ -1364,6 +1364,13 @@ mod tests {
         assert!(contents.contains("Remote Provider Guide"));
         assert!(contents.contains("Manifest 格式"));
         assert!(contents.contains("Manifest format"));
+        assert!(contents.contains("Implementation examples (Zhipu/BigModel)"));
+        assert!(contents.contains("实现示例：Zhipu / BigModel"));
+        assert!(contents.contains("Node.js"));
+        assert!(contents.contains("Python"));
+        assert!(contents.contains("PowerShell"));
+        assert!(contents.contains("Bash"));
+        assert!(contents.contains("display = section.hidden ? \"none\" : \"block\""));
     }
 
     #[test]
