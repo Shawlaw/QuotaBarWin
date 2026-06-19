@@ -6,9 +6,9 @@
 QuotaBarWin 是一个 Windows-first 的 AI 用量 / 额度监控工具，基于 Tauri 2、
 Rust、React 和 Vite 构建。
 
-核心架构原则：**Provider 是唯一对外数据抽象**。Provider 内部可以使用原生
-Rust、缓存的远程脚本、CLI、API 请求、JSON 解析或文本解析，但前端只渲染归一化
-后的 `ProviderSnapshot` / `AppSnapshot` 数据。
+核心架构原则：**Provider 是唯一对外数据抽象**。用户可配置的 Provider 统一来自
+remote registry / manifest；Provider 脚本内部可以使用 CLI、API 请求、JSON 解析或
+文本解析，但前端只渲染归一化后的 `ProviderSnapshot` / `AppSnapshot` 数据。
 
 ## 当前功能
 
@@ -19,9 +19,8 @@ Rust、缓存的远程脚本、CLI、API 请求、JSON 解析或文本解析，�
 - 支持 AppData 配置和便携模式。将 `quotabarwin.portable` 放在可执行文件旁
   即启用便携模式。
 - 支持 `visibleWindowIds` 和 `windowLabelOverrides` 自定义额度窗口显示。
-- 原生 Codex usage provider，读取 ChatGPT/Codex usage API。
 - 远程 Provider registry：从 manifest 安装缓存脚本，支持可选 SHA-256 校验
-  和更新检查。
+  和更新检查；设置页显示 Provider 版本、安装时间、更新时间和上次检查时间。
 - 全局代理和单 Provider 代理，支持 HTTP 与 SOCKS5。
 - Provider 配置支持 secret 占位符：`${secret:NAME}`、`${env:NAME}`、
   `${file:C:\path\secret.txt}`。
@@ -29,16 +28,15 @@ Rust、缓存的远程脚本、CLI、API 请求、JSON 解析或文本解析，�
 
 ## Provider 模型
 
-当前实现支持的 Provider config kind：
+当前实现只支持一种用户配置 Provider：
 
 | Kind | 来源 | 说明 |
 |---|---|---|
-| `mock` | 内置 | 默认开发数据和 smoke 检查使用。 |
-| `codex` | 原生 Rust | 请求 `https://chatgpt.com/backend-api/wham/usage`，映射 5h / weekly 额度窗口。 |
 | `remote` | 缓存外部脚本 | 从 registry / manifest 安装，并使用声明的 runtime 执行，例如 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
 
-旧版 `command` / `script` Provider 仍可在历史 specs 中看到，但当前 config schema
-不再接受它们。
+旧版 `mock` / `codex` / `command` / `script` Provider 仍可在历史 specs 中看到，
+但当前 config schema 不再接受它们。Codex usage 通过 `codex-usage` remote
+Provider 示例提供。
 
 远程 Provider 作者指南：
 [`docs/remote-provider-guide.md`](docs/remote-provider-guide.md)。完整示例位于
@@ -46,7 +44,7 @@ Rust、缓存的远程脚本、CLI、API 请求、JSON 解析或文本解析，�
 
 ## 配置存储
 
-当前配置 schema version：`10`。
+当前配置 schema version：`11`。
 
 Windows AppData 配置：
 

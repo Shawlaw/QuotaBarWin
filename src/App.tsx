@@ -9,7 +9,6 @@ import {
   getAppVersion,
   getConfig,
   getConfigStorageInfo,
-  getProviderPresets,
   listenForRefreshRequests,
   listenForSnapshotUpdates,
   listenForSingleInstance,
@@ -21,7 +20,7 @@ import {
   setPortableMode
 } from "./lib/api";
 import { I18nProvider, useI18n } from "./i18n";
-import type { AppConfig, AppSnapshot, ConfigStorageInfo, ProviderPreset } from "./types";
+import type { AppConfig, AppSnapshot, ConfigStorageInfo } from "./types";
 
 function fallbackSnapshot(error: unknown): AppSnapshot {
   return {
@@ -86,7 +85,6 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [configStorageInfo, setConfigStorageInfo] = useState<ConfigStorageInfo | null>(null);
   const [appVersion, setAppVersion] = useState<string>("unknown");
-  const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -126,7 +124,6 @@ function MainApp({ onLanguageChange }: MainAppProps) {
         setConfig(loadedConfig);
         setConfigStorageInfo(loadedStorageInfo);
         setAppVersion(loadedVersion);
-        setPresets(await getProviderPresets());
         const cached = await getCachedSnapshot();
         if (cached && isMounted) {
           setSnapshot(cached);
@@ -271,7 +268,6 @@ function MainApp({ onLanguageChange }: MainAppProps) {
           onResetConfig={restoreDefaultConfig}
           onSave={persistConfig}
           onSetPortableMode={(enabled) => void togglePortableMode(enabled)}
-          presets={presets}
         />
       ) : (
         <section className="overview-page" aria-label={t.app.overviewLabel} data-testid="overview-page">

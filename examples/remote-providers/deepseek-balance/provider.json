@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "id": "deepseek-balance",
   "displayName": "DeepSeek Balance",
+  "version": "1.0.0",
   "description": "DeepSeek pay-as-you-go account balance via remote provider script.",
   "runtime": "node",
   "entry": "provider.cjs",

@@ -1,10 +1,7 @@
 import { useRef, useState } from "react";
 import type {
   AppConfig,
-  CodexProviderConfig,
   ConfigStorageInfo,
-  ProviderConfig,
-  ProviderPreset,
   ProviderSnapshot,
   RemoteProviderConfig
 } from "../types";
@@ -21,7 +18,6 @@ import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
 import {
   ProviderWindowSettings,
-  type WindowConfigProvider,
   type WindowDisplayPatch
 } from "./ProviderWindowSettings";
 import { RemoteProviderSettings } from "./RemoteProviderSettings";
@@ -31,7 +27,6 @@ type SettingsPanelProps = {
   configStorageInfo: ConfigStorageInfo | null;
   isConfigStorageBusy: boolean;
   isSaving: boolean;
-  presets: ProviderPreset[];
   snapshotProviders?: ProviderSnapshot[];
   onChange: (config: AppConfig) => void;
   onOpenConfigFolder: () => Promise<void>;
@@ -43,20 +38,13 @@ type SettingsPanelProps = {
 function updateProvider(
   config: AppConfig,
   providerId: string,
-  updater: (provider: ProviderConfig) => ProviderConfig
+  updater: (provider: RemoteProviderConfig) => RemoteProviderConfig
 ): AppConfig {
   return {
     ...config,
     providers: config.providers.map((provider) =>
       provider.id === providerId ? updater(provider) : provider
     )
-  };
-}
-
-function removeProvider(config: AppConfig, providerId: string): AppConfig {
-  return {
-    ...config,
-    providers: config.providers.filter((provider) => provider.id !== providerId)
   };
 }
 
@@ -76,24 +64,6 @@ function moveProvider(config: AppConfig, providerId: string, direction: -1 | 1):
     ...config,
     providers
   };
-}
-
-function uniqueProviderId(config: AppConfig, providerId: string): string {
-  const existingIds = new Set(config.providers.map((provider) => provider.id));
-  if (!existingIds.has(providerId)) {
-    return providerId;
-  }
-
-  let index = 2;
-  while (existingIds.has(`${providerId}-${index}`)) {
-    index += 1;
-  }
-
-  return `${providerId}-${index}`;
-}
-
-function cloneProvider(provider: ProviderConfig): ProviderConfig {
-  return JSON.parse(JSON.stringify(provider)) as ProviderConfig;
 }
 
 function formatEnvVars(envVars: Record<string, string> | undefined): string {
@@ -134,12 +104,29 @@ function remoteProviderRegistrySettings(config: AppConfig) {
   );
 }
 
+function formatProviderDate(value: string | null | undefined, fallback: string): string {
+  if (!value) {
+    return fallback;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
+}
+
+function shortChecksum(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  return value.length > 18 ? `${value.slice(0, 18)}...` : value;
+}
+
 export function SettingsPanel({
   config,
   configStorageInfo,
   isConfigStorageBusy,
   isSaving,
-  presets,
   snapshotProviders = [],
   onChange,
   onOpenConfigFolder,
@@ -151,6 +138,8 @@ export function SettingsPanel({
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
   const [expandedProviderActions, setExpandedProviderActions] = useState<Record<string, boolean>>({});
   const [envVarDrafts, setEnvVarDrafts] = useState<Record<string, string>>({});
+  const [updateInfo, setUpdateInfo] = useState<Record<string, Awaited<ReturnType<typeof refreshRemoteProvider>>>>({});
+  const [remoteMessage, setRemoteMessage] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
   const initialConfigRef = useRef(JSON.stringify(config));
   const configDraft = JSON.stringify(config);
@@ -164,17 +153,6 @@ export function SettingsPanel({
   const canSave = hasChanges && !refreshIntervalError && !lowQuotaWarningError && !isSaving;
   const isPortableMode = configStorageInfo?.mode === "portable";
   const storageModeLabel = isPortableMode ? t.settings.portableMode : t.settings.appDataMode;
-
-  function addPreset(preset: ProviderPreset) {
-    const provider = cloneProvider(preset.providerConfigTemplate);
-    provider.id = uniqueProviderId(config, provider.id);
-
-    setExpandedProviders((current) => ({ ...current, [provider.id]: true }));
-    onChange({
-      ...config,
-      providers: [...config.providers, provider]
-    });
-  }
 
   async function saveSettings() {
     setSaveMessage(t.settings.saving);
@@ -194,27 +172,12 @@ export function SettingsPanel({
     setSaveMessage(t.settings.noChanges);
   }
 
-  function updateCodexProvider(
-    provider: CodexProviderConfig,
-    patch: Partial<CodexProviderConfig>
-  ) {
-    onChange(
-      updateProvider(config, provider.id, (current) =>
-        current.kind === "codex" ? { ...current, ...patch } : current
-      )
-    );
-  }
-
   function updateWindowConfigProvider(
-    provider: WindowConfigProvider,
+    provider: RemoteProviderConfig,
     patch: WindowDisplayPatch
   ) {
     onChange(
-      updateProvider(config, provider.id, (current) =>
-        current.kind === "codex" || current.kind === "remote"
-          ? { ...current, ...patch }
-          : current
-      )
+      updateProvider(config, provider.id, (current) => ({ ...current, ...patch }))
     );
   }
 
@@ -232,14 +195,75 @@ export function SettingsPanel({
     patch: Partial<RemoteProviderConfig>
   ) {
     onChange(
-      updateProvider(config, provider.id, (current) =>
-        current.kind === "remote" ? { ...current, ...patch } : current
-      )
+      updateProvider(config, provider.id, (current) => ({ ...current, ...patch }))
     );
   }
 
   function snapshotWindowsForProvider(providerId: string) {
     return snapshotProviders.find((provider) => provider.id === providerId)?.windows ?? [];
+  }
+
+  async function handleProviderUpdateCheck(providerId: string) {
+    setRemoteMessage(null);
+    try {
+      const result = await refreshRemoteProvider(providerId);
+      setUpdateInfo((current) => ({ ...current, [providerId]: result }));
+      setRemoteMessage(
+        result.available ? t.remoteProviders.updateAvailable : t.remoteProviders.providerRefreshed
+      );
+    } catch (error) {
+      setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToRefreshProvider);
+    }
+  }
+
+  async function handleCheckAllUpdates() {
+    setRemoteMessage(null);
+    try {
+      const result = await checkRemoteUpdates();
+      setUpdateInfo(Object.fromEntries(result.map((update) => [update.id, update])));
+      const updated = await getConfig();
+      onChange(updated);
+      const availableCount = result.filter((update) => update.available).length;
+      setRemoteMessage(
+        availableCount > 0
+          ? t.remoteProviders.updatesAvailable(availableCount)
+          : t.remoteProviders.allProvidersUpToDate
+      );
+    } catch (error) {
+      setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToCheckUpdates);
+    }
+  }
+
+  async function handleApplyUpdate(providerId: string) {
+    setRemoteMessage(null);
+    try {
+      await applyRemoteUpdate(providerId);
+      setUpdateInfo((current) => {
+        const next = { ...current };
+        delete next[providerId];
+        return next;
+      });
+      const updated = await getConfig();
+      onChange(updated);
+      setRemoteMessage(t.remoteProviders.updateApplied);
+    } catch (error) {
+      setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToApplyUpdate);
+    }
+  }
+
+  async function handleRemoveProvider(provider: RemoteProviderConfig) {
+    if (!window.confirm(t.settings.removeProviderConfirm(provider.name))) {
+      return;
+    }
+    setRemoteMessage(null);
+    try {
+      await removeRemoteProvider(provider.id);
+      const updated = await getConfig();
+      onChange(updated);
+      setRemoteMessage(t.remoteProviders.providerRemoved);
+    } catch (error) {
+      setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToRemoveProvider);
+    }
   }
 
   return (
@@ -418,25 +442,34 @@ export function SettingsPanel({
       <section className="settings-section" aria-label={t.settings.providers} data-testid="providers-settings-section">
         <div className="settings-section-title">
           <h3>{t.settings.providers}</h3>
-          <span>{t.settings.configuredCount(config.providers.length)}</span>
+          <div className="settings-section-actions">
+            <span>{t.settings.configuredCount(config.providers.length)}</span>
+            <button type="button" className="button-secondary" onClick={() => void handleCheckAllUpdates()}>
+              {t.remoteProviders.checkUpdates}
+            </button>
+          </div>
         </div>
-        {presets.length > 0 ? (
-          <section className="preset-list" aria-label={t.settings.addProvider}>
-            <h3>{t.settings.addProvider}</h3>
-            <div className="preset-actions">
-              {presets.map((preset) => (
-                <button
-                  type="button"
-                  className="button-secondary"
-                  key={preset.id}
-                  onClick={() => addPreset(preset)}
-                >
-                  {preset.displayName}
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
+        <RemoteProviderSettings
+          registrySettings={remoteProviderRegistrySettings(config)}
+          onRegistrySettingsChange={(remoteProviderRegistry) =>
+            onChange({
+              ...config,
+              remoteProviderRegistry
+            })
+          }
+          onInstallRegistry={async (url, providerProxyUrl, providerAutoUpdate) => {
+            const result = await installRemoteProviderRegistry(
+              url,
+              providerProxyUrl,
+              providerAutoUpdate
+            );
+            const updated = await getConfig();
+            onChange(updated);
+            return result;
+          }}
+          onOpenGuide={openRemoteProviderGuide}
+        />
+        {remoteMessage ? <div className="settings-message">{remoteMessage}</div> : null}
         <div className="settings-provider-list">
         {config.providers.length === 0 ? (
           <p className="settings-empty">{t.settings.noProviders}</p>
@@ -459,7 +492,7 @@ export function SettingsPanel({
                 />
                 {provider.name}
               </label>
-              <span>{provider.kind}</span>
+              <span>{provider.version ?? shortChecksum(provider.trustedChecksum) ?? t.remoteProviders.unknownVersion}</span>
               <button
                 type="button"
                 className="button-secondary"
@@ -509,93 +542,39 @@ export function SettingsPanel({
                   type="button"
                   className="button-danger button-compact"
                   data-testid={`remove-provider-${provider.id}`}
-                  onClick={() => {
-                    if (window.confirm(t.settings.removeProviderConfirm(provider.name))) {
-                      onChange(removeProvider(config, provider.id));
-                    }
-                  }}
+                  onClick={() => void handleRemoveProvider(provider)}
                 >
                   {t.settings.remove}
                 </button>
+                <button
+                  type="button"
+                  className="button-secondary button-compact"
+                  onClick={() => void handleProviderUpdateCheck(provider.id)}
+                >
+                  {t.remoteProviders.checkUpdates}
+                </button>
+                {updateInfo[provider.id]?.available ? (
+                  <button
+                    type="button"
+                    className="button-primary button-compact"
+                    onClick={() => void handleApplyUpdate(provider.id)}
+                  >
+                    {t.remoteProviders.applyUpdate}
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {expandedProviders[provider.id] ? (
               <>
-                {presets
-                  .find((preset) => preset.providerConfigTemplate.id === provider.id)
-                  ?.requiredEnvVars?.map((envVar) => (
-                    <p className="env-hint" key={envVar}>
-                      {t.settings.setEnvVar(envVar)}
-                    </p>
-                  ))}
-                {provider.kind === "codex" ? (
                   <div className="command-fields">
-                    <label>
-                      {t.settings.name}
-                      <input
-                        value={provider.name}
-                        onChange={(event) =>
-                          updateCodexProvider(provider, { name: event.currentTarget.value })
-                        }
-                      />
-                    </label>
-                    <label className="args-field">
-                      {t.settings.authToken}
-                      <textarea
-                        rows={3}
-                        placeholder={t.settings.authTokenPlaceholder}
-                        value={provider.authToken}
-                        onChange={(event) =>
-                          updateCodexProvider(provider, { authToken: event.currentTarget.value })
-                        }
-                      />
-                    </label>
-                    <label>
-                      {t.settings.accountId}
-                      <input
-                        placeholder={t.settings.optional}
-                        value={provider.accountId ?? ""}
-                        onChange={(event) =>
-                          updateCodexProvider(provider, {
-                            accountId: event.currentTarget.value || null
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      {t.settings.proxyUrl}
-                      <input
-                        placeholder={t.settings.providerProxyPlaceholder}
-                        value={provider.proxyUrl ?? ""}
-                        onChange={(event) =>
-                          updateCodexProvider(provider, {
-                            proxyUrl: event.currentTarget.value || null
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      {t.settings.timeout}
-                      <input
-                        type="number"
-                        min={100}
-                        value={provider.timeoutMs}
-                        onChange={(event) =>
-                          updateCodexProvider(provider, {
-                            timeoutMs: Number(event.currentTarget.value)
-                          })
-                        }
-                      />
-                    </label>
-                    <ProviderWindowSettings
-                      provider={provider}
-                      snapshotWindows={snapshotWindowsForProvider(provider.id)}
-                      onChange={(patch) => updateWindowConfigProvider(provider, patch)}
-                    />
-                  </div>
-                ) : null}
-                {provider.kind === "remote" ? (
-                  <div className="command-fields">
+                    <div className="remote-provider-meta">
+                      <span>{t.remoteProviders.version}: {provider.version ?? shortChecksum(provider.trustedChecksum) ?? t.remoteProviders.unknownVersion}</span>
+                      <span>{t.remoteProviders.installedAt}: {formatProviderDate(provider.installedAt, "-")}</span>
+                      <span>{t.remoteProviders.updatedAt}: {formatProviderDate(provider.updatedAt, "-")}</span>
+                      <span>{t.remoteProviders.lastCheckedAt}: {formatProviderDate(provider.lastCheckedAt, "-")}</span>
+                      <span>{t.remoteProviders.runtime}: {provider.runtime}</span>
+                      <span title={provider.manifestUrl}>{t.remoteProviders.manifestUrl}: {provider.manifestUrl}</span>
+                    </div>
                     <label>
                       {t.settings.name}
                       <input
@@ -627,49 +606,12 @@ export function SettingsPanel({
                       onChange={(patch) => updateWindowConfigProvider(provider, patch)}
                     />
                   </div>
-                ) : null}
               </>
             ) : null}
           </article>
         ))}
         </div>
       </section>
-
-      <RemoteProviderSettings
-        providers={config.providers.filter(
-          (provider): provider is RemoteProviderConfig => provider.kind === "remote"
-        )}
-        registrySettings={remoteProviderRegistrySettings(config)}
-        onRegistrySettingsChange={(remoteProviderRegistry) =>
-          onChange({
-            ...config,
-            remoteProviderRegistry
-          })
-        }
-        onInstallRegistry={async (url, providerProxyUrl, providerAutoUpdate) => {
-          const result = await installRemoteProviderRegistry(
-            url,
-            providerProxyUrl,
-            providerAutoUpdate
-          );
-          const updated = await getConfig();
-          onChange(updated);
-          return result;
-        }}
-        onRemove={async (id) => {
-          await removeRemoteProvider(id);
-          const updated = await getConfig();
-          onChange(updated);
-        }}
-        onRefresh={refreshRemoteProvider}
-        onCheckUpdates={checkRemoteUpdates}
-        onApplyUpdate={async (id) => {
-          await applyRemoteUpdate(id);
-          const updated = await getConfig();
-          onChange(updated);
-        }}
-        onOpenGuide={openRemoteProviderGuide}
-      />
 
       <div className="fixed-save-bar" data-testid="fixed-save-bar">
         <span>{hasChanges ? t.settings.unsavedChanges : saveMessage}</span>

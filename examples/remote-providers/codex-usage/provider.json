@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "id": "codex-usage",
   "displayName": "Codex Usage",
+  "version": "1.0.0",
   "description": "ChatGPT/Codex 5h and weekly usage via remote provider script.",
   "runtime": "node",
   "entry": "provider.cjs",

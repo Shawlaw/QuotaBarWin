@@ -210,6 +210,7 @@
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
+  "version": "1.0.0",
   "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "node",
   "entry": "provider.cjs",
@@ -228,11 +229,12 @@
               <tr><td><code>schemaVersion</code></td><td>是</td><td>必须为 <code>1</code>。</td></tr>
               <tr><td><code>id</code></td><td>是</td><td>唯一 Provider id，不能与已有 Provider 冲突。</td></tr>
               <tr><td><code>displayName</code></td><td>是</td><td>UI 中显示的人类可读名称。</td></tr>
+              <tr><td><code>version</code></td><td>否</td><td>设置页显示的人类可读版本号；缺省时显示短 checksum。</td></tr>
               <tr><td><code>runtime</code></td><td>是</td><td>执行 <code>entry</code> 的 runtime，可为命令名或绝对路径。</td></tr>
               <tr><td><code>entry</code></td><td>是</td><td>Source 文件。相对路径按 manifest 所在位置解析。</td></tr>
               <tr><td><code>requiredEnvVars</code></td><td>否</td><td>脚本需要的环境变量。</td></tr>
               <tr><td><code>output</code></td><td>是</td><td>当前使用 <code>provider-snapshot-v1</code>。</td></tr>
-              <tr><td><code>checksums.source</code></td><td>否</td><td>Source SHA-256。启用安全 auto-update 时需要。</td></tr>
+              <tr><td><code>checksums.source</code></td><td>否</td><td>Source SHA-256。启用安全 auto-update 时需要；<code>version</code> 只用于展示，不替代 checksum。</td></tr>
             </tbody>
           </table>
         </section>
@@ -318,7 +320,7 @@
             仓库中的 <code>examples/remote-providers/</code> 包含 Kimi、BigModel、Codex usage 和 DeepSeek balance 示例。
           </p>
           <p>
-            如果 manifest 包含 <code>checksums.source</code>，可在设置页使用自动更新或手动 “检查更新 / 应用更新”。缺少 checksum 时，需要移除后重新添加 Provider。
+            如果 manifest 包含 <code>checksums.source</code>，可在设置页使用自动更新或手动 “检查更新 / 应用更新”。设置页会显示版本、安装时间、更新时间和上次检查时间。缺少 checksum 时，需要移除后重新添加 Provider。
           </p>
         </section>
       </article>
@@ -352,6 +354,7 @@
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
+  "version": "1.0.0",
   "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "node",
   "entry": "provider.cjs",
@@ -370,11 +373,12 @@
               <tr><td><code>schemaVersion</code></td><td>yes</td><td>Must be <code>1</code>.</td></tr>
               <tr><td><code>id</code></td><td>yes</td><td>Unique provider id. Must not conflict with an existing provider.</td></tr>
               <tr><td><code>displayName</code></td><td>yes</td><td>Human-readable name shown in the UI.</td></tr>
+              <tr><td><code>version</code></td><td>no</td><td>Human-readable version shown in Settings; if omitted, a short checksum is shown.</td></tr>
               <tr><td><code>runtime</code></td><td>yes</td><td>Runtime used to execute <code>entry</code>. It can be a command name or absolute path.</td></tr>
               <tr><td><code>entry</code></td><td>yes</td><td>Source file. Relative paths are resolved against the manifest URL/path.</td></tr>
               <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script.</td></tr>
               <tr><td><code>output</code></td><td>yes</td><td>Use <code>provider-snapshot-v1</code>.</td></tr>
-              <tr><td><code>checksums.source</code></td><td>no</td><td>Source SHA-256. Required for safe auto-update.</td></tr>
+              <tr><td><code>checksums.source</code></td><td>no</td><td>Source SHA-256. Required for safe auto-update; <code>version</code> is display metadata and does not replace checksum verification.</td></tr>
             </tbody>
           </table>
         </section>
@@ -460,7 +464,7 @@
             The repository's <code>examples/remote-providers/</code> directory contains Kimi, BigModel, Codex usage, and DeepSeek balance examples.
           </p>
           <p>
-            If the manifest contains <code>checksums.source</code>, use auto-update or the Settings page's Check Updates / Apply Update actions. Without a checksum, remove and re-add the provider to update it.
+            If the manifest contains <code>checksums.source</code>, use auto-update or the Settings page's Check Updates / Apply Update actions. Settings shows the version, install time, update time, and last check time. Without a checksum, remove and re-add the provider to update it.
           </p>
         </section>
       </article>

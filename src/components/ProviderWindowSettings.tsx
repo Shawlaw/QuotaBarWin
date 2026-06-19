@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useI18n } from "../i18n";
-import type { CodexProviderConfig, QuotaWindow, RemoteProviderConfig } from "../types";
+import type { QuotaWindow, RemoteProviderConfig } from "../types";
 
-export type WindowConfigProvider = CodexProviderConfig | RemoteProviderConfig;
+export type WindowConfigProvider = RemoteProviderConfig;
 
 export type WindowDisplayPatch = {
   windowLabelOverrides?: Record<string, string>;

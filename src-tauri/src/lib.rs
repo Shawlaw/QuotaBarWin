@@ -4,10 +4,8 @@ mod app_info;
 mod config;
 mod diagnostics;
 pub mod logger;
-mod presets;
 #[cfg(test)]
 mod productization;
-mod providers;
 mod proxy;
 mod quota;
 mod redact;
@@ -27,7 +25,6 @@ pub use config::{
     open_remote_provider_guide, reset_config, save_config, set_portable_mode, AppConfig,
 };
 pub use diagnostics::export_diagnostics;
-pub use presets::get_provider_presets;
 pub use proxy::{ProxyConfig, ProxyKind};
 pub use quota::{
     get_cached_snapshot, refresh_provider, refresh_snapshot, AppSnapshot, ProviderSnapshot,
@@ -94,7 +91,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             get_config_storage_info,
-            get_provider_presets,
             get_app_version,
             export_diagnostics,
             open_config_folder,

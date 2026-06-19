@@ -12,7 +12,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 10;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 11;
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
 const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
@@ -82,50 +82,13 @@ pub enum AppLanguage {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ProviderConfig {
-    #[serde(rename = "mock")]
-    Mock {
-        id: String,
-        name: String,
-        enabled: bool,
-    },
-    #[serde(rename = "codex")]
-    Codex {
-        id: String,
-        name: String,
-        enabled: bool,
-        #[serde(rename = "authToken", alias = "auth_token", alias = "auth-token")]
-        auth_token: String,
-        #[serde(
-            default,
-            rename = "accountId",
-            alias = "account_id",
-            alias = "account-id"
-        )]
-        account_id: Option<String>,
-        #[serde(default, rename = "proxyUrl", alias = "proxy_url", alias = "proxy-url")]
-        proxy_url: Option<String>,
-        #[serde(rename = "timeoutMs", alias = "timeout_ms", alias = "timeout-ms")]
-        timeout_ms: u64,
-        #[serde(
-            default,
-            rename = "windowLabelOverrides",
-            alias = "window_label_overrides",
-            alias = "window-label-overrides"
-        )]
-        window_label_overrides: HashMap<String, String>,
-        #[serde(
-            default,
-            rename = "visibleWindowIds",
-            alias = "visible_window_ids",
-            alias = "visible-window-ids"
-        )]
-        visible_window_ids: Vec<String>,
-    },
     #[serde(rename = "remote")]
     Remote {
         id: String,
         name: String,
         enabled: bool,
+        #[serde(default)]
+        version: Option<String>,
         #[serde(rename = "manifestUrl", alias = "manifest_url", alias = "manifest-url")]
         manifest_url: String,
         #[serde(rename = "sourceUrl", alias = "source_url", alias = "source-url")]
@@ -168,6 +131,27 @@ pub enum ProviderConfig {
             alias = "trusted-checksum"
         )]
         trusted_checksum: Option<String>,
+        #[serde(
+            default,
+            rename = "installedAt",
+            alias = "installed_at",
+            alias = "installed-at"
+        )]
+        installed_at: Option<String>,
+        #[serde(
+            default,
+            rename = "updatedAt",
+            alias = "updated_at",
+            alias = "updated-at"
+        )]
+        updated_at: Option<String>,
+        #[serde(
+            default,
+            rename = "lastCheckedAt",
+            alias = "last_checked_at",
+            alias = "last-checked-at"
+        )]
+        last_checked_at: Option<String>,
         #[serde(
             default,
             rename = "windowLabelOverrides",
@@ -232,11 +216,7 @@ pub fn default_config() -> AppConfig {
         network_proxy: None,
         tray_popup_position: None,
         remote_provider_registry: RemoteProviderRegistrySettings::default(),
-        providers: vec![ProviderConfig::Mock {
-            id: "mock-codex".to_string(),
-            name: "Codex Mock".to_string(),
-            enabled: true,
-        }],
+        providers: Vec::new(),
     }
 }
 
@@ -510,6 +490,39 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
             "autoUpdate": true
         });
         value["schemaVersion"] = serde_json::json!(10);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(10);
+    if version < 11 {
+        if let Some(providers) = value
+            .get_mut("providers")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            providers.retain(|provider| {
+                provider
+                    .get("kind")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("remote")
+            });
+            for provider in providers {
+                if provider.get("version").is_none() {
+                    provider["version"] = serde_json::Value::Null;
+                }
+                if provider.get("installedAt").is_none() {
+                    provider["installedAt"] = serde_json::Value::Null;
+                }
+                if provider.get("updatedAt").is_none() {
+                    provider["updatedAt"] = serde_json::Value::Null;
+                }
+                if provider.get("lastCheckedAt").is_none() {
+                    provider["lastCheckedAt"] = serde_json::Value::Null;
+                }
+            }
+        }
+        value["schemaVersion"] = serde_json::json!(11);
     }
 
     Ok(value)
@@ -838,6 +851,30 @@ fn open_path_external(path: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    fn remote_provider_config(id: &str) -> ProviderConfig {
+        ProviderConfig::Remote {
+            id: id.to_string(),
+            name: "Provider".to_string(),
+            enabled: true,
+            version: Some("1.0.0".to_string()),
+            manifest_url: "https://example.com/provider.json".to_string(),
+            source_url: "https://example.com/provider.cjs".to_string(),
+            provider_dir: None,
+            runtime: "node".to_string(),
+            resolved_runtime: None,
+            proxy_url: None,
+            auto_update: true,
+            update_interval_seconds: 3600,
+            trusted_checksum: None,
+            installed_at: Some("2026-06-18T00:00:00Z".to_string()),
+            updated_at: Some("2026-06-18T00:00:00Z".to_string()),
+            last_checked_at: Some("2026-06-18T00:00:00Z".to_string()),
+            window_label_overrides: HashMap::new(),
+            visible_window_ids: Vec::new(),
+            env_vars: HashMap::new(),
+        }
+    }
+
     #[test]
     fn loads_default_config_when_missing() {
         let temp = tempfile::tempdir().expect("temp dir");
@@ -864,11 +901,7 @@ mod tests {
             network_proxy: None,
             tray_popup_position: Some(TrayPopupPosition { x: 111, y: 222 }),
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
-            providers: vec![ProviderConfig::Mock {
-                id: "mock".to_string(),
-                name: "Mock".to_string(),
-                enabled: false,
-            }],
+            providers: vec![remote_provider_config("remote")],
         };
 
         save_config_to_path(&path, &config).expect("save config");
@@ -879,48 +912,30 @@ mod tests {
     }
 
     #[test]
-    fn provider_config_parses_all_supported_kinds() {
-        let providers = serde_json::json!([
-            {
-                "kind": "mock",
-                "id": "mock",
-                "name": "Mock",
-                "enabled": true
-            },
-            {
-                "kind": "codex",
-                "id": "codex",
-                "name": "Codex",
-                "enabled": true,
-                "authToken": "${env:CODEX_ACCESS_TOKEN}",
-                "accountId": "acct",
-                "proxyUrl": "socks5h://127.0.0.1:7890",
-                "timeoutMs": 15000,
-                "windowLabelOverrides": { "weekly": "Weekly limit" },
-                "visibleWindowIds": ["5h", "weekly"]
-            },
-            {
-                "kind": "remote",
-                "id": "remote-kimi",
-                "name": "Remote Kimi",
-                "enabled": true,
-                "manifestUrl": "https://example.com/provider.json",
-                "sourceUrl": "https://example.com/provider.cjs",
-                "runtime": "node",
-                "autoUpdate": true,
-                "updateIntervalSeconds": 1800,
-                "trustedChecksum": "sha256:abc123",
-                "windowLabelOverrides": {},
-                "visibleWindowIds": []
-            }
-        ]);
+    fn provider_config_parses_remote_kind_only() {
+        let provider = serde_json::json!({
+            "kind": "remote",
+            "id": "remote-kimi",
+            "name": "Remote Kimi",
+            "enabled": true,
+            "version": "1.0.0",
+            "manifestUrl": "https://example.com/provider.json",
+            "sourceUrl": "https://example.com/provider.cjs",
+            "runtime": "node",
+            "autoUpdate": true,
+            "updateIntervalSeconds": 1800,
+            "trustedChecksum": "sha256:abc123",
+            "installedAt": "2026-06-18T00:00:00Z",
+            "updatedAt": "2026-06-18T00:00:00Z",
+            "lastCheckedAt": "2026-06-18T00:00:00Z",
+            "windowLabelOverrides": {},
+            "visibleWindowIds": []
+        });
 
-        let parsed = serde_json::from_value::<Vec<ProviderConfig>>(providers)
-            .expect("deserialize providers");
+        let parsed = serde_json::from_value::<ProviderConfig>(provider)
+            .expect("deserialize provider");
 
-        assert!(matches!(parsed[0], ProviderConfig::Mock { .. }));
-        assert!(matches!(parsed[1], ProviderConfig::Codex { .. }));
-        assert!(matches!(parsed[2], ProviderConfig::Remote { .. }));
+        assert!(matches!(parsed, ProviderConfig::Remote { .. }));
     }
 
     #[test]
@@ -954,20 +969,49 @@ mod tests {
     }
 
     #[test]
-    fn config_migration_v3_to_current_preserves_supported_providers() {
+    fn config_migration_v10_to_current_keeps_only_remote_providers() {
         let value = serde_json::json!({
-            "schemaVersion": 3,
+            "schemaVersion": 10,
             "refreshIntervalSeconds": 300,
             "displayMode": "remaining",
             "lowQuotaWarningThreshold": 20,
             "launchAtStartup": false,
             "logLevel": "info",
-            "providers": [{
-                "kind": "mock",
-                "id": "mock",
-                "name": "Mock",
-                "enabled": true
-            }]
+            "language": "system",
+            "networkProxy": null,
+            "trayPopupPosition": null,
+            "remoteProviderRegistry": {
+                "registryUrl": null,
+                "providerProxyUrl": null,
+                "autoUpdate": true
+            },
+            "providers": [
+                {
+                    "kind": "mock",
+                    "id": "mock",
+                    "name": "Mock",
+                    "enabled": true
+                },
+                {
+                    "kind": "codex",
+                    "id": "codex",
+                    "name": "Codex",
+                    "enabled": true,
+                    "authToken": "${env:CODEX_ACCESS_TOKEN}",
+                    "timeoutMs": 15000
+                },
+                {
+                    "kind": "remote",
+                    "id": "remote-kimi",
+                    "name": "Remote Kimi",
+                    "enabled": true,
+                    "manifestUrl": "https://example.com/provider.json",
+                    "sourceUrl": "https://example.com/provider.cjs",
+                    "runtime": "node",
+                    "autoUpdate": true,
+                    "updateIntervalSeconds": 1800
+                }
+            ]
         });
 
         let migrated = migrate_config_value(value).expect("migrates");
@@ -976,7 +1020,10 @@ mod tests {
             migrated["schemaVersion"],
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
-        assert_eq!(migrated["providers"][0]["kind"], serde_json::json!("mock"));
+        assert_eq!(migrated["providers"].as_array().unwrap().len(), 1);
+        assert_eq!(migrated["providers"][0]["kind"], serde_json::json!("remote"));
+        assert_eq!(migrated["providers"][0]["version"], serde_json::Value::Null);
+        assert_eq!(migrated["providers"][0]["installedAt"], serde_json::Value::Null);
     }
 
     #[test]
@@ -1057,7 +1104,19 @@ mod tests {
     }
 
     #[test]
-    fn local_command_and_script_provider_configs_are_rejected() {
+    fn non_remote_provider_configs_are_rejected() {
+        let mock = serde_json::json!({
+            "kind": "mock",
+            "id": "mock",
+            "name": "Mock",
+            "enabled": true
+        });
+        let codex = serde_json::json!({
+            "kind": "codex",
+            "id": "codex",
+            "name": "Codex",
+            "enabled": true
+        });
         let command = serde_json::json!({
             "kind": "command",
             "id": "command",
@@ -1071,6 +1130,8 @@ mod tests {
             "enabled": true
         });
 
+        assert!(serde_json::from_value::<ProviderConfig>(mock).is_err());
+        assert!(serde_json::from_value::<ProviderConfig>(codex).is_err());
         assert!(serde_json::from_value::<ProviderConfig>(command).is_err());
         assert!(serde_json::from_value::<ProviderConfig>(script).is_err());
     }
@@ -1096,6 +1157,7 @@ mod tests {
                 id: "provider".to_string(),
                 name: "Provider".to_string(),
                 enabled: true,
+                version: Some("1.0.0".to_string()),
                 manifest_url: "https://example.com/provider.json".to_string(),
                 source_url: "https://example.com/provider.cjs".to_string(),
                 provider_dir: None,
@@ -1105,6 +1167,9 @@ mod tests {
                 auto_update: true,
                 update_interval_seconds: 3600,
                 trusted_checksum: None,
+                installed_at: Some("2026-06-18T00:00:00Z".to_string()),
+                updated_at: Some("2026-06-18T00:00:00Z".to_string()),
+                last_checked_at: Some("2026-06-18T00:00:00Z".to_string()),
                 window_label_overrides: HashMap::from([(
                     "300-minute".to_string(),
                     "5h".to_string(),
@@ -1139,6 +1204,11 @@ mod tests {
             value["providers"][0]["envVars"],
             serde_json::json!({ "KIMI_API_KEY": "${secret:KIMI_API_KEY}" })
         );
+        assert_eq!(value["providers"][0]["version"], serde_json::json!("1.0.0"));
+        assert_eq!(
+            value["providers"][0]["installedAt"],
+            serde_json::json!("2026-06-18T00:00:00Z")
+        );
         assert!(value["providers"][0]
             .get("window_label_overrides")
             .is_none());
@@ -1152,11 +1222,15 @@ mod tests {
             "id": "provider",
             "name": "Provider",
             "enabled": true,
+            "version": "1.0.0",
             "manifestUrl": "https://example.com/provider.json",
             "sourceUrl": "https://example.com/provider.cjs",
             "runtime": "node",
             "autoUpdate": true,
             "updateIntervalSeconds": 3600,
+            "installedAt": "2026-06-18T00:00:00Z",
+            "updatedAt": "2026-06-18T00:00:00Z",
+            "lastCheckedAt": "2026-06-18T00:00:00Z",
             "windowLabelOverrides": { "300-minute": "5h" },
             "visibleWindowIds": ["5h"],
             "envVars": { "KIMI_API_KEY": "${secret:KIMI_API_KEY}" }
@@ -1165,25 +1239,25 @@ mod tests {
         let provider =
             serde_json::from_value::<ProviderConfig>(value).expect("deserialize provider");
 
-        match provider {
-            ProviderConfig::Remote {
-                window_label_overrides,
-                visible_window_ids,
-                env_vars,
-                ..
-            } => {
-                assert_eq!(
-                    window_label_overrides.get("300-minute"),
-                    Some(&"5h".to_string())
-                );
-                assert_eq!(visible_window_ids, vec!["5h".to_string()]);
-                assert_eq!(
-                    env_vars.get("KIMI_API_KEY"),
-                    Some(&"${secret:KIMI_API_KEY}".to_string())
-                );
-            }
-            _ => panic!("expected remote provider"),
-        }
+        let ProviderConfig::Remote {
+            window_label_overrides,
+            visible_window_ids,
+            env_vars,
+            version,
+            installed_at,
+            ..
+        } = provider;
+        assert_eq!(version, Some("1.0.0".to_string()));
+        assert_eq!(installed_at, Some("2026-06-18T00:00:00Z".to_string()));
+        assert_eq!(
+            window_label_overrides.get("300-minute"),
+            Some(&"5h".to_string())
+        );
+        assert_eq!(visible_window_ids, vec!["5h".to_string()]);
+        assert_eq!(
+            env_vars.get("KIMI_API_KEY"),
+            Some(&"${secret:KIMI_API_KEY}".to_string())
+        );
     }
 
     #[test]

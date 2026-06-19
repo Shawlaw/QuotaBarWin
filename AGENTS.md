@@ -12,10 +12,11 @@ quota windows. The stack is:
 - Backend: Rust 2021, Tauri 2, reqwest, serde, zip.
 - Packaging: Tauri MSI/NSIS plus GitHub Actions release artifacts.
 
-Core invariant: **Provider is the only public data abstraction.** Providers can
-use native API calls, cached remote scripts, CLI tools, JSON/text parsing, or
-other internals, but the UI consumes only normalized `AppSnapshot`,
-`ProviderSnapshot`, and `QuotaWindow` data.
+Core invariant: **Provider is the only public data abstraction.** User-facing
+providers are installed from remote registries/manifests. Remote provider
+scripts can use API calls, CLI tools, JSON/text parsing, or other internals, but
+the UI consumes only normalized `AppSnapshot`, `ProviderSnapshot`, and
+`QuotaWindow` data.
 
 ## Source Of Truth
 
@@ -44,17 +45,16 @@ conflicts with code, README, or this file, trust the code and current docs.
 
 ## Current Provider Kinds
 
-Current config schema version: `10`.
+Current config schema version: `11`.
 
-Supported provider config kinds:
+Supported provider config kind:
 
-- `mock`: built-in development provider.
-- `codex`: native Rust provider for ChatGPT/Codex usage.
 - `remote`: cached script installed from a registry/manifest.
 
-Do not add or depend on `command` / `script` provider configs unless the task is
-explicitly to revive that design. Current config deserialization rejects those
-legacy kinds.
+Do not add or depend on `mock`, `codex`, `command`, or `script` provider configs
+unless the task is explicitly to revive that design. Current config
+deserialization rejects those legacy kinds. Codex usage is provided as the
+`codex-usage` remote provider example.
 
 ## Config And Secrets
 

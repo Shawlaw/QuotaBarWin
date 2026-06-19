@@ -179,6 +179,13 @@ export type I18nCatalog = {
     checkUpdates: string;
     applyUpdate: string;
     remove: string;
+    version: string;
+    unknownVersion: string;
+    installedAt: string;
+    updatedAt: string;
+    lastCheckedAt: string;
+    runtime: string;
+    manifestUrl: string;
   };
   format: {
     unknown: string;
@@ -375,7 +382,14 @@ export const en: I18nCatalog = {
     refresh: "Refresh",
     checkUpdates: "Check Updates",
     applyUpdate: "Apply Update",
-    remove: "Remove"
+    remove: "Remove",
+    version: "Version",
+    unknownVersion: "unknown version",
+    installedAt: "Installed",
+    updatedAt: "Updated",
+    lastCheckedAt: "Last checked",
+    runtime: "Runtime",
+    manifestUrl: "Manifest"
   },
   format: {
     unknown: "Unknown",
@@ -572,7 +586,14 @@ export const zhCN: I18nCatalog = {
     refresh: "刷新",
     checkUpdates: "检查更新",
     applyUpdate: "应用更新",
-    remove: "移除"
+    remove: "移除",
+    version: "版本",
+    unknownVersion: "未知版本",
+    installedAt: "安装时间",
+    updatedAt: "更新时间",
+    lastCheckedAt: "上次检查",
+    runtime: "运行时",
+    manifestUrl: "Manifest"
   },
   format: {
     unknown: "未知",

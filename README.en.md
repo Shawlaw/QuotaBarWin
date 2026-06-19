@@ -5,10 +5,11 @@ Default documentation is Simplified Chinese: [`README.md`](README.md).
 Windows-first AI usage and quota monitor built with Tauri 2, Rust, React, and
 Vite.
 
-The app keeps quota data behind one public abstraction: **Provider**. A provider
-can use native Rust, a cached remote script, CLI calls, API requests, JSON
-parsing, or text parsing internally, but the frontend only renders normalized
-`ProviderSnapshot` / `AppSnapshot` data.
+The app keeps quota data behind one public abstraction: **Provider**.
+User-configurable providers are installed from remote registries/manifests. A
+provider script can use CLI calls, API requests, JSON parsing, or text parsing
+internally, but the frontend only renders normalized `ProviderSnapshot` /
+`AppSnapshot` data.
 
 ## Current Features
 
@@ -22,9 +23,9 @@ parsing, or text parsing internally, but the frontend only renders normalized
   `quotabarwin.portable` next to the app executable.
 - Provider window customization with `visibleWindowIds` and
   `windowLabelOverrides`.
-- Native Codex usage provider support for the ChatGPT/Codex usage API.
 - Remote provider registries that install cached provider scripts from
-  manifests with optional SHA-256 verification and update checks.
+  manifests with optional SHA-256 verification and update checks. Settings
+  shows provider version, install time, update time, and last check time.
 - Global and per-provider proxy support for HTTP and SOCKS5 URLs.
 - Secret placeholders for provider config: `${secret:NAME}`, `${env:NAME}`,
   and `${file:C:\path\secret.txt}`.
@@ -32,16 +33,15 @@ parsing, or text parsing internally, but the frontend only renders normalized
 
 ## Provider Model
 
-Supported provider config kinds in the current implementation:
+The current implementation supports one user-configurable provider kind:
 
 | Kind | Source | Notes |
 |---|---|---|
-| `mock` | Built in | Default local fixture provider for development and smoke checks. |
-| `codex` | Native Rust | Calls `https://chatgpt.com/backend-api/wham/usage` and maps 5h / weekly usage windows. |
 | `remote` | Cached external script | Installed from a registry/manifest and executed with its declared runtime, such as `node`, `python`, `pwsh`, `bash`, or an absolute executable path. |
 
-Older `command` / `script` provider designs remain in historical specs, but
-they are not accepted by the current config schema.
+Older `mock` / `codex` / `command` / `script` provider designs remain in
+historical specs, but they are not accepted by the current config schema. Codex
+usage is available through the `codex-usage` remote provider example.
 
 Remote provider authoring is documented in
 [`docs/remote-provider-guide.md`](docs/remote-provider-guide.md). Complete
@@ -49,7 +49,7 @@ examples live in [`examples/remote-providers/`](examples/remote-providers/).
 
 ## Config Storage
 
-Current schema version: `10`.
+Current schema version: `11`.
 
 Windows AppData config:
 

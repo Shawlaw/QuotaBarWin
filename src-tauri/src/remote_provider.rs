@@ -20,6 +20,8 @@ pub struct ProviderManifest {
     #[serde(rename = "displayName")]
     pub display_name: String,
     #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
     pub description: Option<String>,
     pub runtime: String,
     pub entry: String,
@@ -48,6 +50,12 @@ pub struct RemoteProviderMeta {
     pub last_check_at: Option<String>,
     #[serde(default)]
     pub checksum: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub installed_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
     pub source_url: String,
     #[serde(default)]
     pub resolved_runtime: Option<String>,
@@ -59,6 +67,12 @@ pub struct UpdateInfo {
     pub id: String,
     pub available: bool,
     pub new_checksum: Option<String>,
+    #[serde(default)]
+    pub current_version: Option<String>,
+    #[serde(default)]
+    pub new_version: Option<String>,
+    #[serde(default)]
+    pub checked_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -347,6 +361,8 @@ pub fn cache_remote_provider(
 ) -> Result<PathBuf, RemoteProviderError> {
     let provider_dir = cache_dir.join(id);
     fs::create_dir_all(&provider_dir)?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let existing_meta = load_cached_meta(&provider_dir).ok().flatten();
 
     let manifest_path = provider_dir.join("provider.json");
     let source_name = source_file_name(&manifest.entry);
@@ -363,9 +379,15 @@ pub fn cache_remote_provider(
     fs::write(&source_path, source)?;
 
     let meta = RemoteProviderMeta {
-        etag: None,
-        last_check_at: Some(chrono::Utc::now().to_rfc3339()),
+        etag: existing_meta.as_ref().and_then(|meta| meta.etag.clone()),
+        last_check_at: Some(now.clone()),
         checksum: Some(compute_checksum(source)),
+        version: manifest.version.clone(),
+        installed_at: existing_meta
+            .as_ref()
+            .and_then(|meta| meta.installed_at.clone())
+            .or_else(|| Some(now.clone())),
+        updated_at: Some(now),
         source_url: resolve_source_url(manifest_url, &manifest.entry),
         resolved_runtime: resolved_runtime.map(|path| path.display().to_string()),
     };
@@ -524,6 +546,7 @@ pub fn check_update(
     let status = response.status();
 
     if status.as_u16() == 304 {
+        let checked_at = chrono::Utc::now().to_rfc3339();
         return Ok(UpdateInfo {
             id: provider_dir
                 .file_name()
@@ -532,6 +555,9 @@ pub fn check_update(
                 .to_string(),
             available: false,
             new_checksum: None,
+            current_version: existing_meta.as_ref().and_then(|meta| meta.version.clone()),
+            new_version: existing_meta.as_ref().and_then(|meta| meta.version.clone()),
+            checked_at: Some(checked_at),
         });
     }
 
@@ -558,16 +584,21 @@ pub fn check_update(
         (None, _) => false,
     };
 
+    let checked_at = chrono::Utc::now().to_rfc3339();
     let source_url = resolve_source_url(manifest_url, &manifest.entry);
     let mut meta = existing_meta.unwrap_or_else(|| RemoteProviderMeta {
         etag: None,
         last_check_at: None,
         checksum: trusted_checksum.map(|value| value.to_string()),
+        version: None,
+        installed_at: None,
+        updated_at: None,
         source_url: source_url.clone(),
         resolved_runtime: None,
     });
+    let current_version = meta.version.clone();
     meta.etag = new_etag;
-    meta.last_check_at = Some(chrono::Utc::now().to_rfc3339());
+    meta.last_check_at = Some(checked_at.clone());
     meta.source_url = source_url;
 
     let meta_json = serde_json::to_string_pretty(&meta)
@@ -578,6 +609,9 @@ pub fn check_update(
         id: manifest.id,
         available,
         new_checksum,
+        current_version,
+        new_version: manifest.version,
+        checked_at: Some(checked_at),
     })
 }
 
@@ -642,6 +676,7 @@ mod tests {
             schema_version: 2,
             id: "x".to_string(),
             display_name: "X".to_string(),
+            version: None,
             description: None,
             runtime: "node".to_string(),
             entry: "x.cjs".to_string(),
@@ -662,6 +697,7 @@ mod tests {
             schema_version: 1,
             id: "   ".to_string(),
             display_name: "X".to_string(),
+            version: None,
             description: None,
             runtime: "node".to_string(),
             entry: "x.cjs".to_string(),
@@ -683,6 +719,7 @@ mod tests {
             schema_version: 1,
             id: "kimi-coding".to_string(),
             display_name: "Kimi Coding".to_string(),
+            version: Some("1.0.0".to_string()),
             description: None,
             runtime: "node".to_string(),
             entry: "provider.cjs".to_string(),

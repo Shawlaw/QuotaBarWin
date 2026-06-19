@@ -17,12 +17,10 @@ Provider Runtime
   -> React UI overview + settings + tray popup
 ```
 
-当前配置 schema 为 `10`，配置文件名为 `config.quotaBarWin.json`。支持的 provider config kind 是：
+当前配置 schema 为 `11`，配置文件名为 `config.quotaBarWin.json`。当前用户配置只支持 `remote` provider kind：
 
 | kind | 当前状态 |
 |---|---|
-| `mock` | 已实现，用于默认开发数据 |
-| `codex` | 已实现，原生请求 ChatGPT/Codex usage API |
 | `remote` | 已实现，通过 registry/manifest 安装并缓存脚本 |
 | `command` / `script` | 历史设计概念；当前 config schema 不再接受 |
 
@@ -99,7 +97,7 @@ Codex CLI 是一个 provider preset
 自定义脚本也是一个 provider preset
 ```
 
-注意：这些旧路线中的 “preset / custom command / local script” 表述多为规划语义。当前实现没有内置 preset 列表，第三方扩展入口是 `remote` provider registry。
+注意：这些旧路线中的 “mock / native codex / preset / custom command / local script” 表述多为规划语义。当前实现没有内置 provider preset 列表，第三方扩展入口是 `remote` provider registry，Codex usage 也作为 remote provider 示例提供。
 
 真正的主干是：
 

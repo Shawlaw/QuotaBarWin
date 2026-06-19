@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
@@ -15,9 +16,9 @@ use crate::{
     proxy::ProxyConfig,
     remote_provider::{
         cache_remote_provider, check_update, compute_checksum, fetch_manifest, fetch_manifest_text,
-        fetch_provider_registry, fetch_source, load_cached_manifest, load_cached_meta,
-        parse_manifest, resolve_provider_url, resolve_runtime, resolve_source_url,
-        validate_runtime_executable, ProviderManifest, UpdateInfo,
+        fetch_provider_registry, fetch_source, load_cached_meta, parse_manifest,
+        resolve_provider_url, resolve_runtime, resolve_source_url, validate_runtime_executable,
+        ProviderManifest, UpdateInfo,
     },
 };
 
@@ -31,9 +32,7 @@ fn remote_provider_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
 
 fn provider_id(provider: &ProviderConfig) -> &str {
     match provider {
-        ProviderConfig::Mock { id, .. }
-        | ProviderConfig::Codex { id, .. }
-        | ProviderConfig::Remote { id, .. } => id,
+        ProviderConfig::Remote { id, .. } => id,
     }
 }
 
@@ -126,10 +125,12 @@ fn install_remote_provider_from_manifest(
     )
     .map_err(|e| e.to_string())?;
 
+    let now = Utc::now().to_rfc3339();
     let config = ProviderConfig::Remote {
         id: manifest.id.clone(),
         name: manifest.display_name.clone(),
         enabled: true,
+        version: manifest.version.clone(),
         manifest_url: url.to_string(),
         source_url,
         provider_dir: Some(provider_dir.clone()),
@@ -139,6 +140,9 @@ fn install_remote_provider_from_manifest(
         auto_update: actual_auto_update,
         update_interval_seconds: 3600,
         trusted_checksum: Some(compute_checksum(&source)),
+        installed_at: Some(now.clone()),
+        updated_at: Some(now.clone()),
+        last_checked_at: Some(now),
         window_label_overrides: Default::default(),
         visible_window_ids: Default::default(),
         env_vars: Default::default(),
@@ -325,22 +329,24 @@ async fn check_remote_updates_inner(
     let app_handle = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        let loaded = load_or_create_config(&path)?;
+        let mut loaded = load_or_create_config(&path)?;
         let global_proxy = loaded.config.network_proxy.clone();
+        let mut config_changed = false;
 
         let mut updates = Vec::new();
-        for provider in &loaded.config.providers {
+        for provider in &mut loaded.config.providers {
             let ProviderConfig::Remote {
                 id,
                 manifest_url,
                 proxy_url,
                 trusted_checksum,
                 auto_update,
+                version,
+                source_url,
+                updated_at,
+                last_checked_at,
                 ..
-            } = provider
-            else {
-                continue;
-            };
+            } = provider;
 
             if let Some(ref only) = only_id {
                 if id != only {
@@ -360,15 +366,23 @@ async fn check_remote_updates_inner(
             )
             .map_err(|e| e.to_string())?;
 
+            if update.checked_at != *last_checked_at {
+                *last_checked_at = update.checked_at.clone();
+                config_changed = true;
+            }
+
             if update.available && *auto_update {
                 if let Some(new_checksum) = &update.new_checksum {
-                    let entry = load_cached_manifest(&provider_dir)
-                        .map_err(|e| e.to_string())?
-                        .entry
-                        .clone();
-                    let source_url = resolve_source_url(manifest_url, &entry);
+                    let manifest = fetch_manifest(
+                        manifest_url,
+                        proxy_url.as_deref(),
+                        global_proxy.as_ref(),
+                        FETCH_TIMEOUT,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    let new_source_url = resolve_source_url(manifest_url, &manifest.entry);
                     let source = fetch_source(
-                        &source_url,
+                        &new_source_url,
                         proxy_url.as_deref(),
                         global_proxy.as_ref(),
                         FETCH_TIMEOUT,
@@ -377,8 +391,6 @@ async fn check_remote_updates_inner(
                     crate::remote_provider::verify_checksum(&source, new_checksum)
                         .map_err(|e| e.to_string())?;
 
-                    let manifest =
-                        load_cached_manifest(&provider_dir).map_err(|e| e.to_string())?;
                     let parent = provider_dir
                         .parent()
                         .expect("provider dir has parent")
@@ -396,10 +408,18 @@ async fn check_remote_updates_inner(
                         resolved_runtime.as_deref(),
                     )
                     .map_err(|e| e.to_string())?;
+                    *trusted_checksum = Some(compute_checksum(&source));
+                    *source_url = new_source_url;
+                    *version = manifest.version.clone();
+                    *updated_at = Some(Utc::now().to_rfc3339());
+                    config_changed = true;
                 }
             }
 
             updates.push(update);
+        }
+        if config_changed {
+            save_config_to_path(&path, &loaded.config)?;
         }
         Ok(updates)
     })
@@ -422,10 +442,7 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
             manifest_url,
             proxy_url,
             ..
-        } = provider
-        else {
-            return Err("not a remote provider".to_string());
-        };
+        } = provider;
 
         let manifest_url = manifest_url.clone();
         let proxy_url = proxy_url.clone();
@@ -473,15 +490,20 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
         )
         .map_err(|e| e.to_string())?;
 
-        if let ProviderConfig::Remote {
+        let ProviderConfig::Remote {
             ref mut trusted_checksum,
             ref mut source_url,
+            ref mut version,
+            ref mut updated_at,
+            ref mut last_checked_at,
             ..
-        } = find_provider_config_mut(&mut loaded.config, &id).ok_or("provider not found")?
-        {
-            *trusted_checksum = Some(compute_checksum(&source));
-            *source_url = new_source_url;
-        }
+        } = find_provider_config_mut(&mut loaded.config, &id).ok_or("provider not found")?;
+        *trusted_checksum = Some(compute_checksum(&source));
+        *source_url = new_source_url;
+        *version = manifest.version;
+        let now = Utc::now().to_rfc3339();
+        *updated_at = Some(now.clone());
+        *last_checked_at = Some(now);
 
         save_config_to_path(&path, &loaded.config)
     })

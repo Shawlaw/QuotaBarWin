@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "id": "example-minimal",
   "displayName": "Example Minimal Provider",
+  "version": "1.0.0",
   "description": "A minimal remote provider manifest template. Copy this file, replace the fields, and compute the SHA-256 of your provider.cjs.",
   "runtime": "node",
   "entry": "provider.cjs",

@@ -24,6 +24,7 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
+  "version": "1.0.0",
   "description": "Kimi coding quota usage via remote provider script",
   "runtime": "node",
   "entry": "provider.cjs",
@@ -41,13 +42,14 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 | `schemaVersion` | 是 | 必须为 `1`。 |
 | `id` | 是 | 唯一 Provider id，不能与当前配置中的 Provider 冲突。 |
 | `displayName` | 是 | UI 中显示的人类可读名称。 |
+| `version` | 否 | 人类可读版本号，会显示在设置页，建议使用 SemVer。缺省时 UI 会回退显示短 checksum。 |
 | `description` | 否 | 简短说明。 |
 | `runtime` | 是 | 执行 `entry` 的 runtime，例如 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
 | `entry` | 是 | Source 文件名。相对路径按 manifest 所在位置解析；也支持 HTTPS / file / 本地路径。 |
 | `requiredEnvVars` | 否 | 脚本需要的环境变量。刷新时会先查 provider `envVars`，再解析 `${secret:NAME}`。 |
 | `output` | 是 | 当前仅支持 `provider-snapshot-v1`。 |
 | `permissions` | 否 | 声明能力，目前主要用于说明。建议用 `env:<NAME>` 标注环境变量。 |
-| `checksums.source` | 否 | Source 文件 SHA-256。启用安全 auto-update 时需要，格式为 `sha256:<hex>`。 |
+| `checksums.source` | 否 | Source 文件 SHA-256。启用安全 auto-update 时需要，格式为 `sha256:<hex>`。`version` 只用于展示，不替代 checksum 校验。 |
 
 ## Registry 格式（`registry.json`）
 
@@ -215,7 +217,8 @@ Registry 可以用一个 URL 安装多个 Provider：
 
 ## 更新远程 Provider
 
-如果 manifest 包含 `checksums.source`，QuotaBarWin 可以检测 source 变化：
+如果 manifest 包含 `checksums.source`，QuotaBarWin 可以检测 source 变化。设置页会显示
+已安装版本、安装时间、更新时间和上次检查时间：
 
 - **自动更新**：安装时为 Provider 启用 auto-update 后，checksum 不同时会静默更新。
 - **手动更新**：在 Settings 中使用 “检查更新” / “应用更新”。

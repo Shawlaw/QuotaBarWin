@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
+  "version": "1.0.0",
   "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "node",
   "entry": "provider.cjs",

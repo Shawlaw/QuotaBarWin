@@ -5,7 +5,6 @@ import type {
   AppConfig,
   AppSnapshot,
   ConfigStorageInfo,
-  ProviderPreset,
   ProxyConfig,
   RemoteProviderConfig,
 } from "../types";
@@ -15,7 +14,7 @@ function hasTauriInternals(): boolean {
 }
 
 const fallbackConfig: AppConfig = {
-  schemaVersion: 10,
+  schemaVersion: 11,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -28,14 +27,7 @@ const fallbackConfig: AppConfig = {
     providerProxyUrl: null,
     autoUpdate: true,
   },
-  providers: [
-    {
-      id: "browser-preview",
-      name: "Browser Preview",
-      enabled: true,
-      kind: "mock",
-    },
-  ],
+  providers: [],
 };
 
 const fallbackSnapshot: AppSnapshot = {
@@ -227,18 +219,13 @@ export async function openRemoteProviderGuide(): Promise<void> {
   return invoke<void>("open_remote_provider_guide");
 }
 
-export async function getProviderPresets(): Promise<ProviderPreset[]> {
-  if (!hasTauriInternals()) {
-    return [];
-  }
-
-  return invoke<ProviderPreset[]>("get_provider_presets");
-}
-
 export type UpdateInfo = {
   id: string;
   available: boolean;
   newChecksum: string | null;
+  currentVersion?: string | null;
+  newVersion?: string | null;
+  checkedAt?: string | null;
 };
 
 export async function getNetworkProxy(): Promise<ProxyConfig | null> {
@@ -304,7 +291,7 @@ export async function removeRemoteProvider(id: string): Promise<void> {
 export async function refreshRemoteProvider(id: string): Promise<UpdateInfo> {
   if (!hasTauriInternals()) {
     void id;
-    return { id: "", available: false, newChecksum: null };
+    return { id: "", available: false, newChecksum: null, currentVersion: null, newVersion: null, checkedAt: null };
   }
 
   return invoke<UpdateInfo>("refresh_remote_provider", { id });

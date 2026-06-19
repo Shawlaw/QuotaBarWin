@@ -19,6 +19,7 @@ Remote providers let you install quota providers from a hosted manifest + script
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
+  "version": "1.0.0",
   "description": "Kimi coding quota usage via remote provider script",
   "runtime": "node",
   "entry": "provider.cjs",
@@ -38,13 +39,14 @@ Field descriptions:
 | `schemaVersion` | yes | Must be `1`. |
 | `id` | yes | Unique provider id. Must not conflict with an existing provider in your config. |
 | `displayName` | yes | Human-readable name shown in the UI. |
+| `version` | no | Human-readable provider version shown in Settings. SemVer is recommended. If omitted, the UI falls back to a short checksum. |
 | `description` | no | Short description. |
 | `runtime` | yes | Runtime used to execute `entry`. Common values: `node`, `python`, `pwsh`, `bash`. Can also be an absolute path like `C:\Tools\node\node.exe`. |
 | `entry` | yes | Source file name. Can be a relative path (resolved against the manifest URL/directory), an absolute HTTPS URL, a `file://` URL, or a local file path. |
 | `requiredEnvVars` | no | Environment variables that the script needs. On refresh, QuotaBarWin resolves each name from provider `envVars`, then `${secret:NAME}`. |
 | `output` | yes | Output contract. Only `provider-snapshot-v1` is supported for remote providers at the moment. |
 | `permissions` | no | Declared capabilities (currently informational). Use `env:<NAME>` to document required env vars. |
-| `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. |
+| `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. `version` is display metadata and does not replace checksum verification. |
 
 ## Provider registry (`registry.json`)
 
@@ -295,7 +297,7 @@ To host your own, upload a directory containing `provider.json` + the source fil
 
 ## Updating a remote provider
 
-If the manifest contains `checksums.source`, QuotaBarWin can detect when the source file changes:
+If the manifest contains `checksums.source`, QuotaBarWin can detect when the source file changes. Settings shows the installed version, install time, update time, and last check time:
 
 - **Auto-update**: enabled per provider during install; updates are applied silently when the checksum differs.
 - **Manual update**: use the "Check Updates" / "Apply Update" buttons in Settings.

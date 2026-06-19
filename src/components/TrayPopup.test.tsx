@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => {
   const listeners: { trayShown?: (presentationId: number) => void } = {};
   const state = { presentationId: 0 };
   const config: AppConfig = {
-    schemaVersion: 10,
+    schemaVersion: 11,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -35,12 +35,6 @@ const mocks = vi.hoisted(() => {
         runtime: "node",
         autoUpdate: false,
         updateIntervalSeconds: 3600,
-      },
-      {
-        id: "mock-codex",
-        name: "Codex Mock",
-        enabled: true,
-        kind: "mock",
       },
     ],
   };

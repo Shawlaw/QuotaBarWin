@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::config::{config_path_for_app, load_or_create_config, ProviderConfig};
-use crate::providers::{codex, mock};
 use crate::remote_provider_runner::run_remote_provider;
 
 static SNAPSHOT_CACHE: OnceLock<Mutex<Option<AppSnapshot>>> = OnceLock::new();
@@ -219,33 +218,9 @@ fn run_provider_with_retry(
 fn run_provider_config(
     provider: ProviderConfig,
     config_dir: &Path,
-    recovery_messages: &[String],
+    _recovery_messages: &[String],
 ) -> Vec<ProviderSnapshot> {
     match provider {
-        ProviderConfig::Mock { id, name, enabled } if enabled => {
-            vec![mock::provider_snapshot(&id, &name, recovery_messages)]
-        }
-        ProviderConfig::Codex {
-            id,
-            name,
-            enabled,
-            auth_token,
-            account_id,
-            proxy_url,
-            timeout_ms,
-            window_label_overrides,
-            visible_window_ids,
-        } if enabled => vec![codex::provider_snapshot(
-            &id,
-            &name,
-            &auth_token,
-            account_id.as_deref(),
-            proxy_url.as_deref(),
-            timeout_ms,
-            config_dir,
-            &window_label_overrides,
-            &visible_window_ids,
-        )],
         ProviderConfig::Remote {
             id,
             name,
@@ -270,15 +245,13 @@ fn run_provider_config(
             &window_label_overrides,
             &visible_window_ids,
         ),
-        _ => Vec::new(),
+        ProviderConfig::Remote { .. } => Vec::new(),
     }
 }
 
 fn provider_config_id(provider: &ProviderConfig) -> &str {
     match provider {
-        ProviderConfig::Mock { id, .. }
-        | ProviderConfig::Codex { id, .. }
-        | ProviderConfig::Remote { id, .. } => id,
+        ProviderConfig::Remote { id, .. } => id,
     }
 }
 
@@ -421,17 +394,115 @@ mod tests {
         build_app_snapshot_from_config_path(&path).expect("snapshot")
     }
 
+    fn test_config(providers: Vec<ProviderConfig>) -> AppConfig {
+        AppConfig {
+            schema_version: crate::config::CURRENT_CONFIG_SCHEMA_VERSION,
+            refresh_interval_seconds: 300,
+            display_mode: "remaining".to_string(),
+            low_quota_warning_threshold: 20.0,
+            launch_at_startup: false,
+            log_level: "info".to_string(),
+            language: AppLanguage::System,
+            network_proxy: None,
+            tray_popup_position: None,
+            remote_provider_registry: RemoteProviderRegistrySettings::default(),
+            providers,
+        }
+    }
+
+    fn remote_provider(
+        temp: &tempfile::TempDir,
+        id: &str,
+        name: &str,
+        enabled: bool,
+        used_percent: f64,
+    ) -> ProviderConfig {
+        let provider_dir = temp.path().join(id);
+        std::fs::create_dir_all(&provider_dir).expect("create provider dir");
+        std::fs::write(
+            provider_dir.join("provider.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "id": id,
+                "displayName": name,
+                "version": "1.0.0",
+                "runtime": "node",
+                "entry": "provider.cjs",
+                "requiredEnvVars": [],
+                "output": "provider-snapshot-v1"
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+        std::fs::write(
+            provider_dir.join("provider.cjs"),
+            format!(
+                r#"console.log(JSON.stringify({{id:{id:?},name:{name:?},status:"ok",updatedAt:null,windows:[{{id:"weekly",label:"Weekly",usedPercent:{used_percent},confidence:"exact"}}]}}));"#
+            ),
+        )
+        .expect("write source");
+
+        ProviderConfig::Remote {
+            id: id.to_string(),
+            name: name.to_string(),
+            enabled,
+            version: Some("1.0.0".to_string()),
+            manifest_url: "https://example.com/provider.json".to_string(),
+            source_url: "https://example.com/provider.cjs".to_string(),
+            provider_dir: Some(provider_dir),
+            runtime: "node".to_string(),
+            resolved_runtime: None,
+            proxy_url: None,
+            auto_update: false,
+            update_interval_seconds: 3600,
+            trusted_checksum: None,
+            installed_at: None,
+            updated_at: None,
+            last_checked_at: None,
+            window_label_overrides: std::collections::HashMap::new(),
+            visible_window_ids: Vec::new(),
+            env_vars: std::collections::HashMap::new(),
+        }
+    }
+
+    fn broken_remote_provider(id: &str, name: &str) -> ProviderConfig {
+        ProviderConfig::Remote {
+            id: id.to_string(),
+            name: name.to_string(),
+            enabled: true,
+            version: None,
+            manifest_url: "https://example.com/provider.json".to_string(),
+            source_url: "https://example.com/provider.cjs".to_string(),
+            provider_dir: None,
+            runtime: "node".to_string(),
+            resolved_runtime: None,
+            proxy_url: None,
+            auto_update: false,
+            update_interval_seconds: 3600,
+            trusted_checksum: None,
+            installed_at: None,
+            updated_at: None,
+            last_checked_at: None,
+            window_label_overrides: std::collections::HashMap::new(),
+            visible_window_ids: Vec::new(),
+            env_vars: std::collections::HashMap::new(),
+        }
+    }
+
     #[test]
-    fn mock_provider_returns_app_snapshot() {
+    fn remote_provider_returns_app_snapshot() {
         let _cache_guard = isolate_snapshot_cache();
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
+        let config = test_config(vec![remote_provider(&temp, "remote-a", "Remote A", true, 28.0)]);
+        save_config_to_path(&path, &config).expect("save config");
         let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");
 
         assert_eq!(snapshot.schema_version, 1);
         assert_eq!(snapshot.providers.len(), 1);
-        assert_eq!(snapshot.providers[0].name, "Codex Mock");
-        assert_eq!(snapshot.providers[0].windows.len(), 2);
+        assert_eq!(snapshot.providers[0].name, "Remote A");
+        assert_eq!(snapshot.providers[0].source, "remote");
+        assert_eq!(snapshot.providers[0].windows.len(), 1);
     }
 
     #[test]
@@ -468,6 +539,8 @@ mod tests {
         let _cache_guard = isolate_snapshot_cache();
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
+        let config = test_config(vec![remote_provider(&temp, "remote-a", "Remote A", true, 28.0)]);
+        save_config_to_path(&path, &config).expect("save config");
         let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");
 
         for provider in snapshot.providers {
@@ -485,23 +558,8 @@ mod tests {
     #[test]
     fn disabled_provider_is_not_included() {
         let _cache_guard = isolate_snapshot_cache();
-        let config = AppConfig {
-            schema_version: 1,
-            refresh_interval_seconds: 300,
-            display_mode: "remaining".to_string(),
-            low_quota_warning_threshold: 20.0,
-            launch_at_startup: false,
-            log_level: "info".to_string(),
-            language: AppLanguage::System,
-            network_proxy: None,
-            tray_popup_position: None,
-            remote_provider_registry: RemoteProviderRegistrySettings::default(),
-            providers: vec![ProviderConfig::Mock {
-                id: "disabled".to_string(),
-                name: "Disabled".to_string(),
-                enabled: false,
-            }],
-        };
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config = test_config(vec![remote_provider(&temp, "disabled", "Disabled", false, 28.0)]);
 
         let snapshot = snapshot_from_config(config);
 
@@ -514,30 +572,10 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
 
-        let config = AppConfig {
-            schema_version: 5,
-            refresh_interval_seconds: 300,
-            display_mode: "remaining".to_string(),
-            low_quota_warning_threshold: 20.0,
-            launch_at_startup: false,
-            log_level: "info".to_string(),
-            language: AppLanguage::System,
-            network_proxy: None,
-            tray_popup_position: None,
-            remote_provider_registry: RemoteProviderRegistrySettings::default(),
-            providers: vec![
-                ProviderConfig::Mock {
-                    id: "stale-a".to_string(),
-                    name: "Stale A".to_string(),
-                    enabled: true,
-                },
-                ProviderConfig::Mock {
-                    id: "stale-b".to_string(),
-                    name: "Stale B".to_string(),
-                    enabled: true,
-                },
-            ],
-        };
+        let config = test_config(vec![
+            remote_provider(&temp, "stale-a", "Stale A", true, 20.0),
+            remote_provider(&temp, "stale-b", "Stale B", true, 40.0),
+        ]);
         save_config_to_path(&path, &config).expect("save config");
 
         let initial = build_app_snapshot_from_config_path(&path).expect("initial snapshot");
@@ -589,74 +627,20 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
 
-        let broken_remote_provider = |id: &str, name: &str| ProviderConfig::Remote {
-            id: id.to_string(),
-            name: name.to_string(),
-            enabled: true,
-            manifest_url: "https://example.com/provider.json".to_string(),
-            source_url: "https://example.com/provider.cjs".to_string(),
-            provider_dir: None,
-            runtime: "node".to_string(),
-            resolved_runtime: None,
-            proxy_url: None,
-            auto_update: false,
-            update_interval_seconds: 3600,
-            trusted_checksum: None,
-            window_label_overrides: std::collections::HashMap::new(),
-            visible_window_ids: Vec::new(),
-            env_vars: std::collections::HashMap::new(),
-        };
-
-        let config = AppConfig {
-            schema_version: 5,
-            refresh_interval_seconds: 300,
-            display_mode: "remaining".to_string(),
-            low_quota_warning_threshold: 20.0,
-            launch_at_startup: false,
-            log_level: "info".to_string(),
-            language: AppLanguage::System,
-            network_proxy: None,
-            tray_popup_position: None,
-            remote_provider_registry: RemoteProviderRegistrySettings::default(),
-            providers: vec![
-                ProviderConfig::Mock {
-                    id: "stale-a".to_string(),
-                    name: "Stale A".to_string(),
-                    enabled: true,
-                },
-                ProviderConfig::Mock {
-                    id: "stale-b".to_string(),
-                    name: "Stale B".to_string(),
-                    enabled: true,
-                },
-            ],
-        };
+        let config = test_config(vec![
+            remote_provider(&temp, "stale-a", "Stale A", true, 20.0),
+            remote_provider(&temp, "stale-b", "Stale B", true, 40.0),
+        ]);
         save_config_to_path(&path, &config).expect("save config");
 
         let initial = build_app_snapshot_from_config_path(&path).expect("initial snapshot");
         assert_eq!(initial.providers[0].status, "ok");
         assert!(!initial.providers[0].windows.is_empty());
 
-        let broken_config = AppConfig {
-            schema_version: 5,
-            refresh_interval_seconds: 300,
-            display_mode: "remaining".to_string(),
-            low_quota_warning_threshold: 20.0,
-            launch_at_startup: false,
-            log_level: "info".to_string(),
-            language: AppLanguage::System,
-            network_proxy: None,
-            tray_popup_position: None,
-            remote_provider_registry: RemoteProviderRegistrySettings::default(),
-            providers: vec![
-                broken_remote_provider("stale-a", "Stale A"),
-                ProviderConfig::Mock {
-                    id: "stale-b".to_string(),
-                    name: "Stale B".to_string(),
-                    enabled: true,
-                },
-            ],
-        };
+        let broken_config = test_config(vec![
+            broken_remote_provider("stale-a", "Stale A"),
+            remote_provider(&temp, "stale-b", "Stale B", true, 40.0),
+        ]);
         save_config_to_path(&path, &broken_config).expect("save broken config");
 
         let refreshed =
@@ -677,73 +661,19 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
 
-        let broken_remote_provider = |id: &str, name: &str| ProviderConfig::Remote {
-            id: id.to_string(),
-            name: name.to_string(),
-            enabled: true,
-            manifest_url: "https://example.com/provider.json".to_string(),
-            source_url: "https://example.com/provider.cjs".to_string(),
-            provider_dir: None,
-            runtime: "node".to_string(),
-            resolved_runtime: None,
-            proxy_url: None,
-            auto_update: false,
-            update_interval_seconds: 3600,
-            trusted_checksum: None,
-            window_label_overrides: std::collections::HashMap::new(),
-            visible_window_ids: Vec::new(),
-            env_vars: std::collections::HashMap::new(),
-        };
-
-        let config = AppConfig {
-            schema_version: 5,
-            refresh_interval_seconds: 300,
-            display_mode: "remaining".to_string(),
-            low_quota_warning_threshold: 20.0,
-            launch_at_startup: false,
-            log_level: "info".to_string(),
-            language: AppLanguage::System,
-            network_proxy: None,
-            tray_popup_position: None,
-            remote_provider_registry: RemoteProviderRegistrySettings::default(),
-            providers: vec![
-                ProviderConfig::Mock {
-                    id: "stale-a".to_string(),
-                    name: "Stale A".to_string(),
-                    enabled: true,
-                },
-                ProviderConfig::Mock {
-                    id: "stale-b".to_string(),
-                    name: "Stale B".to_string(),
-                    enabled: true,
-                },
-            ],
-        };
+        let config = test_config(vec![
+            remote_provider(&temp, "stale-a", "Stale A", true, 20.0),
+            remote_provider(&temp, "stale-b", "Stale B", true, 40.0),
+        ]);
         save_config_to_path(&path, &config).expect("save config");
 
         let initial = build_app_snapshot_from_config_path(&path).expect("initial snapshot");
         assert_eq!(initial.providers.len(), 2);
 
-        let broken_config = AppConfig {
-            schema_version: 5,
-            refresh_interval_seconds: 300,
-            display_mode: "remaining".to_string(),
-            low_quota_warning_threshold: 20.0,
-            launch_at_startup: false,
-            log_level: "info".to_string(),
-            language: AppLanguage::System,
-            network_proxy: None,
-            tray_popup_position: None,
-            remote_provider_registry: RemoteProviderRegistrySettings::default(),
-            providers: vec![
-                broken_remote_provider("stale-a", "Stale A"),
-                ProviderConfig::Mock {
-                    id: "stale-b".to_string(),
-                    name: "Stale B".to_string(),
-                    enabled: true,
-                },
-            ],
-        };
+        let broken_config = test_config(vec![
+            broken_remote_provider("stale-a", "Stale A"),
+            remote_provider(&temp, "stale-b", "Stale B", true, 40.0),
+        ]);
         save_config_to_path(&path, &broken_config).expect("save broken config");
 
         let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");
@@ -763,37 +693,7 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
 
-        let broken_provider = ProviderConfig::Remote {
-            id: "broken".to_string(),
-            name: "Broken".to_string(),
-            enabled: true,
-            manifest_url: "https://example.com/provider.json".to_string(),
-            source_url: "https://example.com/provider.cjs".to_string(),
-            provider_dir: None,
-            runtime: "node".to_string(),
-            resolved_runtime: None,
-            proxy_url: None,
-            auto_update: false,
-            update_interval_seconds: 3600,
-            trusted_checksum: None,
-            window_label_overrides: std::collections::HashMap::new(),
-            visible_window_ids: Vec::new(),
-            env_vars: std::collections::HashMap::new(),
-        };
-
-        let config = AppConfig {
-            schema_version: 5,
-            refresh_interval_seconds: 300,
-            display_mode: "remaining".to_string(),
-            low_quota_warning_threshold: 20.0,
-            launch_at_startup: false,
-            log_level: "info".to_string(),
-            language: AppLanguage::System,
-            network_proxy: None,
-            tray_popup_position: None,
-            remote_provider_registry: RemoteProviderRegistrySettings::default(),
-            providers: vec![broken_provider],
-        };
+        let config = test_config(vec![broken_remote_provider("broken", "Broken")]);
         save_config_to_path(&path, &config).expect("save config");
 
         let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");

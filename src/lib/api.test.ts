@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 const config: AppConfig = {
-  schemaVersion: 10,
+  schemaVersion: 11,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -32,14 +32,7 @@ const config: AppConfig = {
     providerProxyUrl: null,
     autoUpdate: true,
   },
-  providers: [
-    {
-      kind: "mock",
-      id: "mock-codex",
-      name: "Codex Mock",
-      enabled: true,
-    },
-  ],
+  providers: [],
 };
 
 const snapshot: AppSnapshot = {

@@ -11,7 +11,7 @@ Each subdirectory contains:
 
 `manifest.example.json` is a standalone, minimal manifest template you can copy when creating your own provider.
 
-`registry.json` is a provider registry that lists all example providers. Paste its URL/path into **Settings → Remote Providers → Registry URL** and click **Install Registry** to install them all at once.
+`registry.json` is a provider registry that lists all example providers. Paste its URL/path into **Settings → Providers → Remote Sources → Registry URL** and click **Install Registry** to install them all at once.
 
 ## Providers
 
@@ -25,7 +25,7 @@ Each subdirectory contains:
 ## Usage
 
 1. Upload the whole `remote-providers/` directory to a static host (e.g., GitHub Raw).
-2. In QuotaBarWin, go to **Settings → Remote Providers**.
+2. In QuotaBarWin, go to **Settings → Providers → Remote Sources**.
 3. Paste the raw URL of `registry.json` into **Registry URL** and click **Install Registry**.
 4. Review the install summary.
 
@@ -65,3 +65,6 @@ sha256sum provider.cjs
 ```
 
 Then set `checksums.source` to `sha256:<hex>`.
+
+If you edit `provider.json` itself, including display metadata such as `version`,
+also recompute that manifest checksum and update `registry.json`.

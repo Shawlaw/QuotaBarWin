@@ -57,7 +57,7 @@ export type AppConfig = {
   networkProxy?: ProxyConfig | null;
   trayPopupPosition?: TrayPopupPosition | null;
   remoteProviderRegistry?: RemoteProviderRegistrySettings;
-  providers: ProviderConfig[];
+  providers: RemoteProviderConfig[];
 };
 
 export type RemoteProviderRegistrySettings = {
@@ -80,30 +80,7 @@ export type ConfigStorageInfo = {
   portableMarkerPath: string;
 };
 
-export type ProviderConfig =
-  | MockProviderConfig
-  | CodexProviderConfig
-  | RemoteProviderConfig;
-
-export type MockProviderConfig = {
-  id: string;
-  name: string;
-  enabled: boolean;
-  kind: "mock";
-};
-
-export type CodexProviderConfig = {
-  id: string;
-  name: string;
-  enabled: boolean;
-  kind: "codex";
-  authToken: string;
-  accountId?: string | null;
-  proxyUrl?: string | null;
-  timeoutMs: number;
-  windowLabelOverrides?: Record<string, string>;
-  visibleWindowIds?: string[];
-};
+export type ProviderConfig = RemoteProviderConfig;
 
 export type ProxyKind = "none" | "system" | "http" | "socks5";
 
@@ -117,6 +94,7 @@ export type RemoteProviderConfig = {
   name: string;
   enabled: boolean;
   kind: "remote";
+  version?: string | null;
   manifestUrl: string;
   sourceUrl: string;
   providerDir?: string | null;
@@ -126,16 +104,10 @@ export type RemoteProviderConfig = {
   autoUpdate: boolean;
   updateIntervalSeconds: number;
   trustedChecksum?: string | null;
+  installedAt?: string | null;
+  updatedAt?: string | null;
+  lastCheckedAt?: string | null;
   windowLabelOverrides?: Record<string, string>;
   visibleWindowIds?: string[];
   envVars?: Record<string, string>;
-};
-
-export type ProviderPreset = {
-  id: string;
-  displayName: string;
-  description: string;
-  providerConfigTemplate: ProviderConfig;
-  requiredEnvVars?: string[];
-  docs?: string | null;
 };
