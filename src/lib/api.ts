@@ -21,7 +21,7 @@ const fallbackConfig: AppConfig = {
   lowQuotaWarningThreshold: 20,
   launchAtStartup: false,
   logLevel: "info",
-  language: "system",
+  language: "zh-CN",
   networkProxy: null,
   remoteProviderRegistry: {
     registryUrl: null,

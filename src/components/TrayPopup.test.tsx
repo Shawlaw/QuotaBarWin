@@ -7,6 +7,8 @@ import {
 } from "@testing-library/react";
 import { TrayPopup } from "./TrayPopup";
 import type { AppConfig, AppSnapshot } from "../types";
+import { I18nProvider } from "../i18n";
+import type { ReactElement } from "react";
 
 const mocks = vi.hoisted(() => {
   const listeners: { trayShown?: (presentationId: number) => void } = {};
@@ -171,8 +173,16 @@ beforeEach(() => {
   mocks.state.presentationId = 0;
 });
 
+function renderWithEnglish(ui: ReactElement) {
+  return render(ui, {
+    wrapper: ({ children }) => (
+      <I18nProvider language="en">{children}</I18nProvider>
+    )
+  });
+}
+
 test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
-  render(<TrayPopup />);
+  renderWithEnglish(<TrayPopup />);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
   expect(screen.getByTestId("tray-popup")).toBeInTheDocument();
@@ -202,7 +212,7 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
 });
 
 test("tray_popup_uses_window_focus_to_check_for_missed_presentation", async () => {
-  render(<TrayPopup />);
+  renderWithEnglish(<TrayPopup />);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
 
@@ -222,7 +232,7 @@ test("tray_popup_uses_window_focus_to_check_for_missed_presentation", async () =
 });
 
 test("tray_popup_window_title_includes_provider_name_and_reset_stays_secondary", async () => {
-  render(<TrayPopup />);
+  renderWithEnglish(<TrayPopup />);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
 
@@ -234,7 +244,7 @@ test("tray_popup_window_title_includes_provider_name_and_reset_stays_secondary",
 });
 
 test("tray_popup_hides_popup_on_escape_and_close_button", async () => {
-  render(<TrayPopup />);
+  renderWithEnglish(<TrayPopup />);
 
   fireEvent.keyDown(window, { key: "Escape" });
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -244,7 +254,7 @@ test("tray_popup_hides_popup_on_escape_and_close_button", async () => {
 });
 
 test("tray_popup_follows_main_snapshot_provider_order_for_quota_windows", async () => {
-  const { container } = render(<TrayPopup />);
+  const { container } = renderWithEnglish(<TrayPopup />);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
   const popupText = container.textContent ?? "";
@@ -299,14 +309,14 @@ test("tray_popup_shows_unhealthy_provider_in_title", async () => {
     ],
   });
 
-  render(<TrayPopup />);
+  renderWithEnglish(<TrayPopup />);
 
   await waitFor(() => expect(screen.getByText("Kimi Error")).toBeInTheDocument());
   expect(screen.queryByLabelText("Provider status")).not.toBeInTheDocument();
 });
 
 test("tray_popup_starts_native_dragging_from_titlebar", async () => {
-  render(<TrayPopup />);
+  renderWithEnglish(<TrayPopup />);
 
   fireEvent.mouseDown(screen.getByTestId("tray-popup-titlebar"), { button: 2 });
   expect(mocks.startDraggingCurrentWindow).not.toHaveBeenCalled();

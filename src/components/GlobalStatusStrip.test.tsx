@@ -2,6 +2,8 @@ import { render, screen } from '@testing-library/react';
 import { describe, test } from 'vitest';
 import { GlobalStatusStrip } from './GlobalStatusStrip';
 import type { ProviderSnapshot } from '../types';
+import { I18nProvider } from '../i18n';
+import type { ReactElement } from 'react';
 
 const provider = (status: ProviderSnapshot['status']): ProviderSnapshot => ({
   id: 'test',
@@ -28,21 +30,29 @@ const provider = (status: ProviderSnapshot['status']): ProviderSnapshot => ({
   metadata: null
 });
 
+function renderWithEnglish(ui: ReactElement) {
+  return render(ui, {
+    wrapper: ({ children }) => (
+      <I18nProvider language="en">{children}</I18nProvider>
+    )
+  });
+}
+
 describe('GlobalStatusStrip', () => {
   test('renders_stale_status_when_provider_is_stale', () => {
-    render(<GlobalStatusStrip providers={[provider('stale')]} />);
+    renderWithEnglish(<GlobalStatusStrip providers={[provider('stale')]} />);
     expect(screen.getByText(/Test Provider data is stale/)).toBeInTheDocument();
   });
 
   test('prioritizes_error_over_stale', () => {
-    render(
+    renderWithEnglish(
       <GlobalStatusStrip providers={[provider('error'), provider('stale')]} />
     );
     expect(screen.getByText(/Test Provider refresh failed/)).toBeInTheDocument();
   });
 
   test('shows_stale_when_no_error_but_stale_exists', () => {
-    render(
+    renderWithEnglish(
       <GlobalStatusStrip providers={[provider('ok'), provider('stale')]} />
     );
     expect(screen.getByText(/Test Provider data is stale/)).toBeInTheDocument();

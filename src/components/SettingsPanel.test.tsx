@@ -2,6 +2,7 @@ import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { SettingsPanel } from "./SettingsPanel";
+import { I18nProvider } from "../i18n";
 import type {
   AppConfig,
   ConfigStorageInfo,
@@ -110,19 +111,21 @@ function renderSettings(
   function Harness() {
     const [config, setConfig] = useState(initialConfig);
     return (
-      <SettingsPanel
-        config={config}
-        configStorageInfo={storageInfo}
-        isConfigStorageBusy={false}
-        isSaving={false}
-        onChange={setConfig}
-        onOpenConfigFolder={async () => undefined}
-        onResetConfig={async () => undefined}
-        onSave={() => undefined}
-        onSetPortableMode={() => undefined}
-        presets={presets}
-        snapshotProviders={snapshotProviders}
-      />
+      <I18nProvider language="en">
+        <SettingsPanel
+          config={config}
+          configStorageInfo={storageInfo}
+          isConfigStorageBusy={false}
+          isSaving={false}
+          onChange={setConfig}
+          onOpenConfigFolder={async () => undefined}
+          onResetConfig={async () => undefined}
+          onSave={() => undefined}
+          onSetPortableMode={() => undefined}
+          presets={presets}
+          snapshotProviders={snapshotProviders}
+        />
+      </I18nProvider>
     );
   }
 

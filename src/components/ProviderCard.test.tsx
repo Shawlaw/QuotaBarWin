@@ -3,6 +3,8 @@ import { afterEach, vi } from "vitest";
 import { ProviderCard } from "./ProviderCard";
 import type { ProviderSnapshot } from "../types";
 import kimiExpected from "../../docs/specs/fixtures/expected/kimi_provider_snapshot.json";
+import { I18nProvider } from "../i18n";
+import type { ReactElement } from "react";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -33,34 +35,42 @@ const provider: ProviderSnapshot = {
   ]
 };
 
+function renderWithEnglish(ui: ReactElement) {
+  return render(ui, {
+    wrapper: ({ children }) => (
+      <I18nProvider language="en">{children}</I18nProvider>
+    )
+  });
+}
+
 test("ProviderCard renders provider name", () => {
-  render(<ProviderCard provider={provider} />);
+  renderWithEnglish(<ProviderCard provider={provider} />);
 
   expect(screen.getByRole("heading", { name: "Codex Mock" })).toBeInTheDocument();
 });
 
 test("provider_card_renders_error_state", () => {
-  render(<ProviderCard provider={{ ...provider, status: "error", error: "Command failed" }} />);
+  renderWithEnglish(<ProviderCard provider={{ ...provider, status: "error", error: "Command failed" }} />);
 
   expect(screen.getByText(/Command failed/)).toBeInTheDocument();
 });
 
 test("provider_card_renders_remaining_percent", () => {
-  render(<ProviderCard provider={provider} />);
+  renderWithEnglish(<ProviderCard provider={provider} />);
 
   expect(screen.getByText("72% remaining")).toBeInTheDocument();
   expect(screen.queryByText(/28% used/)).not.toBeInTheDocument();
 });
 
 test("provider_card_renders_used_percent_when_display_mode_is_used", () => {
-  render(<ProviderCard provider={provider} displayMode="used" />);
+  renderWithEnglish(<ProviderCard provider={provider} displayMode="used" />);
 
   expect(screen.getByText("28% used")).toBeInTheDocument();
   expect(screen.queryByText(/72% remaining/)).not.toBeInTheDocument();
 });
 
 test("provider_card_renders_balance_amount_detail", () => {
-  render(
+  renderWithEnglish(
     <ProviderCard
       provider={{
         ...provider,
@@ -85,7 +95,7 @@ test("provider_card_renders_balance_amount_detail", () => {
 });
 
 test("provider_card_fades_used_mode_opacity_as_usage_increases", () => {
-  const { rerender } = render(<ProviderCard provider={provider} displayMode="used" />);
+  const { rerender } = renderWithEnglish(<ProviderCard provider={provider} displayMode="used" />);
   const fill = screen.getByRole("progressbar", { name: "Codex Mock 5h window used" }).firstElementChild;
 
   expect(fill).toHaveStyle({ width: "28%" });
@@ -113,20 +123,20 @@ test("provider_card_renders_provider_refresh_time", () => {
     return "unknown refresh";
   });
 
-  render(<ProviderCard provider={provider} />);
+  renderWithEnglish(<ProviderCard provider={provider} />);
 
   expect(screen.getByText("Last updated 06/08/2026, 08:00 AM GMT+8")).toBeInTheDocument();
 });
 
 test("provider_card_renders_kimi_fixture_snapshot", () => {
-  render(<ProviderCard provider={kimiExpected as ProviderSnapshot} />);
+  renderWithEnglish(<ProviderCard provider={kimiExpected as ProviderSnapshot} />);
 
   expect(screen.getByRole("heading", { name: "Kimi Coding" })).toBeInTheDocument();
   expect(screen.getByText("Weekly limit")).toBeInTheDocument();
 });
 
 test("provider_card_renders_status_label", () => {
-  render(<ProviderCard provider={provider} />);
+  renderWithEnglish(<ProviderCard provider={provider} />);
 
   expect(screen.getByText("status ok")).toBeInTheDocument();
   expect(screen.queryByText("Bottleneck")).not.toBeInTheDocument();
@@ -135,7 +145,7 @@ test("provider_card_renders_status_label", () => {
 test("provider_card_shows_refresh_without_action_menu", () => {
   const onRefresh = vi.fn();
 
-  render(<ProviderCard provider={provider} onRefresh={onRefresh} />);
+  renderWithEnglish(<ProviderCard provider={provider} onRefresh={onRefresh} />);
 
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
@@ -144,7 +154,7 @@ test("provider_card_shows_refresh_without_action_menu", () => {
 });
 
 test("provider_card_opens_warning_status_details", () => {
-  render(
+  renderWithEnglish(
     <ProviderCard
       provider={{
         ...provider,
@@ -179,7 +189,7 @@ test("provider_card_renders_reset_time_for_each_window", () => {
     return "unknown reset";
   });
 
-  render(
+  renderWithEnglish(
     <ProviderCard
       provider={{
         ...provider,
@@ -206,7 +216,7 @@ test("provider_card_renders_reset_time_for_each_window", () => {
 });
 
 test("provider_card_collapses_and_expands_many_quota_windows", () => {
-  render(
+  renderWithEnglish(
     <ProviderCard
       provider={{
         ...provider,
@@ -227,7 +237,7 @@ test("provider_card_collapses_and_expands_many_quota_windows", () => {
 });
 
 test('provider_card_renders_stale_state_with_cached_data', () => {
-  render(
+  renderWithEnglish(
     <ProviderCard
       provider={{
         ...provider,

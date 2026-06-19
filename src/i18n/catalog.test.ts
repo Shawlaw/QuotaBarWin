@@ -10,9 +10,11 @@ describe("i18n language resolution", () => {
   test("resolves_system_from_browser_languages", () => {
     expect(resolveLanguage("system", ["fr-FR", "zh-Hans-CN", "en-US"])).toBe("zh-CN");
     expect(resolveLanguage("system", ["fr-FR", "en-US"])).toBe("en");
+    expect(resolveLanguage("system", ["fr-FR"])).toBe("zh-CN");
   });
 
   test("creates_catalog_for_resolved_language", () => {
     expect(createI18n("system", ["zh-CN"]).t.header.settings).toBe("设置");
+    expect(createI18n().t.header.settings).toBe("设置");
   });
 });

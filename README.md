@@ -1,47 +1,149 @@
 # QuotaBarWin
 
-WindowsFirst AI usage/quota monitor.
+默认语言：简体中文。English documentation:
+[`README.en.md`](README.en.md).
 
-Architecture principle:
+QuotaBarWin 是一个 Windows-first 的 AI 用量 / 额度监控工具，基于 Tauri 2、
+Rust、React 和 Vite 构建。
 
-Provider is the only public abstraction that supplies quota data to the app.
-A provider may internally execute commands, call curl/CLI/scripts, parse JSON,
-parse text, or use native logic, but the UI and app runtime only depend on
-normalized ProviderSnapshot / AppSnapshot data.
+核心架构原则：**Provider 是唯一对外数据抽象**。Provider 内部可以使用原生
+Rust、缓存的远程脚本、CLI、API 请求、JSON 解析或文本解析，但前端只渲染归一化
+后的 `ProviderSnapshot` / `AppSnapshot` 数据。
 
-## Development
+## 当前功能
+
+- 桌面概览页：Provider 卡片、额度窗口、进度条、全局状态和单 Provider 刷新。
+- Windows 托盘、托盘弹窗、隐藏启动和单实例行为。
+- 可配置刷新间隔、显示模式、低额度警告阈值、语言、日志级别、开机启动和
+  Provider 顺序。
+- 支持 AppData 配置和便携模式。将 `quotabarwin.portable` 放在可执行文件旁
+  即启用便携模式。
+- 支持 `visibleWindowIds` 和 `windowLabelOverrides` 自定义额度窗口显示。
+- 原生 Codex usage provider，读取 ChatGPT/Codex usage API。
+- 远程 Provider registry：从 manifest 安装缓存脚本，支持可选 SHA-256 校验
+  和更新检查。
+- 全局代理和单 Provider 代理，支持 HTTP 与 SOCKS5。
+- Provider 配置支持 secret 占位符：`${secret:NAME}`、`${env:NAME}`、
+  `${file:C:\path\secret.txt}`。
+- 支持导出已脱敏的诊断 zip。
+
+## Provider 模型
+
+当前实现支持的 Provider config kind：
+
+| Kind | 来源 | 说明 |
+|---|---|---|
+| `mock` | 内置 | 默认开发数据和 smoke 检查使用。 |
+| `codex` | 原生 Rust | 请求 `https://chatgpt.com/backend-api/wham/usage`，映射 5h / weekly 额度窗口。 |
+| `remote` | 缓存外部脚本 | 从 registry / manifest 安装，并使用声明的 runtime 执行，例如 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
+
+旧版 `command` / `script` Provider 仍可在历史 specs 中看到，但当前 config schema
+不再接受它们。
+
+远程 Provider 作者指南：
+[`docs/remote-provider-guide.md`](docs/remote-provider-guide.md)。完整示例位于
+[`examples/remote-providers/`](examples/remote-providers/)。
+
+## 配置存储
+
+当前配置 schema version：`10`。
+
+Windows AppData 配置：
+
+```text
+%APPDATA%\QuotaBarWin\config.quotaBarWin.json
+```
+
+启用便携模式时，可执行文件旁的配置：
+
+```text
+<app-exe-dir>\config.quotaBarWin.json
+```
+
+远程 Provider 脚本缓存目录：
+
+```text
+%APPDATA%\QuotaBarWin\providers\remote\<provider-id>\
+```
+
+`${secret:NAME}` 会优先读取 `<config-dir>\secrets\NAME.txt`，找不到时回退到进程
+环境变量 `NAME`。
+
+## 开发
+
+安装依赖：
 
 ```powershell
 npm install
+```
+
+启动浏览器预览：
+
+```powershell
+npm run dev
+```
+
+启动 Tauri 桌面应用：
+
+```powershell
+npm run tauri dev
+```
+
+构建前端资源：
+
+```powershell
 npm run build
+```
+
+运行测试：
+
+```powershell
 npm run test -- --run
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-## Build Artifacts
+检查图标：
 
-Windows release builds are produced by `.github/workflows/release.yml`. The
-workflow builds the Tauri installer artifacts and also creates a portable zip
-containing `QuotaBarWin.exe`.
+```powershell
+npm run icons:check
+```
 
-Local installer build:
+E2E 使用 `tauri-driver` 和 WebDriverIO：
+
+```powershell
+npm run e2e
+```
+
+如需安装 `tauri-driver`：
+
+```powershell
+cargo install tauri-driver --locked
+```
+
+## 构建产物
+
+Windows release 由 `.github/workflows/release.yml` 生成。工作流会构建 Tauri
+安装包，并额外生成包含 `QuotaBarWin.exe` 的 portable zip。
+
+本地安装包构建：
 
 ```powershell
 npm run tauri build
 ```
 
-## Install
+Tauri MSI / NSIS 打包配置位于
+[`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json)。
 
-Download the Windows installer from the release artifacts and run it. The
-portable zip can also be extracted to any folder and launched directly with
-`QuotaBarWin.exe`.
+## 安装
 
-## Uninstall
+从 release artifacts 下载 Windows installer 并运行。也可以解压 portable zip 到任意
+目录后直接启动 `QuotaBarWin.exe`。
 
-If installed with the Windows installer, uninstall from Windows Settings >
-Apps > Installed apps > QuotaBarWin. If using the portable zip, quit
-QuotaBarWin from the tray menu and delete the extracted folder.
+## 卸载
 
-User configuration is stored under `%APPDATA%\QuotaBarWin\config.json` on
-Windows. Remove that folder if you also want to delete local settings,
-diagnostics, and logs.
+如果使用 Windows installer 安装，请在 Windows 设置 > 应用 > 已安装应用 >
+QuotaBarWin 中卸载。如果使用 portable zip，请先从托盘菜单退出 QuotaBarWin，然后
+删除解压目录。
+
+如需同时删除本地设置、诊断、日志、secrets 和远程 Provider 缓存，请删除
+`%APPDATA%\QuotaBarWin`。

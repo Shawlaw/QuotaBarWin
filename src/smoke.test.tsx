@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { ProviderCard } from "./components/ProviderCard";
 import type { ProviderSnapshot } from "./types";
+import { I18nProvider } from "./i18n";
 
 test("smoke renders V0 provider card from a standard snapshot shape", () => {
   const provider: ProviderSnapshot = {
@@ -40,7 +41,11 @@ test("smoke renders V0 provider card from a standard snapshot shape", () => {
     ]
   };
 
-  render(<ProviderCard provider={provider} />);
+  render(
+    <I18nProvider language="en">
+      <ProviderCard provider={provider} />
+    </I18nProvider>
+  );
 
   expect(screen.getByText("5h window")).toBeInTheDocument();
   expect(screen.getByText("weekly window")).toBeInTheDocument();

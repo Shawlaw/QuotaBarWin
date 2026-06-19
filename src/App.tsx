@@ -48,7 +48,7 @@ function isTrayView(): boolean {
 }
 
 export function App() {
-  const [frontendLanguage, setFrontendLanguage] = useState<AppConfig["language"]>("system");
+  const [frontendLanguage, setFrontendLanguage] = useState<AppConfig["language"]>("zh-CN");
   const trayView = isTrayView();
 
   useEffect(() => {

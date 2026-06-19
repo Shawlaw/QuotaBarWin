@@ -1,16 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>QuotaBarWin Remote Provider Guide</title>
+    <title>QuotaBarWin 远程 Provider 指南 / Remote Provider Guide</title>
     <style>
       :root {
         color: #1f2937;
         background: #f6f8fb;
         font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        line-height: 1.55;
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "Microsoft YaHei", sans-serif;
+        line-height: 1.58;
       }
 
       * {
@@ -24,12 +25,12 @@
       main {
         margin: 0 auto;
         max-width: 920px;
-        padding: 40px 24px 56px;
+        padding: 32px 24px 56px;
       }
 
       header {
         border-bottom: 1px solid #d9e2ec;
-        margin-bottom: 28px;
+        margin-bottom: 24px;
         padding-bottom: 20px;
       }
 
@@ -48,7 +49,7 @@
 
       h2 {
         font-size: 22px;
-        margin-top: 32px;
+        margin-top: 30px;
       }
 
       h3 {
@@ -124,6 +125,27 @@
         font-size: 16px;
       }
 
+      .language-switch {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .language-switch a {
+        border: 1px solid #0f766e;
+        border-radius: 6px;
+        color: #0f766e;
+        font-weight: 650;
+        padding: 7px 12px;
+        text-decoration: none;
+      }
+
+      .language-switch a[aria-current="true"] {
+        background: #0f766e;
+        color: #ffffff;
+      }
+
       .note {
         background: #eff6ff;
         border-left: 4px solid #3b82f6;
@@ -132,31 +154,59 @@
         margin-top: 12px;
         padding: 12px 16px;
       }
+
+      .lang-en {
+        display: none;
+      }
     </style>
+    <script>
+      function applyLanguage() {
+        const language = location.hash === "#en" ? "en" : "zh-CN";
+        document.documentElement.lang = language;
+        for (const section of document.querySelectorAll("[data-language]")) {
+          section.hidden = section.dataset.language !== language;
+          section.style.display = section.hidden ? "none" : "";
+        }
+        for (const link of document.querySelectorAll("[data-language-link]")) {
+          link.setAttribute(
+            "aria-current",
+            link.dataset.languageLink === language ? "true" : "false",
+          );
+        }
+      }
+
+      window.addEventListener("hashchange", applyLanguage);
+      window.addEventListener("DOMContentLoaded", applyLanguage);
+    </script>
   </head>
   <body>
     <main>
-      <header>
-        <h1>Remote Provider Guide</h1>
-        <p class="lead">
-          Install quota providers from a hosted manifest + script, without bundling them into the app.
-        </p>
-      </header>
+      <article data-language="zh-CN">
+        <header>
+          <h1>远程 Provider 指南</h1>
+          <p class="lead">
+            通过托管的 manifest 和脚本安装额度 Provider，无需把 Provider 打包进主程序。
+          </p>
+          <nav class="language-switch" aria-label="文档语言">
+            <a href="#zh-CN" data-language-link="zh-CN" aria-current="true">中文</a>
+            <a href="#en" data-language-link="en" aria-current="false">English</a>
+          </nav>
+        </header>
 
-      <section>
-        <h2>How it works</h2>
-        <ol>
-          <li>You provide a registry URL or local file path (<code>registry.json</code>) that lists one or more providers.</li>
-          <li>QuotaBarWin reads the registry, fetches each referenced provider manifest, verifies optional checksums, and downloads the source scripts.</li>
-          <li>Each script is cached locally and executed with its declared runtime (for example <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path).</li>
-          <li>On every refresh QuotaBarWin runs the cached scripts and parses the output into quota windows.</li>
-        </ol>
-      </section>
+        <section>
+          <h2>工作方式</h2>
+          <ol>
+            <li>在设置页提供 registry URL 或本地路径，例如 <code>registry.json</code>。</li>
+            <li>QuotaBarWin 读取 registry，拉取每个 Provider manifest，校验可选 checksum，并下载 source script。</li>
+            <li>脚本会缓存到本机，并使用 manifest 声明的 runtime 执行，例如 <code>node</code>、<code>python</code>、<code>pwsh</code>、<code>bash</code> 或绝对路径。</li>
+            <li>每次刷新时，QuotaBarWin 运行缓存脚本，并把 stdout 解析为标准额度窗口。</li>
+          </ol>
+        </section>
 
-      <section>
-        <h2>Manifest format</h2>
-        <p>Save the manifest as <code>provider.json</code> next to your source script.</p>
-        <pre>{
+        <section>
+          <h2>Manifest 格式</h2>
+          <p>将 manifest 保存为 <code>provider.json</code>，并放在 source script 旁。</p>
+          <pre>{
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
@@ -170,30 +220,27 @@
     "source": "sha256:&lt;hex&gt;"
   }
 }</pre>
+          <table>
+            <thead>
+              <tr><th>字段</th><th>必填</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>schemaVersion</code></td><td>是</td><td>必须为 <code>1</code>。</td></tr>
+              <tr><td><code>id</code></td><td>是</td><td>唯一 Provider id，不能与已有 Provider 冲突。</td></tr>
+              <tr><td><code>displayName</code></td><td>是</td><td>UI 中显示的人类可读名称。</td></tr>
+              <tr><td><code>runtime</code></td><td>是</td><td>执行 <code>entry</code> 的 runtime，可为命令名或绝对路径。</td></tr>
+              <tr><td><code>entry</code></td><td>是</td><td>Source 文件。相对路径按 manifest 所在位置解析。</td></tr>
+              <tr><td><code>requiredEnvVars</code></td><td>否</td><td>脚本需要的环境变量。</td></tr>
+              <tr><td><code>output</code></td><td>是</td><td>当前使用 <code>provider-snapshot-v1</code>。</td></tr>
+              <tr><td><code>checksums.source</code></td><td>否</td><td>Source SHA-256。启用安全 auto-update 时需要。</td></tr>
+            </tbody>
+          </table>
+        </section>
 
-        <table>
-          <thead>
-            <tr><th>Field</th><th>Required</th><th>Description</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><code>schemaVersion</code></td><td>yes</td><td>Must be <code>1</code>.</td></tr>
-            <tr><td><code>id</code></td><td>yes</td><td>Unique provider id. Must not conflict with an existing provider.</td></tr>
-            <tr><td><code>displayName</code></td><td>yes</td><td>Human-readable name shown in the UI.</td></tr>
-            <tr><td><code>description</code></td><td>no</td><td>Short description.</td></tr>
-            <tr><td><code>runtime</code></td><td>yes</td><td>Runtime used to execute <code>entry</code>. Common values: <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path.</td></tr>
-            <tr><td><code>entry</code></td><td>yes</td><td>Source file name. Relative paths are resolved against the manifest URL; absolute HTTPS URLs are also supported.</td></tr>
-            <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script. On refresh, QuotaBarWin resolves each name from provider <code>envVars</code>, then <code>${secret:NAME}</code>.</td></tr>
-            <tr><td><code>output</code></td><td>yes</td><td>Output contract. Use <code>provider-snapshot-v1</code>.</td></tr>
-            <tr><td><code>permissions</code></td><td>no</td><td>Declared capabilities (informational). Use <code>env:&lt;NAME&gt;</code> to document env vars.</td></tr>
-            <tr><td><code>checksums.source</code></td><td>no</td><td>SHA-256 checksum of the source file. Required for auto-update. Format: <code>sha256:&lt;hex&gt;</code>.</td></tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section>
-        <h2>Provider registry format</h2>
-        <p>Save the registry as <code>registry.json</code>. It points to one or more provider manifests.</p>
-        <pre>{
+        <section>
+          <h2>Registry 格式</h2>
+          <p>Registry 可以用一个 URL 安装多个 Provider。</p>
+          <pre>{
   "schemaVersion": 1,
   "providers": [
     {
@@ -203,24 +250,15 @@
     }
   ]
 }</pre>
-        <table>
-          <thead>
-            <tr><th>Field</th><th>Required</th><th>Description</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><code>schemaVersion</code></td><td>yes</td><td>Must be <code>1</code>.</td></tr>
-            <tr><td><code>providers</code></td><td>yes</td><td>Array of provider entries.</td></tr>
-            <tr><td><code>providers[].id</code></td><td>yes</td><td>Provider id. Must match the id declared in the referenced manifest.</td></tr>
-            <tr><td><code>providers[].providerUrl</code></td><td>yes</td><td>URL or local path to the provider's <code>provider.json</code>. Relative paths are resolved against the registry URL/path.</td></tr>
-            <tr><td><code>providers[].checksum</code></td><td>no</td><td>SHA-256 checksum of the referenced manifest text. If provided, QuotaBarWin verifies the manifest before installing.</td></tr>
-          </tbody>
-        </table>
-      </section>
+          <p>
+            <code>providerUrl</code> 可以是 HTTPS URL、<code>file://</code> URL 或本地路径；相对路径会按 registry 所在位置解析。
+          </p>
+        </section>
 
-      <section>
-        <h2>Source script output contract</h2>
-        <p>When <code>output</code> is <code>provider-snapshot-v1</code>, the script must print a single JSON object to stdout. <code>id</code>, <code>name</code>, and <code>source</code> are optional and default to the manifest values.</p>
-        <pre>{
+        <section>
+          <h2>Source Script 输出协议</h2>
+          <p>脚本必须向 stdout 输出一个 JSON 对象。诊断信息请写 stderr。</p>
+          <pre>{
   "status": "ok",
   "updatedAt": "2026-06-12T10:00:00.000Z",
   "windows": [
@@ -241,326 +279,191 @@
   ],
   "metadata": {}
 }</pre>
+          <div class="note">
+            请保持 <code>windows[].id</code> 稳定。用户会用它配置窗口顺序、可见性和自定义名称。
+          </div>
+        </section>
 
-        <h3>Window fields</h3>
-        <table>
-          <thead>
-            <tr><th>Field</th><th>Required</th><th>Description</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><code>id</code></td><td>yes</td><td>Stable window identifier used by user configuration.</td></tr>
-            <tr><td><code>label</code></td><td>yes</td><td>Display label. Can be friendly or localized, but must not be the only stable identity.</td></tr>
-            <tr><td><code>remaining</code></td><td>no</td><td>Remaining amount. Useful for balance providers that report the current balance directly.</td></tr>
-            <tr><td><code>used</code></td><td>no</td><td>Used amount.</td></tr>
-            <tr><td><code>limit</code></td><td>no</td><td>Total limit.</td></tr>
-            <tr><td><code>unit</code></td><td>no</td><td>Unit string, e.g. <code>requests</code>, <code>tokens</code>, <code>percent</code>.</td></tr>
-            <tr><td><code>usedPercent</code></td><td>no</td><td>0-100.</td></tr>
-            <tr><td><code>remainingPercent</code></td><td>no</td><td>0-100.</td></tr>
-            <tr><td><code>warningRemaining</code></td><td>no</td><td>Absolute remaining amount that should put the window in warning state.</td></tr>
-            <tr><td><code>resetAt</code></td><td>no</td><td>ISO 8601 timestamp.</td></tr>
-            <tr><td><code>resetText</code></td><td>no</td><td>Human-readable reset text.</td></tr>
-            <tr><td><code>confidence</code></td><td>no</td><td><code>exact</code>, <code>estimated</code>, or <code>unknown</code>.</td></tr>
-          </tbody>
-        </table>
-
-        <h3>Stable window IDs and user customization</h3>
-        <p>
-          Treat every <code>windows[].id</code> value as part of your provider's compatibility contract. Users can customize per-window display order, visibility, and names by referring to these IDs in local provider config, so changing an ID can silently break their preferences.
-        </p>
-        <pre>{
+        <section>
+          <h2>本地配置与 Secret</h2>
+          <p>
+            远程脚本不应该包含凭据。脚本读取 <code>process.env.NAME</code>，QuotaBarWin 会把配置中的 env vars 注入子进程。
+          </p>
+          <pre>{
   "kind": "remote",
   "id": "kimi-coding",
-  "visibleWindowIds": ["300-minute", "usage", "total-quota"],
-  "windowLabelOverrides": {
-    "300-minute": "5h",
-    "usage": "Weekly"
-  },
   "envVars": {
     "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
   }
 }</pre>
-        <ul>
-          <li><code>visibleWindowIds</code> controls which windows are displayed. When it is set, QuotaBarWin displays only those windows and uses the configured order.</li>
-          <li><code>windowLabelOverrides</code> controls display names. Overrides are matched by <code>window.id</code> first, so stable IDs let users keep custom names even if provider labels change. Legacy label matching may work for existing configs, but provider authors should document and preserve IDs.</li>
-          <li><code>label</code> should be friendly text for the UI and may change for clarity or localization. Do not derive <code>id</code> from translated labels, marketing copy, or other wording that might change. Prefer semantic provider API keys such as <code>weekly</code>, <code>300-minute</code>, <code>tokens-limit-6-1</code>, or <code>total-quota</code>.</li>
-        </ul>
-      </section>
+          <p>
+            <code>${secret:NAME}</code> 会优先读取 <code>&lt;config-dir&gt;/secrets/NAME.txt</code>，找不到时回退到环境变量 <code>NAME</code>。
+          </p>
+        </section>
 
-      <section>
-        <h2>Parsing raw API responses</h2>
-        <p>Remote providers should keep provider-specific parsing inside the source script. The app only needs the normalized <code>provider-snapshot-v1</code> JSON printed to stdout.</p>
-        <ol>
-          <li>Fetch or read the provider's raw API response.</li>
-          <li>Select the quota records that represent user-visible windows.</li>
-          <li>Convert provider-specific field names into stable window fields.</li>
-          <li>Put useful extra provider fields in <code>metadata</code>, not in <code>windows</code>.</li>
-          <li>Print exactly one JSON object to stdout; write diagnostics to stderr.</li>
-        </ol>
+        <section>
+          <h2>安全检查清单</h2>
+          <ul>
+            <li>只安装你信任来源的远程 Provider。</li>
+            <li>安装前检查 source URL、runtime 和 required env vars。</li>
+            <li>优先使用带 <code>providers[].checksum</code> 的 registry。</li>
+            <li>优先使用带 <code>checksums.source</code> 的 manifest；否则无法安全自动更新。</li>
+            <li>缓存 source 位于 app data 目录下的 <code>providers/remote/&lt;id&gt;/</code>。</li>
+          </ul>
+        </section>
 
-        <h3>BigModel raw response</h3>
-        <pre>{
-  "success": true,
-  "code": 200,
-  "msg": "success",
-  "data": {
-    "level": "pro",
-    "limits": [
-      {
-        "type": "TOKENS_LIMIT",
-        "unit": 6,
-        "number": 1,
-        "currentValue": 12345,
-        "usage": 100000,
-        "percentage": 12.35,
-        "nextResetTime": 1781654400000,
-        "usageDetails": [
-          { "modelCode": "glm-4.5", "usage": 1000 }
-        ]
-      }
-    ]
+        <section>
+          <h2>示例与更新</h2>
+          <p>
+            仓库中的 <code>examples/remote-providers/</code> 包含 Kimi、BigModel、Codex usage 和 DeepSeek balance 示例。
+          </p>
+          <p>
+            如果 manifest 包含 <code>checksums.source</code>，可在设置页使用自动更新或手动 “检查更新 / 应用更新”。缺少 checksum 时，需要移除后重新添加 Provider。
+          </p>
+        </section>
+      </article>
+
+      <article class="lang-en" data-language="en" hidden>
+        <header>
+          <h1>Remote Provider Guide</h1>
+          <p class="lead">
+            Install quota providers from a hosted manifest and script, without bundling them into the app.
+          </p>
+          <nav class="language-switch" aria-label="Document language">
+            <a href="#zh-CN" data-language-link="zh-CN" aria-current="false">中文</a>
+            <a href="#en" data-language-link="en" aria-current="true">English</a>
+          </nav>
+        </header>
+
+        <section>
+          <h2>How it works</h2>
+          <ol>
+            <li>You provide a registry URL or local file path such as <code>registry.json</code>.</li>
+            <li>QuotaBarWin reads the registry, fetches each provider manifest, verifies optional checksums, and downloads source scripts.</li>
+            <li>Each script is cached locally and executed with its declared runtime, such as <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path.</li>
+            <li>On every refresh, QuotaBarWin runs the cached scripts and parses stdout into quota windows.</li>
+          </ol>
+        </section>
+
+        <section>
+          <h2>Manifest format</h2>
+          <p>Save the manifest as <code>provider.json</code> next to your source script.</p>
+          <pre>{
+  "schemaVersion": 1,
+  "id": "kimi-coding",
+  "displayName": "Kimi Coding Usage",
+  "description": "Kimi coding quota usage via remote provider script.",
+  "runtime": "node",
+  "entry": "provider.cjs",
+  "requiredEnvVars": ["KIMI_API_KEY"],
+  "output": "provider-snapshot-v1",
+  "permissions": ["env:KIMI_API_KEY"],
+  "checksums": {
+    "source": "sha256:&lt;hex&gt;"
   }
 }</pre>
+          <table>
+            <thead>
+              <tr><th>Field</th><th>Required</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>schemaVersion</code></td><td>yes</td><td>Must be <code>1</code>.</td></tr>
+              <tr><td><code>id</code></td><td>yes</td><td>Unique provider id. Must not conflict with an existing provider.</td></tr>
+              <tr><td><code>displayName</code></td><td>yes</td><td>Human-readable name shown in the UI.</td></tr>
+              <tr><td><code>runtime</code></td><td>yes</td><td>Runtime used to execute <code>entry</code>. It can be a command name or absolute path.</td></tr>
+              <tr><td><code>entry</code></td><td>yes</td><td>Source file. Relative paths are resolved against the manifest URL/path.</td></tr>
+              <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script.</td></tr>
+              <tr><td><code>output</code></td><td>yes</td><td>Use <code>provider-snapshot-v1</code>.</td></tr>
+              <tr><td><code>checksums.source</code></td><td>no</td><td>Source SHA-256. Required for safe auto-update.</td></tr>
+            </tbody>
+          </table>
+        </section>
 
-        <table>
-          <thead>
-            <tr><th>Raw field</th><th>Snapshot field</th><th>Notes</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><code>data.limits[]</code></td><td><code>windows[]</code></td><td>One raw limit becomes one quota window.</td></tr>
-            <tr><td><code>type</code>, <code>unit</code>, <code>number</code></td><td><code>id</code>, <code>label</code></td><td>Build a stable id and a readable label.</td></tr>
-            <tr><td><code>currentValue</code></td><td><code>used</code></td><td>Normalize strings/numbers to numbers when possible.</td></tr>
-            <tr><td><code>usage</code></td><td><code>limit</code></td><td>Leave as <code>null</code> if the API omits it.</td></tr>
-            <tr><td><code>percentage</code></td><td><code>usedPercent</code></td><td>Use a 0-100 value.</td></tr>
-            <tr><td><code>100 - percentage</code></td><td><code>remainingPercent</code></td><td>Use <code>null</code> when <code>percentage</code> is missing.</td></tr>
-            <tr><td><code>nextResetTime</code></td><td><code>resetAt</code></td><td>Convert epoch milliseconds to ISO 8601.</td></tr>
-            <tr><td><code>level</code>, <code>usageDetails</code>, raw status fields</td><td><code>metadata</code></td><td>Preserve useful details without changing the window contract.</td></tr>
-          </tbody>
-        </table>
-
-        <h3>Kimi raw response</h3>
-        <pre>{
-  "limits": [
+        <section>
+          <h2>Provider registry format</h2>
+          <p>A registry installs multiple providers from one URL.</p>
+          <pre>{
+  "schemaVersion": 1,
+  "providers": [
     {
-      "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
-      "detail": { "used": 42, "limit": 100, "resetTime": "2026-06-13T15:00:00Z" }
-    }
-  ],
-  "usage": { "used": 120, "limit": 500, "resetTime": "2026-06-17T00:00:00Z" },
-  "totalQuota": { "limit": 1000, "remaining": 830 },
-  "user": { "region": "us", "membership": { "level": "pro" } }
-}</pre>
-        <p>The Kimi example maps the 300-minute <code>limits[].detail</code> entry to a <code>5h</code> window, maps <code>usage</code> to a weekly window, and derives total quota usage from <code>totalQuota.limit - totalQuota.remaining</code>.</p>
-
-        <h3>Codex raw response</h3>
-        <pre>{
-  "plan_type": "plus",
-  "credits": { "granted": 100, "used": 12 },
-  "rate_limit": {
-    "primary_window": { "used_percent": 32, "reset_after_seconds": 7200 },
-    "secondary_window": { "used_percent": 18, "reset_at": 1781913600 }
-  }
-}</pre>
-        <p>The Codex example reports percentages rather than absolute counters, so <code>used</code> and <code>limit</code> stay <code>null</code>, <code>used_percent</code> becomes <code>usedPercent</code>, and reset values are converted from seconds or relative seconds into ISO timestamps.</p>
-
-        <h3>DeepSeek raw response</h3>
-        <pre>{
-  "is_available": true,
-  "balance_infos": [
-    {
-      "currency": "CNY",
-      "total_balance": "110.00",
-      "granted_balance": "10.00",
-      "topped_up_balance": "100.00"
+      "id": "kimi-coding",
+      "providerUrl": "kimi-coding/provider.json",
+      "checksum": "sha256:&lt;manifest-sha256&gt;"
     }
   ]
 }</pre>
-        <p>DeepSeek is pay-as-you-go, so the example maps each currency balance to a window with <code>remaining</code> set to <code>total_balance</code> and <code>unit</code> set to the currency. Optional local env vars such as <code>DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200</code>, <code>DEEPSEEK_BALANCE_WARNING_CNY=20</code>, and <code>DEEPSEEK_BALANCE_CURRENCY=CNY</code> provide a reference total, absolute warning balance, and currency filter.</p>
+          <p>
+            <code>providerUrl</code> may be an HTTPS URL, <code>file://</code> URL, or local path. Relative paths are resolved against the registry URL/path.
+          </p>
+        </section>
 
-        <div class="note">
-          Remote provider source should not contain credentials. The script still reads <code>process.env.NAME</code>, but QuotaBarWin injects configured environment variables only into the child process. For each manifest <code>requiredEnvVars</code> entry, the app first checks the installed provider config <code>envVars</code> map; if a key is absent, it resolves <code>${secret:NAME}</code>. Extra configured <code>envVars</code> are also injected, which is useful for optional provider settings. <code>${secret:NAME}</code> reads <code>&lt;config-dir&gt;/secrets/NAME.txt</code> first and falls back to environment variable <code>NAME</code>.
-        </div>
-      </section>
+        <section>
+          <h2>Source script output contract</h2>
+          <p>The script must print one JSON object to stdout. Write diagnostics to stderr.</p>
+          <pre>{
+  "status": "ok",
+  "updatedAt": "2026-06-12T10:00:00.000Z",
+  "windows": [
+    {
+      "id": "weekly",
+      "label": "Weekly limit",
+      "remaining": 88,
+      "used": 12,
+      "limit": 100,
+      "unit": "requests",
+      "usedPercent": 12,
+      "remainingPercent": 88,
+      "warningRemaining": 20,
+      "resetAt": "2026-06-19T10:00:00.000Z",
+      "resetText": null,
+      "confidence": "exact"
+    }
+  ],
+  "metadata": {}
+}</pre>
+          <div class="note">
+            Keep <code>windows[].id</code> stable. User customization depends on it for display order, visibility, and labels.
+          </div>
+        </section>
 
-      <section>
-        <h2>Implementation examples (Zhipu/BigModel)</h2>
-        <p>These examples call the Zhipu/BigModel quota endpoint and print a <code>provider-snapshot-v1</code> response. They all read the API key from <code>BIGMODEL_API_KEY</code>.</p>
-
-        <h3>Node.js</h3>
-        <pre>const token = process.env.BIGMODEL_API_KEY;
-if (!token) {
-  console.error("BIGMODEL_API_KEY is required");
-  process.exit(1);
-}
-
-fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
-  headers: { Authorization: `Bearer ${token}` }
-})
-  .then((res) => {
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  })
-  .then((body) => {
-    const limits = body.data?.limits ?? [];
-    const windows = limits.map((l) => ({
-      id: `${l.type}-${l.unit}-${l.number}`.toLowerCase(),
-      label: `${l.type} / ${l.unit}`,
-      used: l.currentValue ?? null,
-      limit: l.usage ?? null,
-      unit: l.type === "TOKENS_LIMIT" ? "tokens" : null,
-      usedPercent: l.percentage ?? null,
-      remainingPercent: l.percentage == null ? null : Math.max(0, 100 - l.percentage),
-      resetAt: l.nextResetTime ? new Date(l.nextResetTime).toISOString() : null,
-      resetText: null,
-      confidence: "exact"
-    }));
-    console.log(JSON.stringify({
-      status: "ok",
-      updatedAt: new Date().toISOString(),
-      windows,
-      metadata: {}
-    }));
-  })
-  .catch((err) => {
-    console.error(err.message);
-    process.exit(1);
-  });</pre>
-
-        <h3>Python</h3>
-        <pre>import json, os, sys, urllib.request, datetime
-
-token = os.environ.get("BIGMODEL_API_KEY")
-if not token:
-    sys.exit("BIGMODEL_API_KEY is required")
-
-req = urllib.request.Request(
-    "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
-    headers={"Authorization": f"Bearer {token}"}
-)
-
-with urllib.request.urlopen(req) as res:
-    body = json.load(res)
-
-limits = body.get("data", {}).get("limits", [])
-windows = []
-for l in limits:
-    pct = l.get("percentage")
-    windows.append({
-        "id": f"{l['type']}-{l['unit']}-{l['number']}".lower(),
-        "label": f"{l['type']} / {l['unit']}",
-        "used": l.get("currentValue"),
-        "limit": l.get("usage"),
-        "unit": "tokens" if l.get("type") == "TOKENS_LIMIT" else None,
-        "usedPercent": pct,
-        "remainingPercent": None if pct is None else max(0, 100 - pct),
-        "resetAt": datetime.datetime.fromtimestamp(
-            l["nextResetTime"] / 1000, tz=datetime.timezone.utc
-        ).isoformat() if l.get("nextResetTime") else None,
-        "resetText": None,
-        "confidence": "exact"
-    })
-
-print(json.dumps({
-    "status": "ok",
-    "updatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    "windows": windows,
-    "metadata": {}
-}, ensure_ascii=False))</pre>
-
-        <h3>PowerShell</h3>
-        <pre>$token = $env:BIGMODEL_API_KEY
-if (-not $token) { throw "BIGMODEL_API_KEY is required" }
-
-$res = Invoke-RestMethod -Uri "https://open.bigmodel.cn/api/monitor/usage/quota/limit" -Headers @{
-  Authorization = "Bearer $token"
-}
-
-$windows = @()
-foreach ($l in $res.data.limits) {
-  $pct = $l.percentage
-  $windows += @{
-    id = "$($l.type)-$($l.unit)-$($l.number)".ToLower()
-    label = "$($l.type) / $($l.unit)"
-    used = $l.currentValue
-    limit = $l.usage
-    unit = if ($l.type -eq "TOKENS_LIMIT") { "tokens" } else { $null }
-    usedPercent = $pct
-    remainingPercent = if ($null -eq $pct) { $null } else { [math]::Max(0, 100 - $pct) }
-    resetAt = if ($l.nextResetTime) {
-      ([DateTimeOffset]::FromUnixTimeMilliseconds($l.nextResetTime).UtcDateTime).ToString("o")
-    } else { $null }
-    resetText = $null
-    confidence = "exact"
+        <section>
+          <h2>Local config and secrets</h2>
+          <p>
+            Remote provider source should not contain credentials. Scripts read <code>process.env.NAME</code>; QuotaBarWin injects configured env vars into the child process.
+          </p>
+          <pre>{
+  "kind": "remote",
+  "id": "kimi-coding",
+  "envVars": {
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
   }
-}
+}</pre>
+          <p>
+            <code>${secret:NAME}</code> reads <code>&lt;config-dir&gt;/secrets/NAME.txt</code> first and falls back to environment variable <code>NAME</code>.
+          </p>
+        </section>
 
-@{
-  status = "ok"
-  updatedAt = (Get-Date).ToString("o")
-  windows = $windows
-  metadata = @{}
-} | ConvertTo-Json -Depth 10</pre>
+        <section>
+          <h2>Security checklist</h2>
+          <ul>
+            <li>Only install remote providers from sources you trust.</li>
+            <li>Review source URL, runtime, and required env vars before installing.</li>
+            <li>Prefer registries that include <code>providers[].checksum</code>.</li>
+            <li>Prefer manifests that include <code>checksums.source</code>; without it QuotaBarWin cannot auto-update safely.</li>
+            <li>The cached source lives under <code>providers/remote/&lt;id&gt;/</code> in the app data directory.</li>
+          </ul>
+        </section>
 
-        <h3>Bash (Git Bash)</h3>
-        <pre>#!/usr/bin/env bash
-set -euo pipefail
-
-TOKEN="${BIGMODEL_API_KEY:-}"
-[ -z "$TOKEN" ] &amp;&amp; { echo "BIGMODEL_API_KEY is required" &gt;&amp;2; exit 1; }
-
-RESPONSE=$(curl -fsS -H "Authorization: Bearer $TOKEN" \
-  "https://open.bigmodel.cn/api/monitor/usage/quota/limit")
-
-UPDATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-WINDOWS=$(echo "$RESPONSE" | jq '[.data.limits[] | {
-  id: "\(.type)-\(.unit)-\(.number)" | ascii_downcase,
-  label: "\(.type) / \(.unit)",
-  used: .currentValue,
-  limit: .usage,
-  unit: (if .type == "TOKENS_LIMIT" then "tokens" else null end),
-  usedPercent: .percentage,
-  remainingPercent: (if .percentage == null then null else [0, 100 - .percentage] | max end),
-  resetAt: (if .nextResetTime == null then null else (.nextResetTime / 1000 | strflocaltime("%Y-%m-%dT%H:%M:%SZ")) end),
-  resetText: null,
-  confidence: "exact"
-}]')
-
-jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
-  '{status: "ok", updatedAt: $updatedAt, windows: $windows, metadata: {}}'</pre>
-
-        <div class="note">
-          For Bash, <code>jq</code> must be available. On Windows, Git Bash usually ships with it.
-        </div>
-      </section>
-
-      <section>
-        <h2>Security checklist</h2>
-        <ul>
-          <li>Only install remote providers from sources you trust.</li>
-          <li>Review each provider's source URL, runtime, and required env vars before installing a registry.</li>
-          <li>Prefer registries that include <code>providers[].checksum</code> so QuotaBarWin can verify each manifest before installing.</li>
-          <li>Prefer manifests that include <code>checksums.source</code>; without it QuotaBarWin cannot auto-update safely.</li>
-          <li>The cached source file lives in the app data directory under <code>providers/remote/&lt;id&gt;/</code>.</li>
-        </ul>
-      </section>
-
-      <section>
-        <h2>Examples</h2>
-        <p>
-          The <code>examples/remote-providers/</code> directory in the QuotaBarWin repository contains a sample <code>registry.json</code> and complete providers for Kimi, BigModel (Zhipu), Codex usage, and DeepSeek balance.
-        </p>
-        <p>To host your own set of providers, upload the directory containing <code>registry.json</code> and the provider subdirectories, then paste the raw <code>registry.json</code> URL into QuotaBarWin.</p>
-      </section>
-
-      <section>
-        <h2>Updating a remote provider</h2>
-        <p>If the manifest contains <code>checksums.source</code>, QuotaBarWin can detect source changes:</p>
-        <ul>
-          <li><strong>Auto-update</strong>: enabled per provider during install; updates are applied silently when the checksum differs.</li>
-          <li><strong>Manual update</strong>: use the <em>Check Updates</em> / <em>Apply Update</em> buttons in Settings.</li>
-        </ul>
-        <p>If <code>checksums.source</code> is missing, updates must be applied by removing and re-adding the provider.</p>
-      </section>
+        <section>
+          <h2>Examples and updates</h2>
+          <p>
+            The repository's <code>examples/remote-providers/</code> directory contains Kimi, BigModel, Codex usage, and DeepSeek balance examples.
+          </p>
+          <p>
+            If the manifest contains <code>checksums.source</code>, use auto-update or the Settings page's Check Updates / Apply Update actions. Without a checksum, remove and re-add the provider to update it.
+          </p>
+        </section>
+      </article>
     </main>
   </body>
 </html>

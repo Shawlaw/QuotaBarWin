@@ -2,6 +2,37 @@
 
 > 这一版替换旧路线中的 `opencode-quota adapter` 主线。新的核心判断是：**Provider 是唯一对外数据提供抽象；command、curl、CLI、parser、adapter 都只是 Provider 内部实现细节。**
 
+## 当前实现状态（2026-06）
+
+本文档目录是路线设计与历史决策记录，不是当前代码的唯一事实来源。开始实现前应先读取仓库根目录的 `README.md` 和实际源码。
+
+当前代码已经实现的主线：
+
+```text
+Provider Runtime
+  -> mock provider
+  -> native codex provider
+  -> remote provider registry + cached runtime execution
+  -> AppSnapshot / ProviderSnapshot / QuotaWindow
+  -> React UI overview + settings + tray popup
+```
+
+当前配置 schema 为 `10`，配置文件名为 `config.quotaBarWin.json`。支持的 provider config kind 是：
+
+| kind | 当前状态 |
+|---|---|
+| `mock` | 已实现，用于默认开发数据 |
+| `codex` | 已实现，原生请求 ChatGPT/Codex usage API |
+| `remote` | 已实现，通过 registry/manifest 安装并缓存脚本 |
+| `command` / `script` | 历史设计概念；当前 config schema 不再接受 |
+
+远程 provider 的实际格式、安装、更新、secret 和输出协议请优先看：
+
+```text
+docs/remote-provider-guide.md
+examples/remote-providers/README.md
+```
+
 ## 如何给 Codex 使用
 
 建议只给 Codex 一个入口指令：
@@ -20,11 +51,12 @@ Codex 应先读取：
 
 ```text
 README.md
+AGENTS.md
 00_overview_and_coding_contract.md
 10_codex_self_managed_workflow.md
 ```
 
-然后只读取当前目标版本文档，不要一次性读完整个文档包。
+然后只读取当前目标版本文档，不要一次性读完整个文档包。若路线文档与源码冲突，以源码、README 和 AGENTS.md 为准。
 
 ## 文档列表
 
@@ -66,6 +98,8 @@ BigModel/Z.ai curl 是一个 provider preset；当前规范以 JSON 响应为准
 Codex CLI 是一个 provider preset
 自定义脚本也是一个 provider preset
 ```
+
+注意：这些旧路线中的 “preset / custom command / local script” 表述多为规划语义。当前实现没有内置 preset 列表，第三方扩展入口是 `remote` provider registry。
 
 真正的主干是：
 

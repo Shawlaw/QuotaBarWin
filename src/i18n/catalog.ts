@@ -603,10 +603,10 @@ export function resolveLanguage(
     }
   }
 
-  return "en";
+  return "zh-CN";
 }
 
-export function createI18n(choice: LanguageChoice = "en", languages?: readonly string[]) {
+export function createI18n(choice: LanguageChoice = "zh-CN", languages?: readonly string[]) {
   const language = resolveLanguage(choice, languages);
 
   return {

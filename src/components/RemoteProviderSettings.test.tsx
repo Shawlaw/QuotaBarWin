@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
+import type { ReactElement } from "react";
 import { RemoteProviderSettings } from "./RemoteProviderSettings";
 import type { RemoteProviderConfig } from "../types";
 import type { RegistryInstallResult, UpdateInfo } from "../lib/api";
+import { I18nProvider } from "../i18n";
 
 const remoteProvider: RemoteProviderConfig = {
   id: "remote-kimi",
@@ -28,10 +30,18 @@ const registrySettings = {
   autoUpdate: true
 };
 
+function renderWithEnglish(ui: ReactElement) {
+  return render(ui, {
+    wrapper: ({ children }) => (
+      <I18nProvider language="en">{children}</I18nProvider>
+    )
+  });
+}
+
 describe("RemoteProviderSettings", () => {
   test("open_guide_button_calls_handler", () => {
     const onOpenGuide = vi.fn();
-    render(
+    renderWithEnglish(
       <RemoteProviderSettings
         providers={[]}
         registrySettings={registrySettings}
@@ -50,7 +60,7 @@ describe("RemoteProviderSettings", () => {
   });
 
   test("renders_add_form_and_empty_state", () => {
-    render(
+    renderWithEnglish(
       <RemoteProviderSettings
         providers={[]}
         registrySettings={registrySettings}
@@ -73,7 +83,7 @@ describe("RemoteProviderSettings", () => {
   test("install_registry_button_calls_handler_with_form_values", async () => {
     const onInstallRegistry = vi.fn(async (): Promise<RegistryInstallResult> => emptyResult);
     const onRegistrySettingsChange = vi.fn();
-    const { rerender } = render(
+    const { rerender } = renderWithEnglish(
       <RemoteProviderSettings
         providers={[]}
         registrySettings={registrySettings}
@@ -148,7 +158,7 @@ describe("RemoteProviderSettings", () => {
   });
 
   test("renders_persisted_registry_settings", () => {
-    render(
+    renderWithEnglish(
       <RemoteProviderSettings
         providers={[]}
         registrySettings={{
@@ -172,7 +182,7 @@ describe("RemoteProviderSettings", () => {
   });
 
   test("lists_installed_remote_providers", () => {
-    render(
+    renderWithEnglish(
       <RemoteProviderSettings
         providers={[remoteProvider]}
         registrySettings={registrySettings}
@@ -194,7 +204,7 @@ describe("RemoteProviderSettings", () => {
   });
 
   test("toggles_installed_provider_details", () => {
-    render(
+    renderWithEnglish(
       <RemoteProviderSettings
         providers={[remoteProvider]}
         registrySettings={registrySettings}
@@ -219,7 +229,7 @@ describe("RemoteProviderSettings", () => {
 
   test("remove_button_calls_handler", async () => {
     const onRemove = vi.fn();
-    render(
+    renderWithEnglish(
       <RemoteProviderSettings
         providers={[remoteProvider]}
         registrySettings={registrySettings}
@@ -242,7 +252,7 @@ describe("RemoteProviderSettings", () => {
   test("check_updates_button_displays_available_updates", async () => {
     const update: UpdateInfo = { id: "remote-kimi", available: true, newChecksum: "sha256:new" };
     const onCheckUpdates = vi.fn(async () => [update]);
-    render(
+    renderWithEnglish(
       <RemoteProviderSettings
         providers={[remoteProvider]}
         registrySettings={registrySettings}
@@ -264,7 +274,7 @@ describe("RemoteProviderSettings", () => {
 
   test("apply_update_button_calls_handler", async () => {
     const onApplyUpdate = vi.fn();
-    render(
+    renderWithEnglish(
       <RemoteProviderSettings
         providers={[remoteProvider]}
         registrySettings={registrySettings}

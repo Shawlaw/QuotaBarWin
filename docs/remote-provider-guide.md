@@ -1,15 +1,23 @@
-# QuotaBarWin Remote Provider Guide
+# QuotaBarWin 远程 Provider 指南
 
-Remote providers let you install quota providers from a hosted manifest + script, without bundling them into the app. This is useful for third-party providers, rapid iteration, or sharing provider configurations across machines.
+默认语言：简体中文。English documentation:
+[`remote-provider-guide.en.md`](remote-provider-guide.en.md).
 
-## How it works
+远程 Provider 允许你通过一个托管的 `registry.json` / `provider.json` 安装额度
+Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合第三方 Provider、
+快速迭代 Provider 脚本，或在多台机器之间共享 Provider 配置。
 
-1. You provide a registry URL or local file path (`registry.json`) that lists one or more providers. Both `https://` and `file://` URLs, as well as plain local paths like `C:\Providers\registry.json`, are supported.
-2. QuotaBarWin reads the registry, fetches each referenced provider manifest, verifies optional checksums, and downloads the source scripts.
-3. Each script is cached locally and executed with its declared runtime (for example `node`, `python`, or an absolute path).
-4. On every refresh QuotaBarWin runs the cached scripts and parses the output into quota windows.
+## 工作方式
 
-## Manifest format (`provider.json`)
+1. 在设置页提供 registry URL 或本地路径，例如 `registry.json`。支持 `https://`、
+   `file://` 和普通本地路径。
+2. QuotaBarWin 读取 registry，拉取每个 Provider manifest，校验可选 checksum，
+   并下载 source script。
+3. Source script 会缓存到本机，并使用 manifest 声明的 runtime 执行，例如
+   `node`、`python`、`pwsh`、`bash` 或绝对路径。
+4. 每次刷新时，QuotaBarWin 运行缓存脚本，并把 stdout 解析为标准额度窗口。
+
+## Manifest 格式（`provider.json`）
 
 ```json
 {
@@ -28,24 +36,22 @@ Remote providers let you install quota providers from a hosted manifest + script
 }
 ```
 
-Field descriptions:
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `schemaVersion` | 是 | 必须为 `1`。 |
+| `id` | 是 | 唯一 Provider id，不能与当前配置中的 Provider 冲突。 |
+| `displayName` | 是 | UI 中显示的人类可读名称。 |
+| `description` | 否 | 简短说明。 |
+| `runtime` | 是 | 执行 `entry` 的 runtime，例如 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
+| `entry` | 是 | Source 文件名。相对路径按 manifest 所在位置解析；也支持 HTTPS / file / 本地路径。 |
+| `requiredEnvVars` | 否 | 脚本需要的环境变量。刷新时会先查 provider `envVars`，再解析 `${secret:NAME}`。 |
+| `output` | 是 | 当前仅支持 `provider-snapshot-v1`。 |
+| `permissions` | 否 | 声明能力，目前主要用于说明。建议用 `env:<NAME>` 标注环境变量。 |
+| `checksums.source` | 否 | Source 文件 SHA-256。启用安全 auto-update 时需要，格式为 `sha256:<hex>`。 |
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `schemaVersion` | yes | Must be `1`. |
-| `id` | yes | Unique provider id. Must not conflict with an existing provider in your config. |
-| `displayName` | yes | Human-readable name shown in the UI. |
-| `description` | no | Short description. |
-| `runtime` | yes | Runtime used to execute `entry`. Common values: `node`, `python`, `pwsh`, `bash`. Can also be an absolute path like `C:\Tools\node\node.exe`. |
-| `entry` | yes | Source file name. Can be a relative path (resolved against the manifest URL/directory), an absolute HTTPS URL, a `file://` URL, or a local file path. |
-| `requiredEnvVars` | no | Environment variables that the script needs. On refresh, QuotaBarWin resolves each name from provider `envVars`, then `${secret:NAME}`. |
-| `output` | yes | Output contract. Only `provider-snapshot-v1` is supported for remote providers at the moment. |
-| `permissions` | no | Declared capabilities (currently informational). Use `env:<NAME>` to document required env vars. |
-| `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. |
+## Registry 格式（`registry.json`）
 
-## Provider registry (`registry.json`)
-
-A registry lets you install multiple providers with one URL. It is useful for distributing a curated set of providers.
+Registry 可以用一个 URL 安装多个 Provider：
 
 ```json
 {
@@ -60,19 +66,18 @@ A registry lets you install multiple providers with one URL. It is useful for di
 }
 ```
 
-Field descriptions:
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `schemaVersion` | 是 | 必须为 `1`。 |
+| `providers` | 是 | Provider 条目数组。 |
+| `providers[].id` | 是 | Provider id，必须与引用的 manifest 中的 id 一致。 |
+| `providers[].providerUrl` | 是 | `provider.json` 的 URL 或本地路径。相对路径按 registry 所在位置解析。 |
+| `providers[].checksum` | 否 | Manifest 文本 SHA-256；提供后安装前会校验。 |
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `schemaVersion` | yes | Must be `1`. |
-| `providers` | yes | Array of provider entries. |
-| `providers[].id` | yes | Provider id. Must match the id declared in the referenced manifest. |
-| `providers[].providerUrl` | yes | URL or local path to the provider's `provider.json`. Relative paths are resolved against the registry URL/path. |
-| `providers[].checksum` | no | SHA-256 checksum of the referenced manifest text. If provided, QuotaBarWin verifies the manifest before installing. |
+## Source Script 输出协议
 
-## Source script output contract
-
-When `output` is `provider-snapshot-v1`, the script must print a single JSON object to stdout. `id`, `name`, and `source` are optional and default to the values from the manifest/config.
+当 `output` 为 `provider-snapshot-v1` 时，脚本必须向 stdout 输出一个 JSON 对象。
+`id`、`name` 和 `source` 可以省略，QuotaBarWin 会使用 manifest / config 中的值。
 
 ```json
 {
@@ -98,28 +103,28 @@ When `output` is `provider-snapshot-v1`, the script must print a single JSON obj
 }
 ```
 
-Window fields:
+### Window 字段
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `id` | yes | Stable window identifier used by user configuration. |
-| `label` | yes | Display label. Can be friendly or localized, but must not be the only stable identity. |
-| `used` | no | Used amount. |
-| `remaining` | no | Remaining amount. Useful for balance providers that report the current balance directly. |
-| `limit` | no | Total limit. |
-| `unit` | no | Unit string, e.g. `requests`, `tokens`, `percent`. |
-| `usedPercent` | no | 0-100. |
-| `remainingPercent` | no | 0-100. |
-| `warningRemaining` | no | Absolute remaining amount that should put the window in warning state. |
-| `resetAt` | no | ISO 8601 timestamp. |
-| `resetText` | no | Human-readable reset text. |
-| `confidence` | no | `exact`, `estimated`, or `unknown`. |
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `id` | 是 | 稳定窗口 ID，会被用户配置引用。 |
+| `label` | 是 | UI 显示名称，可以更友好或本地化，但不能作为唯一稳定身份。 |
+| `used` | 否 | 已用数量。 |
+| `remaining` | 否 | 剩余数量，余额型 Provider 很常用。 |
+| `limit` | 否 | 总额度。 |
+| `unit` | 否 | 单位，例如 `requests`、`tokens`、`percent`、`CNY`。 |
+| `usedPercent` | 否 | 0-100。 |
+| `remainingPercent` | 否 | 0-100。 |
+| `warningRemaining` | 否 | 剩余数量低于该值时进入 warning 状态。 |
+| `resetAt` | 否 | ISO 8601 时间。 |
+| `resetText` | 否 | 人类可读重置说明。 |
+| `confidence` | 否 | `exact`、`estimated` 或 `unknown`。 |
 
-### Stable window IDs and user customization
+## 稳定窗口 ID 与用户自定义
 
-Treat every `windows[].id` value as part of your provider's compatibility contract. Users can customize per-window display order, visibility, and names by referring to these IDs in local provider config, so changing an ID can silently break their preferences.
-
-Example installed provider config:
+请把每个 `windows[].id` 当成 Provider 的兼容性契约。用户可以通过本地配置中的
+`visibleWindowIds` 和 `windowLabelOverrides` 控制显示顺序、可见性和名称；如果你随意
+改 ID，会破坏这些偏好。
 
 ```json
 {
@@ -136,128 +141,47 @@ Example installed provider config:
 }
 ```
 
-- `visibleWindowIds` controls which windows are displayed. When it is set, QuotaBarWin displays only those windows and uses the configured order.
-- `windowLabelOverrides` controls display names. Overrides are matched by `window.id` first, so stable IDs let users keep custom names even if provider labels change. Legacy label matching may work for existing configs, but provider authors should document and preserve IDs.
-- `label` should be friendly text for the UI and may change for clarity or localization. Do not derive `id` from translated labels, marketing copy, or other wording that might change. Prefer semantic provider API keys such as `weekly`, `300-minute`, `tokens-limit-6-1`, or `total-quota`.
+- `visibleWindowIds` 控制展示哪些窗口以及顺序。
+- `windowLabelOverrides` 优先匹配 `window.id`，再兼容旧 label 匹配。
+- `label` 只是展示文案，可以变得更清晰或本地化；`id` 应来自稳定 API 语义，例如
+  `weekly`、`300-minute`、`tokens-limit-6-1`、`total-quota`。
 
-## Parsing raw API responses
+## 解析 Provider 原始响应
 
-Remote providers should keep provider-specific parsing inside the source script. The app only needs the normalized `provider-snapshot-v1` JSON printed to stdout.
+远程 Provider 应把供应商 API 的解析逻辑留在脚本内部。QuotaBarWin 只需要脚本最终
+输出标准 `provider-snapshot-v1`。
 
-Recommended parsing flow:
+推荐流程：
 
-1. Fetch or read the provider's raw API response.
-2. Select the quota records that represent user-visible windows.
-3. Convert provider-specific field names into stable window fields.
-4. Put useful extra provider fields in `metadata`, not in `windows`.
-5. Print exactly one JSON object to stdout; write diagnostics to stderr.
+1. 请求 Provider 原始 API，或在测试中读取 fixture。
+2. 选择用户真正需要看到的 quota / balance 记录。
+3. 将供应商字段转换成稳定的 `windows[]` 字段。
+4. 将 plan、usageDetails、account metadata 等附加信息放进 `metadata`。
+5. stdout 只输出一个 JSON 对象；诊断信息写 stderr。
 
-Example raw BigModel response:
+示例映射：
 
-```json
-{
-  "success": true,
-  "code": 200,
-  "msg": "success",
-  "data": {
-    "level": "pro",
-    "limits": [
-      {
-        "type": "TOKENS_LIMIT",
-        "unit": 6,
-        "number": 1,
-        "currentValue": 12345,
-        "usage": 100000,
-        "percentage": 12.35,
-        "nextResetTime": 1781654400000,
-        "usageDetails": [
-          { "modelCode": "glm-4.5", "usage": 1000 }
-        ]
-      }
-    ]
-  }
-}
-```
+- BigModel：将 `data.limits[]` 映射为 `windows[]`，用 `type/unit/number` 组合稳定
+  ID，`currentValue -> used`，`usage -> limit`，`percentage -> usedPercent`，
+  `nextResetTime -> resetAt`。
+- Kimi：将 300-minute `limits[].detail` 映射为 `300-minute` / `5h`，将 `usage`
+  映射为 weekly，并从 `totalQuota.limit - totalQuota.remaining` 推导总额度用量。
+- Codex：将 `rate_limit.primary_window` 映射为 `5h`，将
+  `rate_limit.secondary_window` 映射为 `weekly`；因为 API 主要返回百分比，
+  `used` 和 `limit` 可以为 `null`。
+- DeepSeek：将每个 `balance_infos[]` 货币映射为类似 `balance-cny` 的窗口，
+  `remaining` 为 `total_balance`，`unit` 为币种。可用本地 env var 提供参考总额和
+  低余额阈值。
 
-Mapping into `provider-snapshot-v1`:
+## 本地配置与 Secret
 
-| Raw field | Snapshot field | Notes |
-|-----------|----------------|-------|
-| `data.limits[]` | `windows[]` | One raw limit becomes one quota window. |
-| `type`, `unit`, `number` | `id`, `label` | Build a stable id and a readable label. |
-| `currentValue` | `used` | Normalize strings/numbers to numbers when possible. |
-| `usage` | `limit` | Leave as `null` if the API omits it. |
-| `percentage` | `usedPercent` | Clamp or validate into the 0-100 range if the API is not trusted. |
-| `100 - percentage` | `remainingPercent` | Use `null` when `percentage` is missing. |
-| `nextResetTime` | `resetAt` | Convert epoch milliseconds to ISO 8601. |
-| `level`, `usageDetails`, raw status fields | `metadata` | Preserve useful details without changing the window contract. |
+远程脚本不应该包含凭据。脚本仍然读取 `process.env.NAME`，但 QuotaBarWin 只会把
+配置中的环境变量注入到子进程。
 
-Example raw Kimi response:
+`${secret:NAME}` 会优先读取 `<config-dir>/secrets/NAME.txt`，找不到时回退到环境变量
+`NAME`。`${env:NAME}` 和 `${file:C:\path\secret.txt}` 也仍然支持。
 
-```json
-{
-  "limits": [
-    {
-      "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
-      "detail": { "used": 42, "limit": 100, "resetTime": "2026-06-13T15:00:00Z" }
-    }
-  ],
-  "usage": { "used": 120, "limit": 500, "resetTime": "2026-06-17T00:00:00Z" },
-  "totalQuota": { "limit": 1000, "remaining": 830 },
-  "user": { "region": "us", "membership": { "level": "pro" } }
-}
-```
-
-The Kimi example maps the 300-minute `limits[].detail` entry to a `5h` window, maps `usage` to a weekly window, and derives total quota usage from `totalQuota.limit - totalQuota.remaining`.
-
-Example raw Codex usage response:
-
-```json
-{
-  "plan_type": "plus",
-  "credits": { "granted": 100, "used": 12 },
-  "rate_limit": {
-    "primary_window": { "used_percent": 32, "reset_after_seconds": 7200 },
-    "secondary_window": { "used_percent": 18, "reset_at": 1781913600 }
-  }
-}
-```
-
-The Codex example reports percentages rather than absolute counters, so `used` and `limit` stay `null`, `used_percent` becomes `usedPercent`, and reset values are converted from seconds or relative seconds into ISO timestamps.
-
-Example raw DeepSeek balance response:
-
-```json
-{
-  "is_available": true,
-  "balance_infos": [
-    {
-      "currency": "CNY",
-      "total_balance": "110.00",
-      "granted_balance": "10.00",
-      "topped_up_balance": "100.00"
-    }
-  ]
-}
-```
-
-DeepSeek is pay-as-you-go, so the API reports the current balance instead of a quota window. The example maps each `balance_infos[]` entry to a window with `remaining` set to `total_balance` and `unit` set to the currency. Optional local env vars can provide user-specific display context:
-
-```text
-DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200
-DEEPSEEK_BALANCE_WARNING_CNY=20
-DEEPSEEK_BALANCE_CURRENCY=CNY
-```
-
-The reference total lets QuotaBarWin render a percentage progress bar. The warning amount triggers an absolute low-balance warning when the current balance is at or below that value. Currency-specific variables such as `_CNY` override the generic `DEEPSEEK_BALANCE_REFERENCE_TOTAL` and `DEEPSEEK_BALANCE_WARNING` values.
-
-### Local config and secrets
-
-Remote provider source should not contain credentials. The script still reads `process.env.NAME`, but QuotaBarWin injects configured environment variables only into the child process. For each manifest `requiredEnvVars` entry, the app first checks the installed provider config `envVars` map; if a key is absent, it resolves `${secret:NAME}`. Extra configured `envVars` are also injected, which is useful for optional provider settings such as reference totals, currency filters, or warning thresholds.
-
-`${secret:NAME}` reads `<config-dir>/secrets/NAME.txt` first and falls back to environment variable `NAME`. Existing `${file:C:\path\secret.txt}` and `${env:NAME}` placeholders are still supported.
-
-Example installed provider config:
+示例：
 
 ```json
 {
@@ -269,32 +193,31 @@ Example installed provider config:
 }
 ```
 
-Treat the remote script as shared code and keep user-specific tokens in local config, local secret files, or environment variables on the local machine.
+## 安全检查清单
 
-## Security checklist
+- 只安装你信任来源的远程 Provider。
+- 安装前检查 source URL、runtime 和 required env vars。
+- 优先使用带 `providers[].checksum` 的 registry。
+- 优先使用带 `checksums.source` 的 manifest；否则无法安全自动更新。
+- 缓存的 source 文件位于 app data 目录下的 `providers/remote/<id>/`。
 
-- Only install remote providers from sources you trust.
-- Review each provider's `sourceUrl`, `runtime`, and `requiredEnvVars` before installing a registry.
-- Prefer registries that include `providers[].checksum` so QuotaBarWin can verify the manifest before installing.
-- Prefer manifests that include `checksums.source`; without it QuotaBarWin cannot auto-update safely.
-- The cached source file lives in the app data directory under `providers/remote/<id>/`.
+## 示例
 
-## Examples
+完整示例见 [`examples/remote-providers/`](../examples/remote-providers/)：
 
-See [`examples/remote-providers/`](../examples/remote-providers) for complete sample providers:
+- `kimi-coding`：Kimi coding quota，需要 `KIMI_API_KEY`。
+- `bigmodel-coding-plan`：Zhipu / BigModel coding plan quota，需要
+  `BIGMODEL_API_KEY`。
+- `codex-usage`：ChatGPT/Codex 5h 和 weekly usage，默认读取
+  `~/.codex/auth.json`，也支持 `CODEX_ACCESS_TOKEN` 等覆盖。
+- `deepseek-balance`：DeepSeek pay-as-you-go balance，需要
+  `DEEPSEEK_API_KEY`，支持余额参考值和低余额阈值配置。
 
-- `kimi-coding` — Kimi coding quota via `KIMI_API_KEY`.
-- `bigmodel-coding-plan` — Zhipu/BigModel quota via `BIGMODEL_API_KEY`.
-- `codex-usage` — ChatGPT/Codex 5h and weekly usage via `~/.codex/auth.json` by default, with optional `CODEX_ACCESS_TOKEN`, `CODEX_ACCOUNT_ID`, or `CODEX_AUTH_FILE` env var overrides. Supports runtime proxy injection via `QBWIN_PROXY_URL`.
-- `deepseek-balance` — DeepSeek pay-as-you-go balance via `${secret:DEEPSEEK_API_KEY}` plus optional local balance display settings.
+## 更新远程 Provider
 
-To host your own, upload a directory containing `provider.json` + the source file and paste the raw `provider.json` URL into QuotaBarWin.
+如果 manifest 包含 `checksums.source`，QuotaBarWin 可以检测 source 变化：
 
-## Updating a remote provider
+- **自动更新**：安装时为 Provider 启用 auto-update 后，checksum 不同时会静默更新。
+- **手动更新**：在 Settings 中使用 “检查更新” / “应用更新”。
 
-If the manifest contains `checksums.source`, QuotaBarWin can detect when the source file changes:
-
-- **Auto-update**: enabled per provider during install; updates are applied silently when the checksum differs.
-- **Manual update**: use the "Check Updates" / "Apply Update" buttons in Settings.
-
-If `checksums.source` is missing, updates must be applied by removing and re-adding the provider.
+如果缺少 `checksums.source`，需要移除并重新添加 Provider 才能更新。

@@ -1,9 +1,30 @@
 # QuotaBarWin 远程 Provider 自刷新扩展方案（细化稿）
 
-> 状态：设计稿（待用户确认关键决策后可进入实现）  
+> 状态：历史设计稿；远程 provider registry 路线已部分实现  
 > 适用范围：GitHub Raw 远程 Provider、自刷新/自更新、全局/按 provider 代理  
 > 前置依赖：Phase 1 刷新机制优化（`stale` 状态、成功缓存、`ErrorKind`、重试调度）  
 > 运行平台：Windows only
+
+## 当前实现备注（2026-06）
+
+当前代码已经实现的远程 provider 能力：
+
+- 通过 registry 安装远程 provider：`install_remote_provider_registry(url, proxyUrl, autoUpdate)`。
+- registry 和 manifest 均支持 `https://`、`file://` 和本地路径；相对路径会按 registry/manifest 位置解析。
+- manifest schemaVersion 为 `1`，source checksum 可选；有 `checksums.source` 且安装时启用 auto update 时才会开启自动更新。
+- source 脚本缓存在 app data 的 `providers/remote/<id>/` 下，包含 `provider.json`、source 文件、`.meta.json` 和 `.bak`。
+- runtime 支持命令名或绝对路径，安装时会解析并用 `--version` / `--help` 校验。
+- 全局代理和 provider 代理已实现，优先级为 provider proxy > global HTTP/SOCKS5/system > no proxy。
+- Tauri command 当前包括 `install_remote_provider_registry`、`remove_remote_provider`、`refresh_remote_provider`、`check_remote_updates`、`apply_remote_update`、`get_network_proxy`、`set_network_proxy`。
+- 前端设置页已有 Remote Providers 区域、registry URL、provider proxy、auto update、检查更新、应用更新、删除 provider 和打开指南入口。
+
+与本设计稿不同或尚未实现的部分：
+
+- 当前入口是 registry 安装，不是单个 `add_remote_provider(url, proxy, auto_update)` command。
+- id 冲突当前在安装结果里作为失败/跳过处理，不提供覆盖/重命名弹窗流程。
+- 首次安装安全确认弹窗尚未按本设计稿完整实现。
+- 定时刷新前按 `updateIntervalSeconds` 自动检查更新的调度逻辑尚未完整接入。
+- 以 `docs/remote-provider-guide.md` 作为 manifest 和输出协议的当前事实文档。
 
 ---
 

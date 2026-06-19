@@ -209,7 +209,7 @@ fn default_log_level() -> String {
 }
 
 fn default_language() -> AppLanguage {
-    AppLanguage::System
+    AppLanguage::ZhCn
 }
 
 fn default_update_interval_seconds() -> u64 {
@@ -486,7 +486,7 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(7);
     if version < 8 {
-        value["language"] = serde_json::json!("system");
+        value["language"] = serde_json::json!("zh-CN");
         value["schemaVersion"] = serde_json::json!(8);
     }
 
@@ -941,7 +941,7 @@ mod tests {
         );
         assert_eq!(migrated["launchAtStartup"], serde_json::json!(false));
         assert_eq!(migrated["logLevel"], serde_json::json!("info"));
-        assert_eq!(migrated["language"], serde_json::json!("system"));
+        assert_eq!(migrated["language"], serde_json::json!("zh-CN"));
         assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
         assert_eq!(
             migrated["remoteProviderRegistry"],
@@ -980,7 +980,7 @@ mod tests {
     }
 
     #[test]
-    fn config_migration_v7_to_current_adds_system_language() {
+    fn config_migration_v7_to_current_adds_default_chinese_language() {
         let value = serde_json::json!({
             "schemaVersion": 7,
             "refreshIntervalSeconds": 300,
@@ -998,7 +998,7 @@ mod tests {
             migrated["schemaVersion"],
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
-        assert_eq!(migrated["language"], serde_json::json!("system"));
+        assert_eq!(migrated["language"], serde_json::json!("zh-CN"));
         assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
     }
 
@@ -1286,7 +1286,9 @@ mod tests {
 
         assert!(guide_path.exists());
         let contents = fs::read_to_string(&guide_path).expect("read guide");
+        assert!(contents.contains("远程 Provider 指南"));
         assert!(contents.contains("Remote Provider Guide"));
+        assert!(contents.contains("Manifest 格式"));
         assert!(contents.contains("Manifest format"));
     }
 

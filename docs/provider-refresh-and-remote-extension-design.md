@@ -1,8 +1,25 @@
 # QuotaBarWin Provider 刷新机制优化方案（Phase 1）
 
-> 状态：设计稿（待 Review，未进入代码实现）  
+> 状态：历史设计稿；部分能力已进入当前实现  
 > 适用范围：方案 A（stale 降级）+ 方案 B（指数退避重试）  
 > 远程 Provider / GitHub Raw 扩展相关内容已拆出到 `remote-provider-extension-design.md`
+
+## 当前实现备注（2026-06）
+
+当前代码已经实现了以下刷新保护：
+
+- `ProviderSnapshot.status` 支持 `stale`。
+- `build_app_snapshot_from_config_path` 和 `refresh_provider_from_config_path` 在 provider 失败时会从已有 `SNAPSHOT_CACHE` 中找同 id provider，保留旧 `windows`，将状态改为 `stale`，并附上新的 `error` / `diagnostics`。
+- 对可重试错误做短间隔重试，间隔为 1s、2s。可重试识别覆盖 timeout、connection、connect，以及 Codex usage API 5xx。
+- 首次失败且没有缓存时仍返回 `error` provider。
+
+尚未实现或与本设计稿不同的部分：
+
+- 没有独立的 `LAST_SUCCESSFUL_PROVIDER_SNAPSHOTS` per-provider 成功缓存。
+- 没有持久或内存级 `ProviderRefreshState`、`consecutive_failures`、`next_retry_at` 长退避跳过逻辑。
+- 当前重试是在单次刷新内完成，而不是调度层指数退避。
+
+继续修改刷新机制时，以 `src-tauri/src/quota.rs` 的实现为准，并根据本备注判断设计稿中哪些内容仍是待办。
 
 ---
 
