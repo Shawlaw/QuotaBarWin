@@ -11,6 +11,7 @@ import {
   refreshRemoteProvider,
   refreshSnapshot,
   removeRemoteProvider,
+  resetTrayPopupSize,
   saveConfig,
   setNetworkProxy,
 } from "./api";
@@ -21,7 +22,7 @@ afterEach(() => {
 });
 
 const config: AppConfig = {
-  schemaVersion: 11,
+  schemaVersion: 12,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -112,18 +113,22 @@ test("api_invokes_network_proxy_commands", async () => {
   });
 });
 
-test("api_invokes_tray_popup_presentation_command", async () => {
+test("api_invokes_tray_popup_commands", async () => {
   const calls: string[] = [];
   mockIPC((cmd) => {
     calls.push(cmd);
     if (cmd === "get_tray_popup_presentation_id") {
       return 42;
     }
+    if (cmd === "reset_tray_popup_size") {
+      return null;
+    }
     throw new Error(`unexpected command ${cmd}`);
   });
 
   await expect(getTrayPopupPresentationId()).resolves.toBe(42);
-  expect(calls).toEqual(["get_tray_popup_presentation_id"]);
+  await expect(resetTrayPopupSize()).resolves.toBeNull();
+  expect(calls).toEqual(["get_tray_popup_presentation_id", "reset_tray_popup_size"]);
 });
 
 test("api_invokes_remote_provider_commands", async () => {

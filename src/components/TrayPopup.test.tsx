@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => {
   const listeners: { trayShown?: (presentationId: number) => void } = {};
   const state = { presentationId: 0 };
   const config: AppConfig = {
-    schemaVersion: 11,
+    schemaVersion: 12,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -153,9 +153,11 @@ const mocks = vi.hoisted(() => {
       return () => undefined;
     }),
     listeners,
+    resetTrayPopupSize: vi.fn(async () => undefined),
     refreshSnapshot: vi.fn(async () => snapshot),
     state,
     startDraggingCurrentWindow: vi.fn(async () => undefined),
+    startResizingCurrentWindow: vi.fn(async () => undefined),
   };
 });
 
@@ -319,5 +321,28 @@ test("tray_popup_starts_native_dragging_from_titlebar", async () => {
 
   await waitFor(() =>
     expect(mocks.startDraggingCurrentWindow).toHaveBeenCalledTimes(1),
+  );
+});
+
+test("tray_popup_resets_size_from_titlebar_double_click", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  fireEvent.doubleClick(screen.getByTestId("tray-popup-titlebar"), { button: 0 });
+
+  await waitFor(() =>
+    expect(mocks.resetTrayPopupSize).toHaveBeenCalledTimes(1),
+  );
+});
+
+test("tray_popup_starts_native_resizing_from_handle", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  fireEvent.mouseDown(screen.getByTestId("tray-popup-resize-handle"), { button: 2 });
+  expect(mocks.startResizingCurrentWindow).not.toHaveBeenCalled();
+
+  fireEvent.mouseDown(screen.getByTestId("tray-popup-resize-handle"), { button: 0 });
+
+  await waitFor(() =>
+    expect(mocks.startResizingCurrentWindow).toHaveBeenCalledTimes(1),
   );
 });

@@ -14,7 +14,7 @@ function hasTauriInternals(): boolean {
 }
 
 const fallbackConfig: AppConfig = {
-  schemaVersion: 11,
+  schemaVersion: 12,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -397,10 +397,26 @@ export async function hideTrayPopup(): Promise<void> {
   return invoke<void>("hide_tray_popup");
 }
 
+export async function resetTrayPopupSize(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  return invoke<void>("reset_tray_popup_size");
+}
+
 export async function startDraggingCurrentWindow(): Promise<void> {
   if (!hasTauriInternals()) {
     return;
   }
 
   return invoke<void>("start_tray_popup_dragging");
+}
+
+export async function startResizingCurrentWindow(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  await getCurrentWindow().startResizeDragging("SouthEast");
 }

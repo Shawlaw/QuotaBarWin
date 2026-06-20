@@ -12,7 +12,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 11;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 12;
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
 const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
@@ -36,6 +36,8 @@ pub struct AppConfig {
     pub network_proxy: Option<ProxyConfig>,
     #[serde(default)]
     pub tray_popup_position: Option<TrayPopupPosition>,
+    #[serde(default)]
+    pub tray_popup_size: Option<TrayPopupSize>,
     #[serde(default)]
     pub remote_provider_registry: RemoteProviderRegistrySettings,
     pub providers: Vec<ProviderConfig>,
@@ -67,6 +69,13 @@ impl Default for RemoteProviderRegistrySettings {
 pub struct TrayPopupPosition {
     pub x: i32,
     pub y: i32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TrayPopupSize {
+    pub width: f64,
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -215,6 +224,7 @@ pub fn default_config() -> AppConfig {
         language: default_language(),
         network_proxy: None,
         tray_popup_position: None,
+        tray_popup_size: None,
         remote_provider_registry: RemoteProviderRegistrySettings::default(),
         providers: Vec::new(),
     }
@@ -502,10 +512,7 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
             .and_then(serde_json::Value::as_array_mut)
         {
             providers.retain(|provider| {
-                provider
-                    .get("kind")
-                    .and_then(serde_json::Value::as_str)
-                    == Some("remote")
+                provider.get("kind").and_then(serde_json::Value::as_str) == Some("remote")
             });
             for provider in providers {
                 if provider.get("version").is_none() {
@@ -523,6 +530,15 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
             }
         }
         value["schemaVersion"] = serde_json::json!(11);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(11);
+    if version < 12 {
+        value["trayPopupSize"] = serde_json::json!(null);
+        value["schemaVersion"] = serde_json::json!(12);
     }
 
     Ok(value)
@@ -577,6 +593,11 @@ pub fn load_tray_popup_position_for_app(app: &AppHandle) -> Option<TrayPopupPosi
         .tray_popup_position
 }
 
+pub fn load_tray_popup_size_for_app(app: &AppHandle) -> Option<TrayPopupSize> {
+    let path = config_path_for_app(app).ok()?;
+    load_or_create_config(&path).ok()?.config.tray_popup_size
+}
+
 pub fn save_tray_popup_position_for_app(
     app: &AppHandle,
     position: TrayPopupPosition,
@@ -587,6 +608,16 @@ pub fn save_tray_popup_position_for_app(
         return Ok(());
     }
     config.tray_popup_position = Some(position);
+    save_config_to_path(&path, &config)
+}
+
+pub fn save_tray_popup_size_for_app(app: &AppHandle, size: TrayPopupSize) -> Result<(), String> {
+    let path = config_path_for_app(app)?;
+    let mut config = load_or_create_config(&path)?.config;
+    if config.tray_popup_size == Some(size) {
+        return Ok(());
+    }
+    config.tray_popup_size = Some(size);
     save_config_to_path(&path, &config)
 }
 
@@ -900,6 +931,10 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: Some(TrayPopupPosition { x: 111, y: 222 }),
+            tray_popup_size: Some(TrayPopupSize {
+                width: 420.0,
+                height: 640.0,
+            }),
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![remote_provider_config("remote")],
         };
@@ -932,8 +967,8 @@ mod tests {
             "visibleWindowIds": []
         });
 
-        let parsed = serde_json::from_value::<ProviderConfig>(provider)
-            .expect("deserialize provider");
+        let parsed =
+            serde_json::from_value::<ProviderConfig>(provider).expect("deserialize provider");
 
         assert!(matches!(parsed, ProviderConfig::Remote { .. }));
     }
@@ -958,6 +993,7 @@ mod tests {
         assert_eq!(migrated["logLevel"], serde_json::json!("info"));
         assert_eq!(migrated["language"], serde_json::json!("zh-CN"));
         assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
+        assert_eq!(migrated["trayPopupSize"], serde_json::json!(null));
         assert_eq!(
             migrated["remoteProviderRegistry"],
             serde_json::json!({
@@ -980,6 +1016,7 @@ mod tests {
             "language": "system",
             "networkProxy": null,
             "trayPopupPosition": null,
+            "trayPopupSize": null,
             "remoteProviderRegistry": {
                 "registryUrl": null,
                 "providerProxyUrl": null,
@@ -1021,9 +1058,15 @@ mod tests {
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
         assert_eq!(migrated["providers"].as_array().unwrap().len(), 1);
-        assert_eq!(migrated["providers"][0]["kind"], serde_json::json!("remote"));
+        assert_eq!(
+            migrated["providers"][0]["kind"],
+            serde_json::json!("remote")
+        );
         assert_eq!(migrated["providers"][0]["version"], serde_json::Value::Null);
-        assert_eq!(migrated["providers"][0]["installedAt"], serde_json::Value::Null);
+        assert_eq!(
+            migrated["providers"][0]["installedAt"],
+            serde_json::Value::Null
+        );
     }
 
     #[test]
@@ -1047,6 +1090,7 @@ mod tests {
         );
         assert_eq!(migrated["language"], serde_json::json!("zh-CN"));
         assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
+        assert_eq!(migrated["trayPopupSize"], serde_json::json!(null));
     }
 
     #[test]
@@ -1070,6 +1114,7 @@ mod tests {
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
         assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
+        assert_eq!(migrated["trayPopupSize"], serde_json::json!(null));
     }
 
     #[test]
@@ -1101,6 +1146,36 @@ mod tests {
                 "autoUpdate": true
             })
         );
+        assert_eq!(migrated["trayPopupSize"], serde_json::json!(null));
+    }
+
+    #[test]
+    fn config_migration_v11_to_current_adds_tray_popup_size() {
+        let value = serde_json::json!({
+            "schemaVersion": 11,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "launchAtStartup": false,
+            "logLevel": "info",
+            "language": "system",
+            "networkProxy": null,
+            "trayPopupPosition": null,
+            "remoteProviderRegistry": {
+                "registryUrl": null,
+                "providerProxyUrl": null,
+                "autoUpdate": true
+            },
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(migrated["trayPopupSize"], serde_json::json!(null));
     }
 
     #[test]
@@ -1148,6 +1223,10 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
+            tray_popup_size: Some(TrayPopupSize {
+                width: 420.0,
+                height: 640.0,
+            }),
             remote_provider_registry: RemoteProviderRegistrySettings {
                 registry_url: Some("https://example.com/registry.json".to_string()),
                 provider_proxy_url: Some("http://proxy:8080".to_string()),
@@ -1190,6 +1269,13 @@ mod tests {
                 "registryUrl": "https://example.com/registry.json",
                 "providerProxyUrl": "http://proxy:8080",
                 "autoUpdate": false
+            })
+        );
+        assert_eq!(
+            value["trayPopupSize"],
+            serde_json::json!({
+                "width": 420.0,
+                "height": 640.0
             })
         );
         assert_eq!(

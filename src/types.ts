@@ -56,6 +56,7 @@ export type AppConfig = {
   language: AppLanguage;
   networkProxy?: ProxyConfig | null;
   trayPopupPosition?: TrayPopupPosition | null;
+  trayPopupSize?: TrayPopupSize | null;
   remoteProviderRegistry?: RemoteProviderRegistrySettings;
   providers: RemoteProviderConfig[];
 };
@@ -69,6 +70,11 @@ export type RemoteProviderRegistrySettings = {
 export type TrayPopupPosition = {
   x: number;
   y: number;
+};
+
+export type TrayPopupSize = {
+  width: number;
+  height: number;
 };
 
 export type ConfigStorageInfo = {

@@ -1065,7 +1065,8 @@ button:disabled {
   height: 100vh;
   min-height: 0;
   overflow: hidden;
-  padding: 14px;
+  padding: 14px 16px 18px 14px;
+  position: relative;
 }
 
 .tray-popup__header {
@@ -1095,7 +1096,7 @@ button:disabled {
   gap: 12px;
   min-height: 0;
   overflow: auto;
-  padding-right: 2px;
+  padding: 0 2px 4px 0;
 }
 
 .tray-popup__header h1 {
@@ -1174,4 +1175,36 @@ button:disabled {
   flex-shrink: 0;
   font-size: 12px;
   font-weight: 650;
+}
+
+.tray-popup__resize-handle {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  bottom: 2px;
+  cursor: nwse-resize;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  position: absolute;
+  right: 2px;
+  width: 18px;
+}
+
+.tray-popup__resize-handle::before {
+  border-bottom: 2px solid #94a3b8;
+  border-right: 2px solid #94a3b8;
+  bottom: 4px;
+  content: "";
+  height: 8px;
+  opacity: 0.75;
+  position: absolute;
+  right: 4px;
+  width: 8px;
+}
+
+.tray-popup__resize-handle:hover::before,
+.tray-popup__resize-handle:focus-visible::before {
+  border-color: #0f766e;
+  opacity: 1;
 }

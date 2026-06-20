@@ -4,7 +4,7 @@ import type { AppConfig, AppSnapshot } from "./types";
 
 const mocks = vi.hoisted(() => {
   const config: AppConfig = {
-    schemaVersion: 11,
+    schemaVersion: 12,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,

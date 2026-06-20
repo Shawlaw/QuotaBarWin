@@ -405,6 +405,7 @@ mod tests {
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
+            tray_popup_size: None,
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers,
         }
@@ -494,7 +495,9 @@ mod tests {
         let _cache_guard = isolate_snapshot_cache();
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
-        let config = test_config(vec![remote_provider(&temp, "remote-a", "Remote A", true, 28.0)]);
+        let config = test_config(vec![remote_provider(
+            &temp, "remote-a", "Remote A", true, 28.0,
+        )]);
         save_config_to_path(&path, &config).expect("save config");
         let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");
 
@@ -539,7 +542,9 @@ mod tests {
         let _cache_guard = isolate_snapshot_cache();
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
-        let config = test_config(vec![remote_provider(&temp, "remote-a", "Remote A", true, 28.0)]);
+        let config = test_config(vec![remote_provider(
+            &temp, "remote-a", "Remote A", true, 28.0,
+        )]);
         save_config_to_path(&path, &config).expect("save config");
         let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");
 
@@ -559,7 +564,9 @@ mod tests {
     fn disabled_provider_is_not_included() {
         let _cache_guard = isolate_snapshot_cache();
         let temp = tempfile::tempdir().expect("temp dir");
-        let config = test_config(vec![remote_provider(&temp, "disabled", "Disabled", false, 28.0)]);
+        let config = test_config(vec![remote_provider(
+            &temp, "disabled", "Disabled", false, 28.0,
+        )]);
 
         let snapshot = snapshot_from_config(config);
 

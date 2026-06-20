@@ -15,8 +15,9 @@ internally, but the frontend only renders normalized `ProviderSnapshot` /
 
 - Compact desktop overview with provider cards, quota windows, progress bars,
   global status, and per-provider refresh.
-- Windows tray integration, tray popup window, hidden startup mode, and
-  single-instance behavior.
+- Windows tray integration, resizable tray popup window, hidden startup mode,
+  and single-instance behavior. Double-click the tray popup title area to reset
+  its default size.
 - Configurable refresh interval, display mode, low-quota warning threshold,
   language, log level, launch-at-startup, and provider ordering.
 - AppData and portable config storage. Portable mode is enabled by creating
@@ -49,7 +50,7 @@ examples live in [`examples/remote-providers/`](examples/remote-providers/).
 
 ## Config Storage
 
-Current schema version: `11`.
+Current schema version: `12`.
 
 Windows AppData config:
 

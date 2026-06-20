@@ -35,7 +35,10 @@ pub use remote_provider_commands::{
     refresh_remote_provider, remove_remote_provider, set_network_proxy, RegistryInstallFailure,
     RegistryInstallResult,
 };
-pub use tray::{get_tray_popup_presentation_id, hide_tray_popup, start_tray_popup_dragging};
+pub use tray::{
+    get_tray_popup_presentation_id, hide_tray_popup, reset_tray_popup_size,
+    start_tray_popup_dragging,
+};
 
 fn window_title(version: &str) -> String {
     format!("QuotaBarWin V{version}")
@@ -110,6 +113,7 @@ pub fn run() {
             apply_remote_update,
             get_tray_popup_presentation_id,
             hide_tray_popup,
+            reset_tray_popup_size,
             start_tray_popup_dragging
         ])
         .on_window_event(|window, event| match event {
@@ -125,6 +129,10 @@ pub fn run() {
             }
             tauri::WindowEvent::Moved(position) if window.label() == tray::TRAY_POPUP_LABEL => {
                 tray::save_tray_popup_position_after_user_move(window.app_handle(), *position);
+            }
+            tauri::WindowEvent::Resized(size) if window.label() == tray::TRAY_POPUP_LABEL => {
+                let scale_factor = window.scale_factor().unwrap_or(1.0);
+                tray::save_tray_popup_size_after_resize(window.app_handle(), *size, scale_factor);
             }
             _ => {}
         })

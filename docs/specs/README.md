@@ -17,7 +17,7 @@ Provider Runtime
   -> React UI overview + settings + tray popup
 ```
 
-当前配置 schema 为 `11`，配置文件名为 `config.quotaBarWin.json`。当前用户配置只支持 `remote` provider kind：
+当前配置 schema 为 `12`，配置文件名为 `config.quotaBarWin.json`。当前用户配置只支持 `remote` provider kind：
 
 | kind | 当前状态 |
 |---|---|

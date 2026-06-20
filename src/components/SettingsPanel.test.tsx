@@ -110,7 +110,7 @@ const configStorageInfo: ConfigStorageInfo = {
 
 function configWithProviders(providers: AppConfig["providers"]): AppConfig {
   return {
-    schemaVersion: 11,
+    schemaVersion: 12,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,

@@ -6,8 +6,10 @@ import {
   hideCurrentWindow,
   hideTrayPopup,
   listenForTrayPopupShown,
+  resetTrayPopupSize,
   refreshSnapshot,
-  startDraggingCurrentWindow
+  startDraggingCurrentWindow,
+  startResizingCurrentWindow
 } from "../lib/api";
 import {
   calculateProviderStatus,
@@ -181,13 +183,33 @@ export function TrayPopup() {
     void startDraggingCurrentWindow();
   }
 
+  function onTitleDoubleClick(event: MouseEvent<HTMLElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    void resetTrayPopupSize();
+  }
+
+  function onResizeHandleMouseDown(event: MouseEvent<HTMLButtonElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    void startResizingCurrentWindow();
+  }
+
   return (
     <main className="tray-popup" data-testid="tray-popup">
       <header className="tray-popup__header">
         <div
           className="tray-popup__titlebar"
           data-testid="tray-popup-titlebar"
+          title={t.tray.resetSize}
           onMouseDown={onTitleMouseDown}
+          onDoubleClick={onTitleDoubleClick}
         >
           <div className="tray-popup__title-line">
             <h1>QuotaBarWin</h1>
@@ -261,6 +283,14 @@ export function TrayPopup() {
           </section>
         ) : null}
       </div>
+      <button
+        aria-label={t.tray.resize}
+        className="tray-popup__resize-handle"
+        data-testid="tray-popup-resize-handle"
+        onMouseDown={onResizeHandleMouseDown}
+        title={t.tray.resize}
+        type="button"
+      />
     </main>
   );
 }

@@ -13,7 +13,8 @@ remote registry / manifest；Provider 脚本内部可以使用 CLI、API 请求�
 ## 当前功能
 
 - 桌面概览页：Provider 卡片、额度窗口、进度条、全局状态和单 Provider 刷新。
-- Windows 托盘、托盘弹窗、隐藏启动和单实例行为。
+- Windows 托盘、可调整尺寸的托盘弹窗、隐藏启动和单实例行为；托盘弹窗标题栏
+  双击可恢复默认尺寸。
 - 可配置刷新间隔、显示模式、低额度警告阈值、语言、日志级别、开机启动和
   Provider 顺序。
 - 支持 AppData 配置和便携模式。将 `quotabarwin.portable` 放在可执行文件旁
@@ -44,7 +45,7 @@ Provider 示例提供。
 
 ## 配置存储
 
-当前配置 schema version：`11`。
+当前配置 schema version：`12`。
 
 Windows AppData 配置：
 

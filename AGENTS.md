@@ -45,7 +45,7 @@ conflicts with code, README, or this file, trust the code and current docs.
 
 ## Current Provider Kinds
 
-Current config schema version: `11`.
+Current config schema version: `12`.
 
 Supported provider config kind:
 

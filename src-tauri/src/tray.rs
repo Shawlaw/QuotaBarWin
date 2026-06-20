@@ -2,10 +2,11 @@ use tauri::{
     menu::{Menu, MenuId, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     utils::config::Color,
-    AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
+    WebviewWindowBuilder,
 };
 
-use crate::config::{self, AppLanguage, TrayPopupPosition};
+use crate::config::{self, AppLanguage, TrayPopupPosition, TrayPopupSize};
 
 use std::{
     env,
@@ -31,6 +32,10 @@ pub const TRAY_POPUP_LABEL: &str = "tray-popup";
 pub const TRAY_POPUP_VIEW: &str = "index.html?view=tray";
 const TRAY_POPUP_WIDTH: f64 = 380.0;
 const TRAY_POPUP_HEIGHT: f64 = 520.0;
+const TRAY_POPUP_MIN_WIDTH: f64 = 320.0;
+const TRAY_POPUP_MIN_HEIGHT: f64 = 360.0;
+const TRAY_POPUP_MAX_RESTORED_WIDTH: f64 = 2000.0;
+const TRAY_POPUP_MAX_RESTORED_HEIGHT: f64 = 2000.0;
 const TRAY_POPUP_OFFSET: f64 = 12.0;
 const TRAY_POPUP_DRAG_FOCUS_GRACE: Duration = Duration::from_secs(2);
 const TRAY_POPUP_POSITION_SAVE_GRACE: Duration = Duration::from_secs(30);
@@ -242,17 +247,18 @@ pub fn create_tray_popup_window(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
 
+    let size = tray_popup_size_from_saved(config::load_tray_popup_size_for_app(app));
+
     WebviewWindowBuilder::new(
         app,
         TRAY_POPUP_LABEL,
         WebviewUrl::App(TRAY_POPUP_VIEW.into()),
     )
     .title("QuotaBarWin")
-    .inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_HEIGHT)
-    .min_inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_HEIGHT)
-    .max_inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_HEIGHT)
+    .inner_size(size.width, size.height)
+    .min_inner_size(TRAY_POPUP_MIN_WIDTH, TRAY_POPUP_MIN_HEIGHT)
     .position(0.0, 0.0)
-    .resizable(false)
+    .resizable(true)
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
@@ -261,6 +267,19 @@ pub fn create_tray_popup_window(app: &AppHandle) -> tauri::Result<()> {
     .shadow(true)
     .background_color(Color(255, 255, 255, 255))
     .build()?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reset_tray_popup_size(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
+        let size = default_tray_popup_size();
+        window
+            .set_size(LogicalSize::new(size.width, size.height))
+            .map_err(|error| error.to_string())?;
+        config::save_tray_popup_size_for_app(&app, size)?;
+    }
 
     Ok(())
 }
@@ -342,6 +361,15 @@ pub fn save_tray_popup_position_after_user_move(app: &AppHandle, position: Physi
     }
 }
 
+pub fn save_tray_popup_size_after_resize(
+    app: &AppHandle,
+    size: PhysicalSize<u32>,
+    scale_factor: f64,
+) {
+    let logical_size = tray_popup_logical_size_from_physical(size, scale_factor);
+    let _ = config::save_tray_popup_size_for_app(app, logical_size);
+}
+
 #[tauri::command]
 pub fn get_tray_popup_presentation_id() -> u64 {
     TRAY_POPUP_PRESENTATION_ID.load(Ordering::SeqCst)
@@ -402,6 +430,42 @@ fn tray_popup_position(anchor: PhysicalPosition<f64>) -> (i32, i32) {
     let x = (anchor.x - TRAY_POPUP_WIDTH + TRAY_POPUP_OFFSET).max(0.0);
     let y = (anchor.y - TRAY_POPUP_HEIGHT - TRAY_POPUP_OFFSET).max(0.0);
     (x.round() as i32, y.round() as i32)
+}
+
+fn default_tray_popup_size() -> TrayPopupSize {
+    TrayPopupSize {
+        width: TRAY_POPUP_WIDTH,
+        height: TRAY_POPUP_HEIGHT,
+    }
+}
+
+fn tray_popup_size_from_saved(saved: Option<TrayPopupSize>) -> TrayPopupSize {
+    saved
+        .filter(|size| size.width.is_finite() && size.height.is_finite())
+        .map(|size| TrayPopupSize {
+            width: size
+                .width
+                .clamp(TRAY_POPUP_MIN_WIDTH, TRAY_POPUP_MAX_RESTORED_WIDTH),
+            height: size
+                .height
+                .clamp(TRAY_POPUP_MIN_HEIGHT, TRAY_POPUP_MAX_RESTORED_HEIGHT),
+        })
+        .unwrap_or_else(default_tray_popup_size)
+}
+
+fn tray_popup_logical_size_from_physical(
+    size: PhysicalSize<u32>,
+    scale_factor: f64,
+) -> TrayPopupSize {
+    let safe_scale_factor = if scale_factor.is_finite() && scale_factor > 0.0 {
+        scale_factor
+    } else {
+        1.0
+    };
+    tray_popup_size_from_saved(Some(TrayPopupSize {
+        width: f64::from(size.width) / safe_scale_factor,
+        height: f64::from(size.height) / safe_scale_factor,
+    }))
 }
 
 fn tray_popup_position_from_saved_or_anchor(
@@ -487,5 +551,38 @@ mod tests {
         assert!(!should_save_tray_popup_position_on_move());
         allow_position_save_for_drag();
         assert!(should_save_tray_popup_position_on_move());
+    }
+
+    #[test]
+    fn tray_popup_size_defaults_and_clamps_saved_size() {
+        assert_eq!(tray_popup_size_from_saved(None), default_tray_popup_size());
+        assert_eq!(
+            tray_popup_size_from_saved(Some(TrayPopupSize {
+                width: 100.0,
+                height: 120.0
+            })),
+            TrayPopupSize {
+                width: TRAY_POPUP_MIN_WIDTH,
+                height: TRAY_POPUP_MIN_HEIGHT
+            }
+        );
+        assert_eq!(
+            tray_popup_size_from_saved(Some(TrayPopupSize {
+                width: f64::NAN,
+                height: 520.0
+            })),
+            default_tray_popup_size()
+        );
+    }
+
+    #[test]
+    fn tray_popup_resize_event_saves_logical_size() {
+        assert_eq!(
+            tray_popup_logical_size_from_physical(PhysicalSize::new(760, 1040), 2.0),
+            TrayPopupSize {
+                width: 380.0,
+                height: 520.0
+            }
+        );
     }
 }

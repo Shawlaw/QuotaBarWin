@@ -47,6 +47,8 @@ export type I18nCatalog = {
     refresh: string;
     refreshingShort: string;
     close: string;
+    resize: string;
+    resetSize: string;
     noProviders: string;
     providerStatusLabel: string;
     quotaWindowsLabel: string;
@@ -241,6 +243,8 @@ export const en: I18nCatalog = {
     refresh: "Refresh",
     refreshingShort: "...",
     close: "Close",
+    resize: "Resize",
+    resetSize: "Reset size",
     noProviders: "No providers configured.",
     providerStatusLabel: "Provider status",
     quotaWindowsLabel: "Quota windows",
@@ -445,6 +449,8 @@ export const zhCN: I18nCatalog = {
     refresh: "刷新",
     refreshingShort: "...",
     close: "关闭",
+    resize: "调整大小",
+    resetSize: "恢复默认尺寸",
     noProviders: "尚未配置提供方。",
     providerStatusLabel: "提供方状态",
     quotaWindowsLabel: "额度窗口",
