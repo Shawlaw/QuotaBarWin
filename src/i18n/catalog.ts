@@ -70,6 +70,8 @@ export type I18nCatalog = {
     logInfo: string;
     logWarn: string;
     logError: string;
+    logMaxSize: string;
+    logMaxSizeError: string;
     language: string;
     languageSystem: string;
     languageEnglish: string;
@@ -273,6 +275,8 @@ export const en: I18nCatalog = {
     logInfo: "Info",
     logWarn: "Warn",
     logError: "Error",
+    logMaxSize: "Local log limit (MB)",
+    logMaxSizeError: "Local log limit must be at least 1 MB.",
     language: "Language",
     languageSystem: "System",
     languageEnglish: "English",
@@ -479,6 +483,8 @@ export const zhCN: I18nCatalog = {
     logInfo: "信息",
     logWarn: "警告",
     logError: "错误",
+    logMaxSize: "本地日志保留上限（MB）",
+    logMaxSizeError: "本地日志保留上限至少为 1 MB。",
     language: "语言",
     languageSystem: "跟随系统",
     languageEnglish: "English",

@@ -14,6 +14,7 @@ use serde::Deserialize;
 
 use crate::{
     config::resolve_secret_value,
+    logger::{LogLevel, LogSink},
     quota::{
         clamp_snapshot_percentages, AppSnapshot, ProviderDiagnostics, ProviderSnapshot, QuotaWindow,
     },
@@ -81,8 +82,26 @@ pub fn run_remote_provider(
     env_vars: &HashMap<String, String>,
     window_label_overrides: &HashMap<String, String>,
     visible_window_ids: &[String],
+    log: Option<&LogSink>,
 ) -> Vec<ProviderSnapshot> {
+    log_provider(
+        log,
+        LogLevel::Info,
+        id,
+        &format!(
+            "remote provider run started name={} runtime={} providerDirPresent={}",
+            name,
+            runtime,
+            provider_dir.is_some()
+        ),
+    );
     let Some(provider_dir) = provider_dir else {
+        log_provider(
+            log,
+            LogLevel::Error,
+            id,
+            "remote provider cache directory is missing",
+        );
         return vec![provider_error_snapshot(
             id,
             name,
@@ -91,8 +110,26 @@ pub fn run_remote_provider(
     };
 
     let manifest = match load_cached_manifest(provider_dir) {
-        Ok(manifest) => manifest,
+        Ok(manifest) => {
+            log_provider(
+                log,
+                LogLevel::Info,
+                id,
+                &format!(
+                    "cached manifest loaded manifestId={} version={}",
+                    manifest.id,
+                    manifest.version.as_deref().unwrap_or("none")
+                ),
+            );
+            manifest
+        }
         Err(error) => {
+            log_provider(
+                log,
+                LogLevel::Error,
+                id,
+                &format!("failed to load cached manifest: {error}"),
+            );
             return vec![provider_error_snapshot(
                 id,
                 name,
@@ -102,8 +139,22 @@ pub fn run_remote_provider(
     };
 
     let executable = match ensure_runtime_resolved(runtime, resolved_runtime) {
-        Ok(path) => path,
+        Ok(path) => {
+            log_provider(
+                log,
+                LogLevel::Info,
+                id,
+                &format!("runtime resolved path={}", path.display()),
+            );
+            path
+        }
         Err(error) => {
+            log_provider(
+                log,
+                LogLevel::Error,
+                id,
+                &format!("failed to resolve runtime: {error}"),
+            );
             return vec![provider_error_snapshot(
                 id,
                 name,
@@ -115,6 +166,12 @@ pub fn run_remote_provider(
     let source_name = remote_source_file_name(&manifest.entry);
     let source_path = provider_dir.join(&source_name);
     if !source_path.exists() {
+        log_provider(
+            log,
+            LogLevel::Error,
+            id,
+            &format!("cached source file missing path={}", source_path.display()),
+        );
         return vec![provider_error_snapshot(
             id,
             name,
@@ -127,21 +184,47 @@ pub fn run_remote_provider(
 
     let output = match RemoteOutputSpec::parse(&manifest.output) {
         Ok(output) => output,
-        Err(error) => return vec![provider_error_snapshot(id, name, &error)],
+        Err(error) => {
+            log_provider(log, LogLevel::Error, id, &error);
+            return vec![provider_error_snapshot(id, name, &error)];
+        }
     };
 
     let mut env = match resolve_required_env_vars(&manifest.required_env_vars, env_vars, config_dir)
     {
-        Ok(env) => env,
-        Err(error) => return vec![provider_error_snapshot(id, name, &error)],
+        Ok(env) => {
+            log_provider(
+                log,
+                LogLevel::Debug,
+                id,
+                &format!(
+                    "remote provider environment resolved required={} configured={} injected={}",
+                    manifest.required_env_vars.len(),
+                    env_vars.len(),
+                    env.len()
+                ),
+            );
+            env
+        }
+        Err(error) => {
+            log_provider(log, LogLevel::Error, id, &error);
+            return vec![provider_error_snapshot(id, name, &error)];
+        }
     };
     if let Some(proxy_url) = proxy_url.map(str::trim).filter(|value| !value.is_empty()) {
         match resolve_secret_value(proxy_url, config_dir) {
             Ok(proxy_url) if !proxy_url.trim().is_empty() => {
                 env.insert("QBWIN_PROXY_URL".to_string(), proxy_url.trim().to_string());
+                log_provider(log, LogLevel::Debug, id, "provider proxy URL resolved");
             }
             Ok(_) => {}
             Err(error) => {
+                log_provider(
+                    log,
+                    LogLevel::Error,
+                    id,
+                    &format!("unable to resolve provider proxy URL: {error}"),
+                );
                 return vec![provider_error_snapshot(
                     id,
                     name,
@@ -166,7 +249,18 @@ pub fn run_remote_provider(
         &output,
         window_label_overrides,
         visible_window_ids,
+        log,
     )
+}
+
+fn log_provider(log: Option<&LogSink>, level: LogLevel, id: &str, message: &str) {
+    if let Some(log) = log {
+        let _ = log.write(
+            level,
+            "remote_provider_runner",
+            &format!("providerId={id} {message}"),
+        );
+    }
 }
 
 fn run_remote_command(
@@ -176,22 +270,60 @@ fn run_remote_command(
     output: &RemoteOutputSpec,
     window_label_overrides: &HashMap<String, String>,
     visible_window_ids: &[String],
+    log: Option<&LogSink>,
 ) -> Vec<ProviderSnapshot> {
+    log_provider(
+        log,
+        LogLevel::Info,
+        id,
+        &format!(
+            "remote command started executable={} cwd={} timeoutMs={}",
+            command.executable,
+            command.cwd.as_deref().unwrap_or("none"),
+            command.timeout_ms
+        ),
+    );
     match execute_command(command) {
-        Ok(result) if result.timed_out => vec![error_provider(
-            id,
-            name,
-            "Remote provider timed out",
-            Some(result),
-            Some(&command.executable),
-        )],
-        Ok(result) if result.exit_code != Some(0) => vec![error_provider(
-            id,
-            name,
-            "Remote provider exited with a non-zero status",
-            Some(result),
-            Some(&command.executable),
-        )],
+        Ok(result) if result.timed_out => {
+            log_provider(
+                log,
+                LogLevel::Warn,
+                id,
+                &format!(
+                    "remote command timed out durationMs={} exitCode={:?} stderrBytes={}",
+                    result.duration_ms,
+                    result.exit_code,
+                    result.stderr.len()
+                ),
+            );
+            vec![error_provider(
+                id,
+                name,
+                "Remote provider timed out",
+                Some(result),
+                Some(&command.executable),
+            )]
+        }
+        Ok(result) if result.exit_code != Some(0) => {
+            log_provider(
+                log,
+                LogLevel::Warn,
+                id,
+                &format!(
+                    "remote command exited nonzero durationMs={} exitCode={:?} stderrBytes={}",
+                    result.duration_ms,
+                    result.exit_code,
+                    result.stderr.len()
+                ),
+            );
+            vec![error_provider(
+                id,
+                name,
+                "Remote provider exited with a non-zero status",
+                Some(result),
+                Some(&command.executable),
+            )]
+        }
         Ok(result) => parse_remote_output(
             id,
             name,
@@ -200,14 +332,23 @@ fn run_remote_command(
             &command.executable,
             window_label_overrides,
             visible_window_ids,
+            log,
         ),
-        Err(error) => vec![error_provider(
-            id,
-            name,
-            &error,
-            None,
-            Some(&command.executable),
-        )],
+        Err(error) => {
+            log_provider(
+                log,
+                LogLevel::Error,
+                id,
+                &format!("failed to execute remote command: {error}"),
+            );
+            vec![error_provider(
+                id,
+                name,
+                &error,
+                None,
+                Some(&command.executable),
+            )]
+        }
     }
 }
 
@@ -368,6 +509,7 @@ fn parse_remote_output(
     command_path: &str,
     window_label_overrides: &HashMap<String, String>,
     visible_window_ids: &[String],
+    log: Option<&LogSink>,
 ) -> Vec<ProviderSnapshot> {
     let diagnostics = diagnostics_from_result(&result, Some(command_path));
     let parsed = match output {
@@ -382,6 +524,23 @@ fn parse_remote_output(
 
     match parsed {
         Ok(mut providers) => {
+            let window_count = providers
+                .iter()
+                .map(|provider| provider.windows.len())
+                .sum::<usize>();
+            log_provider(
+                log,
+                LogLevel::Info,
+                id,
+                &format!(
+                    "remote output parsed providers={} windows={} durationMs={} stdoutBytes={} stderrBytes={}",
+                    providers.len(),
+                    window_count,
+                    result.duration_ms,
+                    result.stdout.len(),
+                    result.stderr.len()
+                ),
+            );
             for provider in &mut providers {
                 apply_visible_windows(provider, visible_window_ids);
                 apply_window_label_overrides(provider, window_label_overrides);
@@ -393,13 +552,25 @@ fn parse_remote_output(
             }
             providers
         }
-        Err(error) => vec![error_provider(
-            id,
-            name,
-            &format!("Failed to parse remote provider stdout: {error}"),
-            Some(result),
-            Some(command_path),
-        )],
+        Err(error) => {
+            log_provider(
+                log,
+                LogLevel::Error,
+                id,
+                &format!(
+                    "failed to parse remote provider stdout: {error}; stdoutBytes={} stderrBytes={}",
+                    result.stdout.len(),
+                    result.stderr.len()
+                ),
+            );
+            vec![error_provider(
+                id,
+                name,
+                &format!("Failed to parse remote provider stdout: {error}"),
+                Some(result),
+                Some(command_path),
+            )]
+        }
     }
 }
 
@@ -569,6 +740,7 @@ mod tests {
             &RemoteOutputSpec::ProviderSnapshotV1,
             &HashMap::new(),
             &[],
+            None,
         );
 
         assert_eq!(providers.len(), 1);
@@ -587,6 +759,7 @@ mod tests {
             &RemoteOutputSpec::ProviderSnapshotV1,
             &HashMap::new(),
             &[],
+            None,
         );
 
         assert_eq!(providers[0].status, "error");
@@ -610,6 +783,7 @@ mod tests {
             &RemoteOutputSpec::ProviderSnapshotV1,
             &overrides,
             &["Weekly".to_string()],
+            None,
         );
 
         assert_eq!(providers[0].windows.len(), 1);
@@ -630,6 +804,7 @@ mod tests {
                 "five".to_string(),
                 "Weekly".to_string(),
             ],
+            None,
         );
 
         let windows = &providers[0].windows;
@@ -680,6 +855,7 @@ mod tests {
             &env_vars,
             &HashMap::new(),
             &[],
+            None,
         );
 
         assert_eq!(providers[0].status, "ok");
@@ -728,6 +904,7 @@ mod tests {
             &env_vars,
             &HashMap::new(),
             &[],
+            None,
         );
 
         assert_eq!(providers[0].status, "ok");
@@ -771,6 +948,7 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &[],
+            None,
         );
 
         assert_eq!(providers[0].status, "ok");

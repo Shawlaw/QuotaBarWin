@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 const config: AppConfig = {
-  schemaVersion: 12,
+  schemaVersion: 13,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,

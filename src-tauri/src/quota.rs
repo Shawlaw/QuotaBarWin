@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::config::{config_path_for_app, load_or_create_config, ProviderConfig};
+use crate::logger::{LogLevel, LogSink};
 use crate::remote_provider_runner::run_remote_provider;
 
 static SNAPSHOT_CACHE: OnceLock<Mutex<Option<AppSnapshot>>> = OnceLock::new();
@@ -127,6 +128,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
         .lock()
         .map_err(|_| "Refresh lock poisoned".to_string())?;
     let loaded = load_or_create_config(path)?;
+    let log = LogSink::from_config_path(path, &loaded.config);
     let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
     let cached = snapshot_cache()
         .lock()
@@ -137,8 +139,20 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
         .map(|s| s.providers.as_slice())
         .unwrap_or(&[]);
     let mut providers = Vec::new();
+    let enabled_count = loaded
+        .config
+        .providers
+        .iter()
+        .filter(|provider| matches!(provider, ProviderConfig::Remote { enabled: true, .. }))
+        .count();
+    let _ = log.write(
+        LogLevel::Info,
+        "quota",
+        &format!("snapshot refresh started providers={enabled_count}"),
+    );
 
     for provider in loaded.config.providers {
+        let provider_id = provider_config_id(&provider).to_string();
         for result in run_provider_with_retry(
             provider,
             config_dir,
@@ -147,10 +161,30 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
                 std::time::Duration::from_secs(1),
                 std::time::Duration::from_secs(2),
             ],
+            Some(&log),
         ) {
             if result.status == "error" {
+                let _ = log.write(
+                    LogLevel::Warn,
+                    "quota",
+                    &format!(
+                        "provider refresh failed id={} error={}",
+                        provider_id,
+                        result.error.as_deref().unwrap_or("unknown")
+                    ),
+                );
                 providers.push(merge_failed_provider_with_cache(result, old_providers));
             } else {
+                let _ = log.write(
+                    LogLevel::Info,
+                    "quota",
+                    &format!(
+                        "provider refresh succeeded id={} status={} windows={}",
+                        provider_id,
+                        result.status,
+                        result.windows.len()
+                    ),
+                );
                 providers.push(result);
             }
         }
@@ -165,6 +199,16 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     *snapshot_cache()
         .lock()
         .map_err(|_| "Snapshot cache lock poisoned".to_string())? = Some(snapshot.clone());
+
+    let _ = log.write(
+        LogLevel::Info,
+        "quota",
+        &format!(
+            "snapshot refresh finished providers={} refreshedAt={}",
+            snapshot.providers.len(),
+            snapshot.refreshed_at
+        ),
+    );
 
     Ok(snapshot)
 }
@@ -246,14 +290,28 @@ fn run_provider_with_retry(
     config_dir: &Path,
     recovery_messages: &[String],
     delays: &[std::time::Duration],
+    log: Option<&LogSink>,
 ) -> Vec<ProviderSnapshot> {
-    let mut result = run_provider_config(provider.clone(), config_dir, recovery_messages);
-    for delay in delays {
+    let provider_id = provider_config_id(&provider).to_string();
+    let mut result = run_provider_config(provider.clone(), config_dir, recovery_messages, log);
+    for (attempt, delay) in delays.iter().enumerate() {
         if !should_retry_provider_result(&result) {
             break;
         }
+        if let Some(log) = log {
+            let _ = log.write(
+                LogLevel::Warn,
+                "quota",
+                &format!(
+                    "provider refresh retry scheduled id={} attempt={} delayMs={}",
+                    provider_id,
+                    attempt + 2,
+                    delay.as_millis()
+                ),
+            );
+        }
         std::thread::sleep(*delay);
-        result = run_provider_config(provider.clone(), config_dir, recovery_messages);
+        result = run_provider_config(provider.clone(), config_dir, recovery_messages, log);
     }
     result
 }
@@ -262,6 +320,7 @@ fn run_provider_config(
     provider: ProviderConfig,
     config_dir: &Path,
     _recovery_messages: &[String],
+    log: Option<&LogSink>,
 ) -> Vec<ProviderSnapshot> {
     match provider {
         ProviderConfig::Remote {
@@ -287,6 +346,7 @@ fn run_provider_config(
             &env_vars,
             &window_label_overrides,
             &visible_window_ids,
+            log,
         ),
         ProviderConfig::Remote { .. } => Vec::new(),
     }
@@ -306,7 +366,13 @@ pub fn refresh_provider_from_config_path(
         .lock()
         .map_err(|_| "Refresh lock poisoned".to_string())?;
     let loaded = load_or_create_config(path)?;
+    let log = LogSink::from_config_path(path, &loaded.config);
     let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let _ = log.write(
+        LogLevel::Info,
+        "quota",
+        &format!("single provider refresh started id={provider_id}"),
+    );
     let provider = loaded
         .config
         .providers
@@ -322,10 +388,11 @@ pub fn refresh_provider_from_config_path(
             std::time::Duration::from_secs(1),
             std::time::Duration::from_secs(2),
         ],
+        Some(&log),
     );
     let refreshed_provider_ids = refreshed_providers
         .iter()
-        .map(|provider| provider.id.as_str())
+        .map(|provider| provider.id.clone())
         .collect::<Vec<_>>();
     let refreshed_at = Utc::now().to_rfc3339();
 
@@ -365,7 +432,7 @@ pub fn refresh_provider_from_config_path(
         provider.id != provider_id
             && !refreshed_provider_ids
                 .iter()
-                .any(|refreshed_id| *refreshed_id == provider.id)
+                .any(|refreshed_id| refreshed_id == &provider.id)
     });
 
     for (offset, provider) in refreshed_providers.into_iter().enumerate() {
@@ -384,6 +451,17 @@ pub fn refresh_provider_from_config_path(
     *snapshot_cache()
         .lock()
         .map_err(|_| "Snapshot cache lock poisoned".to_string())? = Some(snapshot.clone());
+
+    let _ = log.write(
+        LogLevel::Info,
+        "quota",
+        &format!(
+            "single provider refresh finished id={} refreshedProviders={} snapshotProviders={}",
+            provider_id,
+            refreshed_provider_ids.len(),
+            snapshot.providers.len()
+        ),
+    );
 
     Ok(snapshot)
 }
@@ -445,6 +523,7 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            log_max_bytes: crate::config::DEFAULT_LOG_MAX_BYTES,
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,

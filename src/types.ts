@@ -53,6 +53,7 @@ export type AppConfig = {
   lowQuotaWarningThreshold: number;
   launchAtStartup?: boolean;
   logLevel?: "debug" | "info" | "warn" | "error" | string;
+  logMaxBytes?: number;
   language: AppLanguage;
   networkProxy?: ProxyConfig | null;
   trayPopupPosition?: TrayPopupPosition | null;

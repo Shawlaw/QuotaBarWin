@@ -50,7 +50,7 @@ examples live in [`examples/remote-providers/`](examples/remote-providers/).
 
 ## Config Storage
 
-Current schema version: `12`.
+Current schema version: `13`.
 
 Windows AppData config:
 

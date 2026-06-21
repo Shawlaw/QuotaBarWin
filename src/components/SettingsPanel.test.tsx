@@ -110,7 +110,8 @@ const configStorageInfo: ConfigStorageInfo = {
 
 function configWithProviders(providers: AppConfig["providers"]): AppConfig {
   return {
-    schemaVersion: 12,
+    schemaVersion: 13,
+    logMaxBytes: 10 * 1024 * 1024,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -198,6 +199,17 @@ test("settings_renders_registry_and_remote_provider_metadata", () => {
   expect(screen.getByText(/Version: 1.0.0/)).toBeInTheDocument();
   expect(screen.getByText(/Runtime: node/)).toBeInTheDocument();
   expect(screen.getByText(/Manifest:/)).toHaveTextContent("https://example.com/provider.json");
+});
+
+test("settings_edits_local_log_limit_in_megabytes", () => {
+  renderSettings();
+
+  const input = screen.getByTestId("log-max-size-input");
+  expect(input).toHaveValue(10);
+
+  fireEvent.change(input, { target: { value: "25" } });
+
+  expect(apiMocks.state.config?.logMaxBytes).toBe(25 * 1024 * 1024);
 });
 
 test("settings_edits_remote_env_vars_and_window_display", () => {

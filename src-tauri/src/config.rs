@@ -12,7 +12,8 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 12;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 13;
+pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
 const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
@@ -30,6 +31,8 @@ pub struct AppConfig {
     pub launch_at_startup: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_log_max_bytes")]
+    pub log_max_bytes: u64,
     #[serde(default = "default_language")]
     pub language: AppLanguage,
     #[serde(default)]
@@ -201,6 +204,10 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
+pub fn default_log_max_bytes() -> u64 {
+    DEFAULT_LOG_MAX_BYTES
+}
+
 fn default_language() -> AppLanguage {
     AppLanguage::ZhCn
 }
@@ -221,6 +228,7 @@ pub fn default_config() -> AppConfig {
         low_quota_warning_threshold: 20.0,
         launch_at_startup: false,
         log_level: default_log_level(),
+        log_max_bytes: default_log_max_bytes(),
         language: default_language(),
         network_proxy: None,
         tray_popup_position: None,
@@ -539,6 +547,15 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
     if version < 12 {
         value["trayPopupSize"] = serde_json::json!(null);
         value["schemaVersion"] = serde_json::json!(12);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(12);
+    if version < 13 {
+        value["logMaxBytes"] = serde_json::json!(DEFAULT_LOG_MAX_BYTES);
+        value["schemaVersion"] = serde_json::json!(13);
     }
 
     Ok(value)
@@ -928,6 +945,7 @@ mod tests {
             low_quota_warning_threshold: 15.0,
             launch_at_startup: true,
             log_level: "debug".to_string(),
+            log_max_bytes: DEFAULT_LOG_MAX_BYTES,
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: Some(TrayPopupPosition { x: 111, y: 222 }),
@@ -991,6 +1009,10 @@ mod tests {
         );
         assert_eq!(migrated["launchAtStartup"], serde_json::json!(false));
         assert_eq!(migrated["logLevel"], serde_json::json!("info"));
+        assert_eq!(
+            migrated["logMaxBytes"],
+            serde_json::json!(DEFAULT_LOG_MAX_BYTES)
+        );
         assert_eq!(migrated["language"], serde_json::json!("zh-CN"));
         assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
         assert_eq!(migrated["trayPopupSize"], serde_json::json!(null));
@@ -1067,6 +1089,10 @@ mod tests {
             migrated["providers"][0]["installedAt"],
             serde_json::Value::Null
         );
+        assert_eq!(
+            migrated["logMaxBytes"],
+            serde_json::json!(DEFAULT_LOG_MAX_BYTES)
+        );
     }
 
     #[test]
@@ -1091,6 +1117,10 @@ mod tests {
         assert_eq!(migrated["language"], serde_json::json!("zh-CN"));
         assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
         assert_eq!(migrated["trayPopupSize"], serde_json::json!(null));
+        assert_eq!(
+            migrated["logMaxBytes"],
+            serde_json::json!(DEFAULT_LOG_MAX_BYTES)
+        );
     }
 
     #[test]
@@ -1115,6 +1145,10 @@ mod tests {
         );
         assert_eq!(migrated["trayPopupPosition"], serde_json::json!(null));
         assert_eq!(migrated["trayPopupSize"], serde_json::json!(null));
+        assert_eq!(
+            migrated["logMaxBytes"],
+            serde_json::json!(DEFAULT_LOG_MAX_BYTES)
+        );
     }
 
     #[test]
@@ -1147,6 +1181,10 @@ mod tests {
             })
         );
         assert_eq!(migrated["trayPopupSize"], serde_json::json!(null));
+        assert_eq!(
+            migrated["logMaxBytes"],
+            serde_json::json!(DEFAULT_LOG_MAX_BYTES)
+        );
     }
 
     #[test]
@@ -1176,6 +1214,43 @@ mod tests {
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
         assert_eq!(migrated["trayPopupSize"], serde_json::json!(null));
+        assert_eq!(
+            migrated["logMaxBytes"],
+            serde_json::json!(DEFAULT_LOG_MAX_BYTES)
+        );
+    }
+
+    #[test]
+    fn config_migration_v12_to_current_adds_log_max_bytes() {
+        let value = serde_json::json!({
+            "schemaVersion": 12,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "launchAtStartup": false,
+            "logLevel": "info",
+            "language": "system",
+            "networkProxy": null,
+            "trayPopupPosition": null,
+            "trayPopupSize": null,
+            "remoteProviderRegistry": {
+                "registryUrl": null,
+                "providerProxyUrl": null,
+                "autoUpdate": true
+            },
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(
+            migrated["logMaxBytes"],
+            serde_json::json!(DEFAULT_LOG_MAX_BYTES)
+        );
     }
 
     #[test]
@@ -1220,6 +1295,7 @@ mod tests {
             low_quota_warning_threshold: 20.0,
             launch_at_startup: false,
             log_level: "info".to_string(),
+            log_max_bytes: DEFAULT_LOG_MAX_BYTES,
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
@@ -1277,6 +1353,10 @@ mod tests {
                 "width": 420.0,
                 "height": 640.0
             })
+        );
+        assert_eq!(
+            value["logMaxBytes"],
+            serde_json::json!(DEFAULT_LOG_MAX_BYTES)
         );
         assert_eq!(
             value["providers"][0]["windowLabelOverrides"],

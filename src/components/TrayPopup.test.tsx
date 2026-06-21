@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => {
   const listeners: { trayShown?: (presentationId: number) => void } = {};
   const state = { presentationId: 0 };
   const config: AppConfig = {
-    schemaVersion: 12,
+    schemaVersion: 13,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,

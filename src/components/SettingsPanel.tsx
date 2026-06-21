@@ -22,6 +22,9 @@ import {
 } from "./ProviderWindowSettings";
 import { RemoteProviderSettings } from "./RemoteProviderSettings";
 
+const LOG_BYTES_PER_MB = 1024 * 1024;
+const DEFAULT_LOG_MAX_BYTES = 10 * LOG_BYTES_PER_MB;
+
 type SettingsPanelProps = {
   config: AppConfig;
   configStorageInfo: ConfigStorageInfo | null;
@@ -150,7 +153,10 @@ export function SettingsPanel({
     config.lowQuotaWarningThreshold >= 0 && config.lowQuotaWarningThreshold <= 100
       ? null
       : t.settings.lowQuotaWarningError;
-  const canSave = hasChanges && !refreshIntervalError && !lowQuotaWarningError && !isSaving;
+  const logMaxMegabytes = Math.round((config.logMaxBytes ?? DEFAULT_LOG_MAX_BYTES) / LOG_BYTES_PER_MB);
+  const logMaxSizeError = logMaxMegabytes >= 1 ? null : t.settings.logMaxSizeError;
+  const canSave =
+    hasChanges && !refreshIntervalError && !lowQuotaWarningError && !logMaxSizeError && !isSaving;
   const isPortableMode = configStorageInfo?.mode === "portable";
   const storageModeLabel = isPortableMode ? t.settings.portableMode : t.settings.appDataMode;
 
@@ -338,6 +344,24 @@ export function SettingsPanel({
             <option value="warn">{t.settings.logWarn}</option>
             <option value="error">{t.settings.logError}</option>
           </select>
+        </label>
+        <label>
+          {t.settings.logMaxSize}
+          <input
+            type="number"
+            min={1}
+            step={1}
+            data-testid="log-max-size-input"
+            value={logMaxMegabytes}
+            onChange={(event) => {
+              const megabytes = Number(event.currentTarget.value);
+              onChange({
+                ...config,
+                logMaxBytes: Math.max(0, megabytes) * LOG_BYTES_PER_MB
+              });
+            }}
+          />
+          {logMaxSizeError ? <span className="field-error">{logMaxSizeError}</span> : null}
         </label>
         <label>
           {t.settings.language}

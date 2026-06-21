@@ -10,6 +10,7 @@ use zip::{write::FileOptions, ZipWriter};
 
 use crate::{
     config::{config_path_for_app, load_or_create_config},
+    logger::log_path_for_config_path,
     quota::get_cached_snapshot,
     redact::redact_sensitive,
 };
@@ -26,7 +27,7 @@ struct DiagnosticsManifest {
 pub async fn export_diagnostics(app: AppHandle, output_path: String) -> Result<(), String> {
     let config_path = config_path_for_app(&app)?;
     let snapshot = get_cached_snapshot().ok().flatten();
-    let log_path = config_path.with_file_name("quotabarwin.log");
+    let log_path = log_path_for_config_path(&config_path);
     let app_version = env!("CARGO_PKG_VERSION").to_string();
     let output_path = PathBuf::from(output_path);
 

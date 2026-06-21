@@ -14,12 +14,13 @@ function hasTauriInternals(): boolean {
 }
 
 const fallbackConfig: AppConfig = {
-  schemaVersion: 12,
+  schemaVersion: 13,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
   launchAtStartup: false,
   logLevel: "info",
+  logMaxBytes: 10 * 1024 * 1024,
   language: "zh-CN",
   networkProxy: null,
   remoteProviderRegistry: {
