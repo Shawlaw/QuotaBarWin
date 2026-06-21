@@ -11,7 +11,10 @@ import { I18nProvider } from "../i18n";
 import type { ReactElement } from "react";
 
 const mocks = vi.hoisted(() => {
-  const listeners: { trayShown?: (presentationId: number) => void } = {};
+  const listeners: {
+    snapshotUpdated?: (snapshot: AppSnapshot) => void;
+    trayShown?: (presentationId: number) => void;
+  } = {};
   const state = { presentationId: 0 };
   const config: AppConfig = {
     schemaVersion: 13,
@@ -143,11 +146,15 @@ const mocks = vi.hoisted(() => {
   };
 
   return {
-    getCachedSnapshot: vi.fn(async () => null),
+    getCachedSnapshot: vi.fn(async (): Promise<AppSnapshot | null> => null),
     getConfig: vi.fn(async () => config),
     getTrayPopupPresentationId: vi.fn(async () => state.presentationId),
     hideCurrentWindow: vi.fn(async () => undefined),
     hideTrayPopup: vi.fn(async () => undefined),
+    listenForSnapshotUpdates: vi.fn(async (callback: (snapshot: AppSnapshot) => void) => {
+      listeners.snapshotUpdated = callback;
+      return () => undefined;
+    }),
     listenForTrayPopupShown: vi.fn(async (callback: (presentationId: number) => void) => {
       listeners.trayShown = callback;
       return () => undefined;
@@ -165,6 +172,7 @@ vi.mock("../lib/api", () => mocks);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.listeners.snapshotUpdated = undefined;
   mocks.listeners.trayShown = undefined;
   mocks.state.presentationId = 0;
 });
@@ -205,6 +213,105 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   });
 
   expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(3);
+});
+
+test("tray_popup_syncs_cached_snapshot_before_refreshing_when_shown", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+
+  let resolveRefresh: ((snapshot: AppSnapshot) => void) | undefined;
+  mocks.getCachedSnapshot.mockResolvedValueOnce({
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:05:00+08:00",
+    providers: [
+      {
+        id: "cached-popup",
+        name: "Cached Popup",
+        status: "ok",
+        source: "mock",
+        updatedAt: "2026-06-08T10:05:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [
+          {
+            id: "cached-window",
+            label: "Cached Window",
+            used: 10,
+            limit: 100,
+            unit: "percent",
+            usedPercent: 10,
+            remainingPercent: 90,
+            resetAt: null,
+            resetText: "cached reset",
+            confidence: "estimated",
+          },
+        ],
+      },
+    ],
+  });
+  mocks.refreshSnapshot.mockImplementationOnce(
+    () =>
+      new Promise<AppSnapshot>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+  );
+
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+
+  await waitFor(() => expect(screen.getByText("Cached Popup - Cached Window")).toBeInTheDocument());
+
+  await act(async () => {
+    resolveRefresh?.({
+      schemaVersion: 1,
+      refreshedAt: "2026-06-08T10:06:00+08:00",
+      providers: [],
+    });
+  });
+});
+
+test("tray_popup_uses_native_snapshot_updates", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+
+  await act(async () => {
+    mocks.listeners.snapshotUpdated?.({
+      schemaVersion: 1,
+      refreshedAt: "2026-06-08T10:05:00+08:00",
+      providers: [
+        {
+          id: "native-popup",
+          name: "Native Popup",
+          status: "ok",
+          source: "mock",
+          updatedAt: "2026-06-08T10:05:00+08:00",
+          error: null,
+          diagnostics: null,
+          metadata: null,
+          windows: [
+            {
+              id: "native-window",
+              label: "Native Window",
+              used: 20,
+              limit: 100,
+              unit: "percent",
+              usedPercent: 20,
+              remainingPercent: 80,
+              resetAt: null,
+              resetText: "native reset",
+              confidence: "estimated",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  expect(screen.getByText("Native Popup - Native Window")).toBeInTheDocument();
 });
 
 test("tray_popup_uses_window_focus_to_check_for_missed_presentation", async () => {

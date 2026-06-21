@@ -52,7 +52,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     listeners,
-    getCachedSnapshot: vi.fn(async () => null),
+    getCachedSnapshot: vi.fn(async (): Promise<AppSnapshot | null> => null),
     getAppVersion: vi.fn(async () => "1.0.0"),
     getConfig: vi.fn(async () => config),
     getConfigStorageInfo: vi.fn(async () => configStorageInfo),
@@ -129,6 +129,63 @@ test("main_app_refreshes_when_native_refresh_requested", async () => {
   });
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+});
+
+test("main_app_syncs_cached_snapshot_before_refreshing_when_shown", async () => {
+  render(<App />);
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+
+  let resolveRefresh: ((snapshot: AppSnapshot) => void) | undefined;
+  mocks.getCachedSnapshot.mockResolvedValueOnce({
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:05:00+08:00",
+    providers: [
+      {
+        id: "cached-refresh",
+        name: "Cached Refresh",
+        status: "ok",
+        source: "mock",
+        updatedAt: "2026-06-08T10:05:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [],
+      },
+    ],
+  });
+  mocks.refreshSnapshot.mockImplementationOnce(
+    () =>
+      new Promise<AppSnapshot>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+  );
+
+  await act(async () => {
+    mocks.listeners.refreshRequested?.();
+  });
+
+  await waitFor(() => expect(screen.getByText("Cached Refresh")).toBeInTheDocument());
+
+  await act(async () => {
+    resolveRefresh?.({
+      schemaVersion: 1,
+      refreshedAt: "2026-06-08T10:06:00+08:00",
+      providers: [
+        {
+          id: "live-refresh",
+          name: "Live Refresh",
+          status: "ok",
+          source: "mock",
+          updatedAt: "2026-06-08T10:06:00+08:00",
+          error: null,
+          diagnostics: null,
+          metadata: null,
+          windows: [],
+        },
+      ],
+    });
+  });
 });
 
 test("main_app_uses_native_snapshot_updates_without_js_interval", async () => {

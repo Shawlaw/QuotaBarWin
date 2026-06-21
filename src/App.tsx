@@ -91,6 +91,18 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   const [isConfigStorageBusy, setIsConfigStorageBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  const syncCachedSnapshot = useCallback(async () => {
+    try {
+      const cached = await getCachedSnapshot();
+      if (cached) {
+        setSnapshot(cached);
+      }
+      return cached;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const loadSnapshot = useCallback(async () => {
     if (refreshInFlight.current) {
       return;
@@ -99,15 +111,16 @@ function MainApp({ onLanguageChange }: MainAppProps) {
     refreshInFlight.current = true;
     setIsLoading(true);
     try {
+      await syncCachedSnapshot();
       setSnapshot(await refreshSnapshot());
     } catch (error) {
-      const cached = await getCachedSnapshot();
+      const cached = await syncCachedSnapshot();
       setSnapshot(cached ?? fallbackSnapshot(error));
     } finally {
       refreshInFlight.current = false;
       setIsLoading(false);
     }
-  }, []);
+  }, [syncCachedSnapshot]);
 
   useEffect(() => {
     let isMounted = true;

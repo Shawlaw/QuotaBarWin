@@ -5,6 +5,7 @@ import {
   getTrayPopupPresentationId,
   hideCurrentWindow,
   hideTrayPopup,
+  listenForSnapshotUpdates,
   listenForTrayPopupShown,
   resetTrayPopupSize,
   refreshSnapshot,
@@ -77,6 +78,18 @@ export function TrayPopup() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const syncCachedSnapshot = useCallback(async () => {
+    try {
+      const cached = await getCachedSnapshot();
+      if (cached) {
+        setSnapshot(cached);
+      }
+      return cached;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const loadSnapshot = useCallback(async () => {
     if (refreshInFlight.current) {
       return;
@@ -85,14 +98,15 @@ export function TrayPopup() {
     refreshInFlight.current = true;
     setIsLoading(true);
     try {
+      await syncCachedSnapshot();
       setSnapshot(await refreshSnapshot());
     } catch {
-      setSnapshot(await getCachedSnapshot());
+      setSnapshot(await syncCachedSnapshot());
     } finally {
       refreshInFlight.current = false;
       setIsLoading(false);
     }
-  }, []);
+  }, [syncCachedSnapshot]);
 
   const refreshForPresentation = useCallback((presentationId: number) => {
     if (
@@ -146,6 +160,17 @@ export function TrayPopup() {
       unlisten?.();
     };
   }, [refreshForPresentation, syncTrayPopupPresentation]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listenForSnapshotUpdates((updatedSnapshot) => setSnapshot(updatedSnapshot)).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     function onFocus() {
