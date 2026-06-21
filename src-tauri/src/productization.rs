@@ -50,4 +50,6 @@ fn release_workflow_yaml_is_valid() {
     assert!(value.get("jobs").is_some());
     assert!(workflow.contains("tauri build"));
     assert!(workflow.contains("portable"));
+    assert!(workflow.contains("quotabarwin-release($($versionName)_$commitId)"));
+    assert!(workflow.contains("steps.artifact_name.outputs.name"));
 }

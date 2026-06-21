@@ -63,8 +63,17 @@ jobs:
           Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Include *.msi,*.exe,*.zip,*.json |
             Copy-Item -Destination artifacts/installers -Force
 
+      - name: Compute artifact name
+        id: artifact_name
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $versionName = $package.version
+          $commitId = "${{ github.sha }}".Substring(0, 7)
+          "name=quotabarwin-release($($versionName)_$commitId)" >> $env:GITHUB_OUTPUT
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: quotabarwin-windows-release
+          name: ${{ steps.artifact_name.outputs.name }}
           path: artifacts/**
