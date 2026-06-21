@@ -169,33 +169,76 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     Ok(snapshot)
 }
 
-fn is_retryable_error(providers: &[ProviderSnapshot]) -> bool {
+fn should_retry_provider_result(providers: &[ProviderSnapshot]) -> bool {
     providers.iter().any(|provider| {
         if provider.status != "error" {
             return false;
         }
-        if provider
-            .diagnostics
-            .as_ref()
-            .and_then(|d| d.timed_out)
-            .unwrap_or(false)
-        {
-            return true;
-        }
-        let error_text = provider.error.as_deref().unwrap_or("").to_lowercase();
-        let stderr_text = provider
-            .diagnostics
-            .as_ref()
-            .and_then(|d| d.stderr.as_deref())
-            .unwrap_or("")
-            .to_lowercase();
-        let combined = format!("{error_text} {stderr_text}");
-        combined.contains("timed out")
-            || combined.contains("timeout")
-            || combined.contains("connection")
-            || combined.contains("connect")
-            || (combined.contains("codex usage api returned") && combined.contains(" 5"))
+        !is_non_retryable_error(provider)
     })
+}
+
+fn is_non_retryable_error(provider: &ProviderSnapshot) -> bool {
+    if provider
+        .diagnostics
+        .as_ref()
+        .and_then(|d| d.timed_out)
+        .unwrap_or(false)
+    {
+        return false;
+    }
+
+    let error_text = provider.error.as_deref().unwrap_or("").to_lowercase();
+    let stderr_text = provider
+        .diagnostics
+        .as_ref()
+        .and_then(|d| d.stderr.as_deref())
+        .unwrap_or("")
+        .to_lowercase();
+    let combined = format!("{error_text} {stderr_text}");
+
+    const LOCAL_CONFIGURATION_ERRORS: &[&str] = &[
+        "remote provider cache directory is missing",
+        "failed to load remote provider manifest",
+        "failed to resolve runtime",
+        "cached source file does not exist",
+        "unsupported remote provider output type",
+        "unable to resolve remote provider environment variable",
+        "unable to resolve remote provider proxy url",
+        "failed to parse remote provider stdout",
+    ];
+    if LOCAL_CONFIGURATION_ERRORS
+        .iter()
+        .any(|pattern| combined.contains(pattern))
+    {
+        return true;
+    }
+
+    const AUTH_OR_INPUT_ERRORS: &[&str] = &[
+        " 400",
+        "400:",
+        "bad request",
+        " 401",
+        "401:",
+        "unauthorized",
+        " 403",
+        "403:",
+        "forbidden",
+        "access token is empty",
+        "api key is empty",
+        "token is empty",
+        "invalid token",
+        "invalid api key",
+        "missing access token",
+        "missing api key",
+        "missing token",
+        "no access token",
+        "authentication failed",
+        "permission denied",
+    ];
+    AUTH_OR_INPUT_ERRORS
+        .iter()
+        .any(|pattern| combined.contains(pattern))
 }
 
 fn run_provider_with_retry(
@@ -206,7 +249,7 @@ fn run_provider_with_retry(
 ) -> Vec<ProviderSnapshot> {
     let mut result = run_provider_config(provider.clone(), config_dir, recovery_messages);
     for delay in delays {
-        if !is_retryable_error(&result) {
+        if !should_retry_provider_result(&result) {
             break;
         }
         std::thread::sleep(*delay);
@@ -712,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn retryable_error_detects_timeout() {
+    fn retry_decision_retries_timeout() {
         let providers = vec![ProviderSnapshot {
             id: "test".to_string(),
             name: "Test".to_string(),
@@ -724,11 +767,11 @@ mod tests {
             diagnostics: None,
             metadata: None,
         }];
-        assert!(is_retryable_error(&providers));
+        assert!(should_retry_provider_result(&providers));
     }
 
     #[test]
-    fn retryable_error_detects_connection_failure() {
+    fn retry_decision_retries_connection_failure() {
         let providers = vec![ProviderSnapshot {
             id: "test".to_string(),
             name: "Test".to_string(),
@@ -740,11 +783,11 @@ mod tests {
             diagnostics: None,
             metadata: None,
         }];
-        assert!(is_retryable_error(&providers));
+        assert!(should_retry_provider_result(&providers));
     }
 
     #[test]
-    fn retryable_error_detects_codex_5xx() {
+    fn retry_decision_retries_codex_5xx() {
         let providers = vec![ProviderSnapshot {
             id: "test".to_string(),
             name: "Test".to_string(),
@@ -756,11 +799,35 @@ mod tests {
             diagnostics: None,
             metadata: None,
         }];
-        assert!(is_retryable_error(&providers));
+        assert!(should_retry_provider_result(&providers));
     }
 
     #[test]
-    fn non_retryable_error_rejects_empty_token() {
+    fn retry_decision_retries_unknown_error_by_default() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "remote".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Remote provider exited with a non-zero status".to_string()),
+            diagnostics: Some(ProviderDiagnostics {
+                checked_at: "2026-06-15T00:00:00Z".to_string(),
+                messages: vec![],
+                command_path: Some("node".to_string()),
+                exit_code: Some(1),
+                duration_ms: Some(100),
+                timed_out: Some(false),
+                stderr: Some("temporary upstream failure".to_string()),
+            }),
+            metadata: None,
+        }];
+        assert!(should_retry_provider_result(&providers));
+    }
+
+    #[test]
+    fn retry_decision_skips_empty_token() {
         let providers = vec![ProviderSnapshot {
             id: "test".to_string(),
             name: "Test".to_string(),
@@ -772,11 +839,11 @@ mod tests {
             diagnostics: None,
             metadata: None,
         }];
-        assert!(!is_retryable_error(&providers));
+        assert!(!should_retry_provider_result(&providers));
     }
 
     #[test]
-    fn non_retryable_error_rejects_parse_failure() {
+    fn retry_decision_skips_parse_failure() {
         let providers = vec![ProviderSnapshot {
             id: "test".to_string(),
             name: "Test".to_string(),
@@ -788,11 +855,11 @@ mod tests {
             diagnostics: None,
             metadata: None,
         }];
-        assert!(!is_retryable_error(&providers));
+        assert!(!should_retry_provider_result(&providers));
     }
 
     #[test]
-    fn non_retryable_error_rejects_auth_failure() {
+    fn retry_decision_skips_auth_failure() {
         let providers = vec![ProviderSnapshot {
             id: "test".to_string(),
             name: "Test".to_string(),
@@ -804,6 +871,22 @@ mod tests {
             diagnostics: None,
             metadata: None,
         }];
-        assert!(!is_retryable_error(&providers));
+        assert!(!should_retry_provider_result(&providers));
+    }
+
+    #[test]
+    fn retry_decision_skips_local_configuration_failure() {
+        let providers = vec![ProviderSnapshot {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            status: "error".to_string(),
+            source: "remote".to_string(),
+            updated_at: None,
+            windows: vec![],
+            error: Some("Failed to resolve runtime: node was not found".to_string()),
+            diagnostics: None,
+            metadata: None,
+        }];
+        assert!(!should_retry_provider_result(&providers));
     }
 }
