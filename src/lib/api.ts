@@ -419,5 +419,5 @@ export async function startResizingCurrentWindow(): Promise<void> {
     return;
   }
 
-  await getCurrentWindow().startResizeDragging("SouthEast");
+  return invoke<void>("start_tray_popup_resizing");
 }

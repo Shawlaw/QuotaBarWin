@@ -37,7 +37,7 @@ pub use remote_provider_commands::{
 };
 pub use tray::{
     get_tray_popup_presentation_id, hide_tray_popup, reset_tray_popup_size,
-    start_tray_popup_dragging,
+    start_tray_popup_dragging, start_tray_popup_resizing,
 };
 
 fn window_title(version: &str) -> String {
@@ -126,7 +126,8 @@ pub fn run() {
             get_tray_popup_presentation_id,
             hide_tray_popup,
             reset_tray_popup_size,
-            start_tray_popup_dragging
+            start_tray_popup_dragging,
+            start_tray_popup_resizing
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
@@ -137,7 +138,7 @@ pub fn run() {
                 if window.label() == tray::TRAY_POPUP_LABEL
                     && tray::should_hide_tray_popup_on_focus_lost() =>
             {
-                let _ = window.hide();
+                tray::hide_tray_popup_after_focus_lost(window.clone());
             }
             tauri::WindowEvent::Moved(position) if window.label() == tray::TRAY_POPUP_LABEL => {
                 tray::save_tray_popup_position_after_user_move(window.app_handle(), *position);

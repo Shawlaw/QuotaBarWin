@@ -14,6 +14,7 @@ import {
   resetTrayPopupSize,
   saveConfig,
   setNetworkProxy,
+  startResizingCurrentWindow,
 } from "./api";
 import type { AppConfig, AppSnapshot } from "../types";
 
@@ -123,12 +124,20 @@ test("api_invokes_tray_popup_commands", async () => {
     if (cmd === "reset_tray_popup_size") {
       return null;
     }
+    if (cmd === "start_tray_popup_resizing") {
+      return null;
+    }
     throw new Error(`unexpected command ${cmd}`);
   });
 
   await expect(getTrayPopupPresentationId()).resolves.toBe(42);
   await expect(resetTrayPopupSize()).resolves.toBeNull();
-  expect(calls).toEqual(["get_tray_popup_presentation_id", "reset_tray_popup_size"]);
+  await expect(startResizingCurrentWindow()).resolves.toBeNull();
+  expect(calls).toEqual([
+    "get_tray_popup_presentation_id",
+    "reset_tray_popup_size",
+    "start_tray_popup_resizing",
+  ]);
 });
 
 test("api_invokes_remote_provider_commands", async () => {
