@@ -6,10 +6,14 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
-use crate::config::{self, AppLanguage, TrayPopupPosition, TrayPopupSize};
+use crate::{
+    app_info,
+    config::{self, AppLanguage, TrayPopupPosition, TrayPopupSize},
+};
 
 use std::{
     env,
+    process::Command,
     sync::{
         atomic::{AtomicU64, Ordering},
         Mutex,
@@ -26,10 +30,12 @@ unsafe extern "system" {
 
 pub const TRAY_ID: &str = "main";
 pub const SHOW_ID: &str = "show";
+pub const VERSION_ID: &str = "version";
 pub const OPEN_APP_FOLDER_ID: &str = "open-app-folder";
 pub const QUIT_ID: &str = "quit";
 pub const TRAY_POPUP_LABEL: &str = "tray-popup";
 pub const TRAY_POPUP_VIEW: &str = "index.html?view=tray";
+const GITHUB_URL: &str = "https://github.com/Shawlaw/QuotaBarWin";
 const TRAY_POPUP_WIDTH: f64 = 380.0;
 const TRAY_POPUP_HEIGHT: f64 = 520.0;
 const TRAY_POPUP_MIN_WIDTH: f64 = 320.0;
@@ -50,8 +56,8 @@ struct TrayPopupShownPayload {
 }
 
 #[cfg(test)]
-pub fn tray_menu_ids() -> [&'static str; 3] {
-    [SHOW_ID, OPEN_APP_FOLDER_ID, QUIT_ID]
+pub fn tray_menu_ids() -> [&'static str; 4] {
+    [SHOW_ID, VERSION_ID, OPEN_APP_FOLDER_ID, QUIT_ID]
 }
 
 #[cfg(test)]
@@ -88,6 +94,13 @@ pub fn refresh_tray_menu(app: &AppHandle) -> Result<(), String> {
 fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let labels = tray_menu_labels_for_app(app);
     let show = MenuItem::with_id(app, SHOW_ID, labels.show_main_window, true, None::<&str>)?;
+    let version = MenuItem::with_id(
+        app,
+        VERSION_ID,
+        format!("{} {}", labels.version, app_info::app_display_version()),
+        true,
+        None::<&str>,
+    )?;
     let open_app_folder = MenuItem::with_id(
         app,
         OPEN_APP_FOLDER_ID,
@@ -97,7 +110,7 @@ fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     )?;
     let quit = MenuItem::with_id(app, QUIT_ID, labels.quit, true, None::<&str>)?;
 
-    Menu::with_items(app, &[&show, &open_app_folder, &quit])
+    Menu::with_items(app, &[&show, &version, &open_app_folder, &quit])
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,6 +121,7 @@ enum ResolvedTrayLanguage {
 
 struct TrayMenuLabels {
     show_main_window: &'static str,
+    version: &'static str,
     open_app_folder: &'static str,
     quit: &'static str,
 }
@@ -124,11 +138,13 @@ fn tray_menu_labels(language: &AppLanguage) -> TrayMenuLabels {
     match resolve_tray_language(language) {
         ResolvedTrayLanguage::En => TrayMenuLabels {
             show_main_window: "Show Main Window",
+            version: "Version",
             open_app_folder: "Open App Folder",
             quit: "Quit",
         },
         ResolvedTrayLanguage::ZhCn => TrayMenuLabels {
             show_main_window: "显示主窗口",
+            version: "版本",
             open_app_folder: "打开程序所在目录",
             quit: "退出",
         },
@@ -390,8 +406,43 @@ fn handle_menu_event(app: &AppHandle, id: &MenuId) {
                 eprintln!("Failed to open app folder from tray menu: {error}");
             }
         }
+        VERSION_ID => {
+            if let Err(error) = open_url_external(GITHUB_URL) {
+                eprintln!("Failed to open GitHub from tray menu: {error}");
+            }
+        }
         QUIT_ID => app.exit(0),
         _ => {}
+    }
+}
+
+fn open_url_external(url: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        Command::new("rundll32")
+            .arg("url.dll,FileProtocolHandler")
+            .arg(url)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
     }
 }
 
@@ -483,18 +534,23 @@ mod tests {
 
     #[test]
     fn tray_menu_contains_current_actions() {
-        assert_eq!(tray_menu_ids(), [SHOW_ID, OPEN_APP_FOLDER_ID, QUIT_ID]);
+        assert_eq!(
+            tray_menu_ids(),
+            [SHOW_ID, VERSION_ID, OPEN_APP_FOLDER_ID, QUIT_ID]
+        );
     }
 
     #[test]
     fn tray_menu_labels_are_localized() {
         let en = tray_menu_labels(&AppLanguage::En);
         assert_eq!(en.show_main_window, "Show Main Window");
+        assert_eq!(en.version, "Version");
         assert_eq!(en.open_app_folder, "Open App Folder");
         assert_eq!(en.quit, "Quit");
 
         let zh_cn = tray_menu_labels(&AppLanguage::ZhCn);
         assert_eq!(zh_cn.show_main_window, "显示主窗口");
+        assert_eq!(zh_cn.version, "版本");
         assert_eq!(zh_cn.open_app_folder, "打开程序所在目录");
         assert_eq!(zh_cn.quit, "退出");
     }

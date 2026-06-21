@@ -44,6 +44,10 @@ fn window_title(version: &str) -> String {
     format!("QuotaBarWin V{version}")
 }
 
+fn startup_log_message(version: &str, hidden: bool) -> String {
+    format!("app started version={version} hidden={hidden}")
+}
+
 fn should_start_hidden() -> bool {
     std::env::args().any(|arg| matches!(arg.as_str(), HIDDEN_STARTUP_ARG | "--start-hidden"))
 }
@@ -66,20 +70,28 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            let title = window_title(&app.package_info().version.to_string());
+            let app_version = app_info::app_display_version();
+            let start_hidden = should_start_hidden();
+            let title = window_title(&app_version);
             if let Some(window) = app.get_webview_window("main") {
                 window.set_title(&title)?;
-                if should_start_hidden() {
+                if start_hidden {
                     let _ = window.hide();
                 }
             }
             tray::create_tray_popup_window(app.handle())?;
             tray::create_tray(app.handle())?;
             let app_handle = app.handle().clone();
-            match config::config_path_for_app(&app_handle)
-                .and_then(|path| config::load_or_create_config(&path))
-                .map(|loaded| loaded.config.launch_at_startup)
-            {
+            match config::config_path_for_app(&app_handle).and_then(|path| {
+                let loaded = config::load_or_create_config(&path)?;
+                let log = logger::LogSink::from_config_path(&path, &loaded.config);
+                let _ = log.write(
+                    logger::LogLevel::Info,
+                    "app",
+                    &startup_log_message(&app_version, start_hidden),
+                );
+                Ok(loaded.config.launch_at_startup)
+            }) {
                 Ok(enabled) => {
                     if let Err(error) = config::sync_launch_at_startup_for_app(&app_handle, enabled)
                     {
@@ -147,6 +159,18 @@ mod tests {
     #[test]
     fn window_title_contains_version() {
         assert_eq!(window_title("1.2.3"), "QuotaBarWin V1.2.3");
+        assert_eq!(
+            window_title("1.2.3(abc1234)"),
+            "QuotaBarWin V1.2.3(abc1234)"
+        );
+    }
+
+    #[test]
+    fn startup_log_message_includes_display_version_and_hidden_state() {
+        assert_eq!(
+            startup_log_message("1.2.3(abc1234)", true),
+            "app started version=1.2.3(abc1234) hidden=true"
+        );
     }
 
     #[test]
