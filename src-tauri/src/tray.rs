@@ -67,6 +67,10 @@ pub fn tray_popup_view() -> &'static str {
     TRAY_POPUP_VIEW
 }
 
+fn tray_tooltip(version: &str) -> String {
+    format!("QuotaBarWin V{version}")
+}
+
 pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = build_tray_menu(app)?;
     let icon = tray_icon_image(app)?;
@@ -74,7 +78,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .icon(icon)
-        .tooltip("QuotaBarWin")
+        .tooltip(tray_tooltip(&app_info::app_display_version()))
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| handle_menu_event(app, event.id()))
         .on_tray_icon_event(|tray, event| handle_tray_event(tray.app_handle(), event))
@@ -605,6 +609,14 @@ mod tests {
         assert_eq!(zh_cn.version, "版本");
         assert_eq!(zh_cn.open_app_folder, "打开程序所在目录");
         assert_eq!(zh_cn.quit, "退出");
+    }
+
+    #[test]
+    fn tray_tooltip_contains_display_version() {
+        assert_eq!(
+            tray_tooltip("1.2.3(abc1234)"),
+            "QuotaBarWin V1.2.3(abc1234)"
+        );
     }
 
     #[test]

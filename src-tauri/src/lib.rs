@@ -1,5 +1,6 @@
 #![allow(dependency_on_unit_never_type_fallback)]
 
+mod app_identity;
 mod app_info;
 mod config;
 mod diagnostics;
@@ -53,6 +54,10 @@ fn should_start_hidden() -> bool {
 }
 
 pub fn run() {
+    if let Err(error) = app_identity::configure_process_identity() {
+        eprintln!("{error}");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
