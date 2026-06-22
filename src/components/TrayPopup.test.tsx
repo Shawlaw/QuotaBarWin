@@ -346,6 +346,23 @@ test("tray_popup_window_title_includes_provider_name_and_reset_stays_secondary",
   ).not.toBeInTheDocument();
 });
 
+test("tray_popup_colors_each_window_by_its_own_warning_status", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
+
+  const normalFill = screen.getByRole("progressbar", {
+    name: "Codex Mock Daily remaining",
+  }).firstElementChild;
+  const warningFill = screen.getByRole("progressbar", {
+    name: "Codex Mock Extra window remaining",
+  }).firstElementChild;
+
+  expect(screen.getByText("Codex Mock Low")).toBeInTheDocument();
+  expect(normalFill).toHaveClass("progress-fill--normal");
+  expect(warningFill).toHaveClass("progress-fill--warning");
+});
+
 test("tray_popup_hides_popup_on_escape_and_close_button", async () => {
   renderWithEnglish(<TrayPopup />);
 

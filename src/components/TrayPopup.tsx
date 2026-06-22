@@ -17,7 +17,8 @@ import {
   displayPercentForWindow,
   formatDisplayValue,
   formatQuotaReset,
-  formatShortDateTime
+  formatShortDateTime,
+  windowStatus
 } from "../lib/providerStatus";
 import type { AppConfig, AppSnapshot, ProviderSnapshot, QuotaWindow } from "../types";
 import { useI18n } from "../i18n";
@@ -41,12 +42,15 @@ const issueStatusPriority: Record<ProviderSnapshot["status"], number> = {
   ok: 4
 };
 
-function progressTone(status: ProviderSnapshot["status"]): "normal" | "warning" | "error" {
-  if (status === "error") {
+function windowProgressTone(
+  providerStatus: ProviderSnapshot["status"],
+  quotaStatus: ReturnType<typeof windowStatus>
+): "normal" | "warning" | "error" {
+  if (providerStatus === "error") {
     return "error";
   }
 
-  if (status === "warning" || status === "stale") {
+  if (providerStatus === "stale" || quotaStatus === "warning") {
     return "warning";
   }
 
@@ -281,7 +285,8 @@ export function TrayPopup() {
         {rows.length > 0 ? (
           <section className="tray-popup__windows" aria-label={t.tray.quotaWindowsLabel}>
             {rows.map(({ provider, window }) => {
-              const status = calculateProviderStatus(provider, lowQuotaWarningThreshold);
+              const providerStatus = calculateProviderStatus(provider, lowQuotaWarningThreshold);
+              const quotaStatus = windowStatus(window, lowQuotaWarningThreshold);
               const displayedPercent = displayPercentForWindow(window, displayMode);
               const remainingPercent =
                 window.remainingPercent ??
@@ -299,7 +304,7 @@ export function TrayPopup() {
                     percent={displayedPercent}
                     opacityPercent={remainingPercent}
                     label={`${provider.name} ${window.label} ${displayMode}`}
-                    tone={progressTone(status)}
+                    tone={windowProgressTone(providerStatus, quotaStatus)}
                   />
                   {resetText ? <p>{resetText}</p> : null}
                 </article>
