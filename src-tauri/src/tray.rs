@@ -2,7 +2,7 @@ use tauri::{
     menu::{Menu, MenuId, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     utils::config::Color,
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
+    AppHandle, Emitter, LogicalSize, Manager, Monitor, PhysicalPosition, PhysicalSize, WebviewUrl,
     WebviewWindowBuilder, Window,
 };
 use tauri_runtime::ResizeDirection;
@@ -50,6 +50,14 @@ const TRAY_POPUP_POSITION_SAVE_GRACE: Duration = Duration::from_secs(30);
 static TRAY_POPUP_FOCUS_HIDE_SUPPRESSED_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
 static TRAY_POPUP_POSITION_SAVE_ALLOWED_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
 static TRAY_POPUP_PRESENTATION_ID: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TrayPopupWorkArea {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -516,10 +524,15 @@ fn handle_tray_event(app: &AppHandle, event: TrayIconEvent) {
 fn show_tray_popup(app: &AppHandle, anchor: PhysicalPosition<f64>) {
     if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
         let presentation_id = TRAY_POPUP_PRESENTATION_ID.fetch_add(1, Ordering::SeqCst) + 1;
-        let position = tray_popup_position_from_saved_or_anchor(
+        let desired_position = tray_popup_position_from_saved_or_anchor(
             config::load_tray_popup_position_for_app(app),
             anchor,
         );
+        let popup_size = window
+            .outer_size()
+            .unwrap_or_else(|_| fallback_tray_popup_physical_size());
+        let position =
+            tray_popup_position_on_visible_work_area(app, desired_position, popup_size, anchor);
         suppress_focus_hide_for_drag();
         let _ = window.set_position(PhysicalPosition::new(position.0, position.1));
         let _ = window.set_always_on_top(true);
@@ -537,6 +550,13 @@ fn tray_popup_position(anchor: PhysicalPosition<f64>) -> (i32, i32) {
     let x = (anchor.x - TRAY_POPUP_WIDTH + TRAY_POPUP_OFFSET).max(0.0);
     let y = (anchor.y - TRAY_POPUP_HEIGHT - TRAY_POPUP_OFFSET).max(0.0);
     (x.round() as i32, y.round() as i32)
+}
+
+fn fallback_tray_popup_physical_size() -> PhysicalSize<u32> {
+    PhysicalSize::new(
+        TRAY_POPUP_WIDTH.round() as u32,
+        TRAY_POPUP_HEIGHT.round() as u32,
+    )
 }
 
 fn default_tray_popup_size() -> TrayPopupSize {
@@ -582,6 +602,101 @@ fn tray_popup_position_from_saved_or_anchor(
     saved
         .map(|position| (position.x, position.y))
         .unwrap_or_else(|| tray_popup_position(anchor))
+}
+
+fn tray_popup_position_on_visible_work_area(
+    app: &AppHandle,
+    position: (i32, i32),
+    popup_size: PhysicalSize<u32>,
+    anchor: PhysicalPosition<f64>,
+) -> (i32, i32) {
+    tray_popup_work_area_for_position_or_anchor(app, position, popup_size, anchor)
+        .map(|work_area| clamp_tray_popup_position_to_work_area(position, popup_size, work_area))
+        .unwrap_or(position)
+}
+
+fn tray_popup_work_area_for_position_or_anchor(
+    app: &AppHandle,
+    position: (i32, i32),
+    popup_size: PhysicalSize<u32>,
+    anchor: PhysicalPosition<f64>,
+) -> Option<TrayPopupWorkArea> {
+    let monitors = app.available_monitors().ok().unwrap_or_default();
+    if let Some(work_area) = monitors
+        .iter()
+        .map(tray_popup_work_area_from_monitor)
+        .find(|work_area| tray_popup_rect_intersects_work_area(position, popup_size, *work_area))
+    {
+        return Some(work_area);
+    }
+
+    app.monitor_from_point(anchor.x, anchor.y)
+        .ok()
+        .flatten()
+        .as_ref()
+        .map(tray_popup_work_area_from_monitor)
+        .or_else(|| {
+            app.primary_monitor()
+                .ok()
+                .flatten()
+                .as_ref()
+                .map(tray_popup_work_area_from_monitor)
+        })
+        .or_else(|| monitors.first().map(tray_popup_work_area_from_monitor))
+}
+
+fn tray_popup_work_area_from_monitor(monitor: &Monitor) -> TrayPopupWorkArea {
+    let work_area = monitor.work_area();
+    TrayPopupWorkArea {
+        x: work_area.position.x,
+        y: work_area.position.y,
+        width: work_area.size.width,
+        height: work_area.size.height,
+    }
+}
+
+fn tray_popup_rect_intersects_work_area(
+    position: (i32, i32),
+    popup_size: PhysicalSize<u32>,
+    work_area: TrayPopupWorkArea,
+) -> bool {
+    let left = i64::from(position.0);
+    let top = i64::from(position.1);
+    let right = left + i64::from(popup_size.width);
+    let bottom = top + i64::from(popup_size.height);
+    let work_left = i64::from(work_area.x);
+    let work_top = i64::from(work_area.y);
+    let work_right = work_left + i64::from(work_area.width);
+    let work_bottom = work_top + i64::from(work_area.height);
+
+    right > work_left && left < work_right && bottom > work_top && top < work_bottom
+}
+
+fn clamp_tray_popup_position_to_work_area(
+    position: (i32, i32),
+    popup_size: PhysicalSize<u32>,
+    work_area: TrayPopupWorkArea,
+) -> (i32, i32) {
+    if work_area.width == 0 || work_area.height == 0 {
+        return position;
+    }
+
+    (
+        clamp_tray_popup_axis(position.0, popup_size.width, work_area.x, work_area.width),
+        clamp_tray_popup_axis(position.1, popup_size.height, work_area.y, work_area.height),
+    )
+}
+
+fn clamp_tray_popup_axis(position: i32, size: u32, work_start: i32, work_size: u32) -> i32 {
+    let work_start = i64::from(work_start);
+    let work_size = i64::from(work_size);
+    let size = i64::from(size);
+    if size >= work_size {
+        return work_start as i32;
+    }
+
+    let max_position = work_start + work_size - size;
+    i64::from(position).clamp(work_start, max_position) as i32
 }
 
 #[cfg(test)]
@@ -657,6 +772,78 @@ mod tests {
             ),
             (-120, 240)
         );
+    }
+
+    #[test]
+    fn tray_popup_position_clamps_saved_position_to_current_work_area() {
+        assert_eq!(
+            clamp_tray_popup_position_to_work_area(
+                (3320, 1668),
+                PhysicalSize::new(380, 520),
+                TrayPopupWorkArea {
+                    x: 0,
+                    y: 0,
+                    width: 1920,
+                    height: 1040
+                },
+            ),
+            (1540, 520)
+        );
+    }
+
+    #[test]
+    fn tray_popup_position_clamps_with_negative_monitor_origin() {
+        assert_eq!(
+            clamp_tray_popup_position_to_work_area(
+                (-2600, 120),
+                PhysicalSize::new(380, 520),
+                TrayPopupWorkArea {
+                    x: -1920,
+                    y: 0,
+                    width: 1920,
+                    height: 1040
+                },
+            ),
+            (-1920, 120)
+        );
+    }
+
+    #[test]
+    fn tray_popup_position_uses_work_area_origin_when_popup_is_larger() {
+        assert_eq!(
+            clamp_tray_popup_position_to_work_area(
+                (120, 240),
+                PhysicalSize::new(2200, 1200),
+                TrayPopupWorkArea {
+                    x: 0,
+                    y: 40,
+                    width: 1920,
+                    height: 1000
+                },
+            ),
+            (0, 40)
+        );
+    }
+
+    #[test]
+    fn tray_popup_rect_intersection_detects_visible_and_offscreen_positions() {
+        let work_area = TrayPopupWorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1040,
+        };
+
+        assert!(tray_popup_rect_intersects_work_area(
+            (1700, 900),
+            PhysicalSize::new(380, 520),
+            work_area
+        ));
+        assert!(!tray_popup_rect_intersects_work_area(
+            (2200, 900),
+            PhysicalSize::new(380, 520),
+            work_area
+        ));
     }
 
     #[test]
