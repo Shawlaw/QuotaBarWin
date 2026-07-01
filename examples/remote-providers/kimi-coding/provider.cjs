@@ -18,7 +18,7 @@ const fs = require("node:fs/promises");
     (limit) => Number(limit?.window?.duration) === 300 && limit?.window?.timeUnit === "TIME_UNIT_MINUTE"
   );
   if (fiveHour?.detail) {
-    windows.push(windowFromUsage("300-minute", "5h", fiveHour.detail));
+    windows.push(windowFromUsage("300-minute", "5h", fiveHour.detail, { unknownMeansFull: true }));
   }
 
   if (raw.usage) {
@@ -81,18 +81,48 @@ async function readJson(filePath) {
   return JSON.parse(await fs.readFile(filePath, "utf8"));
 }
 
-function windowFromUsage(id, label, usage) {
+function windowFromUsage(id, label, usage, options = {}) {
   // provider-snapshot-v1 keeps the UI fields stable: used/limit/resetAt are
   // normalized here, while provider-specific fields stay in metadata.
+  const used = numberOrNull(usage.used);
+  const remaining = numberOrNull(usage.remaining);
+  const limit = numberOrNull(usage.limit);
+  const percentages = percentagesFromUsage({ used, remaining, limit }, options);
+
   return {
     id,
     label,
-    used: numberOrNull(usage.used),
-    limit: numberOrNull(usage.limit),
+    remaining,
+    used,
+    limit,
     unit: null,
+    usedPercent: percentages.usedPercent,
+    remainingPercent: percentages.remainingPercent,
     resetAt: usage.resetTime ?? null,
-    confidence: "exact"
+    confidence: percentages.estimated ? "estimated" : "exact"
   };
+}
+
+function percentagesFromUsage({ used, remaining, limit }, options) {
+  if (limit !== null && limit > 0 && used !== null) {
+    const usedPercent = clampPercent((used / limit) * 100);
+    return { usedPercent, remainingPercent: clampPercent(100 - usedPercent), estimated: false };
+  }
+
+  if (limit !== null && limit > 0 && remaining !== null) {
+    const remainingPercent = clampPercent((remaining / limit) * 100);
+    return { usedPercent: clampPercent(100 - remainingPercent), remainingPercent, estimated: false };
+  }
+
+  if (options.unknownMeansFull && used === null && remaining === null && limit === null) {
+    return { usedPercent: 0, remainingPercent: 100, estimated: true };
+  }
+
+  return { usedPercent: null, remainingPercent: null, estimated: false };
+}
+
+function clampPercent(value) {
+  return Math.min(100, Math.max(0, value));
 }
 
 function numberOrNull(value) {
