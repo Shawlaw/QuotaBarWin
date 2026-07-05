@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 const config: AppConfig = {
-  schemaVersion: 13,
+  schemaVersion: 14,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -154,6 +154,7 @@ test("api_invokes_remote_provider_commands", async () => {
         runtime: "node",
         autoUpdate: true,
         updateIntervalSeconds: 3600,
+        timeoutSeconds: 30,
       },
     ],
     skipped: [],

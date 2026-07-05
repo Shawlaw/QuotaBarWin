@@ -130,6 +130,7 @@ Example installed provider config:
 {
   "kind": "remote",
   "id": "kimi-coding",
+  "timeoutSeconds": 30,
   "visibleWindowIds": ["300-minute", "usage", "total-quota"],
   "windowLabelOverrides": {
     "300-minute": "5h",
@@ -143,6 +144,7 @@ Example installed provider config:
 
 - `visibleWindowIds` controls which windows are displayed. When it is set, QuotaBarWin displays only those windows and uses the configured order.
 - `windowLabelOverrides` controls display names. Overrides are matched by `window.id` first, so stable IDs let users keep custom names even if provider labels change. Legacy label matching may work for existing configs, but provider authors should document and preserve IDs.
+- `timeoutSeconds` controls how long the QuotaBarWin host process waits for the script to exit. The default is `30` seconds.
 - `label` should be friendly text for the UI and may change for clarity or localization. Do not derive `id` from translated labels, marketing copy, or other wording that might change. Prefer semantic provider API keys such as `weekly`, `300-minute`, `tokens-limit-6-1`, or `total-quota`.
 
 ## Parsing raw API responses

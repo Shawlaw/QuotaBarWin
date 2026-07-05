@@ -132,6 +132,7 @@ Registry 可以用一个 URL 安装多个 Provider：
 {
   "kind": "remote",
   "id": "kimi-coding",
+  "timeoutSeconds": 30,
   "visibleWindowIds": ["300-minute", "usage", "total-quota"],
   "windowLabelOverrides": {
     "300-minute": "5h",
@@ -145,6 +146,7 @@ Registry 可以用一个 URL 安装多个 Provider：
 
 - `visibleWindowIds` 控制展示哪些窗口以及顺序。
 - `windowLabelOverrides` 优先匹配 `window.id`，再兼容旧 label 匹配。
+- `timeoutSeconds` 控制 QuotaBarWin 宿主进程等待脚本退出的时间，默认 `30` 秒。
 - `label` 只是展示文案，可以变得更清晰或本地化；`id` 应来自稳定 API 语义，例如
   `weekly`、`300-minute`、`tokens-limit-6-1`、`total-quota`。
 

@@ -97,6 +97,7 @@ export type I18nCatalog = {
     proxyUrl: string;
     providerProxyPlaceholder: string;
     timeout: string;
+    timeoutError: string;
     remoteEnvVars: string;
     remoteEnvVarsPlaceholder: string;
     windowLabelOverrides: string;
@@ -302,7 +303,8 @@ export const en: I18nCatalog = {
     optional: "Optional",
     proxyUrl: "Proxy URL",
     providerProxyPlaceholder: "Optional, e.g. http://127.0.0.1:7890 or socks5h://127.0.0.1:7890",
-    timeout: "Timeout",
+    timeout: "Timeout (seconds)",
+    timeoutError: "Timeout must be greater than 0.",
     remoteEnvVars: "Environment variables",
     remoteEnvVarsPlaceholder:
       "KEY=value, one per line\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",
@@ -510,7 +512,8 @@ export const zhCN: I18nCatalog = {
     optional: "可选",
     proxyUrl: "代理 URL",
     providerProxyPlaceholder: "可选，例如 http://127.0.0.1:7890 或 socks5h://127.0.0.1:7890",
-    timeout: "超时",
+    timeout: "超时（秒）",
+    timeoutError: "超时时间必须大于 0。",
     remoteEnvVars: "环境变量",
     remoteEnvVarsPlaceholder:
       "每行一个 KEY=value\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",

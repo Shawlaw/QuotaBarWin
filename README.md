@@ -45,7 +45,7 @@ Provider 示例提供。
 
 ## 配置存储
 
-当前配置 schema version：`13`。
+当前配置 schema version：`14`。
 
 Windows AppData 配置：
 

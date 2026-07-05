@@ -84,6 +84,7 @@ const remoteProvider: RemoteProviderConfig = {
   proxyUrl: null,
   autoUpdate: true,
   updateIntervalSeconds: 3600,
+  timeoutSeconds: 30,
   trustedChecksum: "sha256:abcdef1234567890",
   installedAt: "2026-06-18T08:00:00Z",
   updatedAt: "2026-06-18T08:10:00Z",
@@ -110,7 +111,7 @@ const configStorageInfo: ConfigStorageInfo = {
 
 function configWithProviders(providers: AppConfig["providers"]): AppConfig {
   return {
-    schemaVersion: 13,
+    schemaVersion: 14,
     logMaxBytes: 10 * 1024 * 1024,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
@@ -236,6 +237,18 @@ test("settings_edits_remote_env_vars_and_window_display", () => {
   expect(screen.getByLabelText("Custom label for daily")).toHaveValue("Team daily");
 });
 
+test("settings_edits_remote_provider_timeout", () => {
+  renderSettings();
+
+  fireEvent.click(screen.getByTestId("edit-provider-remote-kimi"));
+  const timeoutInput = screen.getByLabelText("Timeout (seconds)");
+  expect(timeoutInput).toHaveValue(30);
+
+  fireEvent.change(timeoutInput, { target: { value: "45" } });
+
+  expect(apiMocks.state.config?.providers[0].timeoutSeconds).toBe(45);
+});
+
 test("settings_checks_and_applies_remote_provider_update", async () => {
   renderSettings();
 
@@ -286,5 +299,17 @@ test("settings_save_bar_tracks_dirty_state_and_validation", () => {
   expect(
     screen.getByText("Refresh interval must be greater than 0."),
   ).toBeInTheDocument();
+  expect(screen.getByTestId("save-settings-button")).toBeDisabled();
+});
+
+test("settings_blocks_invalid_remote_provider_timeout", () => {
+  renderSettings();
+
+  fireEvent.click(screen.getByTestId("edit-provider-remote-kimi"));
+  fireEvent.change(screen.getByLabelText("Timeout (seconds)"), {
+    target: { value: "0" },
+  });
+
+  expect(screen.getByText("Timeout must be greater than 0.")).toBeInTheDocument();
   expect(screen.getByTestId("save-settings-button")).toBeDisabled();
 });

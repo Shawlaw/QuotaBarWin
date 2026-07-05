@@ -12,8 +12,9 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 13;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 14;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
+pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_REMOTE_PROVIDER_REGISTRY_URL: &str =
     "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json";
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
@@ -139,6 +140,13 @@ pub enum ProviderConfig {
         )]
         update_interval_seconds: u64,
         #[serde(
+            rename = "timeoutSeconds",
+            alias = "timeout_seconds",
+            alias = "timeout-seconds",
+            default = "default_remote_provider_timeout_seconds"
+        )]
+        timeout_seconds: u64,
+        #[serde(
             default,
             rename = "trustedChecksum",
             alias = "trusted_checksum",
@@ -216,6 +224,10 @@ fn default_language() -> AppLanguage {
 
 fn default_update_interval_seconds() -> u64 {
     3600
+}
+
+fn default_remote_provider_timeout_seconds() -> u64 {
+    DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS
 }
 
 fn default_remote_provider_auto_update() -> bool {
@@ -562,6 +574,27 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
     if version < 13 {
         value["logMaxBytes"] = serde_json::json!(DEFAULT_LOG_MAX_BYTES);
         value["schemaVersion"] = serde_json::json!(13);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(13);
+    if version < 14 {
+        if let Some(providers) = value
+            .get_mut("providers")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for provider in providers {
+                if provider.get("kind").and_then(serde_json::Value::as_str) == Some("remote")
+                    && provider.get("timeoutSeconds").is_none()
+                {
+                    provider["timeoutSeconds"] =
+                        serde_json::json!(DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS);
+                }
+            }
+        }
+        value["schemaVersion"] = serde_json::json!(14);
     }
 
     Ok(value)
@@ -919,6 +952,7 @@ mod tests {
             proxy_url: None,
             auto_update: true,
             update_interval_seconds: 3600,
+            timeout_seconds: DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
             trusted_checksum: None,
             installed_at: Some("2026-06-18T00:00:00Z".to_string()),
             updated_at: Some("2026-06-18T00:00:00Z".to_string()),
@@ -994,7 +1028,10 @@ mod tests {
         let parsed =
             serde_json::from_value::<ProviderConfig>(provider).expect("deserialize provider");
 
-        assert!(matches!(parsed, ProviderConfig::Remote { .. }));
+        let ProviderConfig::Remote {
+            timeout_seconds, ..
+        } = parsed;
+        assert_eq!(timeout_seconds, DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS);
     }
 
     #[test]
@@ -1094,6 +1131,10 @@ mod tests {
         assert_eq!(
             migrated["providers"][0]["installedAt"],
             serde_json::Value::Null
+        );
+        assert_eq!(
+            migrated["providers"][0]["timeoutSeconds"],
+            serde_json::json!(DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS)
         );
         assert_eq!(
             migrated["logMaxBytes"],
@@ -1260,6 +1301,52 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v13_to_current_adds_remote_provider_timeout() {
+        let value = serde_json::json!({
+            "schemaVersion": 13,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "launchAtStartup": false,
+            "logLevel": "info",
+            "logMaxBytes": DEFAULT_LOG_MAX_BYTES,
+            "language": "system",
+            "networkProxy": null,
+            "trayPopupPosition": null,
+            "trayPopupSize": null,
+            "remoteProviderRegistry": {
+                "registryUrl": null,
+                "providerProxyUrl": null,
+                "autoUpdate": true
+            },
+            "providers": [
+                {
+                    "kind": "remote",
+                    "id": "remote-kimi",
+                    "name": "Remote Kimi",
+                    "enabled": true,
+                    "manifestUrl": "https://example.com/provider.json",
+                    "sourceUrl": "https://example.com/provider.cjs",
+                    "runtime": "node",
+                    "autoUpdate": true,
+                    "updateIntervalSeconds": 1800
+                }
+            ]
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(
+            migrated["providers"][0]["timeoutSeconds"],
+            serde_json::json!(DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS)
+        );
+    }
+
+    #[test]
     fn non_remote_provider_configs_are_rejected() {
         let mock = serde_json::json!({
             "kind": "mock",
@@ -1327,6 +1414,7 @@ mod tests {
                 proxy_url: None,
                 auto_update: true,
                 update_interval_seconds: 3600,
+                timeout_seconds: DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
                 trusted_checksum: None,
                 installed_at: Some("2026-06-18T00:00:00Z".to_string()),
                 updated_at: Some("2026-06-18T00:00:00Z".to_string()),
@@ -1376,6 +1464,10 @@ mod tests {
             value["providers"][0]["envVars"],
             serde_json::json!({ "KIMI_API_KEY": "${secret:KIMI_API_KEY}" })
         );
+        assert_eq!(
+            value["providers"][0]["timeoutSeconds"],
+            serde_json::json!(DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS)
+        );
         assert_eq!(value["providers"][0]["version"], serde_json::json!("1.0.0"));
         assert_eq!(
             value["providers"][0]["installedAt"],
@@ -1400,6 +1492,7 @@ mod tests {
             "runtime": "node",
             "autoUpdate": true,
             "updateIntervalSeconds": 3600,
+            "timeoutSeconds": 30,
             "installedAt": "2026-06-18T00:00:00Z",
             "updatedAt": "2026-06-18T00:00:00Z",
             "lastCheckedAt": "2026-06-18T00:00:00Z",
@@ -1417,10 +1510,12 @@ mod tests {
             env_vars,
             version,
             installed_at,
+            timeout_seconds,
             ..
         } = provider;
         assert_eq!(version, Some("1.0.0".to_string()));
         assert_eq!(installed_at, Some("2026-06-18T00:00:00Z".to_string()));
+        assert_eq!(timeout_seconds, DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS);
         assert_eq!(
             window_label_overrides.get("300-minute"),
             Some(&"5h".to_string())

@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     config::{
         config_path_for_app, load_or_create_config, save_config_to_path, AppConfig, ProviderConfig,
-        RemoteProviderRegistrySettings,
+        RemoteProviderRegistrySettings, DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
     },
     logger::{LogLevel, LogSink},
     proxy::ProxyConfig,
@@ -212,6 +212,7 @@ fn install_remote_provider_from_manifest(
         proxy_url: proxy_url.map(|s| s.to_string()),
         auto_update: actual_auto_update,
         update_interval_seconds: 3600,
+        timeout_seconds: DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
         trusted_checksum: Some(compute_checksum(&source)),
         installed_at: Some(now.clone()),
         updated_at: Some(now.clone()),

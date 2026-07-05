@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => {
   } = {};
   const state = { presentationId: 0 };
   const config: AppConfig = {
-    schemaVersion: 13,
+    schemaVersion: 14,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => {
         runtime: "node",
         autoUpdate: false,
         updateIntervalSeconds: 3600,
+        timeoutSeconds: 30,
       },
     ],
   };

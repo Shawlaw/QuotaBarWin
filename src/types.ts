@@ -110,6 +110,7 @@ export type RemoteProviderConfig = {
   proxyUrl?: string | null;
   autoUpdate: boolean;
   updateIntervalSeconds: number;
+  timeoutSeconds: number;
   trustedChecksum?: string | null;
   installedAt?: string | null;
   updatedAt?: string | null;

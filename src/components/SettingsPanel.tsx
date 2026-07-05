@@ -14,6 +14,7 @@ import {
   refreshRemoteProvider,
   removeRemoteProvider
 } from "../lib/api";
+import { DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS } from "../lib/defaults";
 import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
 import {
@@ -97,6 +98,10 @@ function parseEnvVarsText(text: string): Record<string, string> {
   return envVars;
 }
 
+function providerTimeoutSeconds(provider: RemoteProviderConfig): number {
+  return provider.timeoutSeconds ?? DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS;
+}
+
 function remoteProviderRegistrySettings(config: AppConfig) {
   return (
     config.remoteProviderRegistry ?? {
@@ -155,8 +160,16 @@ export function SettingsPanel({
       : t.settings.lowQuotaWarningError;
   const logMaxMegabytes = Math.round((config.logMaxBytes ?? DEFAULT_LOG_MAX_BYTES) / LOG_BYTES_PER_MB);
   const logMaxSizeError = logMaxMegabytes >= 1 ? null : t.settings.logMaxSizeError;
+  const hasProviderTimeoutError = config.providers.some(
+    (provider) => providerTimeoutSeconds(provider) < 1
+  );
   const canSave =
-    hasChanges && !refreshIntervalError && !lowQuotaWarningError && !logMaxSizeError && !isSaving;
+    hasChanges &&
+    !refreshIntervalError &&
+    !lowQuotaWarningError &&
+    !logMaxSizeError &&
+    !hasProviderTimeoutError &&
+    !isSaving;
   const isPortableMode = configStorageInfo?.mode === "portable";
   const storageModeLabel = isPortableMode ? t.settings.portableMode : t.settings.appDataMode;
 
@@ -605,6 +618,25 @@ export function SettingsPanel({
                         value={provider.name}
                         onChange={(event) => updateProviderName(provider.id, event.currentTarget.value)}
                       />
+                    </label>
+                    <label>
+                      {t.settings.timeout}
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        data-testid={`provider-timeout-${provider.id}`}
+                        value={providerTimeoutSeconds(provider)}
+                        onChange={(event) => {
+                          const value = Number(event.currentTarget.value);
+                          updateRemoteProvider(provider, {
+                            timeoutSeconds: Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
+                          });
+                        }}
+                      />
+                      {providerTimeoutSeconds(provider) < 1 ? (
+                        <span className="field-error">{t.settings.timeoutError}</span>
+                      ) : null}
                     </label>
                     <label className="args-field">
                       {t.settings.remoteEnvVars}

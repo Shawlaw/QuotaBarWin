@@ -78,6 +78,7 @@ pub fn run_remote_provider(
     runtime: &str,
     resolved_runtime: Option<&str>,
     proxy_url: Option<&str>,
+    timeout_seconds: u64,
     config_dir: &Path,
     env_vars: &HashMap<String, String>,
     window_label_overrides: &HashMap<String, String>,
@@ -238,7 +239,7 @@ pub fn run_remote_provider(
         executable: executable.display().to_string(),
         args: vec![source_path.display().to_string()],
         cwd: Some(provider_dir.display().to_string()),
-        timeout_ms: 15_000,
+        timeout_ms: timeout_seconds.max(1).saturating_mul(1000),
         env,
     };
 
@@ -290,10 +291,12 @@ fn run_remote_command(
                 LogLevel::Warn,
                 id,
                 &format!(
-                    "remote command timed out durationMs={} exitCode={:?} stderrBytes={}",
+                    "remote command timed out timeoutOrigin=host configuredTimeoutMs={} durationMs={} exitCode={:?} stderrBytes={} stderrPreview={}",
+                    command.timeout_ms,
                     result.duration_ms,
                     result.exit_code,
-                    result.stderr.len()
+                    result.stderr.len(),
+                    stderr_preview_for_log(&result.stderr)
                 ),
             );
             vec![error_provider(
@@ -310,10 +313,11 @@ fn run_remote_command(
                 LogLevel::Warn,
                 id,
                 &format!(
-                    "remote command exited nonzero durationMs={} exitCode={:?} stderrBytes={}",
+                    "remote command exited nonzero failureOrigin=provider durationMs={} exitCode={:?} stderrBytes={} stderrPreview={}",
                     result.duration_ms,
                     result.exit_code,
-                    result.stderr.len()
+                    result.stderr.len(),
+                    stderr_preview_for_log(&result.stderr)
                 ),
             );
             vec![error_provider(
@@ -349,6 +353,20 @@ fn run_remote_command(
                 Some(&command.executable),
             )]
         }
+    }
+}
+
+fn stderr_preview_for_log(stderr: &str) -> String {
+    let trimmed = stderr.trim();
+    if trimmed.is_empty() {
+        return "none".to_string();
+    }
+    let single_line = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
+    let redacted = redact_sensitive(&single_line);
+    if redacted.chars().count() > 160 {
+        format!("{}...", redacted.chars().take(160).collect::<String>())
+    } else {
+        redacted
     }
 }
 
@@ -851,6 +869,7 @@ mod tests {
             "node",
             None,
             None,
+            crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
             temp.path(),
             &env_vars,
             &HashMap::new(),
@@ -900,6 +919,7 @@ mod tests {
             "node",
             None,
             None,
+            crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
             temp.path(),
             &env_vars,
             &HashMap::new(),
@@ -944,6 +964,7 @@ mod tests {
             "node",
             None,
             Some("socks5h://localhost:10818"),
+            crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
             temp.path(),
             &HashMap::new(),
             &HashMap::new(),
