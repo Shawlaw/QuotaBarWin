@@ -1,8 +1,11 @@
 const fs = require("node:fs/promises");
 
+const PROVIDER_ID = process.env.QBWIN_PROVIDER_ID || "bigmodel-coding-plan";
+
 (async function main() {
+  logStep("info", "provider.start", "BigModel provider started");
   const fixturePath = process.env.QUOTABARWIN_BIGMODEL_FIXTURE;
-  const raw = fixturePath ? await readJson(fixturePath) : await fetchBigModelQuota();
+  const raw = fixturePath ? await readJsonFixture(fixturePath) : await fetchBigModelQuota();
 
   // Raw BigModel shape used here:
   // {
@@ -12,6 +15,10 @@ const fs = require("node:fs/promises");
   // Each data.limits[] entry becomes one provider-snapshot-v1 window. Extra
   // provider-specific values, such as model-level usageDetails, stay in metadata.
   const limits = raw.data?.limits ?? [];
+  logStep("info", "snapshot.ready", "BigModel snapshot ready", {
+    status: raw.success === false ? "error" : "ok",
+    windowCount: limits.length
+  });
 
   console.log(
     JSON.stringify({
@@ -28,30 +35,60 @@ const fs = require("node:fs/promises");
     })
   );
 })().catch((error) => {
+  logStep("error", "provider.error", "BigModel provider failed", {
+    error: error instanceof Error ? error.message : String(error)
+  });
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
 
 async function fetchBigModelQuota() {
+  logStep("info", "auth.check", "Checking BigModel API key");
   const token = process.env.BIGMODEL_API_KEY;
   if (!token) {
+    logStep("error", "auth.missing", "BIGMODEL_API_KEY is missing");
     throw new Error("BIGMODEL_API_KEY is required");
   }
 
   // Keep secrets local. This example reads an env var because remote providers
   // are source-only; real deployments should prefer app-managed local config or
   // a local secret-file path passed at runtime instead of hard-coded credentials.
+  logStep("info", "http.request.start", "Requesting BigModel quota", {
+    endpoint: "open.bigmodel.cn/api/monitor/usage/quota/limit"
+  });
   const response = await fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
     headers: { Authorization: `Bearer ${token}` }
+  });
+  logStep(response.ok ? "info" : "warn", "http.response", "BigModel quota response received", {
+    status: response.status
   });
   if (!response.ok) {
     throw new Error(`BigModel quota request failed with ${response.status}`);
   }
-  return response.json();
+  const raw = await response.json();
+  logStep("info", "http.parse.done", "BigModel quota response parsed");
+  return raw;
 }
 
-async function readJson(filePath) {
-  return JSON.parse(await fs.readFile(filePath, "utf8"));
+async function readJsonFixture(filePath) {
+  logStep("info", "fixture.read.start", "Reading BigModel fixture");
+  const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
+  logStep("info", "fixture.read.done", "BigModel fixture parsed");
+  return raw;
+}
+
+function logStep(level, stage, message, fields = {}) {
+  process.stderr.write(
+    `${JSON.stringify({
+      level,
+      providerId: PROVIDER_ID,
+      version: process.env.QBWIN_PROVIDER_VERSION || null,
+      sourceChecksum: process.env.QBWIN_PROVIDER_SOURCE_CHECKSUM || null,
+      stage,
+      message,
+      ...fields
+    })}\n`
+  );
 }
 
 function limitToWindow(limit) {

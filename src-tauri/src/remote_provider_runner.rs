@@ -1,7 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
+    io::{BufRead, BufReader, Read},
     path::Path,
-    process::{Command, Stdio},
+    process::{ChildStderr, ChildStdout, Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -19,8 +20,10 @@ use crate::{
         clamp_snapshot_percentages, AppSnapshot, ProviderDiagnostics, ProviderSnapshot, QuotaWindow,
     },
     redact::redact_sensitive,
-    remote_provider::{ensure_runtime_resolved, load_cached_manifest},
+    remote_provider::{ensure_runtime_resolved, load_cached_manifest, ProviderManifest},
 };
+
+const MAX_CAPTURED_STDERR_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Clone)]
 struct RemoteCommandSpec {
@@ -234,6 +237,7 @@ pub fn run_remote_provider(
             }
         }
     }
+    inject_provider_metadata_env(&mut env, id, name, &manifest, timeout_seconds);
 
     let command = RemoteCommandSpec {
         executable: executable.display().to_string(),
@@ -264,6 +268,43 @@ fn log_provider(log: Option<&LogSink>, level: LogLevel, id: &str, message: &str)
     }
 }
 
+fn inject_provider_metadata_env(
+    env: &mut HashMap<String, String>,
+    id: &str,
+    name: &str,
+    manifest: &ProviderManifest,
+    timeout_seconds: u64,
+) {
+    env.insert("QBWIN_PROVIDER_ID".to_string(), id.to_string());
+    env.insert(
+        "QBWIN_PROVIDER_MANIFEST_ID".to_string(),
+        manifest.id.clone(),
+    );
+    env.insert("QBWIN_PROVIDER_NAME".to_string(), name.to_string());
+    if let Some(version) = manifest
+        .version
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        env.insert("QBWIN_PROVIDER_VERSION".to_string(), version.to_string());
+    }
+    if let Some(checksum) = manifest
+        .checksums
+        .source
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        env.insert(
+            "QBWIN_PROVIDER_SOURCE_CHECKSUM".to_string(),
+            checksum.to_string(),
+        );
+    }
+    env.insert(
+        "QBWIN_PROVIDER_TIMEOUT_SECONDS".to_string(),
+        timeout_seconds.max(1).to_string(),
+    );
+}
+
 fn run_remote_command(
     id: &str,
     name: &str,
@@ -284,7 +325,7 @@ fn run_remote_command(
             command.timeout_ms
         ),
     );
-    match execute_command(command) {
+    match execute_command(id, command, log) {
         Ok(result) if result.timed_out => {
             log_provider(
                 log,
@@ -370,7 +411,11 @@ fn stderr_preview_for_log(stderr: &str) -> String {
     }
 }
 
-fn execute_command(command: &RemoteCommandSpec) -> Result<RawCommandResult, String> {
+fn execute_command(
+    provider_id: &str,
+    command: &RemoteCommandSpec,
+    log: Option<&LogSink>,
+) -> Result<RawCommandResult, String> {
     let started = Instant::now();
     let mut process = Command::new(&command.executable);
     process.args(&command.args);
@@ -387,41 +432,221 @@ fn execute_command(command: &RemoteCommandSpec) -> Result<RawCommandResult, Stri
 
     let mut child = process.spawn().map_err(|error| error.to_string())?;
     let timeout = Duration::from_millis(command.timeout_ms.max(1));
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture remote provider stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to capture remote provider stderr".to_string())?;
+    let stdout_handle = thread::spawn(move || read_child_stdout(stdout));
+    let provider_id_for_stderr = provider_id.to_string();
+    let log_for_stderr = log.cloned();
+    let stderr_handle =
+        thread::spawn(move || read_child_stderr(stderr, &provider_id_for_stderr, log_for_stderr));
 
-    loop {
-        if child
-            .try_wait()
-            .map_err(|error| error.to_string())?
-            .is_some()
-        {
-            let output = child
-                .wait_with_output()
-                .map_err(|error| error.to_string())?;
-            return Ok(RawCommandResult {
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: redact_sensitive(&String::from_utf8_lossy(&output.stderr)),
-                exit_code: output.status.code(),
-                duration_ms: started.elapsed().as_millis() as u64,
-                timed_out: false,
-            });
+    let (status, timed_out) = loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            break (status, false);
         }
 
         if started.elapsed() >= timeout {
             let _ = child.kill();
-            let output = child
-                .wait_with_output()
-                .map_err(|error| error.to_string())?;
-            return Ok(RawCommandResult {
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: redact_sensitive(&String::from_utf8_lossy(&output.stderr)),
-                exit_code: output.status.code(),
-                duration_ms: started.elapsed().as_millis() as u64,
-                timed_out: true,
-            });
+            let status = child.wait().map_err(|error| error.to_string())?;
+            break (status, true);
         }
 
         thread::sleep(Duration::from_millis(10));
+    };
+    let stdout = stdout_handle
+        .join()
+        .map_err(|_| "Failed to join remote provider stdout reader".to_string())??;
+    let stderr = stderr_handle
+        .join()
+        .map_err(|_| "Failed to join remote provider stderr reader".to_string())??;
+
+    Ok(RawCommandResult {
+        stdout,
+        stderr,
+        exit_code: status.code(),
+        duration_ms: started.elapsed().as_millis() as u64,
+        timed_out,
+    })
+}
+
+fn read_child_stdout(stdout: ChildStdout) -> Result<String, String> {
+    let mut output = String::new();
+    BufReader::new(stdout)
+        .read_to_string(&mut output)
+        .map_err(|error| error.to_string())?;
+    Ok(output)
+}
+
+fn read_child_stderr(
+    stderr: ChildStderr,
+    provider_id: &str,
+    log: Option<LogSink>,
+) -> Result<String, String> {
+    let mut captured = String::new();
+    let mut reader = BufReader::new(stderr);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_line(&mut line)
+            .map_err(|error| error.to_string())?;
+        if bytes == 0 {
+            break;
+        }
+        let raw_line = line.trim_end_matches(['\r', '\n']);
+        if !raw_line.trim().is_empty() {
+            log_provider_stderr_line(log.as_ref(), provider_id, raw_line);
+            let redacted = captured_stderr_line(raw_line);
+            append_bounded_stderr(&mut captured, &redacted);
+        }
     }
+    Ok(captured)
+}
+
+fn append_bounded_stderr(captured: &mut String, line: &str) {
+    if !captured.is_empty() {
+        captured.push('\n');
+    }
+    captured.push_str(line);
+    if captured.len() <= MAX_CAPTURED_STDERR_BYTES {
+        return;
+    }
+
+    let mut start = captured.len().saturating_sub(MAX_CAPTURED_STDERR_BYTES);
+    while start < captured.len() && !captured.is_char_boundary(start) {
+        start += 1;
+    }
+    let tail = captured[start..].to_string();
+    captured.clear();
+    captured.push_str(&tail);
+}
+
+fn log_provider_stderr_line(log: Option<&LogSink>, provider_id: &str, line: &str) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        log_provider(
+            log,
+            LogLevel::Info,
+            provider_id,
+            &format!("providerLog structured=false line={line}"),
+        );
+        return;
+    };
+    let level = value
+        .get("level")
+        .and_then(serde_json::Value::as_str)
+        .map(LogLevel::parse)
+        .unwrap_or(LogLevel::Info);
+    log_provider(
+        log,
+        level,
+        provider_id,
+        &format!(
+            "providerLog structured=true {}",
+            provider_log_summary(&value)
+        ),
+    );
+}
+
+fn captured_stderr_line(line: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(line) {
+        Ok(value) => redact_sensitive(&format!(
+            "providerLog structured=true {}",
+            provider_log_summary(&value)
+        )),
+        Err(_) => redact_sensitive(line),
+    }
+}
+
+fn provider_log_summary(value: &serde_json::Value) -> String {
+    let level = value
+        .get("level")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("info");
+    let stage = value
+        .get("stage")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let message = value
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let version = value
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("none");
+    let source_checksum = value
+        .get("sourceChecksum")
+        .and_then(serde_json::Value::as_str)
+        .map(short_checksum)
+        .unwrap_or_else(|| "none".to_string());
+    let mut parts = vec![
+        format!("level={level}"),
+        format!("stage={stage}"),
+        format!("message={message}"),
+        format!("version={version}"),
+        format!("sourceChecksum={source_checksum}"),
+    ];
+    if let Some(object) = value.as_object() {
+        for (key, value) in object {
+            if matches!(
+                key.as_str(),
+                "level" | "stage" | "message" | "providerId" | "version" | "sourceChecksum"
+            ) {
+                continue;
+            }
+            if let Some(field) = provider_log_extra_field(key, value) {
+                parts.push(field);
+            }
+        }
+    }
+    parts.join(" ")
+}
+
+fn provider_log_extra_field(key: &str, value: &serde_json::Value) -> Option<String> {
+    let redacted_keys = [
+        "api_key",
+        "apikey",
+        "token",
+        "secret",
+        "cookie",
+        "authorization",
+    ];
+    if redacted_keys
+        .iter()
+        .any(|pattern| key.to_ascii_lowercase().contains(pattern))
+    {
+        return Some(format!("{key}=[REDACTED]"));
+    }
+    match value {
+        serde_json::Value::Bool(value) => Some(format!("{key}={value}")),
+        serde_json::Value::Number(value) => Some(format!("{key}={value}")),
+        serde_json::Value::String(value) => {
+            let normalized = value.split_whitespace().collect::<Vec<_>>().join("_");
+            let truncated = if normalized.chars().count() > 80 {
+                format!("{}...", normalized.chars().take(80).collect::<String>())
+            } else {
+                normalized
+            };
+            Some(format!("{key}={}", redact_sensitive(&truncated)))
+        }
+        serde_json::Value::Null => Some(format!("{key}=null")),
+        _ => None,
+    }
+}
+
+fn short_checksum(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.len() <= 11 {
+        return trimmed.to_string();
+    }
+    format!("{}...", &trimmed[..11])
 }
 
 fn resolve_required_env_vars(
@@ -789,6 +1014,48 @@ mod tests {
     }
 
     #[test]
+    fn remote_provider_stderr_lines_are_forwarded_to_app_log() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config_path = temp.path().join("config.json");
+        let config = crate::config::default_config();
+        let log = LogSink::from_config_path(&config_path, &config);
+        let script = r#"process.stderr.write(JSON.stringify({level:"info",stage:"fixture.start",message:"hello",version:"1.2.3",sourceChecksum:"sha256:abcdefghijklmnopqrstuvwxyz1234567890"}) + "\n");console.log(JSON.stringify({windows:[]}));"#;
+
+        let providers = run_remote_command(
+            "remote-log",
+            "Remote Log",
+            &node_command(script),
+            &RemoteOutputSpec::ProviderSnapshotV1,
+            &HashMap::new(),
+            &[],
+            Some(&log),
+        );
+
+        assert_eq!(providers[0].status, "ok");
+        assert!(providers[0]
+            .diagnostics
+            .as_ref()
+            .and_then(|diagnostics| diagnostics.stderr.as_deref())
+            .unwrap_or("")
+            .contains("stage=fixture.start"));
+        let log_contents = std::fs::read_to_string(config_path.with_file_name("quotabarwin.log"))
+            .expect("read log");
+        assert!(
+            log_contents.contains("providerLog structured=true"),
+            "{log_contents}"
+        );
+        assert!(
+            log_contents.contains("stage=fixture.start"),
+            "{log_contents}"
+        );
+        assert!(log_contents.contains("version=1.2.3"), "{log_contents}");
+        assert!(
+            log_contents.contains("sourceChecksum=sha256:abcd..."),
+            "{log_contents}"
+        );
+    }
+
+    #[test]
     fn window_label_overrides_apply_after_remote_parsing() {
         let script = r#"console.log(JSON.stringify({windows:[{id:'weekly',label:'Weekly',remainingPercent:88,confidence:'exact'}]}));"#;
         let mut overrides = HashMap::new();
@@ -880,6 +1147,58 @@ mod tests {
         assert_eq!(providers[0].status, "ok");
         assert_eq!(providers[0].windows[0].label, "from-config-map");
         assert!(std::env::var("QBWIN_REMOTE_CHILD_TOKEN").is_err());
+    }
+
+    #[test]
+    fn remote_provider_injects_host_metadata_env_vars() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let provider_dir = temp.path().join("provider");
+        std::fs::create_dir(&provider_dir).expect("create provider dir");
+        std::fs::write(
+            provider_dir.join("provider.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "id": "remote-meta",
+                "displayName": "Remote Meta",
+                "version": "2.3.4",
+                "runtime": "node",
+                "entry": "provider.cjs",
+                "requiredEnvVars": [],
+                "output": "provider-snapshot-v1",
+                "checksums": {
+                    "source": "sha256:abc123"
+                }
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+        std::fs::write(
+            provider_dir.join("provider.cjs"),
+            r#"console.log(JSON.stringify({metadata:{id:process.env.QBWIN_PROVIDER_ID,version:process.env.QBWIN_PROVIDER_VERSION,checksum:process.env.QBWIN_PROVIDER_SOURCE_CHECKSUM,timeout:process.env.QBWIN_PROVIDER_TIMEOUT_SECONDS},windows:[]}));"#,
+        )
+        .expect("write source");
+
+        let providers = run_remote_provider(
+            "remote-meta",
+            "Remote Meta",
+            Some(&provider_dir),
+            "node",
+            None,
+            None,
+            42,
+            temp.path(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+            None,
+        );
+
+        assert_eq!(providers[0].status, "ok");
+        let metadata = providers[0].metadata.as_ref().expect("metadata");
+        assert_eq!(metadata["id"], serde_json::json!("remote-meta"));
+        assert_eq!(metadata["version"], serde_json::json!("2.3.4"));
+        assert_eq!(metadata["checksum"], serde_json::json!("sha256:abc123"));
+        assert_eq!(metadata["timeout"], serde_json::json!("42"));
     }
 
     #[test]

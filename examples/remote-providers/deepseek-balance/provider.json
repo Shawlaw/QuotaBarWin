@@ -10,6 +10,6 @@
   "output": "provider-snapshot-v1",
   "permissions": ["env:DEEPSEEK_API_KEY"],
   "checksums": {
-    "source": "sha256:9ea10612c34283f60e39bb7593d409b443811b2ffc898d554d5cbb57c3a77615"
+    "source": "sha256:65c0f8a714e83172b52675d0bea7b59100f4528180138238d7f504e0d70f8dd4"
   }
 }

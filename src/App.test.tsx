@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => {
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
-    language: "system",
+    language: "en",
     remoteProviderRegistry: {
       registryUrl: null,
       providerProxyUrl: null,

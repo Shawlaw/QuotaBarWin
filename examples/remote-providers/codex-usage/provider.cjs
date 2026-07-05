@@ -7,11 +7,18 @@ const tls = require("node:tls");
 
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const CODEX_USAGE_TIMEOUT_MS = 30_000;
+const PROVIDER_ID = process.env.QBWIN_PROVIDER_ID || "codex-usage";
 
 async function main() {
+  logStep("info", "provider.start", "Codex provider started");
   const auth = readCodexAuth();
   const token = process.env.CODEX_ACCESS_TOKEN || auth.accessToken;
+  logStep("info", "auth.loaded", "Codex auth loaded", {
+    tokenSource: process.env.CODEX_ACCESS_TOKEN ? "env" : auth.accessToken ? "auth-file" : "missing",
+    accountIdPresent: Boolean(process.env.CODEX_ACCOUNT_ID || auth.accountId)
+  });
   if (!token) {
+    logStep("error", "auth.missing", "Codex access token is missing");
     throw new Error(
       "Codex access token is required; set CODEX_ACCESS_TOKEN or sign in with Codex so ~/.codex/auth.json exists"
     );
@@ -42,6 +49,11 @@ async function main() {
   if (secondary && typeof secondary.used_percent === "number") {
     windows.push(windowFromUsage("weekly", "Weekly limit", secondary));
   }
+  logStep("info", "snapshot.ready", "Codex snapshot ready", {
+    status: windows.length > 0 ? "ok" : "warning",
+    windowCount: windows.length,
+    planType: raw.plan_type ?? null
+  });
 
   console.log(
     JSON.stringify({
@@ -58,6 +70,9 @@ async function main() {
 
 if (require.main === module) {
   main().catch((error) => {
+    logStep("error", "provider.error", "Codex provider failed", {
+      error: error instanceof Error ? error.message : String(error)
+    });
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   });
@@ -67,11 +82,16 @@ function readCodexAuth() {
   const authPath = process.env.CODEX_AUTH_FILE || path.join(os.homedir(), ".codex", "auth.json");
   try {
     const auth = JSON.parse(fs.readFileSync(authPath, "utf8"));
+    logStep("info", "auth.file.read", "Codex auth file parsed", {
+      hasAccessToken: Boolean(auth?.tokens?.access_token),
+      hasAccountId: Boolean(auth?.tokens?.account_id)
+    });
     return {
       accessToken: stringOrEmpty(auth?.tokens?.access_token),
       accountId: stringOrEmpty(auth?.tokens?.account_id)
     };
   } catch {
+    logStep("warn", "auth.file.read", "Codex auth file could not be read");
     return {
       accessToken: "",
       accountId: ""
@@ -87,6 +107,10 @@ function fetchCodexUsage(token, accountId) {
     process.env.ALL_PROXY
   );
   return new Promise((resolve, reject) => {
+    logStep("info", "usage.request.start", "Codex usage request started", {
+      proxy: Boolean(proxyUrl),
+      proxyProtocol: proxyUrl ? safeProtocol(proxyUrl) : null
+    });
     const headers = {
       Authorization: `Bearer ${token}`,
       "User-Agent": "QuotaBarWin/0.0"
@@ -106,20 +130,34 @@ function fetchCodexUsage(token, accountId) {
         body += chunk;
       });
       response.on("end", () => {
+        logStep(response.statusCode === 200 ? "info" : "warn", "usage.response", "Codex usage response received", {
+          status: response.statusCode ?? null,
+          bodyBytes: Buffer.byteLength(body, "utf8")
+        });
         if (response.statusCode !== 200) {
           reject(new Error(`Codex usage API returned ${response.statusCode}: ${body.slice(0, 160)}`));
           return;
         }
         try {
-          resolve(JSON.parse(body));
+          const parsed = JSON.parse(body);
+          logStep("info", "usage.parse.done", "Codex usage response parsed");
+          resolve(parsed);
         } catch (error) {
           reject(new Error(`Failed to parse Codex usage response: ${error instanceof Error ? error.message : String(error)}`));
         }
       });
     });
 
-    request.on("error", (error) => reject(error));
+    request.on("error", (error) => {
+      logStep("warn", "usage.request.error", "Codex usage request errored", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      reject(error);
+    });
     request.setTimeout(CODEX_USAGE_TIMEOUT_MS, () => {
+      logStep("warn", "usage.request.timeout", "Codex usage request timed out", {
+        timeoutMs: CODEX_USAGE_TIMEOUT_MS
+      });
       request.destroy();
       reject(new Error("Codex usage request timed out"));
     });
@@ -130,6 +168,10 @@ async function fetchJsonViaProxy(targetUrl, headers, proxyUrl, timeoutMs) {
   const target = new URL(targetUrl);
   const proxy = new URL(proxyUrl);
   let tunnel;
+  logStep("info", "proxy.connect.start", "Codex proxy connection started", {
+    proxyProtocol: proxy.protocol,
+    targetHost: target.hostname
+  });
 
   if (proxy.protocol === "socks5:" || proxy.protocol === "socks5h:") {
     tunnel = await connectSocks5(proxy, target, timeoutMs);
@@ -146,10 +188,16 @@ async function fetchJsonViaProxy(targetUrl, headers, proxyUrl, timeoutMs) {
 
   try {
     const response = await requestOverTlsSocket(socket, target, headers, timeoutMs);
+    logStep(response.statusCode === 200 ? "info" : "warn", "usage.response", "Codex usage response received", {
+      status: response.statusCode,
+      bodyBytes: Buffer.byteLength(response.body, "utf8")
+    });
     if (response.statusCode !== 200) {
       throw new Error(`Codex usage API returned ${response.statusCode}: ${response.body.slice(0, 160)}`);
     }
-    return JSON.parse(response.body);
+    const parsed = JSON.parse(response.body);
+    logStep("info", "usage.parse.done", "Codex usage response parsed");
+    return parsed;
   } catch (error) {
     socket.destroy();
     throw error;
@@ -163,9 +211,20 @@ function connectSocks5(proxy, target, timeoutMs) {
       port: Number(proxy.port || 1080)
     });
     socket.setTimeout(timeoutMs);
-    socket.once("error", reject);
-    socket.once("timeout", () => reject(new Error("Codex SOCKS proxy connection timed out")));
+    socket.once("error", (error) => {
+      logStep("warn", "proxy.connect.error", "Codex SOCKS proxy socket errored", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      reject(error);
+    });
+    socket.once("timeout", () => {
+      logStep("warn", "proxy.connect.timeout", "Codex SOCKS proxy connection timed out", {
+        timeoutMs
+      });
+      reject(new Error("Codex SOCKS proxy connection timed out"));
+    });
     socket.once("connect", async () => {
+      logStep("info", "proxy.socket.connected", "Codex SOCKS proxy socket connected");
       const reader = createSocketReader(socket);
       try {
         socket.write(Buffer.from([0x05, 0x01, 0x00]));
@@ -194,6 +253,7 @@ function connectSocks5(proxy, target, timeoutMs) {
         socket.removeAllListeners("error");
         socket.removeAllListeners("timeout");
         socket.setTimeout(0);
+        logStep("info", "proxy.connect.done", "Codex SOCKS proxy CONNECT established");
         resolve(socket);
       } catch (error) {
         reader.stop();
@@ -226,9 +286,20 @@ function connectHttpProxy(proxy, target, timeoutMs) {
     };
     const socket = proxy.protocol === "https:" ? tls.connect(connectOptions) : net.connect(connectOptions);
     socket.setTimeout(timeoutMs);
-    socket.once("error", reject);
-    socket.once("timeout", () => reject(new Error("Codex HTTP proxy connection timed out")));
+    socket.once("error", (error) => {
+      logStep("warn", "proxy.connect.error", "Codex HTTP proxy socket errored", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      reject(error);
+    });
+    socket.once("timeout", () => {
+      logStep("warn", "proxy.connect.timeout", "Codex HTTP proxy connection timed out", {
+        timeoutMs
+      });
+      reject(new Error("Codex HTTP proxy connection timed out"));
+    });
     socket.once("connect", async () => {
+      logStep("info", "proxy.socket.connected", "Codex HTTP proxy socket connected");
       const reader = createSocketReader(socket);
       try {
         const targetHost = `${target.hostname}:${target.port || 443}`;
@@ -249,6 +320,7 @@ function connectHttpProxy(proxy, target, timeoutMs) {
         socket.removeAllListeners("error");
         socket.removeAllListeners("timeout");
         socket.setTimeout(0);
+        logStep("info", "proxy.connect.done", "Codex HTTP proxy CONNECT established");
         resolve(socket);
       } catch (error) {
         reader.stop();
@@ -263,9 +335,20 @@ function requestOverTlsSocket(socket, target, headers, timeoutMs) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     socket.setTimeout(timeoutMs);
-    socket.once("error", reject);
-    socket.once("timeout", () => reject(new Error("Codex usage request timed out")));
+    socket.once("error", (error) => {
+      logStep("warn", "usage.request.error", "Codex TLS request errored", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      reject(error);
+    });
+    socket.once("timeout", () => {
+      logStep("warn", "usage.request.timeout", "Codex usage request timed out", {
+        timeoutMs
+      });
+      reject(new Error("Codex usage request timed out"));
+    });
     socket.once("secureConnect", () => {
+      logStep("info", "usage.tls.connected", "Codex TLS connection established");
       const requestHeaders = [
         `GET ${target.pathname}${target.search} HTTP/1.1`,
         `Host: ${target.host}`,
@@ -459,6 +542,28 @@ function firstNonEmpty(...values) {
     }
   }
   return "";
+}
+
+function safeProtocol(url) {
+  try {
+    return new URL(url).protocol;
+  } catch {
+    return "invalid:";
+  }
+}
+
+function logStep(level, stage, message, fields = {}) {
+  process.stderr.write(
+    `${JSON.stringify({
+      level,
+      providerId: PROVIDER_ID,
+      version: process.env.QBWIN_PROVIDER_VERSION || null,
+      sourceChecksum: process.env.QBWIN_PROVIDER_SOURCE_CHECKSUM || null,
+      stage,
+      message,
+      ...fields
+    })}\n`
+  );
 }
 
 module.exports = {

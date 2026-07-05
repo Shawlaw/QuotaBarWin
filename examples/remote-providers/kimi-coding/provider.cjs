@@ -1,8 +1,11 @@
 const fs = require("node:fs/promises");
 
+const PROVIDER_ID = process.env.QBWIN_PROVIDER_ID || "kimi-coding";
+
 (async function main() {
+  logStep("info", "provider.start", "Kimi provider started");
   const fixturePath = process.env.QUOTABARWIN_KIMI_FIXTURE;
-  const raw = fixturePath ? await readJson(fixturePath) : await fetchKimiUsage();
+  const raw = fixturePath ? await readJsonFixture(fixturePath) : await fetchKimiUsage();
 
   // Raw Kimi shape used here:
   // {
@@ -38,6 +41,9 @@ const fs = require("node:fs/promises");
       confidence: "exact"
     });
   }
+  logStep("info", "snapshot.ready", "Kimi snapshot ready", {
+    windowCount: windows.length
+  });
 
   console.log(
     JSON.stringify({
@@ -55,30 +61,60 @@ const fs = require("node:fs/promises");
     })
   );
 })().catch((error) => {
+  logStep("error", "provider.error", "Kimi provider failed", {
+    error: error instanceof Error ? error.message : String(error)
+  });
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
 
 async function fetchKimiUsage() {
+  logStep("info", "auth.check", "Checking Kimi API key");
   const token = process.env.KIMI_API_KEY;
   if (!token) {
+    logStep("error", "auth.missing", "KIMI_API_KEY is missing");
     throw new Error("KIMI_API_KEY is required");
   }
 
   // Keep secrets local. This example reads an env var because remote providers
   // are source-only; real deployments should prefer app-managed local config or
   // a local secret-file path passed at runtime instead of hard-coded credentials.
+  logStep("info", "http.request.start", "Requesting Kimi usage", {
+    endpoint: "api.kimi.com/coding/v1/usages"
+  });
   const response = await fetch("https://api.kimi.com/coding/v1/usages", {
     headers: { Authorization: `Bearer ${token}` }
+  });
+  logStep(response.ok ? "info" : "warn", "http.response", "Kimi usage response received", {
+    status: response.status
   });
   if (!response.ok) {
     throw new Error(`Kimi usage request failed with ${response.status}`);
   }
-  return response.json();
+  const raw = await response.json();
+  logStep("info", "http.parse.done", "Kimi usage response parsed");
+  return raw;
 }
 
-async function readJson(filePath) {
-  return JSON.parse(await fs.readFile(filePath, "utf8"));
+async function readJsonFixture(filePath) {
+  logStep("info", "fixture.read.start", "Reading Kimi fixture");
+  const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
+  logStep("info", "fixture.read.done", "Kimi fixture parsed");
+  return raw;
+}
+
+function logStep(level, stage, message, fields = {}) {
+  process.stderr.write(
+    `${JSON.stringify({
+      level,
+      providerId: PROVIDER_ID,
+      version: process.env.QBWIN_PROVIDER_VERSION || null,
+      sourceChecksum: process.env.QBWIN_PROVIDER_SOURCE_CHECKSUM || null,
+      stage,
+      message,
+      ...fields
+    })}\n`
+  );
 }
 
 function windowFromUsage(id, label, usage, options = {}) {

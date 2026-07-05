@@ -99,6 +99,7 @@ function runKimiProvider(raw: unknown): ScriptSnapshot {
     {
       cwd: process.cwd(),
       encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
         QUOTABARWIN_KIMI_FIXTURE: fixturePath,

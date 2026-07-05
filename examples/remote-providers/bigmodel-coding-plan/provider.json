@@ -10,6 +10,6 @@
   "output": "provider-snapshot-v1",
   "permissions": ["env:BIGMODEL_API_KEY"],
   "checksums": {
-    "source": "sha256:a0533b53fac719d145d62f2763f54524f0e93184d5098a6b064d1303f0043e55"
+    "source": "sha256:c06c4bb45000da5c817b10dbce0eb0db61a8eac452c531c7e2fa5969c692da7f"
   }
 }

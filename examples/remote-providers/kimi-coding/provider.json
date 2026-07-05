@@ -10,6 +10,6 @@
   "output": "provider-snapshot-v1",
   "permissions": ["env:KIMI_API_KEY"],
   "checksums": {
-    "source": "sha256:5f56612a2c8ecaa8a639d828862e98d9fc650729aac51456943426dd8954480d"
+    "source": "sha256:10218be2b5d00d16e08b35bce6f86323a8aa68d080a29de8fd9e80c32dc5f5c7"
   }
 }
