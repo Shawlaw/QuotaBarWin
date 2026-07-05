@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RemoteProviderRegistrySettings } from "../types";
 import type { RegistryInstallResult } from "../lib/api";
+import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "../lib/defaults";
 import { useI18n } from "../i18n";
 
 type RemoteProviderSettingsProps = {
@@ -23,7 +24,7 @@ export function RemoteProviderSettings({
   const { t } = useI18n();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const registryUrl = registrySettings.registryUrl ?? "";
+  const registryUrl = registrySettings.registryUrl ?? DEFAULT_REMOTE_PROVIDER_REGISTRY_URL;
   const providerProxyUrl = registrySettings.providerProxyUrl ?? "";
   const autoUpdate = registrySettings.autoUpdate;
 

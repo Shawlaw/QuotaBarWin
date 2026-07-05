@@ -14,6 +14,8 @@ use crate::proxy::ProxyConfig;
 
 pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 13;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
+pub const DEFAULT_REMOTE_PROVIDER_REGISTRY_URL: &str =
+    "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json";
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
 const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
@@ -49,7 +51,7 @@ pub struct AppConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteProviderRegistrySettings {
-    #[serde(default)]
+    #[serde(default = "default_remote_provider_registry_url")]
     pub registry_url: Option<String>,
     #[serde(default)]
     pub provider_proxy_url: Option<String>,
@@ -60,7 +62,7 @@ pub struct RemoteProviderRegistrySettings {
 impl Default for RemoteProviderRegistrySettings {
     fn default() -> Self {
         Self {
-            registry_url: None,
+            registry_url: default_remote_provider_registry_url(),
             provider_proxy_url: None,
             auto_update: default_remote_provider_auto_update(),
         }
@@ -218,6 +220,10 @@ fn default_update_interval_seconds() -> u64 {
 
 fn default_remote_provider_auto_update() -> bool {
     true
+}
+
+fn default_remote_provider_registry_url() -> Option<String> {
+    Some(DEFAULT_REMOTE_PROVIDER_REGISTRY_URL.to_string())
 }
 
 pub fn default_config() -> AppConfig {
@@ -503,7 +509,7 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         .unwrap_or(9);
     if version < 10 {
         value["remoteProviderRegistry"] = serde_json::json!({
-            "registryUrl": null,
+            "registryUrl": DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
             "providerProxyUrl": null,
             "autoUpdate": true
         });
@@ -1019,7 +1025,7 @@ mod tests {
         assert_eq!(
             migrated["remoteProviderRegistry"],
             serde_json::json!({
-                "registryUrl": null,
+                "registryUrl": DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
                 "providerProxyUrl": null,
                 "autoUpdate": true
             })
@@ -1175,7 +1181,7 @@ mod tests {
         assert_eq!(
             migrated["remoteProviderRegistry"],
             serde_json::json!({
-                "registryUrl": null,
+                "registryUrl": DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
                 "providerProxyUrl": null,
                 "autoUpdate": true
             })

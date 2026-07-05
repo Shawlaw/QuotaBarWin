@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { ReactElement } from "react";
 import { RemoteProviderSettings } from "./RemoteProviderSettings";
 import type { RegistryInstallResult } from "../lib/api";
+import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "../lib/defaults";
 import { I18nProvider } from "../i18n";
 
 const emptyResult: RegistryInstallResult = {
@@ -54,6 +55,25 @@ describe("RemoteProviderSettings", () => {
     expect(screen.getByText("Remote Sources")).toBeInTheDocument();
     expect(screen.getByTestId("remote-provider-url-input")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Install Registry" })).toBeInTheDocument();
+  });
+
+  test("renders_default_registry_url_when_config_has_no_value", () => {
+    renderWithEnglish(
+      <RemoteProviderSettings
+        registrySettings={{
+          registryUrl: null,
+          providerProxyUrl: null,
+          autoUpdate: true
+        }}
+        onRegistrySettingsChange={vi.fn()}
+        onInstallRegistry={vi.fn(async () => emptyResult)}
+        onOpenGuide={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId("remote-provider-url-input")).toHaveValue(
+      DEFAULT_REMOTE_PROVIDER_REGISTRY_URL
+    );
   });
 
   test("install_registry_button_calls_handler_with_form_values", async () => {

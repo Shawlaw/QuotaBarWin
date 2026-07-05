@@ -8,6 +8,7 @@ import type {
   ProxyConfig,
   RemoteProviderConfig,
 } from "../types";
+import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "./defaults";
 
 function hasTauriInternals(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -24,7 +25,7 @@ const fallbackConfig: AppConfig = {
   language: "zh-CN",
   networkProxy: null,
   remoteProviderRegistry: {
-    registryUrl: null,
+    registryUrl: DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
     providerProxyUrl: null,
     autoUpdate: true,
   },
