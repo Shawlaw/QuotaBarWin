@@ -14,7 +14,7 @@
     {
       "id": "codex-usage",
       "providerUrl": "codex-usage/provider.json",
-      "checksum": "sha256:b1d8551dc878024cca19c287dea5d60fe6ed01ecb2d592ffae9b4a2518aaffdc"
+      "checksum": "sha256:2de5efc6ac1c070aa0de344d903ea25bd96d75783527ba45fd1c9d805d09fec8"
     },
     {
       "id": "deepseek-balance",

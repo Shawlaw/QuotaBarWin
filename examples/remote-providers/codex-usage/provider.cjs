@@ -6,6 +6,7 @@ const path = require("node:path");
 const tls = require("node:tls");
 
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
+const CODEX_USAGE_TIMEOUT_MS = 30_000;
 
 async function main() {
   const auth = readCodexAuth();
@@ -95,7 +96,7 @@ function fetchCodexUsage(token, accountId) {
     }
 
     if (proxyUrl) {
-      fetchJsonViaProxy(CODEX_USAGE_URL, headers, proxyUrl, 15000).then(resolve, reject);
+      fetchJsonViaProxy(CODEX_USAGE_URL, headers, proxyUrl, CODEX_USAGE_TIMEOUT_MS).then(resolve, reject);
       return;
     }
 
@@ -118,7 +119,7 @@ function fetchCodexUsage(token, accountId) {
     });
 
     request.on("error", (error) => reject(error));
-    request.setTimeout(15000, () => {
+    request.setTimeout(CODEX_USAGE_TIMEOUT_MS, () => {
       request.destroy();
       reject(new Error("Codex usage request timed out"));
     });

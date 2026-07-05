@@ -10,6 +10,6 @@
   "output": "provider-snapshot-v1",
   "permissions": ["fs:~/.codex/auth.json", "env:CODEX_ACCESS_TOKEN", "env:CODEX_ACCOUNT_ID", "env:CODEX_AUTH_FILE", "env:QBWIN_PROXY_URL"],
   "checksums": {
-    "source": "sha256:01e6d752063e0c5615ae779b67ae9629cdb0cc8064da4d8ffd6169ce3884b2a9"
+    "source": "sha256:26105b9b079e619b666afe91f6b9c59e5eb755d8ac666d1b24a2a16b275bc84e"
   }
 }
