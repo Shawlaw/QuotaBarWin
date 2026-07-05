@@ -9,11 +9,8 @@ on:
         default: true
         type: boolean
   push:
-    branches:
-      - "**"
     tags:
       - "v*"
-  pull_request:
 
 jobs:
   windows:
@@ -44,15 +41,10 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
       - name: Build Tauri app
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri build
-
-      - name: Build Tauri app without bundles
-        if: github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
-        run: npm run tauri build -- --no-bundle
 
       - name: Create portable zip
         shell: pwsh
@@ -64,7 +56,6 @@ jobs:
           Compress-Archive -Path artifacts/portable/* -DestinationPath artifacts/QuotaBarWin-portable-windows.zip -Force
 
       - name: Collect installer artifacts
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/installers | Out-Null
