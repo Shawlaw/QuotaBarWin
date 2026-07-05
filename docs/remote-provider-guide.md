@@ -79,7 +79,9 @@ Registry 可以用一个 URL 安装多个 Provider：
 ## Source Script 输出协议
 
 当 `output` 为 `provider-snapshot-v1` 时，脚本必须向 stdout 输出一个 JSON 对象。
-`id`、`name` 和 `source` 可以省略，QuotaBarWin 会使用 manifest / config 中的值。
+stdout 应只包含这个最终对象；流程、调试和错误日志请写入 stderr，否则宿主会把
+stdout 当成 JSON 解析并失败。`id`、`name` 和 `source` 可以省略，QuotaBarWin 会
+使用 manifest / config 中的值。
 
 ```json
 {
@@ -104,6 +106,69 @@ Registry 可以用一个 URL 安装多个 Provider：
   "metadata": {}
 }
 ```
+
+### 流程日志与宿主元信息
+
+QuotaBarWin 会逐行读取脚本 stderr，并把日志转发到本地应用日志
+`quotabarwin.log`。脚本失败、返回非 0 退出码或被宿主超时终止时，最近约 16 KiB 的
+stderr 摘要会进入 Provider diagnostics 的 `stderr` 字段，方便区分 provider 内部
+失败和宿主进程超时。普通文本会原样转发；更推荐每行写一个结构化 JSON 对象。
+
+推荐字段：
+
+| 字段 | 说明 |
+|---|---|
+| `level` | `debug`、`info`、`warn` 或 `error`；写入日志时会受应用 `logLevel` 过滤。 |
+| `stage` | 当前阶段，例如 `auth.loaded`、`usage.request.start`、`usage.response`、`snapshot.ready`。 |
+| `message` | 简短的人类可读说明。 |
+| `providerId` | 可选；宿主日志本身也会带 provider id。 |
+| `version` | 可选；建议读取 `QBWIN_PROVIDER_VERSION`。 |
+| `sourceChecksum` | 可选；建议读取 `QBWIN_PROVIDER_SOURCE_CHECKSUM`。宿主日志会显示短 checksum。 |
+| 其他字段 | 仅建议记录布尔值、数字和短字符串。嵌套对象不会进入日志摘要。 |
+
+宿主会在执行脚本前注入这些保留环境变量：
+
+| 环境变量 | 说明 |
+|---|---|
+| `QBWIN_PROVIDER_ID` | 当前安装配置中的 provider id。 |
+| `QBWIN_PROVIDER_MANIFEST_ID` | manifest 声明的 provider id。 |
+| `QBWIN_PROVIDER_NAME` | UI 显示名。 |
+| `QBWIN_PROVIDER_VERSION` | manifest `version`，缺省时不设置。 |
+| `QBWIN_PROVIDER_SOURCE_CHECKSUM` | manifest `checksums.source`，缺省时不设置。 |
+| `QBWIN_PROVIDER_TIMEOUT_SECONDS` | 当前宿主等待脚本退出的秒数。 |
+| `QBWIN_PROXY_URL` | 可选；配置了 provider 代理时注入，脚本可用它发起网络请求。日志中只记录是否启用或协议，不要输出完整值。 |
+
+Node.js 示例：
+
+```js
+function logStep(level, stage, message, fields = {}) {
+  process.stderr.write(`${JSON.stringify({
+    level,
+    providerId: process.env.QBWIN_PROVIDER_ID || "my-provider",
+    version: process.env.QBWIN_PROVIDER_VERSION || null,
+    sourceChecksum: process.env.QBWIN_PROVIDER_SOURCE_CHECKSUM || null,
+    stage,
+    message,
+    ...fields,
+  })}\n`);
+}
+
+logStep("info", "usage.request.start", "Fetching usage", {
+  timeoutSeconds: process.env.QBWIN_PROVIDER_TIMEOUT_SECONDS || null,
+});
+
+console.log(JSON.stringify({
+  status: "ok",
+  updatedAt: new Date().toISOString(),
+  windows: [],
+  metadata: {},
+}));
+```
+
+如果 provider 自己设置 HTTP / CLI 超时，建议低于 `QBWIN_PROVIDER_TIMEOUT_SECONDS`，
+这样脚本有机会先输出 `level=error` 的失败日志并正常退出；否则只能由宿主记录
+`timeoutOrigin=host`。不要在日志里输出 token、API key、Cookie、授权头、账号 ID、
+代理凭据或完整代理 URL。即使宿主会做基础脱敏，provider 仍应从源头避免泄露敏感值。
 
 ### Window 字段
 

@@ -77,7 +77,11 @@ Field descriptions:
 
 ## Source script output contract
 
-When `output` is `provider-snapshot-v1`, the script must print a single JSON object to stdout. `id`, `name`, and `source` are optional and default to the values from the manifest/config.
+When `output` is `provider-snapshot-v1`, the script must print a single JSON
+object to stdout. stdout should contain only that final object; write progress,
+debug, and error logs to stderr, otherwise the host will try to parse the logs
+as JSON and fail. `id`, `name`, and `source` are optional and default to the
+values from the manifest/config.
 
 ```json
 {
@@ -102,6 +106,74 @@ When `output` is `provider-snapshot-v1`, the script must print a single JSON obj
   "metadata": {}
 }
 ```
+
+### Flow logs and host metadata
+
+QuotaBarWin reads script stderr line by line and forwards it to the local app
+log, `quotabarwin.log`. If the script fails, exits non-zero, or is killed by
+the host timeout, the most recent roughly 16 KiB of stderr summary is also
+stored in the provider diagnostics `stderr` field. This makes it easier to tell
+whether the failure came from provider code or from the host timeout. Plain text
+is forwarded too, but structured JSON lines are recommended.
+
+Recommended fields:
+
+| Field | Description |
+|-------|-------------|
+| `level` | `debug`, `info`, `warn`, or `error`; app log writes still respect the configured app `logLevel`. |
+| `stage` | Current stage, for example `auth.loaded`, `usage.request.start`, `usage.response`, or `snapshot.ready`. |
+| `message` | Short human-readable message. |
+| `providerId` | Optional; host log entries already include the provider id. |
+| `version` | Optional; read `QBWIN_PROVIDER_VERSION` when available. |
+| `sourceChecksum` | Optional; read `QBWIN_PROVIDER_SOURCE_CHECKSUM` when available. Host logs show a short checksum. |
+| Extra fields | Prefer booleans, numbers, and short strings. Nested objects are omitted from the log summary. |
+
+The host injects these reserved environment variables before running the script:
+
+| Environment variable | Description |
+|----------------------|-------------|
+| `QBWIN_PROVIDER_ID` | Provider id from the installed config. |
+| `QBWIN_PROVIDER_MANIFEST_ID` | Provider id declared by the manifest. |
+| `QBWIN_PROVIDER_NAME` | UI display name. |
+| `QBWIN_PROVIDER_VERSION` | Manifest `version`; omitted when not set. |
+| `QBWIN_PROVIDER_SOURCE_CHECKSUM` | Manifest `checksums.source`; omitted when not set. |
+| `QBWIN_PROVIDER_TIMEOUT_SECONDS` | Current host timeout in seconds. |
+| `QBWIN_PROXY_URL` | Optional; injected when a provider proxy is configured, so scripts can use it for network requests. Log only whether it is enabled or its protocol, never the full value. |
+
+Node.js example:
+
+```js
+function logStep(level, stage, message, fields = {}) {
+  process.stderr.write(`${JSON.stringify({
+    level,
+    providerId: process.env.QBWIN_PROVIDER_ID || "my-provider",
+    version: process.env.QBWIN_PROVIDER_VERSION || null,
+    sourceChecksum: process.env.QBWIN_PROVIDER_SOURCE_CHECKSUM || null,
+    stage,
+    message,
+    ...fields,
+  })}\n`);
+}
+
+logStep("info", "usage.request.start", "Fetching usage", {
+  timeoutSeconds: process.env.QBWIN_PROVIDER_TIMEOUT_SECONDS || null,
+});
+
+console.log(JSON.stringify({
+  status: "ok",
+  updatedAt: new Date().toISOString(),
+  windows: [],
+  metadata: {},
+}));
+```
+
+If a provider sets its own HTTP or CLI timeout, prefer a value lower than
+`QBWIN_PROVIDER_TIMEOUT_SECONDS`. That gives the script time to emit a
+`level=error` failure log and exit normally; otherwise the host can only record
+`timeoutOrigin=host`. Never log tokens, API keys, cookies, authorization
+headers, account IDs, proxy credentials, or full proxy URLs. The host applies
+basic redaction, but providers should avoid emitting sensitive values in the
+first place.
 
 Window fields:
 
