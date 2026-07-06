@@ -8,6 +8,7 @@
 - 项目元数据：补充 npm/Cargo repository、homepage、bugs、Node 版本要求和贡献者作者信息。
 - 协作入口：补充 `CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`。
 - GitHub 入口：补充 issue 模板、PR 模板、CI 工作流和 Dependabot 配置。
+- 依赖安全：修复 `npm audit` 暴露的 `undici` 高危链路，并用 npm override 避开 `esbuild` 低危范围。
 - Tauri 安全姿态：启用基础 CSP，保留必要的 Tauri IPC source。
 - 防误提交：扩展 `.gitignore`，覆盖常见签名证书、私钥和 keystore 文件。
 
@@ -21,7 +22,6 @@
 
 ## 后续优化
 
-- 修复 `npm audit` 暴露的 `esbuild` 和 `undici` 可自动修复漏洞，并重新运行审计。
 - 在 CI 中加入 Rust 依赖漏洞扫描，例如 `cargo audit` 或 GitHub dependency review。
 - 维护 `CHANGELOG.md`，让每个 tag 的用户可见变化和迁移风险更清晰。
 - E2E 当前历史上可能落后于 Provider schema；在公开宣传 E2E 可靠性前，应先刷新 `e2e/tauri.e2e.mjs` 的种子数据和运行说明。

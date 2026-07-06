@@ -26,6 +26,9 @@
     "smoke": "vitest --run src/smoke.test.tsx",
     "tauri": "tauri"
   },
+  "overrides": {
+    "esbuild": "0.27.2"
+  },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
     "@vitejs/plugin-react": "^5.0.0",
