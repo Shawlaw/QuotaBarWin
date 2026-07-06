@@ -16,6 +16,10 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 - [Remote Provider Guide](docs/remote-provider-guide.en.md)
 - [Remote Provider Examples](examples/remote-providers/)
 - [Remote Provider registry example](examples/remote-providers/registry.json)
+- [Contribution Guide](CONTRIBUTING.md)
+- [Security Policy](SECURITY.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Open Source Readiness Audit](docs/open-source-checklist.md)
 
 ---
 
@@ -201,3 +205,14 @@ The portable zip stores settings, logs, secrets, and cached remote Providers in 
 - If remote Provider installation or update fails, check the registry/manifest URL, network proxy, and SHA-256 checksum.
 - If a Provider needs credentials, prefer secret placeholders instead of writing secrets directly into config.
 - When reporting an issue, include the relevant time range from the app log and manually remove sensitive information.
+
+---
+
+## Open Source
+
+- License: [MIT](LICENSE)
+- Contribution flow: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Security vulnerability reporting: [SECURITY.md](SECURITY.md)
+- Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+Before opening an issue or pull request, make sure it does not include real API keys, tokens, cookies, account IDs, sensitive log excerpts, or proxy credentials.

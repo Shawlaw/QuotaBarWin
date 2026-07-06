@@ -9,3 +9,11 @@ src-tauri/gen/
 !.env.example
 .claude/*local*
 .DS_Store
+*.pem
+*.pfx
+*.p12
+*.key
+*.key.pub
+*.mobileprovision
+*.keystore
+*.jks

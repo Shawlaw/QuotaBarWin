@@ -1,0 +1,33 @@
+name: Remote Provider issue
+description: Report or propose a remote Provider manifest/script change.
+title: "[Provider]: "
+labels: ["remote-provider"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Provider 相关问题请优先提供 manifest URL、Provider ID、版本和脱敏 stderr。不要上传真实密钥或账号信息。
+  - type: input
+    id: provider
+    attributes:
+      label: Provider ID / 名称
+      placeholder: kimi-coding
+    validations:
+      required: true
+  - type: input
+    id: manifest
+    attributes:
+      label: Manifest URL 或本地路径
+      placeholder: https://.../provider.json
+  - type: textarea
+    id: issue
+    attributes:
+      label: 问题或建议
+    validations:
+      required: true
+  - type: textarea
+    id: stderr
+    attributes:
+      label: 脱敏 stderr / diagnostics
+      description: 删除所有 API key、token、cookie、账号 ID、授权头和代理凭据。
+      render: text

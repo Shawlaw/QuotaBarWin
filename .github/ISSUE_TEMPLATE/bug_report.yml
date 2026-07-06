@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem in QuotaBarWin.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请不要粘贴真实 API key、token、cookie、账号 ID、授权头、代理凭据或未脱敏日志。
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题概述
+      description: 简要说明你遇到的问题。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 写出可以稳定复现的步骤。
+      placeholder: |
+        1. 打开...
+        2. 点击...
+        3. 看到...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 版本
+      placeholder: Windows 11 23H2
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏日志或截图
+      description: 只提供已脱敏内容，删除所有凭据、账号 ID 和代理信息。
+      render: text

@@ -16,6 +16,38 @@ fn tauri_config_is_portable_only() {
 }
 
 #[test]
+fn tauri_csp_is_enabled() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let config = fs::read_to_string(root.join("tauri.conf.json")).expect("tauri config");
+    let value: serde_json::Value = serde_json::from_str(&config).expect("json config");
+
+    let csp = value
+        .pointer("/app/security/csp")
+        .and_then(serde_json::Value::as_object)
+        .expect("release CSP should be configured");
+    assert_eq!(csp.get("default-src"), Some(&serde_json::json!("'self'")));
+    assert_eq!(
+        csp.get("connect-src"),
+        Some(&serde_json::json!("ipc: http://ipc.localhost"))
+    );
+    assert!(
+        value
+            .pointer("/app/security/dangerousDisableAssetCspModification")
+            .is_none(),
+        "Tauri CSP source injection should stay enabled"
+    );
+
+    let dev_csp = value
+        .pointer("/app/security/devCsp")
+        .and_then(serde_json::Value::as_object)
+        .expect("dev CSP should be configured explicitly");
+    assert!(dev_csp
+        .get("connect-src")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|sources| sources.contains("ws://localhost:1420")));
+}
+
+#[test]
 fn release_version_is_consistent() {
     let tauri_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo_root = tauri_root.parent().expect("repo root").to_path_buf();
@@ -40,6 +72,37 @@ fn release_version_is_consistent() {
         serde_json::from_str(&lockfile).expect("json package lock");
     assert_eq!(lockfile_value["version"], release_version);
     assert_eq!(lockfile_value["packages"][""]["version"], release_version);
+}
+
+#[test]
+fn open_source_metadata_is_present() {
+    let tauri_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = tauri_root.parent().expect("repo root").to_path_buf();
+
+    for file_name in [
+        "LICENSE",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        "CODE_OF_CONDUCT.md",
+    ] {
+        assert!(
+            repo_root.join(file_name).is_file(),
+            "{file_name} should exist before opening the repository"
+        );
+    }
+
+    let package = fs::read_to_string(repo_root.join("package.json")).expect("package json");
+    let package_value: serde_json::Value = serde_json::from_str(&package).expect("json package");
+    assert_eq!(package_value["license"], "MIT");
+    assert_eq!(
+        package_value["repository"]["url"],
+        "git+https://github.com/Shawlaw/QuotaBarWin.git"
+    );
+    assert_eq!(package_value["engines"]["node"], ">=22");
+
+    let manifest = fs::read_to_string(tauri_root.join("Cargo.toml")).expect("cargo manifest");
+    assert!(manifest.contains("license = \"MIT\""));
+    assert!(manifest.contains("repository = \"https://github.com/Shawlaw/QuotaBarWin\""));
 }
 
 #[test]

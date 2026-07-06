@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest an improvement for QuotaBarWin.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景
+      description: 你希望解决什么问题？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 你期待的行为、界面或配置方式。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 备选方案
+      description: 你尝试过的替代做法或折中方案。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - UI / tray
+        - Remote Provider
+        - Config / storage
+        - Proxy / network
+        - Build / release
+        - Documentation
+        - Other

@@ -1,8 +1,21 @@
 {
   "name": "quotabarwin",
   "version": "1.0.0",
+  "description": "Windows-first desktop app for monitoring AI usage and quota windows.",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Shawlaw/QuotaBarWin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Shawlaw/QuotaBarWin/issues"
+  },
+  "homepage": "https://github.com/Shawlaw/QuotaBarWin#readme",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

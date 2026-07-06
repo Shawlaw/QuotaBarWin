@@ -16,6 +16,10 @@ QuotaBarWin 是一个 Windows-first 的 AI 用量 / 额度监控桌面工具，�
 - [远程 Provider 作者指南](docs/remote-provider-guide.md)
 - [远程 Provider 示例](examples/remote-providers/)
 - [远程 Provider registry 示例](examples/remote-providers/registry.json)
+- [贡献指南](CONTRIBUTING.md)
+- [安全政策](SECURITY.md)
+- [行为准则](CODE_OF_CONDUCT.md)
+- [开源准备审计](docs/open-source-checklist.md)
 
 ---
 
@@ -201,3 +205,14 @@ portable zip 默认把设置、日志、secrets 和远程 Provider 缓存在解�
 - 如果远程 Provider 安装或更新失败，优先检查 registry / manifest 地址、网络代理和 SHA-256 校验值。
 - 如果 Provider 需要密钥，优先使用 secret 占位符，不要把密钥明文写进配置。
 - 如果需要反馈问题，请附上应用日志中的相关时间段，并注意手动删除敏感信息。
+
+---
+
+## 开源协作
+
+- 许可证：[MIT](LICENSE)
+- 贡献流程：[CONTRIBUTING.md](CONTRIBUTING.md)
+- 安全漏洞披露：[SECURITY.md](SECURITY.md)
+- 行为准则：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+提交 issue 或 PR 前，请先确认没有包含真实 API key、token、cookie、账号 ID、日志原文中的敏感片段或代理凭据。

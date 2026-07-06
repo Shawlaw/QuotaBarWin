@@ -1,9 +1,13 @@
 [package]
 name = "quotabarwin"
 version = "1.0.0"
-description = "QuotaBarWin"
-authors = ["QuotaBarWin"]
+description = "Windows-first desktop app for monitoring AI usage and quota windows."
+authors = ["QuotaBarWin Contributors"]
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/Shawlaw/QuotaBarWin"
+homepage = "https://github.com/Shawlaw/QuotaBarWin"
+readme = "../README.md"
 
 [lib]
 name = "quotabarwin_lib"
