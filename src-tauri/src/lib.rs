@@ -90,7 +90,7 @@ pub fn run() {
             match config::config_path_for_app(&app_handle).and_then(|path| {
                 let loaded = config::load_or_create_config(&path)?;
                 let log = logger::LogSink::from_config_path(&path, &loaded.config);
-                let _ = log.write(
+                let _ = log.write_unfiltered(
                     logger::LogLevel::Info,
                     "app",
                     &startup_log_message(&app_version, start_hidden),

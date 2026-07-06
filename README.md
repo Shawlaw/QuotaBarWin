@@ -122,7 +122,8 @@ cargo install tauri-driver --locked
 ## 构建产物
 
 Windows release 由 `.github/workflows/release.yml` 生成。工作流只构建
-`QuotaBarWin.exe`，并打包为 portable zip。zip 内包含
+`QuotaBarWin.exe`，并打包为 portable zip，文件名格式为
+`QuotaBarWin_<version>_windows_x64_portable_<commit>.zip`。zip 内包含
 `quotabarwin.portable`，解压后会默认使用可执行文件旁的 portable 配置。推送
 `v*` tag 时，zip 会上传为 GitHub Release asset；手动触发工作流时会保留为
 Actions artifact。

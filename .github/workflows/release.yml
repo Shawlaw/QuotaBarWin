@@ -46,6 +46,16 @@ jobs:
       - name: Build Tauri app
         run: npm run tauri -- build --no-bundle
 
+      - name: Compute release metadata
+        id: release_meta
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $versionName = $package.version
+          $commitId = "${{ github.sha }}".Substring(0, 7)
+          "artifact_name=quotabarwin-release($($versionName)_$commitId)" >> $env:GITHUB_OUTPUT
+          "zip_name=QuotaBarWin_$($versionName)_windows_x64_portable_$commitId.zip" >> $env:GITHUB_OUTPUT
+
       - name: Create portable zip
         shell: pwsh
         run: |
@@ -56,25 +66,16 @@ jobs:
           New-Item -ItemType Directory -Force -Path artifacts/portable | Out-Null
           Copy-Item $exe.FullName artifacts/portable/QuotaBarWin.exe
           Set-Content -Path artifacts/portable/quotabarwin.portable -Value "QuotaBarWin portable mode"
-          Compress-Archive -Path artifacts/portable/* -DestinationPath artifacts/QuotaBarWin-portable-windows.zip -Force
-
-      - name: Compute artifact name
-        id: artifact_name
-        shell: pwsh
-        run: |
-          $package = Get-Content package.json -Raw | ConvertFrom-Json
-          $versionName = $package.version
-          $commitId = "${{ github.sha }}".Substring(0, 7)
-          "name=quotabarwin-release($($versionName)_$commitId)" >> $env:GITHUB_OUTPUT
+          Compress-Archive -Path artifacts/portable/* -DestinationPath "artifacts/${{ steps.release_meta.outputs.zip_name }}" -Force
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ steps.artifact_name.outputs.name }}
-          path: artifacts/QuotaBarWin-portable-windows.zip
+          name: ${{ steps.release_meta.outputs.artifact_name }}
+          path: artifacts/${{ steps.release_meta.outputs.zip_name }}
 
       - name: Upload GitHub Release asset
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/QuotaBarWin-portable-windows.zip
+          files: artifacts/${{ steps.release_meta.outputs.zip_name }}

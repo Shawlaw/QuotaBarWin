@@ -6,7 +6,10 @@ fn tauri_config_is_portable_only() {
     let config = fs::read_to_string(root.join("tauri.conf.json")).expect("tauri config");
     let value: serde_json::Value = serde_json::from_str(&config).expect("json config");
 
-    assert_eq!(value.pointer("/bundle/active"), Some(&serde_json::json!(false)));
+    assert_eq!(
+        value.pointer("/bundle/active"),
+        Some(&serde_json::json!(false))
+    );
     assert!(value.pointer("/bundle/createUpdaterArtifacts").is_none());
     assert!(value.pointer("/bundle/targets").is_none());
     assert!(value.pointer("/plugins/updater").is_none());
@@ -60,10 +63,13 @@ fn release_workflow_yaml_is_valid() {
     assert!(workflow.contains("tauri -- build --no-bundle"));
     assert!(workflow.contains("portable"));
     assert!(workflow.contains("quotabarwin.portable"));
-    assert!(workflow.contains("QuotaBarWin-portable-windows.zip"));
+    assert!(workflow.contains("Compute release metadata"));
+    assert!(workflow
+        .contains("zip_name=QuotaBarWin_$($versionName)_windows_x64_portable_$commitId.zip"));
     assert!(workflow.contains("softprops/action-gh-release@v2"));
     assert!(!workflow.contains("TAURI_SIGNING_PRIVATE_KEY"));
     assert!(!workflow.contains("Collect installer artifacts"));
-    assert!(workflow.contains("quotabarwin-release($($versionName)_$commitId)"));
-    assert!(workflow.contains("steps.artifact_name.outputs.name"));
+    assert!(workflow.contains("artifact_name=quotabarwin-release($($versionName)_$commitId)"));
+    assert!(workflow.contains("steps.release_meta.outputs.artifact_name"));
+    assert!(workflow.contains("steps.release_meta.outputs.zip_name"));
 }

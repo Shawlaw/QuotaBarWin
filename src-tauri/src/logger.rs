@@ -64,6 +64,15 @@ impl LogSink {
         }
         write_structured_log(&self.path, level, target, message, self.max_bytes)
     }
+
+    pub fn write_unfiltered(
+        &self,
+        level: LogLevel,
+        target: &str,
+        message: &str,
+    ) -> Result<(), String> {
+        write_structured_log(&self.path, level, target, message, self.max_bytes)
+    }
 }
 
 pub fn log_path_for_config_path(config_path: &Path) -> PathBuf {
@@ -157,6 +166,22 @@ mod tests {
         let contents = fs::read_to_string(path).expect("read log");
         assert!(!contents.contains("abcdefghijklmnopqrstuvwxyz123456"));
         assert!(contents.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn unfiltered_logs_ignore_min_level() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config_path = temp.path().join("config.quotaBarWin.json");
+        let mut config = crate::config::default_config();
+        config.log_level = "error".to_string();
+        let log = LogSink::from_config_path(&config_path, &config);
+
+        log.write_unfiltered(LogLevel::Info, "app", "startup version=1.2.3")
+            .expect("write log");
+
+        let contents =
+            fs::read_to_string(log_path_for_config_path(&config_path)).expect("read log");
+        assert!(contents.contains("startup version=1.2.3"));
     }
 
     #[test]
