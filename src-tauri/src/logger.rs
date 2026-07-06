@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use chrono::Utc;
+use chrono::Local;
 use serde::Serialize;
 
 use crate::{config::AppConfig, redact::redact_sensitive};
@@ -73,7 +73,8 @@ pub fn log_path_for_config_path(config_path: &Path) -> PathBuf {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LogEntry<'a> {
-    timestamp: String,
+    timestamp: i64,
+    local_ts: String,
     level: LogLevel,
     target: &'a str,
     message: String,
@@ -90,8 +91,15 @@ pub fn write_structured_log(
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
 
+    let now = Local::now();
     let entry = LogEntry {
-        timestamp: Utc::now().to_rfc3339(),
+        timestamp: now.timestamp_millis(),
+        local_ts: format!(
+            "{}.{:03} {}",
+            now.format("%Y-%m-%d %H:%M:%S"),
+            now.timestamp_subsec_millis(),
+            now.format("%:z")
+        ),
         level,
         target,
         message: redact_sensitive(message),
@@ -149,6 +157,33 @@ mod tests {
         let contents = fs::read_to_string(path).expect("read log");
         assert!(!contents.contains("abcdefghijklmnopqrstuvwxyz123456"));
         assert!(contents.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn logs_include_epoch_timestamp_and_local_display_time() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("app.log");
+
+        write_structured_log(&path, LogLevel::Info, "test", "hello", 1024).expect("write log");
+
+        let contents = fs::read_to_string(path).expect("read log");
+        let entry: serde_json::Value =
+            serde_json::from_str(contents.trim()).expect("parse structured log");
+        assert!(entry["timestamp"].as_i64().is_some());
+
+        let local_ts = entry["localTs"].as_str().expect("localTs string");
+        assert_eq!(local_ts.len(), "2026-07-06 20:47:08.561 +08:00".len());
+        let chars = local_ts.chars().collect::<Vec<_>>();
+        assert_eq!(chars[4], '-');
+        assert_eq!(chars[10], ' ');
+        assert_eq!(chars[19], '.');
+        assert_eq!(chars[23], ' ');
+        assert!(chars[24] == '+' || chars[24] == '-');
+        assert!(chars[25].is_ascii_digit());
+        assert!(chars[26].is_ascii_digit());
+        assert_eq!(chars[27], ':');
+        assert!(chars[28].is_ascii_digit());
+        assert!(chars[29].is_ascii_digit());
     }
 
     #[test]
