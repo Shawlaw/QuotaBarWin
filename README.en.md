@@ -127,29 +127,29 @@ cargo install tauri-driver --locked
 ## Build Artifacts
 
 Windows release builds are produced by `.github/workflows/release.yml`. The
-workflow builds the Tauri installer artifacts and also creates a portable zip
-containing `QuotaBarWin.exe`.
+workflow only builds `QuotaBarWin.exe` and packages it as a portable zip. The
+zip includes `quotabarwin.portable`, so extracted releases use the portable
+config next to the executable by default. On `v*` tags, the zip is uploaded as a
+GitHub Release asset; manual workflow runs keep it as an Actions artifact.
 
-Local installer build:
+Local release exe build:
 
 ```powershell
-npm run tauri build
+npm run tauri -- build --no-bundle
 ```
 
-Tauri bundling is configured for MSI and NSIS targets in
-[`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json).
+MSI / NSIS installers and Tauri updater artifacts are not produced, so builds
+do not require `TAURI_SIGNING_PRIVATE_KEY`.
 
 ## Install
 
-Download the Windows installer from the release artifacts and run it. The
-portable zip can also be extracted to any folder and launched directly with
-`QuotaBarWin.exe`.
+Download the portable zip from GitHub Releases, extract it to any folder, and
+launch `QuotaBarWin.exe` directly.
 
 ## Uninstall
 
-If installed with the Windows installer, uninstall from Windows Settings >
-Apps > Installed apps > QuotaBarWin. If using the portable zip, quit
-QuotaBarWin from the tray menu and delete the extracted folder.
+Quit QuotaBarWin from the tray menu and delete the extracted folder.
 
-Remove `%APPDATA%\QuotaBarWin` if you also want to delete local settings,
-diagnostics, logs, secrets, and cached remote providers.
+The portable zip stores settings, diagnostics, logs, secrets, and cached remote
+providers in the extracted folder by default. If you previously used AppData
+mode, you can also remove `%APPDATA%\QuotaBarWin`.

@@ -1,13 +1,15 @@
 use std::fs;
 
 #[test]
-fn updater_config_is_present() {
+fn tauri_config_is_portable_only() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let config = fs::read_to_string(root.join("tauri.conf.json")).expect("tauri config");
     let value: serde_json::Value = serde_json::from_str(&config).expect("json config");
 
-    assert!(value.pointer("/plugins/updater").is_some());
-    assert!(value.pointer("/bundle/createUpdaterArtifacts").is_some());
+    assert_eq!(value.pointer("/bundle/active"), Some(&serde_json::json!(false)));
+    assert!(value.pointer("/bundle/createUpdaterArtifacts").is_none());
+    assert!(value.pointer("/bundle/targets").is_none());
+    assert!(value.pointer("/plugins/updater").is_none());
 }
 
 #[test]
@@ -48,8 +50,20 @@ fn release_workflow_yaml_is_valid() {
     let value: serde_yaml::Value = serde_yaml::from_str(&workflow).expect("valid yaml");
 
     assert!(value.get("jobs").is_some());
-    assert!(workflow.contains("tauri build"));
+    assert_eq!(
+        value
+            .get("permissions")
+            .and_then(|permissions| permissions.get("contents"))
+            .and_then(serde_yaml::Value::as_str),
+        Some("write")
+    );
+    assert!(workflow.contains("tauri -- build --no-bundle"));
     assert!(workflow.contains("portable"));
+    assert!(workflow.contains("quotabarwin.portable"));
+    assert!(workflow.contains("QuotaBarWin-portable-windows.zip"));
+    assert!(workflow.contains("softprops/action-gh-release@v2"));
+    assert!(!workflow.contains("TAURI_SIGNING_PRIVATE_KEY"));
+    assert!(!workflow.contains("Collect installer artifacts"));
     assert!(workflow.contains("quotabarwin-release($($versionName)_$commitId)"));
     assert!(workflow.contains("steps.artifact_name.outputs.name"));
 }

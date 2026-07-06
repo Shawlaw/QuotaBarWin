@@ -121,28 +121,29 @@ cargo install tauri-driver --locked
 
 ## 构建产物
 
-Windows release 由 `.github/workflows/release.yml` 生成。工作流会构建 Tauri
-安装包，并额外生成包含 `QuotaBarWin.exe` 的 portable zip。
+Windows release 由 `.github/workflows/release.yml` 生成。工作流只构建
+`QuotaBarWin.exe`，并打包为 portable zip。zip 内包含
+`quotabarwin.portable`，解压后会默认使用可执行文件旁的 portable 配置。推送
+`v*` tag 时，zip 会上传为 GitHub Release asset；手动触发工作流时会保留为
+Actions artifact。
 
-本地安装包构建：
+本地 release exe 构建：
 
 ```powershell
-npm run tauri build
+npm run tauri -- build --no-bundle
 ```
 
-Tauri MSI / NSIS 打包配置位于
-[`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json)。
+当前不生成 MSI / NSIS 安装器，也不生成 Tauri updater artifacts，因此构建不需要
+`TAURI_SIGNING_PRIVATE_KEY`。
 
 ## 安装
 
-从 release artifacts 下载 Windows installer 并运行。也可以解压 portable zip 到任意
-目录后直接启动 `QuotaBarWin.exe`。
+从 GitHub Release 下载 portable zip，解压到任意目录后直接启动
+`QuotaBarWin.exe`。
 
 ## 卸载
 
-如果使用 Windows installer 安装，请在 Windows 设置 > 应用 > 已安装应用 >
-QuotaBarWin 中卸载。如果使用 portable zip，请先从托盘菜单退出 QuotaBarWin，然后
-删除解压目录。
+先从托盘菜单退出 QuotaBarWin，然后删除解压目录。
 
-如需同时删除本地设置、诊断、日志、secrets 和远程 Provider 缓存，请删除
-`%APPDATA%\QuotaBarWin`。
+portable zip 默认把设置、诊断、日志、secrets 和远程 Provider 缓存保存在解压
+目录。如果之前使用过 AppData 模式，也可以删除 `%APPDATA%\QuotaBarWin`。

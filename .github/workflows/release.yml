@@ -12,9 +12,12 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   windows:
-    name: Build Windows installer and portable zip
+    name: Build Windows portable zip
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -41,26 +44,19 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
       - name: Build Tauri app
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri build
+        run: npm run tauri -- build --no-bundle
 
       - name: Create portable zip
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path src-tauri/target/release -Filter QuotaBarWin.exe -Recurse | Select-Object -First 1
-          if (-not $exe) { throw "QuotaBarWin.exe was not found" }
+          $exe = Get-ChildItem -Path src-tauri/target/release -Filter *.exe -File |
+            Where-Object { $_.Name -in @("QuotaBarWin.exe", "quotabarwin.exe") } |
+            Select-Object -First 1
+          if (-not $exe) { throw "QuotaBarWin executable was not found" }
           New-Item -ItemType Directory -Force -Path artifacts/portable | Out-Null
           Copy-Item $exe.FullName artifacts/portable/QuotaBarWin.exe
+          Set-Content -Path artifacts/portable/quotabarwin.portable -Value "QuotaBarWin portable mode"
           Compress-Archive -Path artifacts/portable/* -DestinationPath artifacts/QuotaBarWin-portable-windows.zip -Force
-
-      - name: Collect installer artifacts
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path artifacts/installers | Out-Null
-          Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Include *.msi,*.exe,*.zip,*.json |
-            Copy-Item -Destination artifacts/installers -Force
 
       - name: Compute artifact name
         id: artifact_name
@@ -71,8 +67,14 @@ jobs:
           $commitId = "${{ github.sha }}".Substring(0, 7)
           "name=quotabarwin-release($($versionName)_$commitId)" >> $env:GITHUB_OUTPUT
 
-      - name: Upload release artifacts
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.artifact_name.outputs.name }}
-          path: artifacts/**
+          path: artifacts/QuotaBarWin-portable-windows.zip
+
+      - name: Upload GitHub Release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/QuotaBarWin-portable-windows.zip

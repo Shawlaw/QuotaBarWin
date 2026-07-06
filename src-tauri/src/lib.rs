@@ -68,7 +68,6 @@ pub fn run() {
                 let _ = window.emit("single-instance", "QuotaBarWin 已在运行，无需重新启动。");
             }
         }))
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .app_name("QuotaBarWin")

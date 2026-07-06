@@ -23,20 +23,7 @@
     }
   },
   "bundle": {
-    "active": true,
-    "targets": ["msi", "nsis"],
-    "icon": ["icons/icon.ico"],
-    "createUpdaterArtifacts": true
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc4MERCODVDQkYzMzU2MQpSV1JoTmZQTGhkdUFCK2l4QW1DaFYwNjl5c3hndDNxNm1IbkdPUWtLY2hnbkc5emNjNTNybEwyZwo=",
-      "endpoints": [
-        "https://github.com/owner/QuotaBarWin/releases/latest/download/latest.json"
-      ],
-      "windows": {
-        "installMode": "passive"
-      }
-    }
+    "active": false,
+    "icon": ["icons/icon.ico"]
   }
 }
