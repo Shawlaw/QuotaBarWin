@@ -6,10 +6,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const defaultSource = path.join(repoRoot, "src-tauri", "icons", "source.svg");
+const defaultSource = path.join(repoRoot, "src-tauri", "icons", "source.png");
 const defaultOutput = path.join(repoRoot, "src-tauri", "icons");
 const generatedExtensions = new Set([".icns", ".ico", ".png", ".xml"]);
 const contentCheckedExtensions = new Set([".ico", ".png", ".xml"]);
+const desktopExcludedDirs = new Set(["android", "ios"]);
 
 const args = process.argv.slice(2);
 const check = args.includes("--check");
@@ -44,6 +45,18 @@ function runTauriIcon(targetDir) {
   if (result.status !== 0) {
     throw new Error(`Icon generation failed with exit code ${result.status ?? "unknown"}.`);
   }
+
+  pruneDesktopExcludedIconOutputs(targetDir);
+}
+
+function pruneDesktopExcludedIconOutputs(targetDir) {
+  for (const dir of desktopExcludedDirs) {
+    const fullPath = path.join(targetDir, dir);
+
+    if (existsSync(fullPath)) {
+      rmSync(fullPath, { force: true, recursive: true });
+    }
+  }
 }
 
 function listGeneratedFiles(dir, base = dir) {
@@ -51,12 +64,20 @@ function listGeneratedFiles(dir, base = dir) {
     const fullPath = path.join(dir, entry);
     const relativePath = path.relative(base, fullPath);
 
+    if (isIconSource(fullPath)) {
+      return [];
+    }
+
     if (statSync(fullPath).isDirectory()) {
       return listGeneratedFiles(fullPath, base);
     }
 
     return generatedExtensions.has(path.extname(entry).toLowerCase()) ? [relativePath] : [];
   });
+}
+
+function isIconSource(filePath) {
+  return path.resolve(filePath).toLowerCase() === source.toLowerCase();
 }
 
 function hashFile(filePath) {
