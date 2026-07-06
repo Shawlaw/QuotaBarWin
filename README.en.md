@@ -169,6 +169,8 @@ Install `tauri-driver` first if needed:
 cargo install tauri-driver --locked
 ```
 
+Note: E2E is currently an optional maintainer check. Review `e2e/tauri.e2e.mjs` before relying on it. It builds the release app and writes temporary portable config; historically this script can lag behind the Provider schema, so it does not replace the regular build and unit test checks above.
+
 ---
 
 ## Build And Release

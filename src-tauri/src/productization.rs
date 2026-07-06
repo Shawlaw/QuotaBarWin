@@ -81,9 +81,13 @@ fn open_source_metadata_is_present() {
 
     for file_name in [
         "LICENSE",
+        "CHANGELOG.md",
         "CONTRIBUTING.md",
         "SECURITY.md",
         "CODE_OF_CONDUCT.md",
+        ".github/dependabot.yml",
+        ".github/workflows/ci.yml",
+        ".github/workflows/dependency-review.yml",
     ] {
         assert!(
             repo_root.join(file_name).is_file(),
@@ -103,6 +107,16 @@ fn open_source_metadata_is_present() {
     let manifest = fs::read_to_string(tauri_root.join("Cargo.toml")).expect("cargo manifest");
     assert!(manifest.contains("license = \"MIT\""));
     assert!(manifest.contains("repository = \"https://github.com/Shawlaw/QuotaBarWin\""));
+
+    let ci = fs::read_to_string(repo_root.join(".github/workflows/ci.yml")).expect("ci workflow");
+    assert!(ci.contains("npm audit --audit-level=low"));
+    let dependency_review =
+        fs::read_to_string(repo_root.join(".github/workflows/dependency-review.yml"))
+            .expect("dependency review workflow");
+    assert!(dependency_review.contains("actions/dependency-review-action@v4"));
+
+    let readme = fs::read_to_string(repo_root.join("README.md")).expect("readme");
+    assert!(readme.contains("E2E 当前是维护者可选检查"));
 }
 
 #[test]
