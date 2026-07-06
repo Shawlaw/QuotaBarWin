@@ -29,3 +29,10 @@ zip = { version = "0.6", default-features = false, features = ["deflate"] }
 [dev-dependencies]
 serde_yaml = "0.9"
 tempfile = "3"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+opt-level = "z"
