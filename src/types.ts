@@ -66,6 +66,27 @@ export type RemoteProviderRegistrySettings = {
   registryUrl?: string | null;
   providerProxyUrl?: string | null;
   autoUpdate: boolean;
+  sources?: RemoteProviderRegistrySource[];
+};
+
+export type RemoteProviderRegistrySource = {
+  id: string;
+  name: string;
+  url: string;
+  providerProxyUrl?: string | null;
+  autoUpdate?: boolean;
+  enabled: boolean;
+};
+
+export type RemoteProviderCatalogEntry = {
+  id: string;
+  displayName: string;
+  version?: string | null;
+  description?: string | null;
+  providerUrl: string;
+  checksum?: string | null;
+  installed: boolean;
+  error?: string | null;
 };
 
 export type TrayPopupPosition = {

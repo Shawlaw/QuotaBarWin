@@ -250,6 +250,187 @@ pub struct RegistryInstallResult {
     pub failed: Vec<RegistryInstallFailure>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteProviderCatalogEntry {
+    pub id: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub provider_url: String,
+    #[serde(default)]
+    pub checksum: Option<String>,
+    pub installed: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn preview_remote_provider_registry(
+    app: AppHandle,
+    url: String,
+    proxy_url: Option<String>,
+) -> Result<Vec<RemoteProviderCatalogEntry>, String> {
+    let path = config_path_for_app(&app)?;
+    let proxy_url_ref = proxy_url.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let loaded = load_or_create_config(&path)?;
+        let log = LogSink::from_config_path(&path, &loaded.config);
+        let global_proxy = loaded.config.network_proxy.clone();
+        log_remote(
+            &log,
+            LogLevel::Info,
+            &format!(
+                "registry preview started url={} proxyConfigured={}",
+                url,
+                proxy_url_ref
+                    .as_deref()
+                    .map(|value| !value.trim().is_empty())
+                    .unwrap_or(false)
+            ),
+        );
+
+        let registry = fetch_provider_registry(
+            &url,
+            proxy_url_ref.as_deref(),
+            global_proxy.as_ref(),
+            FETCH_TIMEOUT,
+        )
+        .map_err(|e| e.to_string())?;
+
+        let mut entries = Vec::new();
+        for entry in registry.providers {
+            let provider_url = resolve_provider_url(&url, &entry.provider_url);
+            let installed = loaded
+                .config
+                .providers
+                .iter()
+                .any(|provider| provider_id(provider) == entry.id);
+            let mut catalog_entry = RemoteProviderCatalogEntry {
+                id: entry.id.clone(),
+                display_name: entry.id.clone(),
+                version: None,
+                description: None,
+                provider_url: provider_url.clone(),
+                checksum: entry.checksum.clone(),
+                installed,
+                error: None,
+            };
+
+            match fetch_manifest_text(
+                &provider_url,
+                proxy_url_ref.as_deref(),
+                global_proxy.as_ref(),
+                FETCH_TIMEOUT,
+            ) {
+                Ok(manifest_text) => {
+                    if let Some(expected) = entry.checksum.as_ref() {
+                        if let Err(error) =
+                            crate::remote_provider::verify_checksum(&manifest_text, expected.trim())
+                        {
+                            catalog_entry.error = Some(error.to_string());
+                            entries.push(catalog_entry);
+                            continue;
+                        }
+                    }
+
+                    match parse_manifest(&manifest_text) {
+                        Ok(manifest) => {
+                            if manifest.id != entry.id {
+                                catalog_entry.error = Some(format!(
+                                    "registry id '{}' does not match manifest id '{}'",
+                                    entry.id, manifest.id
+                                ));
+                            }
+                            catalog_entry.display_name = manifest.display_name;
+                            catalog_entry.version = manifest.version;
+                            catalog_entry.description = manifest.description;
+                        }
+                        Err(error) => {
+                            catalog_entry.error = Some(error.to_string());
+                        }
+                    }
+                }
+                Err(error) => {
+                    catalog_entry.error = Some(error.to_string());
+                }
+            }
+
+            entries.push(catalog_entry);
+        }
+
+        log_remote(
+            &log,
+            LogLevel::Info,
+            &format!("registry preview finished entries={}", entries.len()),
+        );
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn install_remote_provider_manifest(
+    app: AppHandle,
+    url: String,
+    checksum: Option<String>,
+    proxy_url: Option<String>,
+    auto_update: bool,
+) -> Result<ProviderConfig, String> {
+    let path = config_path_for_app(&app)?;
+    let app_handle = app.clone();
+    let proxy_url_ref = proxy_url.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let loaded = load_or_create_config(&path)?;
+        let log = LogSink::from_config_path(&path, &loaded.config);
+        let global_proxy = loaded.config.network_proxy.clone();
+        log_remote(
+            &log,
+            LogLevel::Info,
+            &format!(
+                "provider manifest install started url={} autoUpdate={} proxyConfigured={}",
+                url,
+                auto_update,
+                proxy_url_ref
+                    .as_deref()
+                    .map(|value| !value.trim().is_empty())
+                    .unwrap_or(false)
+            ),
+        );
+
+        let manifest_text = fetch_manifest_text(
+            &url,
+            proxy_url_ref.as_deref(),
+            global_proxy.as_ref(),
+            FETCH_TIMEOUT,
+        )
+        .map_err(|e| e.to_string())?;
+
+        if let Some(expected) = checksum.as_ref().filter(|value| !value.trim().is_empty()) {
+            crate::remote_provider::verify_checksum(&manifest_text, expected.trim())
+                .map_err(|e| e.to_string())?;
+        }
+
+        let manifest = parse_manifest(&manifest_text).map_err(|e| e.to_string())?;
+        install_remote_provider_from_manifest(
+            &app_handle,
+            &path,
+            &url,
+            proxy_url_ref.as_deref(),
+            auto_update,
+            manifest,
+            &log,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn install_remote_provider_registry(
     app: AppHandle,
@@ -296,12 +477,14 @@ pub async fn install_remote_provider_registry(
         );
 
         let mut persisted = load_or_create_config(&path)?;
+        let existing_sources = persisted.config.remote_provider_registry.sources.clone();
         persisted.config.remote_provider_registry = RemoteProviderRegistrySettings {
             registry_url: Some(url.clone()),
             provider_proxy_url: proxy_url_ref
                 .clone()
                 .filter(|value| !value.trim().is_empty()),
             auto_update,
+            sources: existing_sources,
         };
         save_config_to_path(&path, &persisted.config)?;
         log_remote(&log, LogLevel::Info, "registry settings persisted");

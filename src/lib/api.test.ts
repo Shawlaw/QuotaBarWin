@@ -3,9 +3,11 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   checkRemoteUpdates,
   getCachedSnapshot,
+  installRemoteProviderManifest,
   installRemoteProviderRegistry,
   getConfig,
   getNetworkProxy,
+  previewRemoteProviderRegistry,
   getTrayPopupPresentationId,
   refreshProvider,
   refreshRemoteProvider,
@@ -160,8 +162,27 @@ test("api_invokes_remote_provider_commands", async () => {
     skipped: [],
     failed: [],
   };
+  const catalogResult = [
+    {
+      id: "remote-kimi",
+      displayName: "Remote Kimi",
+      version: "1.0.0",
+      description: "Kimi usage",
+      providerUrl: "https://example.com/provider.json",
+      checksum: "sha256:manifest",
+      installed: false,
+      error: null,
+    },
+  ];
+  const manifestResult = registryResult.installed[0];
   mockIPC((cmd, payload) => {
     payloads[cmd] = payload;
+    if (cmd === "preview_remote_provider_registry") {
+      return catalogResult;
+    }
+    if (cmd === "install_remote_provider_manifest") {
+      return manifestResult;
+    }
     if (cmd === "install_remote_provider_registry") {
       return registryResult;
     }
@@ -179,6 +200,20 @@ test("api_invokes_remote_provider_commands", async () => {
     throw new Error(`unexpected command ${cmd}`);
   });
 
+  await expect(
+    previewRemoteProviderRegistry(
+      "https://example.com/registry.json",
+      "http://proxy.example.com:8080",
+    ),
+  ).resolves.toEqual(catalogResult);
+  await expect(
+    installRemoteProviderManifest(
+      "https://example.com/provider.json",
+      "sha256:manifest",
+      "http://proxy.example.com:8080",
+      true,
+    ),
+  ).resolves.toEqual(manifestResult);
   await expect(
     installRemoteProviderRegistry(
       "https://example.com/registry.json",
@@ -198,6 +233,16 @@ test("api_invokes_remote_provider_commands", async () => {
 
   expect(payloads.install_remote_provider_registry).toEqual({
     url: "https://example.com/registry.json",
+    proxyUrl: "http://proxy.example.com:8080",
+    autoUpdate: true,
+  });
+  expect(payloads.preview_remote_provider_registry).toEqual({
+    url: "https://example.com/registry.json",
+    proxyUrl: "http://proxy.example.com:8080",
+  });
+  expect(payloads.install_remote_provider_manifest).toEqual({
+    url: "https://example.com/provider.json",
+    checksum: "sha256:manifest",
     proxyUrl: "http://proxy.example.com:8080",
     autoUpdate: true,
   });

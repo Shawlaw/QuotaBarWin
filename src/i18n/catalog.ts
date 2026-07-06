@@ -152,6 +152,37 @@ export type I18nCatalog = {
   };
   remoteProviders: {
     title: string;
+    addTitle: string;
+    manageSourcesTitle: string;
+    recommendedProviders: string;
+    customInstall: string;
+    sourceSummary: string;
+    sourceSettings: string;
+    officialSource: string;
+    customSource: string;
+    sourceName: string;
+    sourceUrl: string;
+    sourceEnabled: string;
+    addSource: string;
+    removeSource: string;
+    enabledSourcesCount: (count: number) => string;
+    sourceLoadError: (sourceName: string, message: string) => string;
+    sourceConflict: (providerId: string, sourceNames: string) => string;
+    backToSettings: string;
+    backToAddProvider: string;
+    manageSources: string;
+    refreshCatalog: string;
+    installProvider: string;
+    installed: string;
+    installFromManifest: string;
+    manifestInstallUrl: string;
+    manifestUrlPlaceholder: string;
+    manifestChecksum: string;
+    manifestChecksumPlaceholder: string;
+    noCatalogProviders: string;
+    catalogLoadFailed: string;
+    providerInstalled: string;
+    installProviderFailed: string;
     installedCount: (count: number) => string;
     openGuide: string;
     registryUrl: string;
@@ -361,6 +392,38 @@ export const en: I18nCatalog = {
   },
   remoteProviders: {
     title: "Remote Sources",
+    addTitle: "Add Provider",
+    manageSourcesTitle: "Provider Source",
+    recommendedProviders: "Recommended",
+    customInstall: "Custom install",
+    sourceSummary: "Current source",
+    sourceSettings: "Source settings",
+    officialSource: "Official source",
+    customSource: "Custom source",
+    sourceName: "Source name",
+    sourceUrl: "Registry URL or local path",
+    sourceEnabled: "Enabled",
+    addSource: "Add Source",
+    removeSource: "Remove Source",
+    enabledSourcesCount: (count) => `${count} source(s) enabled`,
+    sourceLoadError: (sourceName, message) => `${sourceName}: ${message}`,
+    sourceConflict: (providerId, sourceNames) =>
+      `Provider id '${providerId}' appears in multiple sources: ${sourceNames}`,
+    backToSettings: "Back to Settings",
+    backToAddProvider: "Back to Add Provider",
+    manageSources: "Manage Source",
+    refreshCatalog: "Refresh List",
+    installProvider: "Install",
+    installed: "Installed",
+    installFromManifest: "Install Provider",
+    manifestInstallUrl: "Provider manifest URL or local path",
+    manifestUrlPlaceholder: "https://.../provider.json or D:\\Providers\\provider.json",
+    manifestChecksum: "Manifest checksum (optional)",
+    manifestChecksumPlaceholder: "sha256:...",
+    noCatalogProviders: "No providers found in this source",
+    catalogLoadFailed: "Failed to load provider list",
+    providerInstalled: "Provider installed",
+    installProviderFailed: "Failed to install provider",
     installedCount: (count) => `${count} installed`,
     openGuide: "Open Guide",
     registryUrl: "Registry URL",
@@ -570,6 +633,38 @@ export const zhCN: I18nCatalog = {
   },
   remoteProviders: {
     title: "远程安装源",
+    addTitle: "添加提供方",
+    manageSourcesTitle: "提供方来源",
+    recommendedProviders: "推荐",
+    customInstall: "自定义安装",
+    sourceSummary: "当前来源",
+    sourceSettings: "来源设置",
+    officialSource: "官方来源",
+    customSource: "自定义来源",
+    sourceName: "来源名称",
+    sourceUrl: "Registry URL 或本地路径",
+    sourceEnabled: "已启用",
+    addSource: "添加来源",
+    removeSource: "移除来源",
+    enabledSourcesCount: (count) => `已启用 ${count} 个来源`,
+    sourceLoadError: (sourceName, message) => `${sourceName}：${message}`,
+    sourceConflict: (providerId, sourceNames) =>
+      `Provider id '${providerId}' 同时出现在多个来源：${sourceNames}`,
+    backToSettings: "返回设置",
+    backToAddProvider: "返回添加提供方",
+    manageSources: "管理来源",
+    refreshCatalog: "刷新列表",
+    installProvider: "安装",
+    installed: "已安装",
+    installFromManifest: "安装提供方",
+    manifestInstallUrl: "Provider manifest URL 或本地路径",
+    manifestUrlPlaceholder: "https://.../provider.json 或 D:\\Providers\\provider.json",
+    manifestChecksum: "Manifest checksum（可选）",
+    manifestChecksumPlaceholder: "sha256:...",
+    noCatalogProviders: "此来源没有找到提供方",
+    catalogLoadFailed: "加载提供方列表失败",
+    providerInstalled: "提供方已安装",
+    installProviderFailed: "安装提供方失败",
     installedCount: (count) => `已安装 ${count} 个`,
     openGuide: "打开指南",
     registryUrl: "注册表 URL",

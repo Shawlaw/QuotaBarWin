@@ -9,8 +9,9 @@ import {
   applyRemoteUpdate,
   checkRemoteUpdates,
   getConfig,
-  installRemoteProviderRegistry,
+  installRemoteProviderManifest,
   openRemoteProviderGuide,
+  previewRemoteProviderRegistry,
   refreshRemoteProvider,
   removeRemoteProvider
 } from "../lib/api";
@@ -149,6 +150,7 @@ export function SettingsPanel({
   const [updateInfo, setUpdateInfo] = useState<Record<string, Awaited<ReturnType<typeof refreshRemoteProvider>>>>({});
   const [remoteMessage, setRemoteMessage] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
+  const [providerSettingsView, setProviderSettingsView] = useState<"main" | "add" | "sources">("main");
   const initialConfigRef = useRef(JSON.stringify(config));
   const configDraft = JSON.stringify(config);
   const hasChanges = configDraft !== initialConfigRef.current;
@@ -189,6 +191,13 @@ export function SettingsPanel({
     onChange(JSON.parse(initialConfigRef.current) as AppConfig);
     setEnvVarDrafts({});
     setSaveMessage(t.settings.noChanges);
+  }
+
+  function acceptPersistedConfig(updated: AppConfig) {
+    initialConfigRef.current = JSON.stringify(updated);
+    onChange(updated);
+    setSaveMessage(t.settings.saved);
+    window.setTimeout(() => setSaveMessage(t.settings.noChanges), 1600);
   }
 
   function updateWindowConfigProvider(
@@ -241,7 +250,7 @@ export function SettingsPanel({
       const result = await checkRemoteUpdates();
       setUpdateInfo(Object.fromEntries(result.map((update) => [update.id, update])));
       const updated = await getConfig();
-      onChange(updated);
+      acceptPersistedConfig(updated);
       const availableCount = result.filter((update) => update.available).length;
       setRemoteMessage(
         availableCount > 0
@@ -263,7 +272,7 @@ export function SettingsPanel({
         return next;
       });
       const updated = await getConfig();
-      onChange(updated);
+      acceptPersistedConfig(updated);
       setRemoteMessage(t.remoteProviders.updateApplied);
     } catch (error) {
       setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToApplyUpdate);
@@ -278,11 +287,69 @@ export function SettingsPanel({
     try {
       await removeRemoteProvider(provider.id);
       const updated = await getConfig();
-      onChange(updated);
+      acceptPersistedConfig(updated);
       setRemoteMessage(t.remoteProviders.providerRemoved);
     } catch (error) {
       setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToRemoveProvider);
     }
+  }
+
+  async function handleInstallManifest(
+    url: string,
+    checksum: string | null,
+    proxyUrl: string | null,
+    autoUpdate: boolean
+  ) {
+    const installed = await installRemoteProviderManifest(
+      url,
+      checksum,
+      proxyUrl,
+      autoUpdate
+    );
+    const updated = await getConfig();
+    acceptPersistedConfig(updated);
+    return installed;
+  }
+
+  function renderSaveBar() {
+    return (
+      <div className="fixed-save-bar" data-testid="fixed-save-bar">
+        <span>{hasChanges ? t.settings.unsavedChanges : saveMessage}</span>
+        <div className="settings-actions">
+          <button type="button" className="button-secondary" onClick={resetChanges} disabled={!hasChanges || isSaving}>
+            {t.settings.resetChanges}
+          </button>
+          <button type="button" onClick={() => void saveSettings()} disabled={!canSave} data-testid="save-settings-button">
+            {isSaving ? t.settings.saving : t.settings.save}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (providerSettingsView === "add" || providerSettingsView === "sources") {
+    return (
+      <section className="settings-panel" aria-label={t.settings.title} data-testid="settings-page">
+        <RemoteProviderSettings
+          view={providerSettingsView}
+          registrySettings={remoteProviderRegistrySettings(config)}
+          installedProviderIds={config.providers.map((provider) => provider.id)}
+          onRegistrySettingsChange={(remoteProviderRegistry) =>
+            onChange({
+              ...config,
+              remoteProviderRegistry
+            })
+          }
+          onPreviewRegistry={previewRemoteProviderRegistry}
+          onInstallManifest={handleInstallManifest}
+          onOpenGuide={openRemoteProviderGuide}
+          onBackToSettings={() => setProviderSettingsView("main")}
+          onBackToAddProvider={() => setProviderSettingsView("add")}
+          onManageSources={() => setProviderSettingsView("sources")}
+        />
+        {renderSaveBar()}
+      </section>
+    );
   }
 
   return (
@@ -481,31 +548,14 @@ export function SettingsPanel({
           <h3>{t.settings.providers}</h3>
           <div className="settings-section-actions">
             <span>{t.settings.configuredCount(config.providers.length)}</span>
+            <button type="button" className="button-primary" onClick={() => setProviderSettingsView("add")}>
+              {t.settings.addProvider}
+            </button>
             <button type="button" className="button-secondary" onClick={() => void handleCheckAllUpdates()}>
               {t.remoteProviders.checkUpdates}
             </button>
           </div>
         </div>
-        <RemoteProviderSettings
-          registrySettings={remoteProviderRegistrySettings(config)}
-          onRegistrySettingsChange={(remoteProviderRegistry) =>
-            onChange({
-              ...config,
-              remoteProviderRegistry
-            })
-          }
-          onInstallRegistry={async (url, providerProxyUrl, providerAutoUpdate) => {
-            const result = await installRemoteProviderRegistry(
-              url,
-              providerProxyUrl,
-              providerAutoUpdate
-            );
-            const updated = await getConfig();
-            onChange(updated);
-            return result;
-          }}
-          onOpenGuide={openRemoteProviderGuide}
-        />
         {remoteMessage ? <div className="settings-message">{remoteMessage}</div> : null}
         <div className="settings-provider-list">
         {config.providers.length === 0 ? (
@@ -669,17 +719,7 @@ export function SettingsPanel({
         </div>
       </section>
 
-      <div className="fixed-save-bar" data-testid="fixed-save-bar">
-        <span>{hasChanges ? t.settings.unsavedChanges : saveMessage}</span>
-        <div className="settings-actions">
-          <button type="button" className="button-secondary" onClick={resetChanges} disabled={!hasChanges || isSaving}>
-            {t.settings.resetChanges}
-          </button>
-          <button type="button" onClick={() => void saveSettings()} disabled={!canSave} data-testid="save-settings-button">
-            {isSaving ? t.settings.saving : t.settings.save}
-          </button>
-        </div>
-      </div>
+      {renderSaveBar()}
     </section>
   );
 }

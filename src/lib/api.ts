@@ -6,6 +6,7 @@ import type {
   AppSnapshot,
   ConfigStorageInfo,
   ProxyConfig,
+  RemoteProviderCatalogEntry,
   RemoteProviderConfig,
 } from "../types";
 import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "./defaults";
@@ -259,6 +260,46 @@ export type RegistryInstallResult = {
   skipped: string[];
   failed: RegistryInstallFailure[];
 };
+
+export async function previewRemoteProviderRegistry(
+  url: string,
+  proxyUrl: string | null,
+): Promise<RemoteProviderCatalogEntry[]> {
+  if (!hasTauriInternals()) {
+    void url;
+    void proxyUrl;
+    return [];
+  }
+
+  return invoke<RemoteProviderCatalogEntry[]>("preview_remote_provider_registry", {
+    url,
+    proxyUrl,
+  });
+}
+
+export async function installRemoteProviderManifest(
+  url: string,
+  checksum: string | null,
+  proxyUrl: string | null,
+  autoUpdate: boolean,
+): Promise<RemoteProviderConfig> {
+  if (!hasTauriInternals()) {
+    void url;
+    void checksum;
+    void proxyUrl;
+    void autoUpdate;
+    throw new Error(
+      "Installing a remote provider manifest is not available in browser preview",
+    );
+  }
+
+  return invoke<RemoteProviderConfig>("install_remote_provider_manifest", {
+    url,
+    checksum,
+    proxyUrl,
+    autoUpdate,
+  });
+}
 
 export async function installRemoteProviderRegistry(
   url: string,

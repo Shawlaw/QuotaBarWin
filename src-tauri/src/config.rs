@@ -58,6 +58,22 @@ pub struct RemoteProviderRegistrySettings {
     pub provider_proxy_url: Option<String>,
     #[serde(default = "default_remote_provider_auto_update")]
     pub auto_update: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<RemoteProviderRegistrySource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteProviderRegistrySource {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    #[serde(default)]
+    pub provider_proxy_url: Option<String>,
+    #[serde(default = "default_remote_provider_auto_update")]
+    pub auto_update: bool,
+    #[serde(default = "default_remote_provider_source_enabled")]
+    pub enabled: bool,
 }
 
 impl Default for RemoteProviderRegistrySettings {
@@ -66,6 +82,7 @@ impl Default for RemoteProviderRegistrySettings {
             registry_url: default_remote_provider_registry_url(),
             provider_proxy_url: None,
             auto_update: default_remote_provider_auto_update(),
+            sources: Vec::new(),
         }
     }
 }
@@ -231,6 +248,10 @@ fn default_remote_provider_timeout_seconds() -> u64 {
 }
 
 fn default_remote_provider_auto_update() -> bool {
+    true
+}
+
+fn default_remote_provider_source_enabled() -> bool {
     true
 }
 
@@ -1400,6 +1421,7 @@ mod tests {
                 registry_url: Some("https://example.com/registry.json".to_string()),
                 provider_proxy_url: Some("http://proxy:8080".to_string()),
                 auto_update: false,
+                sources: Vec::new(),
             },
             providers: vec![ProviderConfig::Remote {
                 id: "provider".to_string(),

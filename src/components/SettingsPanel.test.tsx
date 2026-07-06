@@ -43,7 +43,41 @@ const apiMocks = vi.hoisted(() => {
       skipped: [],
       failed: [],
     })),
+    installRemoteProviderManifest: vi.fn(async (url: string) => {
+      const provider: RemoteProviderConfig = {
+        id: "catalog-kimi",
+        name: "Catalog Kimi",
+        enabled: true,
+        kind: "remote",
+        version: "1.0.0",
+        manifestUrl: url,
+        sourceUrl: "https://example.com/catalog-kimi/provider.cjs",
+        runtime: "node",
+        autoUpdate: true,
+        updateIntervalSeconds: 3600,
+        timeoutSeconds: 30,
+      };
+      if (state.config) {
+        state.config = {
+          ...state.config,
+          providers: [...state.config.providers, provider],
+        };
+      }
+      return provider;
+    }),
     openRemoteProviderGuide: vi.fn(async () => undefined),
+    previewRemoteProviderRegistry: vi.fn(async () => [
+      {
+        id: "catalog-kimi",
+        displayName: "Catalog Kimi",
+        version: "1.0.0",
+        description: "Catalog provider",
+        providerUrl: "https://example.com/catalog-kimi/provider.json",
+        checksum: "sha256:manifest",
+        installed: false,
+        error: null,
+      },
+    ]),
     refreshRemoteProvider: vi.fn(async () => ({
       id: "remote-kimi",
       available: true,
@@ -191,7 +225,7 @@ function renderSettings(
 test("settings_renders_registry_and_remote_provider_metadata", () => {
   renderSettings();
 
-  expect(screen.getByTestId("remote-providers-section")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Add Provider" })).toBeInTheDocument();
   expect(screen.getByText("Remote Kimi")).toBeInTheDocument();
   expect(screen.getByText("1.0.0")).toBeInTheDocument();
 
@@ -211,6 +245,28 @@ test("settings_edits_local_log_limit_in_megabytes", () => {
   fireEvent.change(input, { target: { value: "25" } });
 
   expect(apiMocks.state.config?.logMaxBytes).toBe(25 * 1024 * 1024);
+});
+
+test("settings_add_provider_page_installs_catalog_provider", async () => {
+  renderSettings(configWithProviders([]));
+
+  fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
+
+  expect(screen.getByTestId("add-provider-page")).toBeInTheDocument();
+  await screen.findByText("Catalog Kimi");
+  fireEvent.click(screen.getByRole("button", { name: "Install" }));
+
+  await waitFor(() =>
+    expect(apiMocks.installRemoteProviderManifest).toHaveBeenCalledWith(
+      "https://example.com/catalog-kimi/provider.json",
+      "sha256:manifest",
+      null,
+      true,
+    ),
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Back to Settings" }));
+  expect(await screen.findByText("Catalog Kimi")).toBeInTheDocument();
 });
 
 test("settings_edits_remote_env_vars_and_window_display", () => {
