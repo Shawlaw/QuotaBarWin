@@ -26,6 +26,11 @@ struct SchedulerWakeState {
     wake: Condvar,
 }
 
+struct WaitOutcome {
+    generation: u64,
+    timed_out: bool,
+}
+
 fn wake_state() -> Arc<SchedulerWakeState> {
     WAKE_STATE
         .get_or_init(|| {
@@ -64,18 +69,24 @@ pub fn start(app: AppHandle) {
 
 fn run_scheduler(app: AppHandle, state: Arc<SchedulerWakeState>) {
     let mut observed_generation = current_generation(&state);
-    observed_generation = wait_for_next_tick(&state, INITIAL_REFRESH_DELAY, observed_generation);
+    observed_generation =
+        wait_for_next_tick(&state, INITIAL_REFRESH_DELAY, observed_generation).generation;
     loop {
         if let Err(error) = refresh_once(&app) {
             eprintln!("Background refresh failed: {error}");
         }
 
-        let delay = refresh_delay_for_app(&app).unwrap_or_else(|error| {
-            eprintln!("Unable to load refresh interval: {error}");
-            refresh_interval_delay(MIN_REFRESH_INTERVAL_SECONDS)
-        });
-
-        observed_generation = wait_for_next_tick(&state, delay, observed_generation);
+        loop {
+            let delay = refresh_delay_for_app(&app).unwrap_or_else(|error| {
+                eprintln!("Unable to load refresh interval: {error}");
+                refresh_interval_delay(MIN_REFRESH_INTERVAL_SECONDS)
+            });
+            let outcome = wait_for_next_tick(&state, delay, observed_generation);
+            observed_generation = outcome.generation;
+            if outcome.timed_out {
+                break;
+            }
+        }
     }
 }
 
@@ -104,14 +115,20 @@ fn wait_for_next_tick(
     state: &SchedulerWakeState,
     delay: Duration,
     observed_generation: u64,
-) -> u64 {
+) -> WaitOutcome {
     let Ok(generation) = state.generation.lock() else {
         thread::sleep(delay);
-        return observed_generation;
+        return WaitOutcome {
+            generation: observed_generation,
+            timed_out: true,
+        };
     };
 
     if *generation != observed_generation {
-        return *generation;
+        return WaitOutcome {
+            generation: *generation,
+            timed_out: false,
+        };
     }
 
     state
@@ -119,8 +136,14 @@ fn wait_for_next_tick(
         .wait_timeout_while(generation, delay, |generation| {
             *generation == observed_generation
         })
-        .map(|(generation, _)| *generation)
-        .unwrap_or(observed_generation)
+        .map(|(generation, timeout)| WaitOutcome {
+            generation: *generation,
+            timed_out: timeout.timed_out(),
+        })
+        .unwrap_or(WaitOutcome {
+            generation: observed_generation,
+            timed_out: true,
+        })
 }
 
 #[cfg(test)]

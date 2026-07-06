@@ -20,7 +20,13 @@ import {
   setPortableMode
 } from "./lib/api";
 import { I18nProvider, useI18n } from "./i18n";
-import type { AppConfig, AppSnapshot, ConfigStorageInfo } from "./types";
+import type {
+  AppConfig,
+  AppSnapshot,
+  ConfigStorageInfo,
+  ProviderSnapshot,
+  RemoteProviderConfig
+} from "./types";
 
 function fallbackSnapshot(error: unknown): AppSnapshot {
   return {
@@ -44,6 +50,109 @@ function fallbackSnapshot(error: unknown): AppSnapshot {
 
 function isTrayView(): boolean {
   return new URLSearchParams(window.location.search).get("view") === "tray";
+}
+
+function projectProviderSnapshot(
+  provider: ProviderSnapshot,
+  config: RemoteProviderConfig
+): ProviderSnapshot {
+  const visibleWindowIds = config.visibleWindowIds ?? [];
+  const labelOverrides = config.windowLabelOverrides ?? {};
+  const windows = provider.windows
+    .filter((window) => visibleWindowIds.length === 0 || visibleWindowIds.includes(window.id))
+    .map((window) => ({
+      ...window,
+      label: labelOverrides[window.id] ?? window.label
+    }));
+
+  return {
+    ...provider,
+    name: config.name,
+    windows
+  };
+}
+
+function projectSnapshotForConfig(
+  snapshot: AppSnapshot | null,
+  config: AppConfig
+): AppSnapshot | null {
+  if (!snapshot) {
+    return snapshot;
+  }
+
+  const providersById = new Map(snapshot.providers.map((provider) => [provider.id, provider]));
+  return {
+    ...snapshot,
+    providers: config.providers.flatMap((providerConfig) => {
+      if (!providerConfig.enabled) {
+        return [];
+      }
+
+      const provider = providersById.get(providerConfig.id);
+      return provider ? [projectProviderSnapshot(provider, providerConfig)] : [];
+    })
+  };
+}
+
+function stableRecordEntries(record: Record<string, string> | undefined): [string, string][] {
+  return Object.entries(record ?? {}).sort(([left], [right]) => left.localeCompare(right));
+}
+
+function providerRefreshSignature(provider: RemoteProviderConfig) {
+  return {
+    id: provider.id,
+    enabled: provider.enabled,
+    manifestUrl: provider.manifestUrl,
+    sourceUrl: provider.sourceUrl,
+    providerDir: provider.providerDir ?? null,
+    runtime: provider.runtime,
+    resolvedRuntime: provider.resolvedRuntime ?? null,
+    proxyUrl: provider.proxyUrl ?? null,
+    timeoutSeconds: provider.timeoutSeconds,
+    trustedChecksum: provider.trustedChecksum ?? null,
+    envVars: stableRecordEntries(provider.envVars)
+  };
+}
+
+function configNeedsDataRefresh(
+  previousConfig: AppConfig | null,
+  nextConfig: AppConfig
+): boolean {
+  if (!previousConfig) {
+    return true;
+  }
+
+  if (JSON.stringify(previousConfig.networkProxy ?? null) !== JSON.stringify(nextConfig.networkProxy ?? null)) {
+    return true;
+  }
+
+  const previousProviders = new Map(previousConfig.providers.map((provider) => [provider.id, provider]));
+  for (const nextProvider of nextConfig.providers) {
+    const previousProvider = previousProviders.get(nextProvider.id);
+    if (!previousProvider) {
+      if (nextProvider.enabled) {
+        return true;
+      }
+      continue;
+    }
+
+    if (!previousProvider.enabled && nextProvider.enabled) {
+      return true;
+    }
+
+    if (!nextProvider.enabled) {
+      continue;
+    }
+
+    if (
+      JSON.stringify(providerRefreshSignature(previousProvider)) !==
+      JSON.stringify(providerRefreshSignature(nextProvider))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function App() {
@@ -81,6 +190,7 @@ type MainAppProps = {
 function MainApp({ onLanguageChange }: MainAppProps) {
   const { t } = useI18n();
   const refreshInFlight = useRef(false);
+  const persistedConfigRef = useRef<AppConfig | null>(null);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [configStorageInfo, setConfigStorageInfo] = useState<ConfigStorageInfo | null>(null);
@@ -144,6 +254,7 @@ function MainApp({ onLanguageChange }: MainAppProps) {
           return;
         }
         onLanguageChange(loadedConfig.language);
+        persistedConfigRef.current = loadedConfig;
         setConfig(loadedConfig);
         setConfigStorageInfo(loadedStorageInfo);
         setAppVersion(loadedVersion);
@@ -205,10 +316,15 @@ function MainApp({ onLanguageChange }: MainAppProps) {
 
     setIsSaving(true);
     try {
+      const needsDataRefresh = configNeedsDataRefresh(persistedConfigRef.current, config);
       await saveConfig(config);
+      persistedConfigRef.current = config;
       setConfigStorageInfo(await getConfigStorageInfo());
+      setSnapshot((current) => projectSnapshotForConfig(current, config));
       setSettingsOpen(false);
-      await loadSnapshot();
+      if (needsDataRefresh) {
+        await loadSnapshot();
+      }
     } finally {
       setIsSaving(false);
     }
@@ -224,7 +340,9 @@ function MainApp({ onLanguageChange }: MainAppProps) {
       await saveConfig(config);
       const storageInfo = await setPortableMode(enabled);
       setConfigStorageInfo(storageInfo);
-      setConfig(await getConfig());
+      const updatedConfig = await getConfig();
+      persistedConfigRef.current = updatedConfig;
+      setConfig(updatedConfig);
       await loadSnapshot();
     } finally {
       setIsConfigStorageBusy(false);
@@ -235,6 +353,7 @@ function MainApp({ onLanguageChange }: MainAppProps) {
     setIsConfigStorageBusy(true);
     try {
       const defaultConfig = await resetConfig();
+      persistedConfigRef.current = defaultConfig;
       setConfig(defaultConfig);
       setConfigStorageInfo(await getConfigStorageInfo());
       await loadSnapshot();

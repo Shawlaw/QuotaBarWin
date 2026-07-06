@@ -195,7 +195,7 @@ test("main_app_syncs_cached_snapshot_before_refreshing_when_shown", async () => 
 test("main_app_shows_loading_instead_of_no_providers_before_first_snapshot", async () => {
   render(<App />);
 
-  expect(await screen.findByTestId("global-status-strip")).toHaveTextContent("Loading...");
+  expect(await screen.findByTestId("global-status-strip")).toHaveTextContent(/Loading\.\.\.|加载中\.\.\./);
   expect(screen.queryByText("No providers configured. Add a provider in Settings.")).not.toBeInTheDocument();
   expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
 });
@@ -315,4 +315,92 @@ test("settings_replaces_provider_overview", async () => {
     "button-secondary",
   );
   expect(screen.queryByTestId("overview-page")).not.toBeInTheDocument();
+});
+
+test("saving_provider_reorder_projects_cached_snapshot_without_refreshing_data", async () => {
+  const configWithTwoProviders: AppConfig = {
+    schemaVersion: 14,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "en",
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
+    providers: [
+      {
+        id: "remote-a",
+        name: "Remote A",
+        enabled: true,
+        kind: "remote",
+        manifestUrl: "https://example.test/a/provider.json",
+        sourceUrl: "https://example.test/a/provider.cjs",
+        runtime: "node",
+        autoUpdate: false,
+        updateIntervalSeconds: 3600,
+        timeoutSeconds: 30,
+      },
+      {
+        id: "remote-b",
+        name: "Remote B",
+        enabled: true,
+        kind: "remote",
+        manifestUrl: "https://example.test/b/provider.json",
+        sourceUrl: "https://example.test/b/provider.cjs",
+        runtime: "node",
+        autoUpdate: false,
+        updateIntervalSeconds: 3600,
+        timeoutSeconds: 30,
+      },
+    ],
+  };
+  const cachedSnapshot: AppSnapshot = {
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:00:00+08:00",
+    providers: [
+      {
+        id: "remote-a",
+        name: "Remote A",
+        status: "ok",
+        source: "remote",
+        updatedAt: "2026-06-08T10:00:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [],
+      },
+      {
+        id: "remote-b",
+        name: "Remote B",
+        status: "ok",
+        source: "remote",
+        updatedAt: "2026-06-08T10:00:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [],
+      },
+    ],
+  };
+  mocks.getConfig.mockResolvedValueOnce(configWithTwoProviders);
+  mocks.getCachedSnapshot.mockResolvedValueOnce(cachedSnapshot);
+
+  render(<App />);
+
+  expect(await screen.findByText("Remote A")).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "More" })[1]);
+  fireEvent.click(screen.getByRole("button", { name: "Up" }));
+  fireEvent.click(screen.getByTestId("save-settings-button"));
+
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.getByTestId("overview-page")).toBeInTheDocument());
+  expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
+
+  const overviewText = screen.getByLabelText("Providers").textContent ?? "";
+  expect(overviewText.indexOf("Remote B")).toBeGreaterThanOrEqual(0);
+  expect(overviewText.indexOf("Remote A")).toBeGreaterThanOrEqual(0);
+  expect(overviewText.indexOf("Remote B")).toBeLessThan(overviewText.indexOf("Remote A"));
 });

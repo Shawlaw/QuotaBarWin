@@ -160,21 +160,41 @@ fn persist_snapshot_cache(path: &Path, snapshot: &AppSnapshot) -> Result<(), Str
 }
 
 fn filter_snapshot_for_config(mut snapshot: AppSnapshot, config: &AppConfig) -> AppSnapshot {
-    let enabled_ids = config
-        .providers
-        .iter()
-        .filter_map(|provider| match provider {
-            ProviderConfig::Remote {
-                id, enabled: true, ..
-            } => Some(id.as_str()),
-            ProviderConfig::Remote { .. } => None,
-        })
-        .collect::<Vec<_>>();
-
     let mut providers = Vec::new();
-    for id in enabled_ids {
-        if let Some(provider) = snapshot.providers.iter().find(|provider| provider.id == id) {
-            providers.push(provider.clone());
+    for config_provider in &config.providers {
+        let ProviderConfig::Remote {
+            id,
+            name,
+            enabled,
+            window_label_overrides,
+            visible_window_ids,
+            ..
+        } = config_provider;
+        if !enabled {
+            continue;
+        }
+
+        if let Some(provider) = snapshot
+            .providers
+            .iter()
+            .find(|provider| provider.id == *id)
+        {
+            let mut provider = provider.clone();
+            provider.name = name.clone();
+            provider.windows = provider
+                .windows
+                .into_iter()
+                .filter(|window| {
+                    visible_window_ids.is_empty() || visible_window_ids.contains(&window.id)
+                })
+                .map(|mut window| {
+                    if let Some(label) = window_label_overrides.get(&window.id) {
+                        window.label = label.clone();
+                    }
+                    window
+                })
+                .collect();
+            providers.push(provider);
         }
     }
     snapshot.providers = providers;
@@ -197,15 +217,16 @@ fn read_snapshot_cache_from_disk(
 }
 
 pub fn get_cached_snapshot_from_config_path(path: &Path) -> Result<Option<AppSnapshot>, String> {
+    let loaded = load_or_create_config(path)?;
+
     if let Some(snapshot) = snapshot_cache()
         .lock()
         .map_err(|_| "Snapshot cache lock poisoned".to_string())?
         .clone()
     {
-        return Ok(Some(snapshot));
+        return Ok(Some(filter_snapshot_for_config(snapshot, &loaded.config)));
     }
 
-    let loaded = load_or_create_config(path)?;
     let snapshot = match read_snapshot_cache_from_disk(path, &loaded.config) {
         Ok(snapshot) => snapshot,
         Err(_) => None,
@@ -890,6 +911,49 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["remote-b"]
         );
+    }
+
+    #[test]
+    fn memory_snapshot_cache_is_filtered_by_current_config() {
+        let _cache_guard = isolate_snapshot_cache();
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let initial_config = test_config(vec![
+            remote_provider(&temp, "remote-a", "Remote A", true, 20.0),
+            remote_provider(&temp, "remote-b", "Remote B", true, 40.0),
+        ]);
+        save_config_to_path(&path, &initial_config).expect("save config");
+        build_app_snapshot_from_config_path(&path).expect("snapshot");
+
+        let mut reordered_config = test_config(vec![
+            remote_provider(&temp, "remote-b", "Remote B", true, 40.0),
+            remote_provider(&temp, "remote-a", "Remote A", false, 20.0),
+        ]);
+        let ProviderConfig::Remote {
+            name,
+            window_label_overrides,
+            visible_window_ids,
+            ..
+        } = &mut reordered_config.providers[0];
+        *name = "Renamed B".to_string();
+        window_label_overrides.insert("weekly".to_string(), "Renamed Weekly".to_string());
+        visible_window_ids.push("weekly".to_string());
+        save_config_to_path(&path, &reordered_config).expect("save reordered config");
+
+        let cached = get_cached_snapshot_from_config_path(&path)
+            .expect("read cache")
+            .expect("cache exists");
+
+        assert_eq!(
+            cached
+                .providers
+                .iter()
+                .map(|provider| provider.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["remote-b"]
+        );
+        assert_eq!(cached.providers[0].name, "Renamed B");
+        assert_eq!(cached.providers[0].windows[0].label, "Renamed Weekly");
     }
 
     #[test]
