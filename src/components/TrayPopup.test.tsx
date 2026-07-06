@@ -148,6 +148,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     getCachedSnapshot: vi.fn(async (): Promise<AppSnapshot | null> => null),
+    getAppVersion: vi.fn(async () => "1.0.0(abc1234)"),
     getConfig: vi.fn(async () => config),
     getTrayPopupPresentationId: vi.fn(async () => state.presentationId),
     hideCurrentWindow: vi.fn(async () => undefined),
@@ -193,8 +194,12 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   expect(screen.getByTestId("tray-popup")).toBeInTheDocument();
   expect(screen.getByText(/Last refreshed at/)).toBeInTheDocument();
   expect(screen.getByText("28% remaining")).toBeInTheDocument();
-  expect(screen.getByText("Codex Mock - Extra window")).toBeInTheDocument();
-  expect(screen.getByText("Kimi - Kimi Daily")).toBeInTheDocument();
+  expect(screen.getByText("Codex Mock")).toBeInTheDocument();
+  expect(screen.getByText("Extra window")).toBeInTheDocument();
+  expect(screen.getByText("Kimi")).toBeInTheDocument();
+  expect(screen.getByText("Kimi Daily")).toBeInTheDocument();
+  expect(screen.getByText("v1.0.0")).toHaveAttribute("title", "Version 1.0.0(abc1234)");
+  expect(screen.queryByText(/abc1234/)).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Provider status")).not.toBeInTheDocument();
 
   await act(async () => {
@@ -263,7 +268,8 @@ test("tray_popup_syncs_cached_snapshot_before_refreshing_when_shown", async () =
     mocks.listeners.trayShown?.(1);
   });
 
-  await waitFor(() => expect(screen.getByText("Cached Popup - Cached Window")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText("Cached Popup")).toBeInTheDocument());
+  expect(screen.getByText("Cached Window")).toBeInTheDocument();
 
   await act(async () => {
     resolveRefresh?.({
@@ -312,7 +318,8 @@ test("tray_popup_uses_native_snapshot_updates", async () => {
     });
   });
 
-  expect(screen.getByText("Native Popup - Native Window")).toBeInTheDocument();
+  expect(screen.getByText("Native Popup")).toBeInTheDocument();
+  expect(screen.getByText("Native Window")).toBeInTheDocument();
 });
 
 test("tray_popup_uses_window_focus_to_check_for_missed_presentation", async () => {
@@ -335,12 +342,13 @@ test("tray_popup_uses_window_focus_to_check_for_missed_presentation", async () =
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(3));
 });
 
-test("tray_popup_window_title_includes_provider_name_and_reset_stays_secondary", async () => {
+test("tray_popup_groups_windows_by_provider_and_reset_stays_secondary", async () => {
   renderWithEnglish(<TrayPopup />);
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
 
-  expect(screen.getByText("Codex Mock - Daily")).toBeInTheDocument();
+  expect(screen.getByText("Codex Mock")).toBeInTheDocument();
+  expect(screen.getByText("Daily")).toBeInTheDocument();
   expect(screen.getByText("resets tomorrow")).toBeInTheDocument();
   expect(
     screen.queryByText("Codex Mock - resets tomorrow"),
@@ -380,11 +388,9 @@ test("tray_popup_follows_main_snapshot_provider_order_for_quota_windows", async 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
   const popupText = container.textContent ?? "";
 
-  expect(popupText.indexOf("Kimi - Kimi Daily")).toBeGreaterThanOrEqual(0);
-  expect(popupText.indexOf("Codex Mock - Daily")).toBeGreaterThanOrEqual(0);
-  expect(popupText.indexOf("Codex Mock - Daily")).toBeLessThan(
-    popupText.indexOf("Kimi - Kimi Daily"),
-  );
+  expect(popupText.indexOf("Kimi")).toBeGreaterThanOrEqual(0);
+  expect(popupText.indexOf("Codex Mock")).toBeGreaterThanOrEqual(0);
+  expect(popupText.indexOf("Codex Mock")).toBeLessThan(popupText.indexOf("Kimi"));
 });
 
 test("tray_popup_shows_unhealthy_provider_in_title", async () => {

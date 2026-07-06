@@ -1,4 +1,5 @@
 import { useI18n } from "../i18n";
+import { visibleAppVersion } from "../lib/appVersion";
 
 type HeaderProps = {
   activeView: "overview" | "settings";
@@ -18,11 +19,17 @@ export function Header({
   onOpenSettings
 }: HeaderProps) {
   const { t } = useI18n();
+  const appVersionLabel = visibleAppVersion(appVersion);
 
   return (
     <header className="app-header">
-      <div>
-        <h1 title={t.app.versionTitle(appVersion)}>QuotaBarWin</h1>
+      <div className="app-header__title">
+        <h1>QuotaBarWin</h1>
+        {appVersionLabel ? (
+          <span className="app-header__app-version" title={t.app.versionTitle(appVersion)}>
+            {appVersionLabel}
+          </span>
+        ) : null}
       </div>
       <div className="header-actions">
         <button

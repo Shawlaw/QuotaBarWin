@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import {
   getCachedSnapshot,
+  getAppVersion,
   getConfig,
   getTrayPopupPresentationId,
   hideCurrentWindow,
@@ -20,14 +21,10 @@ import {
   formatShortDateTime,
   windowStatus
 } from "../lib/providerStatus";
-import type { AppConfig, AppSnapshot, ProviderSnapshot, QuotaWindow } from "../types";
+import { visibleAppVersion } from "../lib/appVersion";
+import type { AppConfig, AppSnapshot, ProviderSnapshot } from "../types";
 import { useI18n } from "../i18n";
 import { ProgressBar } from "./ProgressBar";
-
-type WindowRow = {
-  provider: ProviderSnapshot;
-  window: QuotaWindow;
-};
 
 type ProviderIssue = {
   provider: ProviderSnapshot;
@@ -57,10 +54,6 @@ function windowProgressTone(
   return "normal";
 }
 
-function orderedWindows(providers: ProviderSnapshot[]): WindowRow[] {
-  return providers.flatMap((provider) => provider.windows.map((window) => ({ provider, window })));
-}
-
 function orderedProviderIssues(
   providers: ProviderSnapshot[],
   lowQuotaWarningThreshold: number
@@ -80,6 +73,7 @@ export function TrayPopup() {
   const lastHandledPresentationId = useRef(0);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const syncCachedSnapshot = useCallback(async () => {
@@ -136,13 +130,18 @@ export function TrayPopup() {
     let isMounted = true;
 
     async function initialize() {
-      const [loadedConfig, cached] = await Promise.all([getConfig(), getCachedSnapshot()]);
+      const [loadedConfig, cached, loadedAppVersion] = await Promise.all([
+        getConfig(),
+        getCachedSnapshot(),
+        getAppVersion().catch(() => null)
+      ]);
       if (!isMounted) {
         return;
       }
 
       setConfig(loadedConfig);
       setSnapshot(cached);
+      setAppVersion(loadedAppVersion);
       void loadSnapshot();
     }
 
@@ -199,10 +198,11 @@ export function TrayPopup() {
   const providers = snapshot?.providers ?? [];
   const lowQuotaWarningThreshold = config?.lowQuotaWarningThreshold ?? 20;
   const displayMode = config?.displayMode ?? "remaining";
-  const rows = orderedWindows(providers);
+  const providersWithWindows = providers.filter((provider) => provider.windows.length > 0);
   const providerIssues = orderedProviderIssues(providers, lowQuotaWarningThreshold);
   const primaryIssue = providerIssues[0] ?? null;
   const refreshedText = formatShortDateTime(snapshot?.refreshedAt);
+  const appVersionLabel = visibleAppVersion(appVersion);
 
   function onTitleMouseDown(event: MouseEvent<HTMLElement>) {
     if (event.button !== 0) {
@@ -242,6 +242,11 @@ export function TrayPopup() {
         >
           <div className="tray-popup__title-line">
             <h1>QuotaBarWin</h1>
+            {appVersionLabel ? (
+              <span className="tray-popup__app-version" title={t.app.versionTitle(appVersion ?? appVersionLabel)}>
+                {appVersionLabel}
+              </span>
+            ) : null}
             {primaryIssue ? (
               <span
                 className={`status status--${primaryIssue.status} tray-popup__title-status`}
@@ -282,31 +287,47 @@ export function TrayPopup() {
           <section className="tray-popup__empty">{t.tray.noProviders}</section>
         ) : null}
 
-        {rows.length > 0 ? (
-          <section className="tray-popup__windows" aria-label={t.tray.quotaWindowsLabel}>
-            {rows.map(({ provider, window }) => {
+        {providersWithWindows.length > 0 ? (
+          <section className="tray-popup__provider-groups" aria-label={t.tray.quotaWindowsLabel}>
+            {providersWithWindows.map((provider) => {
               const providerStatus = calculateProviderStatus(provider, lowQuotaWarningThreshold);
-              const quotaStatus = windowStatus(window, lowQuotaWarningThreshold);
-              const displayedPercent = displayPercentForWindow(window, displayMode);
-              const remainingPercent =
-                window.remainingPercent ??
-                (window.usedPercent !== null && window.usedPercent !== undefined ? 100 - window.usedPercent : null);
-              const resetText = formatQuotaReset(window, new Date(), t);
               return (
-                <article className="tray-popup__window" key={`${provider.id}-${window.id}`}>
-                  <div className="tray-popup__window-title">
-                    <strong>
-                      {provider.name} - {window.label}
-                    </strong>
-                    <span>{formatDisplayValue(window, displayMode, t)}</span>
+                <article className="tray-popup__provider-group" key={provider.id}>
+                  <header className="tray-popup__provider-header">
+                    <strong>{provider.name}</strong>
+                    {providerStatus !== "ok" ? (
+                      <span className={`status status--${providerStatus}`}>
+                        {t.tray.status[providerStatus]}
+                      </span>
+                    ) : null}
+                  </header>
+                  <div className="tray-popup__provider-windows">
+                    {provider.windows.map((window) => {
+                      const quotaStatus = windowStatus(window, lowQuotaWarningThreshold);
+                      const displayedPercent = displayPercentForWindow(window, displayMode);
+                      const remainingPercent =
+                        window.remainingPercent ??
+                        (window.usedPercent !== null && window.usedPercent !== undefined
+                          ? 100 - window.usedPercent
+                          : null);
+                      const resetText = formatQuotaReset(window, new Date(), t);
+                      return (
+                        <section className="tray-popup__window" key={window.id}>
+                          <div className="tray-popup__window-title">
+                            <strong>{window.label}</strong>
+                            <span>{formatDisplayValue(window, displayMode, t)}</span>
+                          </div>
+                          <ProgressBar
+                            percent={displayedPercent}
+                            opacityPercent={remainingPercent}
+                            label={`${provider.name} ${window.label} ${displayMode}`}
+                            tone={windowProgressTone(providerStatus, quotaStatus)}
+                          />
+                          {resetText ? <p>{resetText}</p> : null}
+                        </section>
+                      );
+                    })}
                   </div>
-                  <ProgressBar
-                    percent={displayedPercent}
-                    opacityPercent={remainingPercent}
-                    label={`${provider.name} ${window.label} ${displayMode}`}
-                    tone={windowProgressTone(providerStatus, quotaStatus)}
-                  />
-                  {resetText ? <p>{resetText}</p> : null}
                 </article>
               );
             })}

@@ -53,7 +53,7 @@ const mocks = vi.hoisted(() => {
   return {
     listeners,
     getCachedSnapshot: vi.fn(async (): Promise<AppSnapshot | null> => null),
-    getAppVersion: vi.fn(async () => "1.0.0"),
+    getAppVersion: vi.fn(async () => "1.0.0(abc1234)"),
     getConfig: vi.fn(async () => config),
     getConfigStorageInfo: vi.fn(async () => configStorageInfo),
     getNetworkProxy: vi.fn(async () => null),
@@ -236,6 +236,8 @@ test("settings_replaces_provider_overview", async () => {
   );
   expect(screen.getByTestId("global-status-strip")).toBeInTheDocument();
   expect(screen.getByLabelText("Providers")).toBeInTheDocument();
+  expect(screen.getByText("v1.0.0")).toHaveAttribute("title", "Version 1.0.0(abc1234)");
+  expect(screen.queryByText(/abc1234/)).not.toBeInTheDocument();
 
   expect(screen.getByRole("button", { name: "Overview" })).toHaveClass(
     "button-secondary",

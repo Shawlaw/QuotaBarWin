@@ -110,6 +110,13 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.app-header__title {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
 .app-header h1,
 .provider-card h2 {
   margin: 0;
@@ -120,6 +127,18 @@ button:disabled {
   font-size: 22px;
   font-weight: 650;
   line-height: 1.2;
+}
+
+.app-header__app-version {
+  color: #64748b;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .github-link {
@@ -1111,7 +1130,6 @@ button:disabled {
 }
 
 .tray-popup__header p,
-.tray-popup__provider p,
 .tray-popup__window p,
 .tray-popup__empty {
   color: #64748b;
@@ -1137,22 +1155,35 @@ button:disabled {
   white-space: nowrap;
 }
 
-.tray-popup__providers,
-.tray-popup__windows {
+.tray-popup__app-version {
+  color: #64748b;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tray-popup__provider-groups,
+.tray-popup__provider-windows {
   display: grid;
   gap: 8px;
 }
 
-.tray-popup__provider,
-.tray-popup__window {
+.tray-popup__provider-group {
+  background: #ffffff;
   border: 1px solid #d9e2ec;
-  border-radius: 7px;
+  border-radius: 8px;
+  box-shadow: 0 5px 14px rgb(15 23 42 / 7%);
   display: grid;
-  gap: 7px;
-  padding: 9px;
+  gap: 9px;
+  padding: 10px;
 }
 
-.tray-popup__provider > div,
+.tray-popup__provider-header,
 .tray-popup__window-title {
   align-items: center;
   display: flex;
@@ -1161,7 +1192,34 @@ button:disabled {
   min-width: 0;
 }
 
-.tray-popup__provider strong,
+.tray-popup__provider-header strong {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tray-popup__provider-header .status {
+  flex-shrink: 0;
+}
+
+.tray-popup__window {
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
+}
+
+.tray-popup__window:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
 .tray-popup__window-title strong {
   color: #0f172a;
   font-size: 13px;
