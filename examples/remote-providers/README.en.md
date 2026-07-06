@@ -10,6 +10,8 @@ Each subdirectory contains:
 
 - `provider.json` — the remote provider manifest.
 - `provider.cjs` — the source script executed by QuotaBarWin.
+- `api.md` — request, response, field mapping, and fixture notes for the provider.
+- `api.en.md` — English version of `api.md`.
 
 `manifest.example.json` is a standalone, minimal manifest template you can copy when creating your own provider.
 
@@ -17,12 +19,14 @@ Each subdirectory contains:
 
 ## Providers
 
-| Provider | Required env var | Description |
-|----------|------------------|-------------|
-| `kimi-coding` | `KIMI_API_KEY` | Kimi coding quota usage. |
-| `bigmodel-coding-plan` | `BIGMODEL_API_KEY` | Zhipu/BigModel coding plan quota. |
-| `codex-usage` | none by default | ChatGPT/Codex 5h and weekly usage. Reads `~/.codex/auth.json` by default. Optional `CODEX_ACCESS_TOKEN`, `CODEX_ACCOUNT_ID`, or `CODEX_AUTH_FILE` env vars can override the local Codex auth file. Supports runtime proxy injection via `QBWIN_PROXY_URL`. |
-| `deepseek-balance` | `DEEPSEEK_API_KEY` | DeepSeek pay-as-you-go balance. Optional `DEEPSEEK_BALANCE_REFERENCE_TOTAL`, `DEEPSEEK_BALANCE_WARNING`, and `DEEPSEEK_BALANCE_CURRENCY`; append `_CNY` or another currency code for per-currency overrides. |
+The top-level README is only an index. Each provider directory's `api.md` records the request, response, field mapping, and local fixtures used by the current example script. Update that API note whenever `provider.cjs` changes.
+
+| Provider | Data source | Required env var | API notes | Description |
+|----------|-------------|------------------|-----------|-------------|
+| `kimi-coding` | `GET https://api.kimi.com/coding/v1/usages` | `KIMI_API_KEY` | [`api.md`](kimi-coding/api.md) / [`EN`](kimi-coding/api.en.md) | Kimi coding quota usage. |
+| `bigmodel-coding-plan` | `GET https://open.bigmodel.cn/api/monitor/usage/quota/limit` | `BIGMODEL_API_KEY` | [`api.md`](bigmodel-coding-plan/api.md) / [`EN`](bigmodel-coding-plan/api.en.md) | Zhipu/BigModel coding plan quota. |
+| `codex-usage` | `GET https://chatgpt.com/backend-api/wham/usage` | none by default | [`api.md`](codex-usage/api.md) / [`EN`](codex-usage/api.en.md) | ChatGPT/Codex 5h and weekly usage. Reads `~/.codex/auth.json` by default. Optional `CODEX_ACCESS_TOKEN`, `CODEX_ACCOUNT_ID`, or `CODEX_AUTH_FILE` env vars can override the local Codex auth file. Supports runtime proxy injection via `QBWIN_PROXY_URL`. |
+| `deepseek-balance` | `GET https://api.deepseek.com/user/balance` | `DEEPSEEK_API_KEY` | [`api.md`](deepseek-balance/api.md) / [`EN`](deepseek-balance/api.en.md) | DeepSeek pay-as-you-go balance. Optional `DEEPSEEK_BALANCE_REFERENCE_TOTAL`, `DEEPSEEK_BALANCE_WARNING`, and `DEEPSEEK_BALANCE_CURRENCY`; append `_CNY` or another currency code for per-currency overrides. |
 
 ## Usage
 

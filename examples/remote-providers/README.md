@@ -10,6 +10,8 @@ English version: [`README.en.md`](README.en.md).
 
 - `provider.json`：远程 Provider manifest。
 - `provider.cjs`：QuotaBarWin 执行的源脚本。
+- `api.md`：该 Provider 当前实现依据的请求、响应、字段映射和 fixture。
+- `api.en.md`：`api.md` 的英文版本。
 
 `manifest.example.json` 是独立的最小 manifest 模板，创建新 Provider 时可以复制后修改。
 
@@ -23,12 +25,14 @@ https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-provi
 
 ## Provider 列表
 
-| Provider | 必需环境变量 | 说明 |
-|----------|--------------|------|
-| `kimi-coding` | `KIMI_API_KEY` | Kimi 编程额度用量。 |
-| `bigmodel-coding-plan` | `BIGMODEL_API_KEY` | 智谱 / BigModel 编程套餐额度。 |
-| `codex-usage` | 默认无 | ChatGPT / Codex 5h 与 weekly 用量。默认读取 `~/.codex/auth.json`；可选 `CODEX_ACCESS_TOKEN`、`CODEX_ACCOUNT_ID` 或 `CODEX_AUTH_FILE` 覆盖本地 Codex auth 文件；支持通过 `QBWIN_PROXY_URL` 注入运行时代理。 |
-| `deepseek-balance` | `DEEPSEEK_API_KEY` | DeepSeek 按量付费余额。可选 `DEEPSEEK_BALANCE_REFERENCE_TOTAL`、`DEEPSEEK_BALANCE_WARNING` 和 `DEEPSEEK_BALANCE_CURRENCY`；也可以追加 `_CNY` 或其他币种代码做按币种覆盖。 |
+顶层 README 只负责发现和导航。每个 Provider 目录下的 `api.md` 记录该示例脚本当前依据的请求、响应、字段映射和本地 fixture；修改 `provider.cjs` 时应同步更新同目录 API 文档。
+
+| Provider | 数据来源 | 必需环境变量 | API 依据 | 说明 |
+|----------|----------|--------------|----------|------|
+| `kimi-coding` | `GET https://api.kimi.com/coding/v1/usages` | `KIMI_API_KEY` | [`api.md`](kimi-coding/api.md) / [`EN`](kimi-coding/api.en.md) | Kimi 编程额度用量。 |
+| `bigmodel-coding-plan` | `GET https://open.bigmodel.cn/api/monitor/usage/quota/limit` | `BIGMODEL_API_KEY` | [`api.md`](bigmodel-coding-plan/api.md) / [`EN`](bigmodel-coding-plan/api.en.md) | 智谱 / BigModel 编程套餐额度。 |
+| `codex-usage` | `GET https://chatgpt.com/backend-api/wham/usage` | 默认无 | [`api.md`](codex-usage/api.md) / [`EN`](codex-usage/api.en.md) | ChatGPT / Codex 5h 与 weekly 用量。默认读取 `~/.codex/auth.json`；可选 `CODEX_ACCESS_TOKEN`、`CODEX_ACCOUNT_ID` 或 `CODEX_AUTH_FILE` 覆盖本地 Codex auth 文件；支持通过 `QBWIN_PROXY_URL` 注入运行时代理。 |
+| `deepseek-balance` | `GET https://api.deepseek.com/user/balance` | `DEEPSEEK_API_KEY` | [`api.md`](deepseek-balance/api.md) / [`EN`](deepseek-balance/api.en.md) | DeepSeek 按量付费余额。可选 `DEEPSEEK_BALANCE_REFERENCE_TOTAL`、`DEEPSEEK_BALANCE_WARNING` 和 `DEEPSEEK_BALANCE_CURRENCY`；也可以追加 `_CNY` 或其他币种代码做按币种覆盖。 |
 
 ## 使用方式
 
