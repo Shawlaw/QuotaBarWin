@@ -1,5 +1,6 @@
 use std::{
-    path::Path,
+    fs,
+    path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
 };
 
@@ -7,9 +8,11 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::config::{config_path_for_app, load_or_create_config, ProviderConfig};
+use crate::config::{config_path_for_app, load_or_create_config, AppConfig, ProviderConfig};
 use crate::logger::{LogLevel, LogSink};
 use crate::remote_provider_runner::run_remote_provider;
+
+const SNAPSHOT_CACHE_FILE_NAME: &str = "last_snapshot.quotaBarWin.json";
 
 static SNAPSHOT_CACHE: OnceLock<Mutex<Option<AppSnapshot>>> = OnceLock::new();
 static REFRESH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -123,6 +126,98 @@ fn merge_failed_provider_with_cache(
     }
 }
 
+fn snapshot_cache_path_for_config_path(path: &Path) -> PathBuf {
+    path.parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(SNAPSHOT_CACHE_FILE_NAME)
+}
+
+fn snapshot_for_disk_cache(snapshot: &AppSnapshot) -> AppSnapshot {
+    let mut cached = snapshot.clone();
+    for provider in &mut cached.providers {
+        provider.metadata = None;
+    }
+    cached
+}
+
+fn persist_snapshot_cache(path: &Path, snapshot: &AppSnapshot) -> Result<(), String> {
+    let cache_path = snapshot_cache_path_for_config_path(path);
+    if let Some(parent) = cache_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    let temporary_path = cache_path.with_file_name(format!(".{SNAPSHOT_CACHE_FILE_NAME}.tmp"));
+    let contents = serde_json::to_string_pretty(&snapshot_for_disk_cache(snapshot))
+        .map_err(|error| error.to_string())?;
+    fs::write(&temporary_path, contents).map_err(|error| error.to_string())?;
+    if cache_path.exists() {
+        fs::remove_file(&cache_path).map_err(|error| error.to_string())?;
+    }
+    fs::rename(&temporary_path, &cache_path).map_err(|error| {
+        let _ = fs::remove_file(&temporary_path);
+        error.to_string()
+    })
+}
+
+fn filter_snapshot_for_config(mut snapshot: AppSnapshot, config: &AppConfig) -> AppSnapshot {
+    let enabled_ids = config
+        .providers
+        .iter()
+        .filter_map(|provider| match provider {
+            ProviderConfig::Remote {
+                id, enabled: true, ..
+            } => Some(id.as_str()),
+            ProviderConfig::Remote { .. } => None,
+        })
+        .collect::<Vec<_>>();
+
+    let mut providers = Vec::new();
+    for id in enabled_ids {
+        if let Some(provider) = snapshot.providers.iter().find(|provider| provider.id == id) {
+            providers.push(provider.clone());
+        }
+    }
+    snapshot.providers = providers;
+    snapshot
+}
+
+fn read_snapshot_cache_from_disk(
+    path: &Path,
+    config: &AppConfig,
+) -> Result<Option<AppSnapshot>, String> {
+    let cache_path = snapshot_cache_path_for_config_path(path);
+    if !cache_path.exists() {
+        return Ok(None);
+    }
+
+    let contents = fs::read_to_string(&cache_path).map_err(|error| error.to_string())?;
+    let snapshot = serde_json::from_str::<AppSnapshot>(&contents)
+        .map_err(|error| format!("Failed to parse snapshot cache: {error}"))?;
+    Ok(Some(filter_snapshot_for_config(snapshot, config)))
+}
+
+pub fn get_cached_snapshot_from_config_path(path: &Path) -> Result<Option<AppSnapshot>, String> {
+    if let Some(snapshot) = snapshot_cache()
+        .lock()
+        .map_err(|_| "Snapshot cache lock poisoned".to_string())?
+        .clone()
+    {
+        return Ok(Some(snapshot));
+    }
+
+    let loaded = load_or_create_config(path)?;
+    let snapshot = match read_snapshot_cache_from_disk(path, &loaded.config) {
+        Ok(snapshot) => snapshot,
+        Err(_) => None,
+    };
+    if let Some(snapshot) = snapshot.clone() {
+        *snapshot_cache()
+            .lock()
+            .map_err(|_| "Snapshot cache lock poisoned".to_string())? = Some(snapshot);
+    }
+    Ok(snapshot)
+}
+
 pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, String> {
     let _guard = refresh_lock()
         .lock()
@@ -199,6 +294,14 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     *snapshot_cache()
         .lock()
         .map_err(|_| "Snapshot cache lock poisoned".to_string())? = Some(snapshot.clone());
+
+    if let Err(error) = persist_snapshot_cache(path, &snapshot) {
+        let _ = log.write(
+            LogLevel::Warn,
+            "quota",
+            &format!("failed to persist snapshot cache: {error}"),
+        );
+    }
 
     let _ = log.write(
         LogLevel::Info,
@@ -454,6 +557,14 @@ pub fn refresh_provider_from_config_path(
         .lock()
         .map_err(|_| "Snapshot cache lock poisoned".to_string())? = Some(snapshot.clone());
 
+    if let Err(error) = persist_snapshot_cache(path, &snapshot) {
+        let _ = log.write(
+            LogLevel::Warn,
+            "quota",
+            &format!("failed to persist snapshot cache: {error}"),
+        );
+    }
+
     let _ = log.write(
         LogLevel::Info,
         "quota",
@@ -487,11 +598,9 @@ pub async fn refresh_provider(app: AppHandle, provider_id: String) -> Result<App
 }
 
 #[tauri::command]
-pub fn get_cached_snapshot() -> Result<Option<AppSnapshot>, String> {
-    snapshot_cache()
-        .lock()
-        .map(|snapshot| snapshot.clone())
-        .map_err(|_| "Snapshot cache lock poisoned".to_string())
+pub fn get_cached_snapshot(app: AppHandle) -> Result<Option<AppSnapshot>, String> {
+    let path = config_path_for_app(&app)?;
+    get_cached_snapshot_from_config_path(&path)
 }
 
 #[cfg(test)]
@@ -616,6 +725,33 @@ mod tests {
         }
     }
 
+    fn cached_provider(id: &str, name: &str) -> ProviderSnapshot {
+        ProviderSnapshot {
+            id: id.to_string(),
+            name: name.to_string(),
+            status: "ok".to_string(),
+            source: "remote".to_string(),
+            updated_at: Some("2026-06-08T10:00:00Z".to_string()),
+            windows: vec![QuotaWindow {
+                id: "weekly".to_string(),
+                label: "Weekly".to_string(),
+                remaining: None,
+                used: None,
+                limit: None,
+                unit: None,
+                used_percent: Some(20.0),
+                remaining_percent: Some(80.0),
+                warning_remaining: None,
+                reset_at: None,
+                reset_text: None,
+                confidence: "exact".to_string(),
+            }],
+            error: None,
+            diagnostics: None,
+            metadata: None,
+        }
+    }
+
     #[test]
     fn remote_provider_returns_app_snapshot() {
         let _cache_guard = isolate_snapshot_cache();
@@ -697,6 +833,88 @@ mod tests {
         let snapshot = snapshot_from_config(config);
 
         assert!(snapshot.providers.is_empty());
+    }
+
+    #[test]
+    fn cached_snapshot_persists_to_disk_for_cold_start() {
+        let _cache_guard = isolate_snapshot_cache();
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let config = test_config(vec![remote_provider(
+            &temp, "remote-a", "Remote A", true, 28.0,
+        )]);
+        save_config_to_path(&path, &config).expect("save config");
+        let initial = build_app_snapshot_from_config_path(&path).expect("snapshot");
+        assert_eq!(initial.providers.len(), 1);
+        assert!(snapshot_cache_path_for_config_path(&path).exists());
+
+        *snapshot_cache().lock().expect("lock") = None;
+        let cached = get_cached_snapshot_from_config_path(&path)
+            .expect("read cache")
+            .expect("cache exists");
+
+        assert_eq!(cached.providers.len(), 1);
+        assert_eq!(cached.providers[0].id, "remote-a");
+    }
+
+    #[test]
+    fn disk_snapshot_cache_is_filtered_by_current_config() {
+        let _cache_guard = isolate_snapshot_cache();
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let config = test_config(vec![
+            remote_provider(&temp, "remote-b", "Remote B", true, 40.0),
+            remote_provider(&temp, "remote-a", "Remote A", false, 20.0),
+        ]);
+        save_config_to_path(&path, &config).expect("save config");
+        let snapshot = AppSnapshot {
+            schema_version: 1,
+            refreshed_at: "2026-06-08T10:00:00Z".to_string(),
+            providers: vec![
+                cached_provider("remote-a", "Remote A"),
+                cached_provider("remote-b", "Remote B"),
+                cached_provider("removed", "Removed"),
+            ],
+        };
+        persist_snapshot_cache(&path, &snapshot).expect("persist cache");
+
+        let cached = get_cached_snapshot_from_config_path(&path)
+            .expect("read cache")
+            .expect("cache exists");
+
+        assert_eq!(
+            cached
+                .providers
+                .iter()
+                .map(|provider| provider.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["remote-b"]
+        );
+    }
+
+    #[test]
+    fn disk_snapshot_cache_omits_provider_metadata() {
+        let _cache_guard = isolate_snapshot_cache();
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let config = test_config(vec![remote_provider(
+            &temp, "remote-a", "Remote A", true, 28.0,
+        )]);
+        save_config_to_path(&path, &config).expect("save config");
+        let mut provider = cached_provider("remote-a", "Remote A");
+        provider.metadata = Some(serde_json::json!({ "secretLike": "do-not-persist" }));
+        let snapshot = AppSnapshot {
+            schema_version: 1,
+            refreshed_at: "2026-06-08T10:00:00Z".to_string(),
+            providers: vec![provider],
+        };
+
+        persist_snapshot_cache(&path, &snapshot).expect("persist cache");
+        let contents = fs::read_to_string(snapshot_cache_path_for_config_path(&path))
+            .expect("read cache file");
+
+        assert!(!contents.contains("secretLike"));
+        assert!(!contents.contains("do-not-persist"));
     }
 
     #[test]

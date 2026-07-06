@@ -12,7 +12,7 @@ use crate::{
     app_info::app_display_version,
     config::{config_path_for_app, load_or_create_config},
     logger::log_path_for_config_path,
-    quota::get_cached_snapshot,
+    quota::get_cached_snapshot_from_config_path,
     redact::redact_sensitive,
 };
 
@@ -27,7 +27,9 @@ struct DiagnosticsManifest {
 #[command]
 pub async fn export_diagnostics(app: AppHandle, output_path: String) -> Result<(), String> {
     let config_path = config_path_for_app(&app)?;
-    let snapshot = get_cached_snapshot().ok().flatten();
+    let snapshot = get_cached_snapshot_from_config_path(&config_path)
+        .ok()
+        .flatten();
     let log_path = log_path_for_config_path(&config_path);
     let app_version = app_display_version();
     let output_path = PathBuf::from(output_path);

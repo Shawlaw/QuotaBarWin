@@ -190,6 +190,11 @@ function renderWithEnglish(ui: ReactElement) {
 test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   renderWithEnglish(<TrayPopup />);
 
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
   expect(screen.getByTestId("tray-popup")).toBeInTheDocument();
   expect(screen.getByText(/Last refreshed at/)).toBeInTheDocument();
@@ -203,7 +208,7 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   expect(screen.queryByLabelText("Provider status")).not.toBeInTheDocument();
 
   await act(async () => {
-    mocks.listeners.trayShown?.(1);
+    mocks.listeners.trayShown?.(2);
   });
 
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
@@ -212,19 +217,11 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
     mocks.listeners.trayShown?.(2);
   });
 
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(3));
-
-  await act(async () => {
-    mocks.listeners.trayShown?.(2);
-  });
-
-  expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(3);
+  expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2);
 });
 
 test("tray_popup_syncs_cached_snapshot_before_refreshing_when_shown", async () => {
   renderWithEnglish(<TrayPopup />);
-
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
 
   let resolveRefresh: ((snapshot: AppSnapshot) => void) | undefined;
   mocks.getCachedSnapshot.mockResolvedValueOnce({
@@ -264,6 +261,7 @@ test("tray_popup_syncs_cached_snapshot_before_refreshing_when_shown", async () =
       }),
   );
 
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
   await act(async () => {
     mocks.listeners.trayShown?.(1);
   });
@@ -280,10 +278,18 @@ test("tray_popup_syncs_cached_snapshot_before_refreshing_when_shown", async () =
   });
 });
 
+test("tray_popup_does_not_show_no_providers_before_first_snapshot", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  expect(await screen.findByText("Waiting for data")).toBeInTheDocument();
+  expect(screen.queryByText("No providers configured.")).not.toBeInTheDocument();
+  expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
+});
+
 test("tray_popup_uses_native_snapshot_updates", async () => {
   renderWithEnglish(<TrayPopup />);
 
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(mocks.listeners.snapshotUpdated).toBeDefined());
 
   await act(async () => {
     mocks.listeners.snapshotUpdated?.({
@@ -325,26 +331,29 @@ test("tray_popup_uses_native_snapshot_updates", async () => {
 test("tray_popup_uses_window_focus_to_check_for_missed_presentation", async () => {
   renderWithEnglish(<TrayPopup />);
 
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
-
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
   mocks.state.presentationId = 1;
   fireEvent.focus(window);
 
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
 
   fireEvent.focus(window);
-  expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2);
+  expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1);
 
   await act(async () => {
     mocks.listeners.trayShown?.(2);
   });
 
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
 });
 
 test("tray_popup_groups_windows_by_provider_and_reset_stays_secondary", async () => {
   renderWithEnglish(<TrayPopup />);
 
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
 
   expect(screen.getByText("Codex Mock")).toBeInTheDocument();
@@ -358,6 +367,10 @@ test("tray_popup_groups_windows_by_provider_and_reset_stays_secondary", async ()
 test("tray_popup_colors_each_window_by_its_own_warning_status", async () => {
   renderWithEnglish(<TrayPopup />);
 
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
 
   const normalFill = screen.getByRole("progressbar", {
@@ -385,6 +398,10 @@ test("tray_popup_hides_popup_on_escape_and_close_button", async () => {
 test("tray_popup_follows_main_snapshot_provider_order_for_quota_windows", async () => {
   const { container } = renderWithEnglish(<TrayPopup />);
 
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
   const popupText = container.textContent ?? "";
 
@@ -438,6 +455,10 @@ test("tray_popup_shows_unhealthy_provider_in_title", async () => {
 
   renderWithEnglish(<TrayPopup />);
 
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
   await waitFor(() => expect(screen.getByText("Kimi Error")).toBeInTheDocument());
   expect(screen.queryByLabelText("Provider status")).not.toBeInTheDocument();
 });

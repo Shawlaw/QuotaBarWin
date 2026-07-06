@@ -125,11 +125,21 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   useEffect(() => {
     let isMounted = true;
 
+    void getCachedSnapshot()
+      .then((cached) => {
+        if (cached && isMounted) {
+          setSnapshot(cached);
+        }
+      })
+      .catch(() => undefined);
+
     async function initialize() {
       try {
-        const loadedConfig = await getConfig();
-        const loadedVersion = await getAppVersion();
-        const loadedStorageInfo = await getConfigStorageInfo();
+        const [loadedConfig, loadedVersion, loadedStorageInfo] = await Promise.all([
+          getConfig(),
+          getAppVersion(),
+          getConfigStorageInfo()
+        ]);
         if (!isMounted) {
           return;
         }
@@ -137,14 +147,8 @@ function MainApp({ onLanguageChange }: MainAppProps) {
         setConfig(loadedConfig);
         setConfigStorageInfo(loadedStorageInfo);
         setAppVersion(loadedVersion);
-        const cached = await getCachedSnapshot();
-        if (cached && isMounted) {
-          setSnapshot(cached);
-        }
-      } finally {
-        if (isMounted) {
-          void loadSnapshot();
-        }
+      } catch {
+        // Cache loading and native refresh events still keep the overview usable.
       }
     }
 
@@ -153,7 +157,7 @@ function MainApp({ onLanguageChange }: MainAppProps) {
     return () => {
       isMounted = false;
     };
-  }, [loadSnapshot]);
+  }, [onLanguageChange]);
 
   useEffect(() => {
     if (config) {
@@ -259,6 +263,9 @@ function MainApp({ onLanguageChange }: MainAppProps) {
     }
   }
 
+  const hasSnapshot = snapshot !== null;
+  const providers = snapshot?.providers ?? [];
+
   return (
     <main className="app-shell">
       <Header
@@ -275,7 +282,7 @@ function MainApp({ onLanguageChange }: MainAppProps) {
           configStorageInfo={configStorageInfo}
           isConfigStorageBusy={isConfigStorageBusy}
           isSaving={isSaving}
-          snapshotProviders={snapshot?.providers ?? []}
+          snapshotProviders={providers}
           onChange={setConfig}
           onOpenConfigFolder={openConfigFolder}
           onResetConfig={restoreDefaultConfig}
@@ -284,14 +291,20 @@ function MainApp({ onLanguageChange }: MainAppProps) {
         />
       ) : (
         <section className="overview-page" aria-label={t.app.overviewLabel} data-testid="overview-page">
-          <GlobalStatusStrip
-            providers={snapshot?.providers ?? []}
-            refreshedAt={snapshot?.refreshedAt ?? null}
-            refreshIntervalSeconds={config?.refreshIntervalSeconds}
-            lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
-          />
+          {hasSnapshot ? (
+            <GlobalStatusStrip
+              providers={providers}
+              refreshedAt={snapshot.refreshedAt}
+              refreshIntervalSeconds={config?.refreshIntervalSeconds}
+              lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
+            />
+          ) : (
+            <section className="global-status" data-testid="global-status-strip">
+              {t.settings.loading}
+            </section>
+          )}
           <section className="provider-list" aria-label={t.app.providersLabel}>
-            {snapshot?.providers.map((provider) => (
+            {providers.map((provider) => (
               <ProviderCard
                 key={provider.id}
                 provider={provider}

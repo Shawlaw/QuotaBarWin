@@ -129,10 +129,17 @@ export function TrayPopup() {
   useEffect(() => {
     let isMounted = true;
 
+    void getCachedSnapshot()
+      .then((cached) => {
+        if (isMounted) {
+          setSnapshot(cached);
+        }
+      })
+      .catch(() => undefined);
+
     async function initialize() {
-      const [loadedConfig, cached, loadedAppVersion] = await Promise.all([
+      const [loadedConfig, loadedAppVersion] = await Promise.all([
         getConfig(),
-        getCachedSnapshot(),
         getAppVersion().catch(() => null)
       ]);
       if (!isMounted) {
@@ -140,9 +147,7 @@ export function TrayPopup() {
       }
 
       setConfig(loadedConfig);
-      setSnapshot(cached);
       setAppVersion(loadedAppVersion);
-      void loadSnapshot();
     }
 
     void initialize();
@@ -150,13 +155,12 @@ export function TrayPopup() {
     return () => {
       isMounted = false;
     };
-  }, [loadSnapshot]);
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listenForTrayPopupShown(refreshForPresentation).then((cleanup) => {
       unlisten = cleanup;
-      void syncTrayPopupPresentation();
     });
 
     return () => {
@@ -195,6 +199,7 @@ export function TrayPopup() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  const hasSnapshot = snapshot !== null;
   const providers = snapshot?.providers ?? [];
   const lowQuotaWarningThreshold = config?.lowQuotaWarningThreshold ?? 20;
   const displayMode = config?.displayMode ?? "remaining";
@@ -283,7 +288,7 @@ export function TrayPopup() {
       </header>
 
       <div className="tray-popup__content">
-        {providers.length === 0 ? (
+        {hasSnapshot && providers.length === 0 ? (
           <section className="tray-popup__empty">{t.tray.noProviders}</section>
         ) : null}
 

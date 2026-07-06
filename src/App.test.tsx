@@ -119,28 +119,25 @@ beforeEach(() => {
 test("refresh_button_calls_refresh_snapshot", async () => {
   render(<App />);
 
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getAllByRole("button", { name: "Refresh" })[0]);
+  fireEvent.click(await screen.findByRole("button", { name: "Refresh" }));
 
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
 });
 
 test("main_app_refreshes_when_native_refresh_requested", async () => {
   render(<App />);
 
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(mocks.listeners.refreshRequested).toBeDefined());
 
   await act(async () => {
     mocks.listeners.refreshRequested?.();
   });
 
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
 });
 
 test("main_app_syncs_cached_snapshot_before_refreshing_when_shown", async () => {
   render(<App />);
-
-  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
 
   let resolveRefresh: ((snapshot: AppSnapshot) => void) | undefined;
   mocks.getCachedSnapshot.mockResolvedValueOnce({
@@ -167,6 +164,7 @@ test("main_app_syncs_cached_snapshot_before_refreshing_when_shown", async () => 
       }),
   );
 
+  await waitFor(() => expect(mocks.listeners.refreshRequested).toBeDefined());
   await act(async () => {
     mocks.listeners.refreshRequested?.();
   });
@@ -194,16 +192,69 @@ test("main_app_syncs_cached_snapshot_before_refreshing_when_shown", async () => 
   });
 });
 
+test("main_app_shows_loading_instead_of_no_providers_before_first_snapshot", async () => {
+  render(<App />);
+
+  expect(await screen.findByTestId("global-status-strip")).toHaveTextContent("Loading...");
+  expect(screen.queryByText("No providers configured. Add a provider in Settings.")).not.toBeInTheDocument();
+  expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
+});
+
+test("main_app_renders_cold_start_cache_before_native_refresh_arrives", async () => {
+  mocks.getCachedSnapshot.mockResolvedValueOnce({
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:01:00+08:00",
+    providers: [
+      {
+        id: "cold-cache",
+        name: "Cold Cache",
+        status: "ok",
+        source: "mock",
+        updatedAt: "2026-06-08T10:01:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [],
+      },
+    ],
+  });
+
+  render(<App />);
+
+  expect(await screen.findByText("Cold Cache")).toBeInTheDocument();
+  expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
+
+  await waitFor(() => expect(mocks.listeners.snapshotUpdated).toBeDefined());
+  await act(async () => {
+    mocks.listeners.snapshotUpdated?.({
+      schemaVersion: 1,
+      refreshedAt: "2026-06-08T10:02:00+08:00",
+      providers: [
+        {
+          id: "live-refresh",
+          name: "Live Refresh",
+          status: "ok",
+          source: "mock",
+          updatedAt: "2026-06-08T10:02:00+08:00",
+          error: null,
+          diagnostics: null,
+          metadata: null,
+          windows: [],
+        },
+      ],
+    });
+  });
+
+  expect(await screen.findByText("Live Refresh")).toBeInTheDocument();
+});
+
 test("main_app_uses_native_snapshot_updates_without_js_interval", async () => {
   const setIntervalSpy = vi.spyOn(window, "setInterval");
   const refreshCallsBeforeRender = mocks.refreshSnapshot.mock.calls.length;
   render(<App />);
 
-  await waitFor(() =>
-    expect(mocks.refreshSnapshot.mock.calls.length).toBeGreaterThan(
-      refreshCallsBeforeRender,
-    ),
-  );
+  await waitFor(() => expect(mocks.listeners.snapshotUpdated).toBeDefined());
+  expect(mocks.refreshSnapshot.mock.calls.length).toBe(refreshCallsBeforeRender);
   expect(
     setIntervalSpy.mock.calls.some(([, delay]) => delay === 300_000),
   ).toBe(false);
@@ -240,6 +291,7 @@ test("settings_replaces_provider_overview", async () => {
       screen.getByRole("heading", { name: "QuotaBarWin" }),
     ).toBeInTheDocument(),
   );
+  await waitFor(() => expect(screen.getByText("v1.0.0")).toBeInTheDocument());
   expect(screen.getByTestId("global-status-strip")).toBeInTheDocument();
   expect(screen.getByLabelText("Providers")).toBeInTheDocument();
   expect(screen.getByText("v1.0.0")).toHaveAttribute("title", "Version 1.0.0(abc1234)");

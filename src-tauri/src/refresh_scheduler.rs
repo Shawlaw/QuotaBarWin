@@ -15,6 +15,7 @@ use crate::{
 };
 
 const MIN_REFRESH_INTERVAL_SECONDS: u64 = 10;
+const INITIAL_REFRESH_DELAY: Duration = Duration::from_millis(750);
 pub const SNAPSHOT_REFRESHED_EVENT: &str = "snapshot-refreshed";
 
 static STARTED: AtomicBool = AtomicBool::new(false);
@@ -63,6 +64,7 @@ pub fn start(app: AppHandle) {
 
 fn run_scheduler(app: AppHandle, state: Arc<SchedulerWakeState>) {
     let mut observed_generation = current_generation(&state);
+    observed_generation = wait_for_next_tick(&state, INITIAL_REFRESH_DELAY, observed_generation);
     loop {
         if let Err(error) = refresh_once(&app) {
             eprintln!("Background refresh failed: {error}");
