@@ -27,7 +27,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-runtime = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
-zip = { version = "0.6", default-features = false, features = ["deflate"] }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 serde_yaml = "0.9"
