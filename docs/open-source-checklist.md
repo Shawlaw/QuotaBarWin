@@ -16,12 +16,12 @@
 - Tauri 安全姿态：启用基础 CSP，保留必要的 Tauri IPC source。
 - 防误提交：扩展 `.gitignore`，覆盖常见签名证书、私钥和 keystore 文件。
 - E2E：`e2e/tauri.e2e.mjs` 已改为生成 schema 14 remote Provider 配置和本地 cache；README 说明了单实例限制和临时产物保留开关。
+- Release 产物：确认 GitHub Release 只由 `.github/workflows/release.yml` 生成，不手动上传本地工作区压缩包或附件。
 
 ## 开源前人工确认
 
 - 确认 GitHub 仓库已启用 Security Advisories / private vulnerability reporting。
 - 确认 v1.0.0 首个公开 Release 的 tag、zip 名称、截图和 README 描述一致。
-- 确认本地 `.tmp/`、`dist/`、`node_modules/`、`src-tauri/target/` 等忽略目录不会被手动上传到 Release 或附件。
 
 ## 后续优化
 
