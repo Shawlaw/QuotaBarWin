@@ -83,4 +83,4 @@ DeepSeek 返回的是余额，不是周期性 quota。没有参考总额时，�
 
 - 示例脚本：[`provider.cjs`](provider.cjs)
 - Manifest：[`provider.json`](provider.json)
-- 原始响应 fixture：[`../../../docs/specs/fixtures/provider_outputs/deepseek_balance.json`](../../../docs/specs/fixtures/provider_outputs/deepseek_balance.json)
+- 原始响应 fixture：[`../../../fixtures/provider_outputs/deepseek_balance.json`](../../../fixtures/provider_outputs/deepseek_balance.json)

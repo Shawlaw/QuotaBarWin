@@ -88,5 +88,5 @@ The script sorts windows in that order and places unknown IDs last. Unit labels 
 
 - Script: [`provider.cjs`](provider.cjs)
 - Manifest: [`provider.json`](provider.json)
-- Raw response fixture: [`../../../docs/specs/fixtures/provider_outputs/bigmodel_quota_limit.json`](../../../docs/specs/fixtures/provider_outputs/bigmodel_quota_limit.json)
+- Raw response fixture: [`../../../fixtures/provider_outputs/bigmodel_quota_limit.json`](../../../fixtures/provider_outputs/bigmodel_quota_limit.json)
 - Command fixture wrapper: [`../../../fixtures/commands/bigmodel_quota_fixture.js`](../../../fixtures/commands/bigmodel_quota_fixture.js)

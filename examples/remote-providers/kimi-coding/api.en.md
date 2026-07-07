@@ -101,5 +101,5 @@ If the 300-minute window has no `used`, `remaining`, or `limit`, the script trea
 
 - Script: [`provider.cjs`](provider.cjs)
 - Manifest: [`provider.json`](provider.json)
-- Raw response fixture: [`../../../docs/specs/fixtures/provider_outputs/kimi_coding_usage.json`](../../../docs/specs/fixtures/provider_outputs/kimi_coding_usage.json)
+- Raw response fixture: [`../../../fixtures/provider_outputs/kimi_coding_usage.json`](../../../fixtures/provider_outputs/kimi_coding_usage.json)
 - Command fixture wrapper: [`../../../fixtures/commands/kimi_usage_fixture.js`](../../../fixtures/commands/kimi_usage_fixture.js)

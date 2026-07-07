@@ -83,4 +83,4 @@ DeepSeek returns balance, not a recurring quota. Without a reference total, the 
 
 - Script: [`provider.cjs`](provider.cjs)
 - Manifest: [`provider.json`](provider.json)
-- Raw response fixture: [`../../../docs/specs/fixtures/provider_outputs/deepseek_balance.json`](../../../docs/specs/fixtures/provider_outputs/deepseek_balance.json)
+- Raw response fixture: [`../../../fixtures/provider_outputs/deepseek_balance.json`](../../../fixtures/provider_outputs/deepseek_balance.json)

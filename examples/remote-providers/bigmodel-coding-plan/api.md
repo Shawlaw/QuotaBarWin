@@ -88,5 +88,5 @@ English version: [`api.en.md`](api.en.md).
 
 - 示例脚本：[`provider.cjs`](provider.cjs)
 - Manifest：[`provider.json`](provider.json)
-- 原始响应 fixture：[`../../../docs/specs/fixtures/provider_outputs/bigmodel_quota_limit.json`](../../../docs/specs/fixtures/provider_outputs/bigmodel_quota_limit.json)
+- 原始响应 fixture：[`../../../fixtures/provider_outputs/bigmodel_quota_limit.json`](../../../fixtures/provider_outputs/bigmodel_quota_limit.json)
 - 命令 fixture 包装：[`../../../fixtures/commands/bigmodel_quota_fixture.js`](../../../fixtures/commands/bigmodel_quota_fixture.js)

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { ProviderCard } from "./ProviderCard";
 import type { ProviderSnapshot } from "../types";
-import kimiExpected from "../../docs/specs/fixtures/expected/kimi_provider_snapshot.json";
+import kimiExpected from "../../fixtures/expected/kimi_provider_snapshot.json";
 import { I18nProvider } from "../i18n";
 import type { ReactElement } from "react";
 

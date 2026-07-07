@@ -235,8 +235,12 @@ behind provider schema changes and currently seeds legacy provider kinds.
   providers as a registry.
 - `examples/remote-providers/*/api.md` and `api.en.md` describe the API/fixture
   contract for each example provider.
-- `fixtures/commands/` contains raw provider response fixtures used by example
-  scripts and tests.
+- `fixtures/provider_outputs/` contains raw provider response JSON fixtures used
+  by example provider docs.
+- `fixtures/expected/` contains expected normalized snapshot fixtures used by
+  tests.
+- `fixtures/commands/` contains command fixture helpers used by older local
+  command examples.
 - `src-tauri/icons/source.png` is the source icon; generated icon outputs should
   be updated with `npm run icons:generate`.
 - `.github/workflows/release.yml` builds the Windows portable zip
