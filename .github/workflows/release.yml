@@ -69,7 +69,7 @@ jobs:
           Compress-Archive -Path artifacts/portable/* -DestinationPath "artifacts/${{ steps.release_meta.outputs.zip_name }}" -Force
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.release_meta.outputs.artifact_name }}
           path: artifacts/${{ steps.release_meta.outputs.zip_name }}
