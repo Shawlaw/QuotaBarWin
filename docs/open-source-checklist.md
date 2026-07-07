@@ -1,6 +1,6 @@
 # 开源准备审计
 
-本文记录开源前需要补齐或持续关注的事项。默认以当前代码、README 和公开 Provider 文档为准；`docs/specs/` 仅作历史设计参考。
+本文记录开源前需要补齐或持续关注的事项。默认以当前代码、README 和公开 Provider 文档为准。
 
 ## 已处理
 
@@ -17,6 +17,7 @@
 - 防误提交：扩展 `.gitignore`，覆盖常见签名证书、私钥和 keystore 文件。
 - E2E：`e2e/tauri.e2e.mjs` 已改为生成 schema 14 remote Provider 配置和本地 cache；README 说明了单实例限制和临时产物保留开关。
 - Release 产物：确认 GitHub Release 只由 `.github/workflows/release.yml` 生成，不手动上传本地工作区压缩包或附件。
+- 历史 specs：迁出仍使用的 provider fixture 后，删除 `docs/specs/` 下过期的路线设计文档。
 
 ## 开源前人工确认
 

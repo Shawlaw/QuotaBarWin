@@ -54,9 +54,8 @@ Start with these files:
   `examples/remote-providers/README.md` for the public remote provider
   contract.
 
-The files under `docs/specs/` are design history and roadmap context. If a spec
-conflicts with code, README, current docs, or this file, trust the code and
-current docs.
+Historical planning specs were removed from the open-source tree. Treat
+README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
