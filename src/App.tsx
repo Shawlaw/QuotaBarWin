@@ -277,6 +277,14 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   }, [config, onLanguageChange]);
 
   useEffect(() => {
+    if (!config || snapshot !== null || refreshInFlight.current) {
+      return;
+    }
+
+    void loadSnapshot();
+  }, [config, loadSnapshot, snapshot]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listenForRefreshRequests(() => void loadSnapshot()).then((cleanup) => {
       unlisten = cleanup;

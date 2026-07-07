@@ -119,14 +119,18 @@ beforeEach(() => {
 test("refresh_button_calls_refresh_snapshot", async () => {
   render(<App />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "Refresh" }));
+  expect(await screen.findByText("Codex Mock")).toBeInTheDocument();
+  mocks.refreshSnapshot.mockClear();
 
+  fireEvent.click(screen.getAllByRole("button", { name: "Refresh" })[0]);
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
 });
 
 test("main_app_refreshes_when_native_refresh_requested", async () => {
   render(<App />);
 
+  expect(await screen.findByText("Codex Mock")).toBeInTheDocument();
+  mocks.refreshSnapshot.mockClear();
   await waitFor(() => expect(mocks.listeners.refreshRequested).toBeDefined());
 
   await act(async () => {
@@ -138,6 +142,10 @@ test("main_app_refreshes_when_native_refresh_requested", async () => {
 
 test("main_app_syncs_cached_snapshot_before_refreshing_when_shown", async () => {
   render(<App />);
+
+  expect(await screen.findByText("Codex Mock")).toBeInTheDocument();
+  mocks.getCachedSnapshot.mockClear();
+  mocks.refreshSnapshot.mockClear();
 
   let resolveRefresh: ((snapshot: AppSnapshot) => void) | undefined;
   mocks.getCachedSnapshot.mockResolvedValueOnce({
@@ -192,16 +200,46 @@ test("main_app_syncs_cached_snapshot_before_refreshing_when_shown", async () => 
   });
 });
 
-test("main_app_shows_loading_instead_of_no_providers_before_first_snapshot", async () => {
+test("main_app_refreshes_after_config_load_when_no_first_snapshot", async () => {
+  let resolveRefresh: ((snapshot: AppSnapshot) => void) | undefined;
+  mocks.refreshSnapshot.mockImplementationOnce(
+    () =>
+      new Promise<AppSnapshot>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+  );
+
   render(<App />);
 
   expect(await screen.findByTestId("global-status-strip")).toHaveTextContent(/Loading\.\.\.|加载中\.\.\./);
   expect(screen.queryByText("No providers configured. Add a provider in Settings.")).not.toBeInTheDocument();
-  expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+
+  await act(async () => {
+    resolveRefresh?.({
+      schemaVersion: 1,
+      refreshedAt: "2026-06-08T10:04:00+08:00",
+      providers: [
+        {
+          id: "startup-refresh",
+          name: "Startup Refresh",
+          status: "ok",
+          source: "mock",
+          updatedAt: "2026-06-08T10:04:00+08:00",
+          error: null,
+          diagnostics: null,
+          metadata: null,
+          windows: [],
+        },
+      ],
+    });
+  });
+
+  expect(await screen.findByText("Startup Refresh")).toBeInTheDocument();
 });
 
 test("main_app_renders_cold_start_cache_before_native_refresh_arrives", async () => {
-  mocks.getCachedSnapshot.mockResolvedValueOnce({
+  const cachedSnapshot: AppSnapshot = {
     schemaVersion: 1,
     refreshedAt: "2026-06-08T10:01:00+08:00",
     providers: [
@@ -217,7 +255,8 @@ test("main_app_renders_cold_start_cache_before_native_refresh_arrives", async ()
         windows: [],
       },
     ],
-  });
+  };
+  mocks.getCachedSnapshot.mockResolvedValueOnce(cachedSnapshot);
 
   render(<App />);
 
@@ -250,11 +289,10 @@ test("main_app_renders_cold_start_cache_before_native_refresh_arrives", async ()
 
 test("main_app_uses_native_snapshot_updates_without_js_interval", async () => {
   const setIntervalSpy = vi.spyOn(window, "setInterval");
-  const refreshCallsBeforeRender = mocks.refreshSnapshot.mock.calls.length;
   render(<App />);
 
   await waitFor(() => expect(mocks.listeners.snapshotUpdated).toBeDefined());
-  expect(mocks.refreshSnapshot.mock.calls.length).toBe(refreshCallsBeforeRender);
+  expect(await screen.findByText("Codex Mock")).toBeInTheDocument();
   expect(
     setIntervalSpy.mock.calls.some(([, delay]) => delay === 300_000),
   ).toBe(false);
@@ -279,7 +317,7 @@ test("main_app_uses_native_snapshot_updates_without_js_interval", async () => {
     });
   });
 
-  expect(screen.getByText("Native Refresh")).toBeInTheDocument();
+  expect(await screen.findByText("Native Refresh")).toBeInTheDocument();
   setIntervalSpy.mockRestore();
 });
 
@@ -386,6 +424,7 @@ test("saving_provider_reorder_projects_cached_snapshot_without_refreshing_data",
   };
   mocks.getConfig.mockResolvedValueOnce(configWithTwoProviders);
   mocks.getCachedSnapshot.mockResolvedValueOnce(cachedSnapshot);
+  mocks.refreshSnapshot.mockResolvedValueOnce(cachedSnapshot);
 
   render(<App />);
 

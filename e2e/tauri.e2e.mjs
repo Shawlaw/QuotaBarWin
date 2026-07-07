@@ -68,7 +68,9 @@ try {
   }
   if (driverProcess && !driverProcess.killed) {
     driverProcess.kill();
+    await waitForProcessExit(driverProcess, 5000);
   }
+  await sleep(1000);
   cleanupE2eConfig();
 }
 
@@ -216,7 +218,7 @@ async function clickByTestId(id) {
 function writeE2eConfig() {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(portableMarkerPath, "QuotaBarWin E2E portable mode\n");
-  fs.rmSync(e2eProviderRoot, { recursive: true, force: true });
+  removePathWithRetry(e2eProviderRoot);
 
   const fixtureProvider = createRemoteProviderCache({
     id: "e2e-remote-fixture",
@@ -281,7 +283,24 @@ function cleanupE2eConfig() {
       // best-effort cleanup only
     }
   }
-  fs.rmSync(e2eProviderRoot, { recursive: true, force: true });
+  removePathBestEffort(e2eProviderRoot);
+}
+
+function removePathWithRetry(targetPath) {
+  fs.rmSync(targetPath, {
+    recursive: true,
+    force: true,
+    maxRetries: 20,
+    retryDelay: 250
+  });
+}
+
+function removePathBestEffort(targetPath) {
+  try {
+    removePathWithRetry(targetPath);
+  } catch (error) {
+    console.warn(`Unable to remove E2E artifact ${targetPath}: ${error?.message ?? error}`);
+  }
 }
 
 function createRemoteProviderCache({ id, displayName, version, source, timeoutSeconds }) {
@@ -500,4 +519,22 @@ function canConnect(targetPort) {
       resolve(false);
     });
   });
+}
+
+function waitForProcessExit(childProcess, timeoutMs) {
+  if (childProcess.exitCode !== null || childProcess.signalCode !== null) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(resolve, timeoutMs);
+    childProcess.once("exit", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
