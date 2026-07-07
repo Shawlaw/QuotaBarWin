@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -24,11 +25,13 @@ const port = Number(process.env.TAURI_DRIVER_PORT ?? 4444);
 const portableDir = path.dirname(appExecutable);
 const configPath = path.join(portableDir, "config.quotaBarWin.json");
 const portableMarkerPath = path.join(portableDir, "quotabarwin.portable");
+const e2eProviderRoot = path.join(portableDir, "providers", "remote");
 
 let driverProcess;
 let app;
 
 try {
+  assertNoConflictingAppInstance();
   run(npmCommand, ["run", "build"], root);
   run("cargo", ["build", "--release", "--features", "tauri/custom-protocol"], path.join(root, "src-tauri"));
   assertBuiltAppExists();
@@ -55,7 +58,7 @@ try {
 
   await assertAppStartedAndShowsQuota();
   await assertConfigCanBeSaved();
-  await assertCliProviderCanRunAndTimeout();
+  await assertRemoteProviderCanRefreshAndTimeout();
   await assertPermissionPromptNamesProvider();
 
   console.log("Tauri WebdriverIO E2E passed");
@@ -92,10 +95,15 @@ async function assertAppStartedAndShowsQuota() {
   });
   assert.match(statusText, /providers active|needs attention|refresh failed/);
 
-  const mockProvider = await byTestId("provider-card-mock-codex");
-  await mockProvider.waitForDisplayed({ timeout: 20000 });
-  const quotaRow = await byTestId("quota-row-mock-codex-5h");
+  const fixtureProvider = await byTestId("provider-card-e2e-remote-fixture");
+  await fixtureProvider.waitForDisplayed({ timeout: 20000 });
+  const quotaRow = await byTestId("quota-row-e2e-remote-fixture-daily");
   assert.equal(await quotaRow.isDisplayed(), true);
+
+  const slowProvider = await byTestId("provider-card-e2e-remote-slow");
+  await slowProvider.waitForDisplayed({ timeout: 20000 });
+  const slowStatus = await byTestId("provider-status-e2e-remote-slow");
+  assert.match(await slowStatus.getText(), /error|错误/i);
 }
 
 async function logConfigStorageDiagnostics() {
@@ -124,9 +132,13 @@ async function logConfigStorageDiagnostics() {
 
 function assertE2eConfigWritten() {
   const written = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  if (written.providers?.length !== 3) {
+  if (written.schemaVersion !== 14 || written.providers?.length !== 2) {
     throw new Error(`E2E config was not written correctly at ${configPath}`);
   }
+  assert.deepEqual(
+    written.providers.map((provider) => provider.kind),
+    ["remote", "remote"]
+  );
   console.log(`E2E config seeded at ${configPath}`);
 }
 
@@ -147,36 +159,34 @@ async function assertConfigCanBeSaved() {
   assert.equal(saved.refreshIntervalSeconds, 120);
 }
 
-async function assertCliProviderCanRunAndTimeout() {
-  await openSettings();
-
-  await clickByTestId("edit-provider-fixture-cli");
-  await clickByTestId("test-provider-fixture-cli");
+async function assertRemoteProviderCanRefreshAndTimeout() {
+  await clickByTestId("provider-refresh-e2e-remote-fixture");
   await app.waitUntil(async () => {
-    const output = await providerOutputText("fixture-cli");
-    return output.includes("Fake Command Provider");
+    const quotaRow = await byTestId("quota-row-e2e-remote-fixture-daily");
+    return quotaRow.isDisplayed();
   }, {
-    timeout: 10000,
-    timeoutMsg: "Fixture CLI provider did not return quota output"
+    timeout: 20000,
+    timeoutMsg: "Fixture remote provider did not refresh quota output"
   });
 
-  await clickByTestId("edit-provider-slow-cli");
-  await clickByTestId("test-provider-slow-cli");
+  await clickByTestId("provider-status-e2e-remote-slow");
+  const slowCard = await byTestId("provider-card-e2e-remote-slow");
   await app.waitUntil(async () => {
-    const output = await providerOutputText("slow-cli");
-    return output.includes("timedOut") && output.includes("true");
+    const text = await slowCard.getText();
+    return text.includes("timed out") || text.includes("timeoutOrigin=host");
   }, {
     timeout: 10000,
-    timeoutMsg: "Slow CLI provider did not show timeout interruption"
+    timeoutMsg: "Slow remote provider did not show timeout diagnostics"
   });
 }
 
 async function assertPermissionPromptNamesProvider() {
-  await clickByTestId("more-provider-fixture-cli");
-  await clickByTestId("remove-provider-fixture-cli");
+  await openSettings();
+  await clickByTestId("more-provider-e2e-remote-fixture");
+  await clickByTestId("remove-provider-e2e-remote-fixture");
 
   const alertText = await app.getAlertText();
-  assert.match(alertText, /Fixture CLI/);
+  assert.match(alertText, /E2E Remote Fixture/);
   await app.dismissAlert();
 }
 
@@ -203,68 +213,48 @@ async function clickByTestId(id) {
   }, element);
 }
 
-async function providerOutputText(providerId) {
-  const output = await app.$(`[data-testid="settings-provider-${providerId}"] pre`);
-  if (!(await output.isExisting())) {
-    return "";
-  }
-  return output.getText();
-}
-
 function writeE2eConfig() {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(portableMarkerPath, "QuotaBarWin E2E portable mode\n");
-  const fixture = (name) => path.join(root, "fixtures", name);
+  fs.rmSync(e2eProviderRoot, { recursive: true, force: true });
+
+  const fixtureProvider = createRemoteProviderCache({
+    id: "e2e-remote-fixture",
+    displayName: "E2E Remote Fixture",
+    version: "1.0.0",
+    source: fixtureRemoteProviderSource(),
+    timeoutSeconds: 5
+  });
+  const slowProvider = createRemoteProviderCache({
+    id: "e2e-remote-slow",
+    displayName: "E2E Remote Slow",
+    version: "1.0.0",
+    source: slowRemoteProviderSource(),
+    timeoutSeconds: 1
+  });
+
   fs.writeFileSync(
     configPath,
     JSON.stringify(
       {
-        schemaVersion: 6,
+        schemaVersion: 14,
         refreshIntervalSeconds: 300,
         displayMode: "remaining",
         lowQuotaWarningThreshold: 20,
         launchAtStartup: false,
         logLevel: "info",
-        providers: [
-          {
-            kind: "mock",
-            id: "mock-codex",
-            name: "Codex Mock",
-            enabled: true
-          },
-          {
-            kind: "script",
-            id: "fixture-cli",
-            name: "Fixture CLI",
-            enabled: true,
-            command: {
-              executable: "node",
-              args: [fixture("fake_provider_snapshot.js")],
-              cwd: null,
-              env: {},
-              timeoutMs: 2000
-            },
-            output: { type: "provider-snapshot-v1" },
-            windowLabelOverrides: {},
-            visibleWindowIds: []
-          },
-          {
-            kind: "script",
-            id: "slow-cli",
-            name: "Slow CLI",
-            enabled: false,
-            command: {
-              executable: "node",
-              args: [fixture("fake_slow.js")],
-              cwd: null,
-              env: {},
-              timeoutMs: 50
-            },
-            output: { type: "provider-snapshot-v1" },
-            windowLabelOverrides: {},
-            visibleWindowIds: []
-          }
-        ]
+        logMaxBytes: 10 * 1024 * 1024,
+        language: "en",
+        networkProxy: null,
+        trayPopupPosition: null,
+        trayPopupSize: null,
+        remoteProviderRegistry: {
+          registryUrl: null,
+          providerProxyUrl: null,
+          autoUpdate: false,
+          sources: []
+        },
+        providers: [fixtureProvider, slowProvider]
       },
       null,
       2
@@ -273,13 +263,146 @@ function writeE2eConfig() {
 }
 
 function cleanupE2eConfig() {
-  for (const file of [configPath, portableMarkerPath]) {
+  if (process.env.QBWIN_E2E_KEEP_ARTIFACTS === "1") {
+    console.log(`Keeping E2E artifacts under ${portableDir}`);
+    return;
+  }
+
+  for (const file of [
+    configPath,
+    portableMarkerPath,
+    path.join(portableDir, "last_snapshot.quotaBarWin.json"),
+    path.join(portableDir, "quotabarwin.log"),
+    path.join(portableDir, "quotabarwin.log.1")
+  ]) {
     try {
       fs.rmSync(file, { force: true });
     } catch {
       // best-effort cleanup only
     }
   }
+  fs.rmSync(e2eProviderRoot, { recursive: true, force: true });
+}
+
+function createRemoteProviderCache({ id, displayName, version, source, timeoutSeconds }) {
+  const providerDir = path.join(e2eProviderRoot, id);
+  const manifestPath = path.join(providerDir, "provider.json");
+  const sourcePath = path.join(providerDir, "provider.cjs");
+  const sourceUrl = sourcePath;
+  const checksum = sourceChecksum(source);
+  const now = new Date().toISOString();
+  const manifest = {
+    schemaVersion: 1,
+    id,
+    displayName,
+    version,
+    description: `${displayName} generated by the E2E runner.`,
+    runtime: "node",
+    entry: "provider.cjs",
+    requiredEnvVars: [],
+    output: "provider-snapshot-v1",
+    permissions: [],
+    checksums: {
+      source: checksum
+    }
+  };
+
+  fs.mkdirSync(providerDir, { recursive: true });
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  fs.writeFileSync(sourcePath, source);
+  fs.writeFileSync(
+    path.join(providerDir, ".meta.json"),
+    JSON.stringify(
+      {
+        etag: null,
+        lastCheckAt: now,
+        checksum,
+        version,
+        installedAt: now,
+        updatedAt: now,
+        sourceUrl,
+        resolvedRuntime: process.execPath
+      },
+      null,
+      2
+    )
+  );
+
+  return {
+    kind: "remote",
+    id,
+    name: displayName,
+    enabled: true,
+    version,
+    manifestUrl: manifestPath,
+    sourceUrl,
+    providerDir,
+    runtime: "node",
+    resolvedRuntime: process.execPath,
+    proxyUrl: null,
+    autoUpdate: false,
+    updateIntervalSeconds: 3600,
+    timeoutSeconds,
+    trustedChecksum: checksum,
+    installedAt: now,
+    updatedAt: now,
+    lastCheckedAt: now,
+    windowLabelOverrides: {},
+    visibleWindowIds: [],
+    envVars: {}
+  };
+}
+
+function sourceChecksum(source) {
+  return `sha256:${createHash("sha256").update(source).digest("hex")}`;
+}
+
+function fixtureRemoteProviderSource() {
+  return `process.stderr.write(JSON.stringify({level:"info",stage:"e2e.start",message:"fixture remote provider started"}) + "\\n");
+console.log(JSON.stringify({
+  status: "ok",
+  updatedAt: new Date().toISOString(),
+  windows: [
+    {
+      id: "daily",
+      label: "Daily",
+      used: 28,
+      limit: 100,
+      unit: "percent",
+      usedPercent: 28,
+      resetAt: null,
+      resetText: "resets tomorrow",
+      confidence: "exact"
+    },
+    {
+      id: "weekly",
+      label: "Weekly limit",
+      remaining: 64,
+      limit: 100,
+      unit: "percent",
+      remainingPercent: 64,
+      resetAt: null,
+      resetText: "resets Friday",
+      confidence: "estimated"
+    }
+  ],
+  metadata: {
+    fixture: true
+  }
+}));
+`;
+}
+
+function slowRemoteProviderSource() {
+  return `process.stderr.write(JSON.stringify({level:"info",stage:"e2e.slow",message:"slow remote provider started"}) + "\\n");
+setTimeout(() => {
+  console.log(JSON.stringify({
+    status: "ok",
+    updatedAt: new Date().toISOString(),
+    windows: []
+  }));
+}, 5000);
+`;
 }
 
 function resolveTauriDriver() {
@@ -300,6 +423,42 @@ function resolveTauriDriver() {
   }
 
   throw new Error("tauri-driver was not found. Install it with: cargo install tauri-driver --locked");
+}
+
+function assertNoConflictingAppInstance() {
+  if (!isWindows) {
+    return;
+  }
+
+  const command =
+    "$ErrorActionPreference = 'SilentlyContinue'; " +
+    "Get-Process | " +
+    "Where-Object { $_.ProcessName -ieq 'QuotaBarWin' -or $_.ProcessName -ieq 'quotabarwin' } | " +
+    "ForEach-Object { $_.Path }";
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", command], {
+    encoding: "utf8"
+  });
+  if (result.status !== 0) {
+    console.warn("Unable to check for conflicting QuotaBarWin instances before E2E.");
+    return;
+  }
+
+  const target = normalizePath(appExecutable);
+  const conflicts = result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((processPath) => normalizePath(processPath) !== target);
+
+  if (conflicts.length > 0) {
+    throw new Error(
+      `A different QuotaBarWin instance is already running. Quit it before E2E so Tauri single-instance does not redirect startup: ${conflicts.join(", ")}`
+    );
+  }
+}
+
+function normalizePath(value) {
+  return path.resolve(value).toLowerCase();
 }
 
 function run(command, args, cwd) {
