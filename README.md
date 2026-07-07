@@ -169,7 +169,7 @@ npm run e2e
 cargo install tauri-driver --locked
 ```
 
-注意：E2E 当前是维护者可选检查，运行前请先查看 `e2e/tauri.e2e.mjs`。它会构建 release app，并写入临时 portable 配置；历史上该脚本可能落后于 Provider schema，不能替代上面的常规构建和单元测试。
+注意：E2E 当前是维护者可选检查，不能替代上面的常规构建和单元测试。运行前请先退出所有已运行的 QuotaBarWin 实例；Tauri 单实例机制会把新启动重定向到已有进程。脚本会构建 release app，并写入临时 portable 配置和本地 remote Provider cache。排查失败时可设置 `QBWIN_E2E_KEEP_ARTIFACTS=1` 保留这些临时文件。
 
 ---
 

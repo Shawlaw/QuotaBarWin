@@ -169,7 +169,7 @@ Install `tauri-driver` first if needed:
 cargo install tauri-driver --locked
 ```
 
-Note: E2E is currently an optional maintainer check. Review `e2e/tauri.e2e.mjs` before relying on it. It builds the release app and writes temporary portable config; historically this script can lag behind the Provider schema, so it does not replace the regular build and unit test checks above.
+Note: E2E is currently an optional maintainer check and does not replace the regular build and unit test checks above. Quit all running QuotaBarWin instances first; Tauri single-instance behavior redirects startup to the existing process. The script builds the release app and writes temporary portable config plus a local remote Provider cache. Set `QBWIN_E2E_KEEP_ARTIFACTS=1` when debugging to keep those temporary files.
 
 ---
 
