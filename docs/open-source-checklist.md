@@ -10,6 +10,7 @@
 - GitHub 入口：补充 issue 模板、PR 模板、CI 工作流和 Dependabot 配置。
 - 变更记录：补充 `CHANGELOG.md`，为公开 release 提供用户可见变更入口。
 - 依赖安全：修复 `npm audit` 暴露的 `undici` 高危链路，并用 npm override 避开 `esbuild` 低危范围。
+- Rust 依赖安全：安装并运行 `cargo audit`，更新 `src-tauri/Cargo.lock` 修复 `quick-xml` 和 `quinn-proto` 高危漏洞。
 - 供应链检查：CI 运行 `npm audit --audit-level=low`，PR 运行 GitHub dependency review 覆盖 npm/Cargo lockfile。
 - Tauri 安全姿态：启用基础 CSP，保留必要的 Tauri IPC source。
 - 防误提交：扩展 `.gitignore`，覆盖常见签名证书、私钥和 keystore 文件。
@@ -25,5 +26,5 @@
 
 ## 后续优化
 
-- 如需离线或本地 Rust 漏洞扫描，在开发环境安装并运行 `cargo audit`；当前本机未安装该 cargo 子命令。
+- `cargo audit` 当前仍报告 GTK/Tauri Linux 链路、`proc-macro-error` 和 `unic-*` 的 warning；审计退出码为 0，无 remaining vulnerability。
 - 在公开宣传 E2E 可靠性前，刷新 `e2e/tauri.e2e.mjs` 的种子数据，让它只使用当前 `remote` Provider schema。
