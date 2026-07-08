@@ -52,9 +52,9 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 
 ## 快速上手
 
-QuotaBarWin 发布包不会内置你的账号凭据，也不会默认启用某个服务账号。应用默认配置了官方远程 Provider 来源，设置页会从这个 registry 展示可安装的 Provider：
+QuotaBarWin 发布包不会内置你的账号凭据，也不会默认启用某个服务账号。应用默认配置了 QuotaBarWin 项目维护的远程 Provider 来源，设置页会从这个 registry 展示可安装的 Provider：
 
-[官方 Provider registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
+[QuotaBarWin 项目维护的 Provider registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
 
 **安全提示：只安装使用可信任的 Provider。Provider 脚本可以直接读取你配置的各类 AI 鉴权信息，并发起网络通讯。**
 
@@ -68,9 +68,9 @@ QuotaBarWin 发布包不会内置你的账号凭据，也不会默认启用某�
 node --version
 ```
 
-### 2. 选择官方 Provider
+### 2. 选择项目维护的 Provider
 
-官方 registry 当前包含以下 manifest；实际可安装列表以 registry 为准：
+QuotaBarWin 项目维护的 registry 当前包含以下 manifest；实际可安装列表以 registry 为准：
 
 | Manifest ID | 显示名称 | 监控内容 | 常用凭据 / 配置 |
 |---|---|---|---|
@@ -84,7 +84,7 @@ node --version
 **安装前请再次确认来源可信。Provider 脚本会在你的机器上运行，可以读取你配置给它的 token、API key、Cookie、账号 ID 等鉴权信息，并访问网络。**
 
 1. 打开 **设置 → 提供方 → 添加提供方**。
-2. 默认会加载官方 Provider 来源；如果列表为空，可以在 **管理来源** 中填入上面的 registry URL。
+2. 默认会加载 QuotaBarWin 项目维护的 Provider 来源；如果列表为空，可以在 **管理来源** 中填入上面的 registry URL。
 3. 点击需要的 Provider 的 **安装**。安装后的 Provider 默认启用，也可以在 Provider 列表里用复选框停用。
 4. 同一 Provider 需要多个账号时，再次点击已安装项的 **添加账号**。
 

@@ -52,9 +52,9 @@ The main window includes an overview page and a settings page. The tray popup is
 
 ## Quick Start
 
-The QuotaBarWin release package does not include your account credentials and does not enable any service account by default. The app is configured with the official remote Provider source, and Settings loads installable Providers from this registry:
+The QuotaBarWin release package does not include your account credentials and does not enable any service account by default. The app is configured with the QuotaBarWin-maintained remote Provider source, and Settings loads installable Providers from this registry:
 
-[Official Provider registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
+[QuotaBarWin-maintained Provider registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
 
 **Security notice: only install and use Providers you trust. Provider scripts can directly read the AI credentials you configure for them and make network requests.**
 
@@ -68,9 +68,9 @@ The QuotaBarWin release package does not include your account credentials and do
 node --version
 ```
 
-### 2. Choose An Official Provider
+### 2. Choose A Project-Maintained Provider
 
-The official registry currently contains these manifests; the actual installable list is loaded from the registry:
+The QuotaBarWin-maintained registry currently contains these manifests; the actual installable list is loaded from the registry:
 
 | Manifest ID | Display name | What it monitors | Common credential / config |
 |---|---|---|---|
@@ -84,7 +84,7 @@ The official registry currently contains these manifests; the actual installable
 **Before installing, confirm that the source is trusted. Provider scripts run on your machine, can read the tokens, API keys, cookies, account IDs, and other credentials configured for them, and can access the network.**
 
 1. Open **Settings → Providers → Add Provider**.
-2. The official Provider source should load automatically. If the list is empty, open **Manage Source** and paste the registry URL above.
+2. The QuotaBarWin-maintained Provider source should load automatically. If the list is empty, open **Manage Source** and paste the registry URL above.
 3. Click **Install** on the Provider you want. Installed Providers are enabled by default, and can be disabled with the checkbox in the Provider list.
 4. For multiple accounts on the same Provider, click **Add account** on the already-installed item.
 

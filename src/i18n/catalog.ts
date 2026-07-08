@@ -161,7 +161,7 @@ export type I18nCatalog = {
     securityNoticeBody: string;
     sourceSummary: string;
     sourceSettings: string;
-    officialSource: string;
+    projectMaintainedSource: string;
     customSource: string;
     sourceName: string;
     sourceUrl: string;
@@ -410,7 +410,7 @@ export const en: I18nCatalog = {
       "Provider scripts can read the AI credentials configured for them and make network requests.",
     sourceSummary: "Current source",
     sourceSettings: "Source settings",
-    officialSource: "Official source",
+    projectMaintainedSource: "Project-maintained source",
     customSource: "Custom source",
     sourceName: "Source name",
     sourceUrl: "Registry URL or local path",
@@ -660,7 +660,7 @@ export const zhCN: I18nCatalog = {
       "Provider 脚本可以直接读取你配置的各类 AI 鉴权信息，并发起网络通讯。",
     sourceSummary: "当前来源",
     sourceSettings: "来源设置",
-    officialSource: "官方来源",
+    projectMaintainedSource: "项目维护来源",
     customSource: "自定义来源",
     sourceName: "来源名称",
     sourceUrl: "Registry URL 或本地路径",

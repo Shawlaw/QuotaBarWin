@@ -40,12 +40,12 @@ type RemoteProviderSettingsProps = {
 
 function normalizeSources(
   registrySettings: RemoteProviderRegistrySettings,
-  officialSourceName: string
+  projectMaintainedSourceName: string
 ): RemoteProviderRegistrySource[] {
   if (registrySettings.sources?.length) {
     return registrySettings.sources.map((source, index) => ({
       id: source.id || `source-${index + 1}`,
-      name: source.name || `${officialSourceName} ${index + 1}`,
+      name: source.name || `${projectMaintainedSourceName} ${index + 1}`,
       url: source.url ?? "",
       providerProxyUrl: source.providerProxyUrl ?? null,
       autoUpdate: source.autoUpdate ?? registrySettings.autoUpdate,
@@ -56,7 +56,7 @@ function normalizeSources(
   return [
     {
       id: "official",
-      name: officialSourceName,
+      name: projectMaintainedSourceName,
       url: registrySettings.registryUrl ?? DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
       providerProxyUrl: registrySettings.providerProxyUrl ?? null,
       autoUpdate: registrySettings.autoUpdate,
@@ -98,8 +98,8 @@ export function RemoteProviderSettings({
 }: RemoteProviderSettingsProps) {
   const { t } = useI18n();
   const sources = useMemo(
-    () => normalizeSources(registrySettings, t.remoteProviders.officialSource),
-    [registrySettings, t.remoteProviders.officialSource]
+    () => normalizeSources(registrySettings, t.remoteProviders.projectMaintainedSource),
+    [registrySettings, t.remoteProviders.projectMaintainedSource]
   );
   const enabledSources = sources.filter(
     (source) => source.enabled && source.url.trim()

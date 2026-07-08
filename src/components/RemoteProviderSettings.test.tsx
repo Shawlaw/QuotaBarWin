@@ -196,7 +196,7 @@ describe("RemoteProviderSettings", () => {
       sources: [
         {
           id: "official",
-          name: "Official source",
+          name: "Project-maintained source",
           url: "https://example.com/registry.json",
           providerProxyUrl: null,
           autoUpdate: true,
@@ -229,8 +229,8 @@ describe("RemoteProviderSettings", () => {
     const onPreviewRegistry = vi.fn(async (url: string) => [
       {
         ...catalog[0],
-        id: url.includes("team") ? "team-provider" : "official-provider",
-        displayName: url.includes("team") ? "Team Provider" : "Official Provider",
+        id: url.includes("team") ? "team-provider" : "project-provider",
+        displayName: url.includes("team") ? "Team Provider" : "Project Provider",
         providerUrl: `${url}/provider.json`
       }
     ]);
@@ -243,8 +243,8 @@ describe("RemoteProviderSettings", () => {
         sources: [
           {
             id: "official",
-            name: "Official",
-            url: "https://example.com/official/registry.json",
+            name: "Project-maintained",
+            url: "https://example.com/project/registry.json",
             providerProxyUrl: null,
             autoUpdate: true,
             enabled: true
@@ -262,10 +262,10 @@ describe("RemoteProviderSettings", () => {
       onPreviewRegistry
     });
 
-    await screen.findByText("Official Provider");
+    await screen.findByText("Project Provider");
     await screen.findByText("Team Provider");
     expect(onPreviewRegistry).toHaveBeenCalledWith(
-      "https://example.com/official/registry.json",
+      "https://example.com/project/registry.json",
       null
     );
     expect(onPreviewRegistry).toHaveBeenCalledWith(
