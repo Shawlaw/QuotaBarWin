@@ -173,7 +173,10 @@ export type I18nCatalog = {
     manageSources: string;
     refreshCatalog: string;
     installProvider: string;
+    addAccount: string;
+    addingAccount: string;
     installed: string;
+    installedAccounts: (count: number) => string;
     installFromManifest: string;
     manifestInstallUrl: string;
     manifestUrlPlaceholder: string;
@@ -182,6 +185,7 @@ export type I18nCatalog = {
     noCatalogProviders: string;
     catalogLoadFailed: string;
     providerInstalled: string;
+    accountAdded: string;
     installProviderFailed: string;
     installedCount: (count: number) => string;
     openGuide: string;
@@ -414,7 +418,10 @@ export const en: I18nCatalog = {
     manageSources: "Manage Source",
     refreshCatalog: "Refresh List",
     installProvider: "Install",
+    addAccount: "Add account",
+    addingAccount: "Adding account",
     installed: "Installed",
+    installedAccounts: (count) => `${count} account${count === 1 ? "" : "s"}`,
     installFromManifest: "Install Provider",
     manifestInstallUrl: "Provider manifest URL or local path",
     manifestUrlPlaceholder: "https://.../provider.json or D:\\Providers\\provider.json",
@@ -423,6 +430,7 @@ export const en: I18nCatalog = {
     noCatalogProviders: "No providers found in this source",
     catalogLoadFailed: "Failed to load provider list",
     providerInstalled: "Provider installed",
+    accountAdded: "Account added",
     installProviderFailed: "Failed to install provider",
     installedCount: (count) => `${count} installed`,
     openGuide: "Open Guide",
@@ -655,7 +663,10 @@ export const zhCN: I18nCatalog = {
     manageSources: "管理来源",
     refreshCatalog: "刷新列表",
     installProvider: "安装",
+    addAccount: "添加账号",
+    addingAccount: "正在添加账号",
     installed: "已安装",
+    installedAccounts: (count) => `${count} 个账号`,
     installFromManifest: "安装提供方",
     manifestInstallUrl: "Provider manifest URL 或本地路径",
     manifestUrlPlaceholder: "https://.../provider.json 或 D:\\Providers\\provider.json",
@@ -664,6 +675,7 @@ export const zhCN: I18nCatalog = {
     noCatalogProviders: "此来源没有找到提供方",
     catalogLoadFailed: "加载提供方列表失败",
     providerInstalled: "提供方已安装",
+    accountAdded: "账号已添加",
     installProviderFailed: "安装提供方失败",
     installedCount: (count) => `已安装 ${count} 个`,
     openGuide: "打开指南",

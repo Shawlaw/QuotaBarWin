@@ -17,6 +17,10 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
    `node`、`python`、`pwsh`、`bash` 或绝对路径。
 4. 每次刷新时，QuotaBarWin 运行缓存脚本，并把 stdout 解析为标准额度窗口。
 
+同一个 manifest 可以安装多次，用于查询同一 Provider 的多个账号。QuotaBarWin 会为
+每个本地账号实例生成稳定的 Provider id，例如 `kimi-coding`、`kimi-coding-2`，
+每个实例可以配置不同的名称、环境变量、代理、超时和窗口显示偏好。
+
 ## Manifest 格式（`provider.json`）
 
 ```json
@@ -40,7 +44,7 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `schemaVersion` | 是 | 必须为 `1`。 |
-| `id` | 是 | 唯一 Provider id，不能与当前配置中的 Provider 冲突。 |
+| `id` | 是 | 稳定 manifest id。重复安装同一 manifest 时，QuotaBarWin 会自动生成不冲突的本地 Provider id。 |
 | `displayName` | 是 | UI 中显示的人类可读名称。 |
 | `version` | 否 | 人类可读版本号，会显示在设置页，建议使用 SemVer。缺省时 UI 会回退显示短 checksum。 |
 | `description` | 否 | 简短说明。 |
@@ -80,8 +84,9 @@ Registry 可以用一个 URL 安装多个 Provider：
 
 当 `output` 为 `provider-snapshot-v1` 时，脚本必须向 stdout 输出一个 JSON 对象。
 stdout 应只包含这个最终对象；流程、调试和错误日志请写入 stderr，否则宿主会把
-stdout 当成 JSON 解析并失败。`id`、`name` 和 `source` 可以省略，QuotaBarWin 会
-使用 manifest / config 中的值。
+stdout 当成 JSON 解析并失败。`id`、`name` 和 `source` 可以省略；即使脚本提供，
+QuotaBarWin 也会优先使用本地安装配置中的 Provider id 和名称，以支持同一 manifest
+的多账号实例。
 
 ```json
 {
@@ -196,7 +201,8 @@ console.log(JSON.stringify({
 ```json
 {
   "kind": "remote",
-  "id": "kimi-coding",
+  "id": "kimi-coding-2",
+  "name": "Kimi Coding - Work",
   "timeoutSeconds": 30,
   "visibleWindowIds": ["300-minute", "usage", "total-quota"],
   "windowLabelOverrides": {
@@ -433,7 +439,8 @@ Bash 示例需要 `jq`。Windows 上 Git Bash 通常会随附它。
 - 安装前检查 source URL、runtime 和 required env vars。
 - 优先使用带 `providers[].checksum` 的 registry。
 - 优先使用带 `checksums.source` 的 manifest；否则无法安全自动更新。
-- 缓存的 source 文件位于 app data 目录下的 `providers/remote/<id>/`。
+- 缓存的 source 文件位于 app data 目录下的 `providers/remote/<id>/`，这里的
+  `<id>` 是本地安装实例 id；同一个 manifest 的多个账号会使用不同目录。
 
 ## 示例
 

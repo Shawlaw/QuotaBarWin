@@ -86,6 +86,7 @@ export type RemoteProviderCatalogEntry = {
   providerUrl: string;
   checksum?: string | null;
   installed: boolean;
+  installedCount?: number;
   error?: string | null;
 };
 

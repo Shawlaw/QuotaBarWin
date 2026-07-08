@@ -823,9 +823,11 @@ fn parse_remote_provider_snapshot_v1(
     stdout: &str,
 ) -> Result<ProviderSnapshot, serde_json::Error> {
     let raw = serde_json::from_str::<RemoteProviderSnapshotV1>(stdout)?;
+    let _script_id = raw.id;
+    let _script_name = raw.name;
     Ok(ProviderSnapshot {
-        id: raw.id.unwrap_or_else(|| id.to_string()),
-        name: raw.name.unwrap_or_else(|| name.to_string()),
+        id: id.to_string(),
+        name: name.to_string(),
         status: raw.status.unwrap_or_else(|| "ok".to_string()),
         source: "remote".to_string(),
         updated_at: raw.updated_at,
@@ -991,6 +993,24 @@ mod tests {
         assert_eq!(providers[0].source, "remote");
         assert_eq!(providers[0].windows[0].remaining_percent, Some(88.0));
         assert!(providers[0].diagnostics.is_some());
+    }
+
+    #[test]
+    fn remote_provider_snapshot_uses_local_instance_identity() {
+        let script = r#"console.log(JSON.stringify({id:'manifest-id',name:'Script Name',status:'ok',updatedAt:null,windows:[]}));"#;
+        let providers = run_remote_command(
+            "manifest-id-2",
+            "Team Account",
+            &node_command(script),
+            &RemoteOutputSpec::ProviderSnapshotV1,
+            &HashMap::new(),
+            &[],
+            None,
+        );
+
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].id, "manifest-id-2");
+        assert_eq!(providers[0].name, "Team Account");
     }
 
     #[test]

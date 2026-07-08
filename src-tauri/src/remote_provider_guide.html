@@ -201,6 +201,7 @@
             <li>脚本会缓存到本机，并使用 manifest 声明的 runtime 执行，例如 <code>node</code>、<code>python</code>、<code>pwsh</code>、<code>bash</code> 或绝对路径。</li>
             <li>每次刷新时，QuotaBarWin 运行缓存脚本，并把 stdout 解析为标准额度窗口。</li>
           </ol>
+          <p>同一个 manifest 可以安装多次，用于查询同一 Provider 的多个账号。QuotaBarWin 会生成 <code>kimi-coding</code>、<code>kimi-coding-2</code> 这类稳定的本地 Provider id。</p>
         </section>
 
         <section>
@@ -227,7 +228,7 @@
             </thead>
             <tbody>
               <tr><td><code>schemaVersion</code></td><td>是</td><td>必须为 <code>1</code>。</td></tr>
-              <tr><td><code>id</code></td><td>是</td><td>唯一 Provider id，不能与已有 Provider 冲突。</td></tr>
+              <tr><td><code>id</code></td><td>是</td><td>稳定 manifest id。重复安装同一 manifest 时，QuotaBarWin 会生成不冲突的本地 Provider id。</td></tr>
               <tr><td><code>displayName</code></td><td>是</td><td>UI 中显示的人类可读名称。</td></tr>
               <tr><td><code>version</code></td><td>否</td><td>设置页显示的人类可读版本号；缺省时显示短 checksum。</td></tr>
               <tr><td><code>runtime</code></td><td>是</td><td>执行 <code>entry</code> 的 runtime，可为命令名或绝对路径。</td></tr>
@@ -260,6 +261,7 @@
         <section>
           <h2>Source Script 输出协议</h2>
           <p>脚本必须向 stdout 输出一个 JSON 对象。诊断信息请写 stderr。</p>
+          <p><code>id</code>、<code>name</code> 和 <code>source</code> 可以省略；即使脚本提供，QuotaBarWin 也会优先使用本地安装配置中的 Provider id 和名称，以支持多账号实例。</p>
           <pre>{
   "status": "ok",
   "updatedAt": "2026-06-12T10:00:00.000Z",
@@ -293,7 +295,8 @@
           </p>
           <pre>{
   "kind": "remote",
-  "id": "kimi-coding",
+  "id": "kimi-coding-2",
+  "name": "Kimi Coding - Work",
   "envVars": {
     "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
   }
@@ -465,7 +468,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
             <li>安装前检查 source URL、runtime 和 required env vars。</li>
             <li>优先使用带 <code>providers[].checksum</code> 的 registry。</li>
             <li>优先使用带 <code>checksums.source</code> 的 manifest；否则无法安全自动更新。</li>
-            <li>缓存 source 位于 app data 目录下的 <code>providers/remote/&lt;id&gt;/</code>。</li>
+            <li>缓存 source 位于 app data 目录下的 <code>providers/remote/&lt;id&gt;/</code>，这里的 <code>&lt;id&gt;</code> 是本地安装实例 id。</li>
           </ul>
         </section>
 
@@ -500,6 +503,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
             <li>Each script is cached locally and executed with its declared runtime, such as <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path.</li>
             <li>On every refresh, QuotaBarWin runs the cached scripts and parses stdout into quota windows.</li>
           </ol>
+          <p>The same manifest can be installed more than once for multiple accounts. QuotaBarWin generates stable local provider ids such as <code>kimi-coding</code> and <code>kimi-coding-2</code>.</p>
         </section>
 
         <section>
@@ -526,7 +530,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
             </thead>
             <tbody>
               <tr><td><code>schemaVersion</code></td><td>yes</td><td>Must be <code>1</code>.</td></tr>
-              <tr><td><code>id</code></td><td>yes</td><td>Unique provider id. Must not conflict with an existing provider.</td></tr>
+              <tr><td><code>id</code></td><td>yes</td><td>Stable manifest id. When installed more than once, QuotaBarWin generates a non-conflicting local provider id.</td></tr>
               <tr><td><code>displayName</code></td><td>yes</td><td>Human-readable name shown in the UI.</td></tr>
               <tr><td><code>version</code></td><td>no</td><td>Human-readable version shown in Settings; if omitted, a short checksum is shown.</td></tr>
               <tr><td><code>runtime</code></td><td>yes</td><td>Runtime used to execute <code>entry</code>. It can be a command name or absolute path.</td></tr>
@@ -559,6 +563,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
         <section>
           <h2>Source script output contract</h2>
           <p>The script must print one JSON object to stdout. Write diagnostics to stderr.</p>
+          <p><code>id</code>, <code>name</code>, and <code>source</code> are optional; even when provided, QuotaBarWin prefers the local installed provider id and name so one manifest can back multiple accounts.</p>
           <pre>{
   "status": "ok",
   "updatedAt": "2026-06-12T10:00:00.000Z",
@@ -592,7 +597,8 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
           </p>
           <pre>{
   "kind": "remote",
-  "id": "kimi-coding",
+  "id": "kimi-coding-2",
+  "name": "Kimi Coding - Work",
   "envVars": {
     "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
   }
@@ -765,7 +771,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
             <li>Review source URL, runtime, and required env vars before installing.</li>
             <li>Prefer registries that include <code>providers[].checksum</code>.</li>
             <li>Prefer manifests that include <code>checksums.source</code>; without it QuotaBarWin cannot auto-update safely.</li>
-            <li>The cached source lives under <code>providers/remote/&lt;id&gt;/</code> in the app data directory.</li>
+            <li>The cached source lives under <code>providers/remote/&lt;id&gt;/</code> in the app data directory, where <code>&lt;id&gt;</code> is the local installed instance id.</li>
           </ul>
         </section>
 

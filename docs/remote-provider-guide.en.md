@@ -12,6 +12,12 @@ Remote providers let you install quota providers from a hosted manifest + script
 3. Each script is cached locally and executed with its declared runtime (for example `node`, `python`, or an absolute path).
 4. On every refresh QuotaBarWin runs the cached scripts and parses the output into quota windows.
 
+The same manifest can be installed more than once to query multiple accounts
+for the same provider. QuotaBarWin generates a stable local provider id for
+each account instance, such as `kimi-coding` and `kimi-coding-2`, and each
+instance can have its own name, environment variables, proxy, timeout, and
+window display preferences.
+
 ## Manifest format (`provider.json`)
 
 ```json
@@ -37,7 +43,7 @@ Field descriptions:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `schemaVersion` | yes | Must be `1`. |
-| `id` | yes | Unique provider id. Must not conflict with an existing provider in your config. |
+| `id` | yes | Stable manifest id. When the same manifest is installed more than once, QuotaBarWin generates a non-conflicting local provider id. |
 | `displayName` | yes | Human-readable name shown in the UI. |
 | `version` | no | Human-readable provider version shown in Settings. SemVer is recommended. If omitted, the UI falls back to a short checksum. |
 | `description` | no | Short description. |
@@ -80,8 +86,9 @@ Field descriptions:
 When `output` is `provider-snapshot-v1`, the script must print a single JSON
 object to stdout. stdout should contain only that final object; write progress,
 debug, and error logs to stderr, otherwise the host will try to parse the logs
-as JSON and fail. `id`, `name`, and `source` are optional and default to the
-values from the manifest/config.
+as JSON and fail. `id`, `name`, and `source` are optional; even when provided,
+QuotaBarWin prefers the local installed provider id and name so one manifest can
+back multiple account instances.
 
 ```json
 {
@@ -201,7 +208,8 @@ Example installed provider config:
 ```json
 {
   "kind": "remote",
-  "id": "kimi-coding",
+  "id": "kimi-coding-2",
+  "name": "Kimi Coding - Work",
   "timeoutSeconds": 30,
   "visibleWindowIds": ["300-minute", "usage", "total-quota"],
   "windowLabelOverrides": {
@@ -522,7 +530,7 @@ For Bash, `jq` must be available. On Windows, Git Bash usually ships with it.
 - Review each provider's `sourceUrl`, `runtime`, and `requiredEnvVars` before installing a registry.
 - Prefer registries that include `providers[].checksum` so QuotaBarWin can verify the manifest before installing.
 - Prefer manifests that include `checksums.source`; without it QuotaBarWin cannot auto-update safely.
-- The cached source file lives in the app data directory under `providers/remote/<id>/`.
+- The cached source file lives in the app data directory under `providers/remote/<id>/`, where `<id>` is the local installed instance id. Multiple accounts from the same manifest use different directories.
 
 ## Examples
 

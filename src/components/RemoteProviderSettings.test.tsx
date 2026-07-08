@@ -108,6 +108,39 @@ describe("RemoteProviderSettings", () => {
     expect(await screen.findByText("Provider installed")).toBeInTheDocument();
   });
 
+  test("catalog_installed_provider_can_add_another_account", async () => {
+    const onInstallManifest = vi.fn(async () => ({
+      ...installedProvider,
+      id: "kimi-coding-2",
+      name: "Kimi Coding 2"
+    }));
+    renderRemoteProviderSettings({
+      onInstallManifest,
+      onPreviewRegistry: vi.fn(async () => [
+        {
+          ...catalog[0],
+          installed: true,
+          installedCount: 1
+        }
+      ])
+    });
+
+    await screen.findByText("Kimi Coding");
+    expect(screen.getByText("1 account")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+
+    await waitFor(() =>
+      expect(onInstallManifest).toHaveBeenCalledWith(
+        "https://example.com/kimi/provider.json",
+        "sha256:manifest",
+        null,
+        true
+      )
+    );
+    expect(await screen.findByText("Account added")).toBeInTheDocument();
+    expect(screen.getByText("2 accounts")).toBeInTheDocument();
+  });
+
   test("custom_manifest_install_calls_handler", async () => {
     const onInstallManifest = vi.fn(async () => installedProvider);
     renderRemoteProviderSettings({ onInstallManifest });

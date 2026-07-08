@@ -37,6 +37,89 @@ fn provider_id(provider: &ProviderConfig) -> &str {
     }
 }
 
+fn provider_manifest_url(provider: &ProviderConfig) -> &str {
+    match provider {
+        ProviderConfig::Remote { manifest_url, .. } => manifest_url,
+    }
+}
+
+fn provider_name(provider: &ProviderConfig) -> &str {
+    match provider {
+        ProviderConfig::Remote { name, .. } => name,
+    }
+}
+
+fn provider_matches_manifest(
+    provider: &ProviderConfig,
+    manifest_id: &str,
+    manifest_url: &str,
+) -> bool {
+    provider_id(provider) == manifest_id || provider_manifest_url(provider) == manifest_url
+}
+
+fn installed_provider_instance_count(
+    config: &AppConfig,
+    manifest_id: &str,
+    manifest_url: &str,
+) -> usize {
+    config
+        .providers
+        .iter()
+        .filter(|provider| provider_matches_manifest(provider, manifest_id, manifest_url))
+        .count()
+}
+
+fn unique_provider_id(config: &AppConfig, base_id: &str) -> (String, usize) {
+    if !config
+        .providers
+        .iter()
+        .any(|provider| provider_id(provider) == base_id)
+    {
+        return (base_id.to_string(), 1);
+    }
+
+    for index in 2.. {
+        let candidate = format!("{base_id}-{index}");
+        if !config
+            .providers
+            .iter()
+            .any(|provider| provider_id(provider) == candidate)
+        {
+            return (candidate, index);
+        }
+    }
+
+    unreachable!("unbounded provider id search should always return")
+}
+
+fn unique_provider_name(config: &AppConfig, base_name: &str, preferred_index: usize) -> String {
+    let candidate = if preferred_index <= 1 {
+        base_name.to_string()
+    } else {
+        format!("{base_name} {preferred_index}")
+    };
+    if !config
+        .providers
+        .iter()
+        .any(|provider| provider_name(provider) == candidate)
+    {
+        return candidate;
+    }
+
+    for index in preferred_index.max(2).. {
+        let candidate = format!("{base_name} {index}");
+        if !config
+            .providers
+            .iter()
+            .any(|provider| provider_name(provider) == candidate)
+        {
+            return candidate;
+        }
+    }
+
+    unreachable!("unbounded provider name search should always return")
+}
+
 fn log_remote(log: &LogSink, level: LogLevel, message: &str) {
     let _ = log.write(level, "remote_provider_commands", message);
 }
@@ -88,7 +171,7 @@ fn install_remote_provider_from_manifest(
         log,
         LogLevel::Info,
         &format!(
-            "provider install started id={} manifestUrl={} autoUpdateRequested={} proxyConfigured={}",
+            "provider install started manifestId={} manifestUrl={} autoUpdateRequested={} proxyConfigured={}",
             manifest.id,
             url,
             auto_update,
@@ -96,33 +179,25 @@ fn install_remote_provider_from_manifest(
         ),
     );
 
-    if loaded
-        .config
-        .providers
-        .iter()
-        .any(|p| provider_id(p) == manifest.id)
-    {
-        log_remote(
-            log,
-            LogLevel::Warn,
-            &format!(
-                "provider install skipped id={} reason=id-conflict",
-                manifest.id
-            ),
-        );
-        return Err(format!(
-            "id conflict: a provider with id '{}' already exists",
-            manifest.id
-        ));
-    }
+    let (instance_id, instance_index) = unique_provider_id(&loaded.config, &manifest.id);
+    let instance_name =
+        unique_provider_name(&loaded.config, &manifest.display_name, instance_index);
+    log_remote(
+        log,
+        LogLevel::Info,
+        &format!(
+            "provider install instance selected manifestId={} providerId={} providerName={}",
+            manifest.id, instance_id, instance_name
+        ),
+    );
 
     let source_url = resolve_source_url(url, &manifest.entry);
     log_remote(
         log,
         LogLevel::Info,
         &format!(
-            "provider source fetch started id={} sourceUrl={}",
-            manifest.id, source_url
+            "provider source fetch started providerId={} manifestId={} sourceUrl={}",
+            instance_id, manifest.id, source_url
         ),
     );
     let source = fetch_source(&source_url, proxy_url, global_proxy.as_ref(), FETCH_TIMEOUT)
@@ -131,7 +206,8 @@ fn install_remote_provider_from_manifest(
         log,
         LogLevel::Info,
         &format!(
-            "provider source fetched id={} bytes={}",
+            "provider source fetched providerId={} manifestId={} bytes={}",
+            instance_id,
             manifest.id,
             source.len()
         ),
@@ -144,7 +220,10 @@ fn install_remote_provider_from_manifest(
         log_remote(
             log,
             LogLevel::Info,
-            &format!("provider source checksum verified id={}", manifest.id),
+            &format!(
+                "provider source checksum verified providerId={} manifestId={}",
+                instance_id, manifest.id
+            ),
         );
     }
 
@@ -152,8 +231,8 @@ fn install_remote_provider_from_manifest(
         log,
         LogLevel::Info,
         &format!(
-            "provider runtime resolve started id={} runtime={}",
-            manifest.id, manifest.runtime
+            "provider runtime resolve started providerId={} manifestId={} runtime={}",
+            instance_id, manifest.id, manifest.runtime
         ),
     );
     let resolved_runtime_path = resolve_runtime(&manifest.runtime)
@@ -166,13 +245,14 @@ fn install_remote_provider_from_manifest(
         log,
         LogLevel::Info,
         &format!(
-            "provider runtime resolved id={} path={}",
+            "provider runtime resolved providerId={} manifestId={} path={}",
+            instance_id,
             manifest.id,
             resolved_runtime_path.display()
         ),
     );
 
-    let provider_dir = remote_provider_dir(app_handle, &manifest.id)
+    let provider_dir = remote_provider_dir(app_handle, &instance_id)
         .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
 
     let parent = provider_dir
@@ -181,7 +261,7 @@ fn install_remote_provider_from_manifest(
         .to_path_buf();
     cache_remote_provider(
         &parent,
-        &manifest.id,
+        &instance_id,
         url,
         &manifest,
         &source,
@@ -192,7 +272,8 @@ fn install_remote_provider_from_manifest(
         log,
         LogLevel::Info,
         &format!(
-            "provider cached id={} dir={}",
+            "provider cached providerId={} manifestId={} dir={}",
+            instance_id,
             manifest.id,
             provider_dir.display()
         ),
@@ -200,8 +281,8 @@ fn install_remote_provider_from_manifest(
 
     let now = Utc::now().to_rfc3339();
     let config = ProviderConfig::Remote {
-        id: manifest.id.clone(),
-        name: manifest.display_name.clone(),
+        id: instance_id.clone(),
+        name: instance_name,
         enabled: true,
         version: manifest.version.clone(),
         manifest_url: url.to_string(),
@@ -228,8 +309,8 @@ fn install_remote_provider_from_manifest(
         log,
         LogLevel::Info,
         &format!(
-            "provider install finished id={} autoUpdate={}",
-            manifest.id, actual_auto_update
+            "provider install finished providerId={} manifestId={} autoUpdate={}",
+            instance_id, manifest.id, actual_auto_update
         ),
     );
     Ok(config)
@@ -263,6 +344,7 @@ pub struct RemoteProviderCatalogEntry {
     #[serde(default)]
     pub checksum: Option<String>,
     pub installed: bool,
+    pub installed_count: usize,
     #[serde(default)]
     pub error: Option<String>,
 }
@@ -304,11 +386,9 @@ pub async fn preview_remote_provider_registry(
         let mut entries = Vec::new();
         for entry in registry.providers {
             let provider_url = resolve_provider_url(&url, &entry.provider_url);
-            let installed = loaded
-                .config
-                .providers
-                .iter()
-                .any(|provider| provider_id(provider) == entry.id);
+            let installed_count =
+                installed_provider_instance_count(&loaded.config, &entry.id, &provider_url);
+            let installed = installed_count > 0;
             let mut catalog_entry = RemoteProviderCatalogEntry {
                 id: entry.id.clone(),
                 display_name: entry.id.clone(),
@@ -317,6 +397,7 @@ pub async fn preview_remote_provider_registry(
                 provider_url: provider_url.clone(),
                 checksum: entry.checksum.clone(),
                 installed,
+                installed_count,
                 error: None,
             };
 
@@ -496,11 +577,12 @@ pub async fn install_remote_provider_registry(
         };
 
         for entry in registry.providers {
+            let provider_url = resolve_provider_url(&url, &entry.provider_url);
             if loaded
                 .config
                 .providers
                 .iter()
-                .any(|p| provider_id(p) == entry.id)
+                .any(|p| provider_matches_manifest(p, &entry.id, &provider_url))
             {
                 log_remote(
                     &log,
@@ -514,7 +596,6 @@ pub async fn install_remote_provider_registry(
                 continue;
             }
 
-            let provider_url = resolve_provider_url(&url, &entry.provider_url);
             log_remote(
                 &log,
                 LogLevel::Info,
@@ -791,7 +872,7 @@ async fn check_remote_updates_inner(
             );
             let provider_dir = remote_provider_dir(&app_handle, id)
                 .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
-            let update = check_update(
+            let mut update = check_update(
                 &provider_dir,
                 manifest_url,
                 proxy_url.as_deref(),
@@ -807,6 +888,7 @@ async fn check_remote_updates_inner(
                 );
                 e.to_string()
             })?;
+            update.id = id.clone();
             log_remote(
                 &log,
                 LogLevel::Info,
@@ -1101,4 +1183,95 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn remote_provider(id: &str, name: &str, manifest_url: &str) -> ProviderConfig {
+        ProviderConfig::Remote {
+            id: id.to_string(),
+            name: name.to_string(),
+            enabled: true,
+            version: Some("1.0.0".to_string()),
+            manifest_url: manifest_url.to_string(),
+            source_url: manifest_url.replace("provider.json", "provider.cjs"),
+            provider_dir: None,
+            runtime: "node".to_string(),
+            resolved_runtime: None,
+            proxy_url: None,
+            auto_update: true,
+            update_interval_seconds: 3600,
+            timeout_seconds: DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
+            trusted_checksum: None,
+            installed_at: None,
+            updated_at: None,
+            last_checked_at: None,
+            window_label_overrides: HashMap::new(),
+            visible_window_ids: Vec::new(),
+            env_vars: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn provider_instances_get_unique_ids_and_names() {
+        let mut config = crate::config::default_config();
+        config.providers = vec![
+            remote_provider(
+                "kimi-coding",
+                "Kimi Coding",
+                "https://example.com/kimi/provider.json",
+            ),
+            remote_provider(
+                "kimi-coding-2",
+                "Kimi Coding 2",
+                "https://example.com/kimi/provider.json",
+            ),
+        ];
+
+        assert_eq!(
+            unique_provider_id(&config, "kimi-coding"),
+            ("kimi-coding-3".to_string(), 3)
+        );
+        assert_eq!(
+            unique_provider_name(&config, "Kimi Coding", 3),
+            "Kimi Coding 3"
+        );
+        assert_eq!(
+            installed_provider_instance_count(
+                &config,
+                "kimi-coding",
+                "https://example.com/kimi/provider.json",
+            ),
+            2
+        );
+    }
+
+    #[test]
+    fn installed_provider_matching_accepts_legacy_id_or_manifest_url() {
+        let mut config = crate::config::default_config();
+        config.providers = vec![
+            remote_provider(
+                "kimi-coding",
+                "Kimi Coding",
+                "https://mirror.example.com/kimi/provider.json",
+            ),
+            remote_provider(
+                "team-kimi",
+                "Team Kimi",
+                "https://example.com/kimi/provider.json",
+            ),
+        ];
+
+        assert_eq!(
+            installed_provider_instance_count(
+                &config,
+                "kimi-coding",
+                "https://example.com/kimi/provider.json",
+            ),
+            2
+        );
+    }
 }

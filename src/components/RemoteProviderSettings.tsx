@@ -256,6 +256,9 @@ export function RemoteProviderSettings({
   async function installFromCatalog(entry: SourceCatalogEntry) {
     setInstallMessage(null);
     setInstallingKey(`${entry.sourceId}:${entry.id}`);
+    const wasInstalled =
+      (entry.installedCount ?? (entry.installed ? 1 : 0)) > 0 ||
+      installedProviderIds.includes(entry.id);
     try {
       await onInstallManifest(
         entry.providerUrl,
@@ -265,10 +268,21 @@ export function RemoteProviderSettings({
       );
       setCatalog((current) =>
         current.map((item) =>
-          item.id === entry.id ? { ...item, installed: true } : item
+          item.sourceId === entry.sourceId && item.providerUrl === entry.providerUrl
+            ? {
+                ...item,
+                installed: true,
+                installedCount:
+                  (item.installedCount ?? (item.installed ? 1 : 0)) + 1
+              }
+            : item
         )
       );
-      setInstallMessage(t.remoteProviders.providerInstalled);
+      setInstallMessage(
+        wasInstalled
+          ? t.remoteProviders.accountAdded
+          : t.remoteProviders.providerInstalled
+      );
     } catch (error) {
       setInstallMessage(
         error instanceof Error ? error.message : t.remoteProviders.installProviderFailed
@@ -512,11 +526,13 @@ export function RemoteProviderSettings({
 
         <ul className="remote-provider-list provider-catalog-list">
           {catalog.map((entry) => {
-            const isInstalled =
-              entry.installed || installedProviderIds.includes(entry.id);
+            const installedCount =
+              entry.installedCount ??
+              (entry.installed || installedProviderIds.includes(entry.id) ? 1 : 0);
+            const isInstalled = installedCount > 0;
             const installKey = `${entry.sourceId}:${entry.id}`;
             const disabled =
-              isInstalled || Boolean(entry.error) || installingKey === installKey;
+              Boolean(entry.error) || installingKey === installKey;
 
             return (
               <li className="remote-provider-item" key={`${entry.sourceId}:${entry.providerUrl}`}>
@@ -528,7 +544,11 @@ export function RemoteProviderSettings({
                   <div className="remote-provider-badges">
                     <span>{entry.sourceName}</span>
                     {entry.version ? <span>{entry.version}</span> : null}
-                    <span>{isInstalled ? t.remoteProviders.installed : entry.id}</span>
+                    <span>
+                      {isInstalled
+                        ? t.remoteProviders.installedAccounts(installedCount)
+                        : entry.id}
+                    </span>
                   </div>
                   <button
                     type="button"
@@ -536,10 +556,12 @@ export function RemoteProviderSettings({
                     disabled={disabled}
                     onClick={() => void installFromCatalog(entry)}
                   >
-                    {isInstalled
-                      ? t.remoteProviders.installed
-                      : installingKey === installKey
-                        ? t.remoteProviders.loading
+                    {installingKey === installKey
+                      ? isInstalled
+                        ? t.remoteProviders.addingAccount
+                        : t.remoteProviders.loading
+                      : isInstalled
+                        ? t.remoteProviders.addAccount
                         : t.remoteProviders.installProvider}
                   </button>
                 </div>
