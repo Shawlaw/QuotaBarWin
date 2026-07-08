@@ -1126,6 +1126,20 @@ button:disabled {
   font-weight: 600;
 }
 
+.settings-warning {
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  color: #78350f;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 12px;
+}
+
+.settings-warning strong {
+  color: #92400e;
+}
+
 .settings-section-actions {
   align-items: center;
   display: flex;

@@ -468,7 +468,8 @@ Bash 示例需要 `jq`。Windows 上 Git Bash 通常会随附它。
 
 ## 安全检查清单
 
-- 只安装你信任来源的远程 Provider。
+- **只安装使用可信任的远程 Provider。Provider 脚本可以直接读取你配置给它的各类
+  AI 鉴权信息，并发起网络通讯。**
 - 安装前检查 source URL、runtime 和 required env vars。
 - 优先使用带 `providers[].checksum` 的 registry。
 - 优先使用带 `checksums.source` 的 manifest；否则无法安全自动更新。

@@ -157,6 +157,8 @@ export type I18nCatalog = {
     manageSourcesTitle: string;
     recommendedProviders: string;
     customInstall: string;
+    securityNoticeLead: string;
+    securityNoticeBody: string;
     sourceSummary: string;
     sourceSettings: string;
     officialSource: string;
@@ -403,6 +405,9 @@ export const en: I18nCatalog = {
     manageSourcesTitle: "Provider Source",
     recommendedProviders: "Recommended",
     customInstall: "Custom install",
+    securityNoticeLead: "Security notice: only install and use Providers you trust.",
+    securityNoticeBody:
+      "Provider scripts can read the AI credentials configured for them and make network requests.",
     sourceSummary: "Current source",
     sourceSettings: "Source settings",
     officialSource: "Official source",
@@ -650,6 +655,9 @@ export const zhCN: I18nCatalog = {
     manageSourcesTitle: "提供方来源",
     recommendedProviders: "推荐",
     customInstall: "自定义安装",
+    securityNoticeLead: "安全提示：只安装使用可信任的 Provider。",
+    securityNoticeBody:
+      "Provider 脚本可以直接读取你配置的各类 AI 鉴权信息，并发起网络通讯。",
     sourceSummary: "当前来源",
     sourceSettings: "来源设置",
     officialSource: "官方来源",

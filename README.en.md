@@ -48,6 +48,94 @@ The main window includes an overview page and a settings page. The tray popup is
 
 ---
 
+## Quick Start
+
+The QuotaBarWin release package does not include your account credentials and does not enable any service account by default. The app is configured with the official remote Provider source, and Settings loads installable Providers from this registry:
+
+[Official Provider registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
+
+**Security notice: only install and use Providers you trust. Provider scripts can directly read the AI credentials you configure for them and make network requests.**
+
+### 1. Install And Run
+
+1. Download the Windows portable zip from GitHub Releases and extract it to any folder.
+2. Run `QuotaBarWin.exe`. For the portable zip, config, logs, secrets, and Provider cache are stored beside the exe by default.
+3. The current example Providers use `node` as their runtime. Before installing or refreshing them, make sure this works on the machine:
+
+```powershell
+node --version
+```
+
+### 2. Choose An Official Provider
+
+The official registry currently contains these manifests; the actual installable list is loaded from the registry:
+
+| Manifest ID | Display name | What it monitors | Common credential / config |
+|---|---|---|---|
+| `kimi-coding` | Kimi Coding Usage | Kimi coding quota usage | `KIMI_API_KEY` |
+| `bigmodel-coding-plan` | BigModel Coding Plan | Zhipu / BigModel coding plan quota | `BIGMODEL_API_KEY` |
+| `codex-usage` | Codex Usage | ChatGPT / Codex 5h and weekly usage | Reads local Codex auth by default; can be overridden with `CODEX_ACCESS_TOKEN`; proxy notes are in section 5. |
+| `deepseek-balance` | DeepSeek Balance | DeepSeek pay-as-you-go balance | `DEEPSEEK_API_KEY`, with optional reference total, low-balance threshold, and currency. |
+
+### 3. Install A Provider
+
+**Before installing, confirm that the source is trusted. Provider scripts run on your machine, can read the tokens, API keys, cookies, account IDs, and other credentials configured for them, and can access the network.**
+
+1. Open **Settings → Providers → Add Provider**.
+2. The official Provider source should load automatically. If the list is empty, open **Manage Source** and paste the registry URL above.
+3. Click **Install** on the Provider you want. Installed Providers are enabled by default, and can be disabled with the checkbox in the Provider list.
+4. For multiple accounts on the same Provider, click **Add account** on the already-installed item.
+
+### 4. Configure Credentials
+
+Return to **Settings → Providers**, expand the installed Provider, and fill **Environment variables**. Prefer `${secret:...}`, `${env:...}`, or `${file:...}` placeholders instead of pasting plain tokens into config.
+
+| Provider | Environment variables example | Secret file |
+|---|---|---|
+| Kimi | `KIMI_API_KEY=${secret:KIMI_API_KEY}` | `<config-dir>\secrets\KIMI_API_KEY.txt` |
+| BigModel | `BIGMODEL_API_KEY=${secret:BIGMODEL_API_KEY}` | `<config-dir>\secrets\BIGMODEL_API_KEY.txt` |
+| DeepSeek | `DEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}` | `<config-dir>\secrets\DEEPSEEK_API_KEY.txt` |
+| Codex usage | Reads local Codex auth by default | Optional `CODEX_ACCESS_TOKEN`, `CODEX_ACCOUNT_ID`, `CODEX_AUTH_FILE`, or proxy env vars |
+
+You can find `<config-dir>` in **Settings → General → Configuration storage**, or click **Open config storage folder**. Create the `secrets` folder manually if it does not exist yet; each secret file only needs to contain the matching token or API key.
+
+### 5. Codex Proxy
+
+When Codex usage needs a proxy, you can set it in that Provider's **Environment variables**, for example:
+
+```text
+HTTPS_PROXY=http://127.0.0.1:7890
+```
+
+The Codex usage script checks proxies in this order: `QBWIN_PROXY_URL`, `HTTPS_PROXY`, `HTTP_PROXY`, then `ALL_PROXY`. Supported protocols are `socks5:`, `socks5h:`, `http:`, and `https:`. If a proxy URL was configured for that Provider during installation, QuotaBarWin injects it as `QBWIN_PROXY_URL`, which has the highest priority. For complete request, auth, and proxy notes, see [`examples/remote-providers/codex-usage/api.en.md`](examples/remote-providers/codex-usage/api.en.md).
+
+### 6. Multiple Accounts
+
+For multiple accounts, keep the left side as the env var expected by the script and change the secret name on the right. For example, two Kimi account instances can use:
+
+```text
+# Kimi Personal account instance
+KIMI_API_KEY=${secret:KIMI_PERSONAL_API_KEY}
+```
+
+```text
+# Kimi Work account instance
+KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}
+```
+
+Create the matching files:
+
+```text
+<config-dir>\secrets\KIMI_PERSONAL_API_KEY.txt
+<config-dir>\secrets\KIMI_WORK_API_KEY.txt
+```
+
+### 7. Save And View
+
+Click **Save**, return to **Overview**, or open the tray popup to view quota status. You can refresh all Providers globally or refresh one Provider from its card.
+
+---
+
 ## Core Features
 
 - Shows quota windows, remaining usage, reset times, status, and progress bars per Provider.
@@ -125,16 +213,6 @@ Environment variables to map the script's env var to a different secret, such as
 [`docs/remote-provider-guide.en.md`](docs/remote-provider-guide.en.md#local-config-and-secrets).
 
 Do not put real API keys, tokens, cookies, account IDs, or proxy credentials in code, docs, fixtures, or tests.
-
----
-
-## First Run
-
-1. Download the Windows portable zip from GitHub Releases.
-2. Extract it to any folder and run `QuotaBarWin.exe`.
-3. Open settings and adjust refresh interval, language, proxy, launch at startup, and log level as needed.
-4. Add or update remote Providers in the Provider section.
-5. Return to the overview page or tray popup to check quota status.
 
 ---
 

@@ -475,7 +475,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
         <section>
           <h2>安全检查清单</h2>
           <ul>
-            <li>只安装你信任来源的远程 Provider。</li>
+            <li><strong>只安装使用可信任的远程 Provider。Provider 脚本可以直接读取你配置给它的各类 AI 鉴权信息，并发起网络通讯。</strong></li>
             <li>安装前检查 source URL、runtime 和 required env vars。</li>
             <li>优先使用带 <code>providers[].checksum</code> 的 registry。</li>
             <li>优先使用带 <code>checksums.source</code> 的 manifest；否则无法安全自动更新。</li>
@@ -789,7 +789,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
         <section>
           <h2>Security checklist</h2>
           <ul>
-            <li>Only install remote providers from sources you trust.</li>
+            <li><strong>Only install and use remote providers you trust. Provider scripts can directly read the AI credentials configured for them and make network requests.</strong></li>
             <li>Review source URL, runtime, and required env vars before installing.</li>
             <li>Prefer registries that include <code>providers[].checksum</code>.</li>
             <li>Prefer manifests that include <code>checksums.source</code>; without it QuotaBarWin cannot auto-update safely.</li>

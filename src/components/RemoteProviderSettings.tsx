@@ -485,6 +485,11 @@ export function RemoteProviderSettings({
         </div>
       </div>
 
+      <div className="settings-warning remote-provider-security-warning" role="note">
+        <strong>{t.remoteProviders.securityNoticeLead}</strong>{" "}
+        {t.remoteProviders.securityNoticeBody}
+      </div>
+
       <section className="remote-provider-source">
         <div className="settings-section-title">
           <h3>{t.remoteProviders.recommendedProviders}</h3>

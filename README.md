@@ -48,6 +48,94 @@ QuotaBarWin 是一个 Windows-first 的 AI 用量 / 额度监控桌面工具，�
 
 ---
 
+## 快速上手
+
+QuotaBarWin 发布包不会内置你的账号凭据，也不会默认启用某个服务账号。应用默认配置了官方远程 Provider 来源，设置页会从这个 registry 展示可安装的 Provider：
+
+[官方 Provider registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
+
+**安全提示：只安装使用可信任的 Provider。Provider 脚本可以直接读取你配置的各类 AI 鉴权信息，并发起网络通讯。**
+
+### 1. 安装并启动
+
+1. 从 GitHub Release 下载 Windows portable zip，解压到任意目录。
+2. 运行 `QuotaBarWin.exe`。如果是 portable zip，配置、日志、secrets 和 Provider 缓存默认都会放在 exe 旁。
+3. 示例 Provider 目前都使用 `node` 作为 runtime；安装或刷新这些 Provider 前，请先确认本机能运行：
+
+```powershell
+node --version
+```
+
+### 2. 选择官方 Provider
+
+官方 registry 当前包含以下 manifest；实际可安装列表以 registry 为准：
+
+| Manifest ID | 显示名称 | 监控内容 | 常用凭据 / 配置 |
+|---|---|---|---|
+| `kimi-coding` | Kimi Coding Usage | Kimi coding quota 用量 | `KIMI_API_KEY` |
+| `bigmodel-coding-plan` | BigModel Coding Plan | 智谱 / BigModel coding plan 额度 | `BIGMODEL_API_KEY` |
+| `codex-usage` | Codex Usage | ChatGPT / Codex 5h 与 weekly 用量 | 默认读取本机 Codex auth，可用 `CODEX_ACCESS_TOKEN` 等覆盖；代理见第 5 节。 |
+| `deepseek-balance` | DeepSeek Balance | DeepSeek 按量付费余额 | `DEEPSEEK_API_KEY`，可选参考总额、低余额阈值和币种。 |
+
+### 3. 安装 Provider
+
+**安装前请再次确认来源可信。Provider 脚本会在你的机器上运行，可以读取你配置给它的 token、API key、Cookie、账号 ID 等鉴权信息，并访问网络。**
+
+1. 打开 **设置 → 提供方 → 添加提供方**。
+2. 默认会加载官方 Provider 来源；如果列表为空，可以在 **管理来源** 中填入上面的 registry URL。
+3. 点击需要的 Provider 的 **安装**。安装后的 Provider 默认启用，也可以在 Provider 列表里用复选框停用。
+4. 同一 Provider 需要多个账号时，再次点击已安装项的 **添加账号**。
+
+### 4. 配置凭据
+
+回到 **设置 → 提供方**，展开刚安装的 Provider，填写 **环境变量**。建议只写 `${secret:...}`、`${env:...}` 或 `${file:...}` 占位符，不要把 token 明文粘进配置。
+
+| Provider | 环境变量示例 | 对应 Secret 文件 |
+|---|---|---|
+| Kimi | `KIMI_API_KEY=${secret:KIMI_API_KEY}` | `<config-dir>\secrets\KIMI_API_KEY.txt` |
+| BigModel / 智谱 | `BIGMODEL_API_KEY=${secret:BIGMODEL_API_KEY}` | `<config-dir>\secrets\BIGMODEL_API_KEY.txt` |
+| DeepSeek | `DEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}` | `<config-dir>\secrets\DEEPSEEK_API_KEY.txt` |
+| Codex usage | 默认读取本机 Codex auth | 可选配置 `CODEX_ACCESS_TOKEN`、`CODEX_ACCOUNT_ID`、`CODEX_AUTH_FILE` 或代理变量 |
+
+`<config-dir>` 可以在 **设置 → 通用 → 配置存储** 中查看，也可以点击 **打开配置存储文件夹**。如果 `secrets` 文件夹不存在，可以手动创建；secret 文件内容只需要写入对应 token 或 API key。
+
+### 5. Codex 代理
+
+Codex usage 需要代理时，可以在该 Provider 的 **环境变量** 中配置，例如：
+
+```text
+HTTPS_PROXY=http://127.0.0.1:7890
+```
+
+Codex usage 脚本的代理优先级是 `QBWIN_PROXY_URL`、`HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY`，支持 `socks5:`、`socks5h:`、`http:` 和 `https:`。如果安装 Provider 时已经为该 Provider 配置了代理 URL，QuotaBarWin 会以 `QBWIN_PROXY_URL` 注入，优先级最高。更完整的请求、鉴权和代理说明见 [`examples/remote-providers/codex-usage/api.md`](examples/remote-providers/codex-usage/api.md)。
+
+### 6. 多账号
+
+多账号时，左边保持脚本需要的变量名，右边换成不同 secret 名。例如两个 Kimi 账号可以分别写：
+
+```text
+# Kimi Personal 账号实例
+KIMI_API_KEY=${secret:KIMI_PERSONAL_API_KEY}
+```
+
+```text
+# Kimi Work 账号实例
+KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}
+```
+
+对应创建：
+
+```text
+<config-dir>\secrets\KIMI_PERSONAL_API_KEY.txt
+<config-dir>\secrets\KIMI_WORK_API_KEY.txt
+```
+
+### 7. 保存并查看
+
+点击 **保存**，回到 **概览** 页，或打开托盘弹窗查看额度状态。之后可以使用全局刷新或单个 Provider 卡片上的刷新按钮更新数据。
+
+---
+
 ## 核心能力
 
 - 在概览页按 Provider 展示额度窗口、剩余额度、重置时间、状态和进度条。
@@ -124,16 +212,6 @@ Secret 占位符：
 [`docs/remote-provider-guide.md`](docs/remote-provider-guide.md#本地配置与-secret)。
 
 不要把真实 API key、token、cookie、账号 ID 或代理凭据写入代码、文档、fixtures 或测试。
-
----
-
-## 首次使用
-
-1. 从 GitHub Release 下载 Windows portable zip。
-2. 解压到任意目录，运行 `QuotaBarWin.exe`。
-3. 进入设置页，按需调整刷新间隔、语言、代理、开机启动和日志级别。
-4. 在 Provider 区域添加或更新远程 Provider。
-5. 回到概览页或托盘弹窗查看额度状态。
 
 ---
 

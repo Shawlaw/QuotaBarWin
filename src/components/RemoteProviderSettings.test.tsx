@@ -80,6 +80,12 @@ describe("RemoteProviderSettings", () => {
     const { props } = renderRemoteProviderSettings({ onOpenGuide });
 
     expect(screen.getByTestId("add-provider-page")).toBeInTheDocument();
+    expect(
+      screen.getByText("Security notice: only install and use Providers you trust.")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Provider scripts can read the AI credentials/)
+    ).toBeInTheDocument();
     await screen.findByText("Kimi Coding");
     expect(props.onPreviewRegistry).toHaveBeenCalledWith(
       DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,

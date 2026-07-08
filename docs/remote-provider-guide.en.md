@@ -562,7 +562,8 @@ For Bash, `jq` must be available. On Windows, Git Bash usually ships with it.
 
 ## Security checklist
 
-- Only install remote providers from sources you trust.
+- **Only install and use remote providers you trust. Provider scripts can directly
+  read the AI credentials configured for them and make network requests.**
 - Review each provider's `sourceUrl`, `runtime`, and `requiredEnvVars` before installing a registry.
 - Prefer registries that include `providers[].checksum` so QuotaBarWin can verify the manifest before installing.
 - Prefer manifests that include `checksums.source`; without it QuotaBarWin cannot auto-update safely.
