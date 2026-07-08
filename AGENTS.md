@@ -5,7 +5,7 @@ Read it before changing code.
 
 ## Project Snapshot
 
-QuotaBarWin is a Windows-first Tauri 2 desktop app for monitoring AI usage and
+QuotaBarWin is a Windows-only Tauri 2 desktop app for monitoring AI usage and
 quota windows. The stack is:
 
 - Frontend: React 19, TypeScript, Vite, Vitest, Testing Library.

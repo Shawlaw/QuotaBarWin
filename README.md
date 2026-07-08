@@ -4,7 +4,9 @@
 
 <h1 align="center">QuotaBarWin</h1>
 
-QuotaBarWin 是一个 Windows-first 的 AI 用量 / 额度监控桌面工具，用来把多个 AI 服务的额度窗口统一展示在主窗口和托盘弹窗里。
+QuotaBarWin 是一个仅支持 Windows 的 AI 用量 / 额度监控桌面工具，用来把多个 AI 服务的额度窗口统一展示在主窗口和托盘弹窗里。
+
+macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBar)，它是一个 macOS 菜单栏 AI 用量监控工具。
 
 默认语言：简体中文。English documentation: [README.en.md](README.en.md).
 

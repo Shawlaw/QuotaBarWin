@@ -4,7 +4,9 @@
 
 <h1 align="center">QuotaBarWin</h1>
 
-QuotaBarWin is a Windows-first desktop app for monitoring AI usage and quota windows across multiple services, with both a main window and a quick tray popup.
+QuotaBarWin is a Windows-only desktop app for monitoring AI usage and quota windows across multiple services, with both a main window and a quick tray popup.
+
+If you are on macOS, consider [CodexBar](https://github.com/steipete/CodexBar), a macOS menu bar app for monitoring AI usage.
 
 Default documentation is Simplified Chinese: [README.md](README.md).
 
