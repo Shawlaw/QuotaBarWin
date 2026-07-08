@@ -55,6 +55,8 @@ Manifest 格式和输出协议见 [`docs/remote-provider-guide.md`](../../docs/r
 4. 将套餐等级、模型用量、账户元数据、原始状态码等 Provider 专属细节放进 `metadata`。
 5. 凭据只保留在本地。这些示例读取 `process.env.NAME`；QuotaBarWin 可从已安装 Provider 的 `envVars`、`<config-dir>/secrets/NAME.txt` 下的 `${secret:NAME}` 文件，或环境变量 fallback 注入，而不需要把密钥写进远程源码。
 
+同一 Provider 配多个账号时，每个本地账号实例仍向脚本注入同一个变量名，但可以映射到不同 secret 文件，例如 `KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}`。完整示例见 [`docs/remote-provider-guide.md`](../../docs/remote-provider-guide.md#本地配置与-secret)。
+
 ## 稳定窗口 ID
 
 Provider 窗口 ID 是面向用户配置的键。QuotaBarWin 支持用 `visibleWindowIds` 选择显示哪些窗口并控制顺序，也支持用 `windowLabelOverrides` 重命名窗口。标签覆盖会优先匹配 `window.id`，所以 Provider 发布新版本时应保持 ID 稳定。

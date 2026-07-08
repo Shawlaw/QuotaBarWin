@@ -118,6 +118,12 @@ Secret placeholders:
 - `${env:NAME}`: reads the environment variable `NAME`.
 - `${file:C:\path\secret.txt}`: reads a local file and trims surrounding whitespace.
 
+For multiple accounts on the same provider, set each account instance's
+Environment variables to map the script's env var to a different secret, such as
+`KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}`, which reads
+`<config-dir>\secrets\KIMI_WORK_API_KEY.txt`. See
+[`docs/remote-provider-guide.en.md`](docs/remote-provider-guide.en.md#local-config-and-secrets).
+
 Do not put real API keys, tokens, cookies, account IDs, or proxy credentials in code, docs, fixtures, or tests.
 
 ---

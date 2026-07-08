@@ -344,17 +344,53 @@ Remote provider source should not contain credentials. The script still reads `p
 
 `${secret:NAME}` reads `<config-dir>/secrets/NAME.txt` first and falls back to environment variable `NAME`. Existing `${file:C:\path\secret.txt}` and `${env:NAME}` placeholders are still supported.
 
-Example installed provider config:
+For a single account, if the manifest declares `requiredEnvVars:
+["KIMI_API_KEY"]` and you leave provider `envVars` empty, QuotaBarWin tries this
+default file:
+
+```text
+<config-dir>/secrets/KIMI_API_KEY.txt
+```
+
+For multiple accounts, explicitly set the mapping in each local provider
+instance under **Settings → Providers → Edit → Environment variables**. The left
+side of `=` stays the environment variable name that the script expects; the
+right side is the local secret file name for that account.
+
+For example, two accounts using the same Kimi provider:
 
 ```json
 {
   "kind": "remote",
   "id": "kimi-coding",
+  "name": "Kimi Personal",
   "envVars": {
-    "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY_PERSONAL}"
   }
 }
 ```
+
+```json
+{
+  "kind": "remote",
+  "id": "kimi-coding-2",
+  "name": "Kimi Work",
+  "envVars": {
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY_WORK}"
+  }
+}
+```
+
+The corresponding local files are:
+
+```text
+<config-dir>/secrets/KIMI_API_KEY_PERSONAL.txt
+<config-dir>/secrets/KIMI_API_KEY_WORK.txt
+```
+
+Both instances inject `process.env.KIMI_API_KEY` into the script, but the values
+come from different secret files. The config stores only placeholders, not plain
+tokens.
 
 Treat the remote script as shared code and keep user-specific tokens in local config, local secret files, or environment variables on the local machine.
 

@@ -100,6 +100,7 @@ export type I18nCatalog = {
     timeoutError: string;
     remoteEnvVars: string;
     remoteEnvVarsPlaceholder: string;
+    remoteEnvVarsHint: string;
     windowLabelOverrides: string;
     windowLabelOverridesPlaceholder: string;
     displayedWindows: string;
@@ -342,7 +343,9 @@ export const en: I18nCatalog = {
     timeoutError: "Timeout must be greater than 0.",
     remoteEnvVars: "Environment variables",
     remoteEnvVarsPlaceholder:
-      "KEY=value, one per line\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",
+      "KEY=value, one per line\nKIMI_API_KEY=${secret:KIMI_WORK_API_KEY}\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",
+    remoteEnvVarsHint:
+      "For multiple accounts, keep the left side as the script env var and change the secret name on the right, e.g. KIMI_API_KEY=${secret:KIMI_WORK_API_KEY} reads secrets/KIMI_WORK_API_KEY.txt.",
     windowLabelOverrides: "Window label overrides",
     windowLabelOverridesPlaceholder: "window-id=Display name\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "Displayed windows",
@@ -587,7 +590,9 @@ export const zhCN: I18nCatalog = {
     timeoutError: "超时时间必须大于 0。",
     remoteEnvVars: "环境变量",
     remoteEnvVarsPlaceholder:
-      "每行一个 KEY=value\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",
+      "每行一个 KEY=value\nKIMI_API_KEY=${secret:KIMI_WORK_API_KEY}\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",
+    remoteEnvVarsHint:
+      "多账号时，左边保持脚本需要的环境变量名，右边换成这个账号的 secret 名；例如 KIMI_API_KEY=${secret:KIMI_WORK_API_KEY} 会读取 secrets/KIMI_WORK_API_KEY.txt。",
     windowLabelOverrides: "窗口标签覆盖",
     windowLabelOverridesPlaceholder: "window-id=显示名称\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "显示的窗口",

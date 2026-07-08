@@ -293,16 +293,27 @@
           <p>
             远程脚本不应该包含凭据。脚本读取 <code>process.env.NAME</code>，QuotaBarWin 会把配置中的 env vars 注入子进程。
           </p>
+          <p>
+            单账号可直接使用 <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY.txt</code> 这类同名 secret。多账号时，在每个账号实例的“环境变量”里显式映射：等号左侧保持脚本需要的变量名，右侧换成该账号的 secret 名。
+          </p>
+          <pre>{
+  "kind": "remote",
+  "id": "kimi-coding",
+  "name": "Kimi Personal",
+  "envVars": {
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY_PERSONAL}"
+  }
+}</pre>
           <pre>{
   "kind": "remote",
   "id": "kimi-coding-2",
-  "name": "Kimi Coding - Work",
+  "name": "Kimi Work",
   "envVars": {
-    "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY_WORK}"
   }
 }</pre>
           <p>
-            <code>${secret:NAME}</code> 会优先读取 <code>&lt;config-dir&gt;/secrets/NAME.txt</code>，找不到时回退到环境变量 <code>NAME</code>。
+            上面会分别读取 <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY_PERSONAL.txt</code> 和 <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY_WORK.txt</code>；配置中只保存占位符，不保存明文 token。
           </p>
         </section>
 
@@ -595,16 +606,27 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
           <p>
             Remote provider source should not contain credentials. Scripts read <code>process.env.NAME</code>; QuotaBarWin injects configured env vars into the child process.
           </p>
+          <p>
+            A single account can use a same-name secret such as <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY.txt</code>. For multiple accounts, set each account instance's Environment variables explicitly: keep the left side as the script env var and change the secret name on the right.
+          </p>
+          <pre>{
+  "kind": "remote",
+  "id": "kimi-coding",
+  "name": "Kimi Personal",
+  "envVars": {
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY_PERSONAL}"
+  }
+}</pre>
           <pre>{
   "kind": "remote",
   "id": "kimi-coding-2",
-  "name": "Kimi Coding - Work",
+  "name": "Kimi Work",
   "envVars": {
-    "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY_WORK}"
   }
 }</pre>
           <p>
-            <code>${secret:NAME}</code> reads <code>&lt;config-dir&gt;/secrets/NAME.txt</code> first and falls back to environment variable <code>NAME</code>.
+            These examples read <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY_PERSONAL.txt</code> and <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY_WORK.txt</code>; the config stores placeholders, not plain tokens.
           </p>
         </section>
 

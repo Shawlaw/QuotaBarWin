@@ -256,17 +256,50 @@ console.log(JSON.stringify({
 `${secret:NAME}` 会优先读取 `<config-dir>/secrets/NAME.txt`，找不到时回退到环境变量
 `NAME`。`${env:NAME}` 和 `${file:C:\path\secret.txt}` 也仍然支持。
 
-示例：
+单账号时，如果 manifest 声明了 `requiredEnvVars: ["KIMI_API_KEY"]`，并且你没有在
+设置页填写 `envVars`，QuotaBarWin 会默认尝试读取：
+
+```text
+<config-dir>/secrets/KIMI_API_KEY.txt
+```
+
+多账号时，请在每个本地 Provider 实例的 **设置 → 提供方 → 编辑 → 环境变量** 中显式
+填写映射。等号左侧仍然是脚本需要的环境变量名；等号右侧才是这个账号使用的本地
+secret 文件名。
+
+例如同一个 Kimi Provider 的两个账号：
 
 ```json
 {
   "kind": "remote",
   "id": "kimi-coding",
+  "name": "Kimi Personal",
   "envVars": {
-    "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY_PERSONAL}"
   }
 }
 ```
+
+```json
+{
+  "kind": "remote",
+  "id": "kimi-coding-2",
+  "name": "Kimi Work",
+  "envVars": {
+    "KIMI_API_KEY": "${secret:KIMI_API_KEY_WORK}"
+  }
+}
+```
+
+对应的本地文件是：
+
+```text
+<config-dir>/secrets/KIMI_API_KEY_PERSONAL.txt
+<config-dir>/secrets/KIMI_API_KEY_WORK.txt
+```
+
+这样两个实例都会向脚本注入同一个 `process.env.KIMI_API_KEY`，但值来自不同的
+secret 文件；配置文件中只保存占位符，不保存明文 token。
 
 ## 实现示例：Zhipu / BigModel
 

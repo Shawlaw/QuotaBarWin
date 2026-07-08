@@ -55,6 +55,11 @@ Use this pattern when adapting the examples:
 4. Move provider-specific details such as plan level, model usage, account metadata, or raw status codes into `metadata`.
 5. Keep credentials local. These examples read `process.env.NAME`; QuotaBarWin can inject values from installed provider `envVars`, `${secret:NAME}` files under `<config-dir>/secrets/NAME.txt`, or environment fallback instead of embedding secrets in remote source.
 
+For multiple accounts on the same provider, each local account instance still
+injects the env var name expected by the script, but can map it to a different
+secret file, such as `KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}`. See the full
+example in [`docs/remote-provider-guide.en.md`](../../docs/remote-provider-guide.en.md#local-config-and-secrets).
+
 ## Stable window IDs
 
 Provider window IDs are user-facing configuration keys. QuotaBarWin supports `visibleWindowIds` to choose which windows are shown and to display them in the configured order, and `windowLabelOverrides` to rename windows. Label overrides match `window.id` first, so keep IDs stable across provider releases.

@@ -688,9 +688,13 @@ export function SettingsPanel({
                         <span className="field-error">{t.settings.timeoutError}</span>
                       ) : null}
                     </label>
-                    <label className="args-field">
-                      {t.settings.remoteEnvVars}
+                    <div className="args-field settings-field">
+                      <label htmlFor={`provider-env-vars-${provider.id}`}>
+                        {t.settings.remoteEnvVars}
+                      </label>
                       <textarea
+                        id={`provider-env-vars-${provider.id}`}
+                        aria-describedby={`provider-env-vars-hint-${provider.id}`}
                         rows={5}
                         placeholder={t.settings.remoteEnvVarsPlaceholder}
                         value={envVarDrafts[provider.id] ?? formatEnvVars(provider.envVars)}
@@ -705,7 +709,13 @@ export function SettingsPanel({
                           });
                         }}
                       />
-                    </label>
+                      <span
+                        id={`provider-env-vars-hint-${provider.id}`}
+                        className="settings-hint"
+                      >
+                        {t.settings.remoteEnvVarsHint}
+                      </span>
+                    </div>
                     <ProviderWindowSettings
                       provider={provider}
                       snapshotWindows={snapshotWindowsForProvider(provider.id)}

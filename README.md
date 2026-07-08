@@ -118,6 +118,11 @@ Secret 占位符：
 - `${env:NAME}`：读取环境变量 `NAME`。
 - `${file:C:\path\secret.txt}`：读取本地文件并裁剪首尾空白。
 
+同一个 Provider 配多个账号时，在每个账号实例的“环境变量”里把脚本需要的变量名映射到不同 secret，例如
+`KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}` 会读取
+`<config-dir>\secrets\KIMI_WORK_API_KEY.txt`。详见
+[`docs/remote-provider-guide.md`](docs/remote-provider-guide.md#本地配置与-secret)。
+
 不要把真实 API key、token、cookie、账号 ID 或代理凭据写入代码、文档、fixtures 或测试。
 
 ---

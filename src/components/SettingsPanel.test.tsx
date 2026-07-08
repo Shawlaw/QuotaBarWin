@@ -234,6 +234,9 @@ test("settings_renders_registry_and_remote_provider_metadata", () => {
   expect(screen.getByText(/Version: 1.0.0/)).toBeInTheDocument();
   expect(screen.getByText(/Runtime: node/)).toBeInTheDocument();
   expect(screen.getByText(/Manifest:/)).toHaveTextContent("https://example.com/provider.json");
+  expect(
+    screen.getByText(/For multiple accounts, keep the left side as the script env var/)
+  ).toBeInTheDocument();
 });
 
 test("settings_edits_local_log_limit_in_megabytes", () => {

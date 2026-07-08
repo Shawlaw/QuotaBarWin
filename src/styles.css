@@ -621,6 +621,11 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
+.settings-field {
+  display: grid;
+  gap: 6px;
+}
+
 .window-settings {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
