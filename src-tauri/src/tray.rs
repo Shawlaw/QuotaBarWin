@@ -10,6 +10,7 @@ use tauri_runtime::ResizeDirection;
 use crate::{
     app_info,
     config::{self, AppLanguage, TrayPopupPosition, TrayPopupSize},
+    logger::{LogLevel, LogSink},
 };
 
 use std::{
@@ -47,9 +48,60 @@ const TRAY_POPUP_OFFSET: f64 = 12.0;
 const TRAY_POPUP_DRAG_FOCUS_GRACE: Duration = Duration::from_secs(2);
 const TRAY_POPUP_FOCUS_LOST_HIDE_DELAY: Duration = Duration::from_millis(180);
 const TRAY_POPUP_POSITION_SAVE_GRACE: Duration = Duration::from_secs(30);
-static TRAY_POPUP_FOCUS_HIDE_SUPPRESSED_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+const E2E_TRAY_COMMANDS_ENV: &str = "QBWIN_E2E";
+static TRAY_POPUP_FOCUS_HIDE_SUPPRESSED_UNTIL: Mutex<Option<FocusHideSuppression>> =
+    Mutex::new(None);
 static TRAY_POPUP_POSITION_SAVE_ALLOWED_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
 static TRAY_POPUP_PRESENTATION_ID: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FocusHideDecision {
+    Allow,
+    Suppressed {
+        remaining_ms: u128,
+        reason: &'static str,
+    },
+    Expired,
+    LockPoisoned,
+}
+
+impl FocusHideDecision {
+    pub(crate) fn should_hide(self) -> bool {
+        matches!(
+            self,
+            FocusHideDecision::Allow | FocusHideDecision::Expired | FocusHideDecision::LockPoisoned
+        )
+    }
+
+    pub(crate) fn status(self) -> &'static str {
+        match self {
+            FocusHideDecision::Allow => "allow",
+            FocusHideDecision::Suppressed { .. } => "suppressed",
+            FocusHideDecision::Expired => "expired",
+            FocusHideDecision::LockPoisoned => "lockPoisoned",
+        }
+    }
+
+    pub(crate) fn remaining_ms(self) -> u128 {
+        match self {
+            FocusHideDecision::Suppressed { remaining_ms, .. } => remaining_ms,
+            _ => 0,
+        }
+    }
+
+    pub(crate) fn reason(self) -> &'static str {
+        match self {
+            FocusHideDecision::Suppressed { reason, .. } => reason,
+            _ => "none",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FocusHideSuppression {
+    until: Instant,
+    reason: &'static str,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TrayPopupWorkArea {
@@ -77,6 +129,17 @@ pub fn tray_popup_view() -> &'static str {
 
 fn tray_tooltip(version: &str) -> String {
     format!("QuotaBarWin V{version}")
+}
+
+pub(crate) fn log_tray_popup_event(app: &AppHandle, level: LogLevel, message: &str) {
+    let Ok(path) = config::config_path_for_app(app) else {
+        return;
+    };
+    let Ok(loaded) = config::load_or_create_config(&path) else {
+        return;
+    };
+    let log = LogSink::from_config_path(&path, &loaded.config);
+    let _ = log.write(level, "tray", message);
 }
 
 pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -274,12 +337,26 @@ fn fallback_tray_icon() -> tauri::image::Image<'static> {
 
 pub fn create_tray_popup_window(app: &AppHandle) -> tauri::Result<()> {
     if app.get_webview_window(TRAY_POPUP_LABEL).is_some() {
+        log_tray_popup_event(
+            app,
+            LogLevel::Info,
+            "create popup skipped existingWindow=true",
+        );
         return Ok(());
     }
 
     let size = tray_popup_size_from_saved(config::load_tray_popup_size_for_app(app));
 
-    WebviewWindowBuilder::new(
+    log_tray_popup_event(
+        app,
+        LogLevel::Info,
+        &format!(
+            "create popup requested width={} height={}",
+            size.width, size.height
+        ),
+    );
+
+    let result = WebviewWindowBuilder::new(
         app,
         TRAY_POPUP_LABEL,
         WebviewUrl::App(TRAY_POPUP_VIEW.into()),
@@ -296,19 +373,51 @@ pub fn create_tray_popup_window(app: &AppHandle) -> tauri::Result<()> {
     .focused(false)
     .shadow(true)
     .background_color(Color(255, 255, 255, 255))
-    .build()?;
+    .build();
 
-    Ok(())
+    match &result {
+        Ok(_) => log_tray_popup_event(app, LogLevel::Info, "create popup succeeded"),
+        Err(error) => log_tray_popup_event(
+            app,
+            LogLevel::Error,
+            &format!("create popup failed error={error}"),
+        ),
+    }
+
+    result.map(|_| ())
 }
 
 #[tauri::command]
 pub fn reset_tray_popup_size(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
         let size = default_tray_popup_size();
-        window
-            .set_size(LogicalSize::new(size.width, size.height))
-            .map_err(|error| error.to_string())?;
+        log_tray_popup_event(
+            &app,
+            LogLevel::Info,
+            &format!(
+                "reset size requested width={} height={} visibleBefore={:?} focusedBefore={:?}",
+                size.width,
+                size.height,
+                window.is_visible(),
+                window.is_focused()
+            ),
+        );
+        if let Err(error) = window.set_size(LogicalSize::new(size.width, size.height)) {
+            log_tray_popup_event(
+                &app,
+                LogLevel::Warn,
+                &format!("reset size failed error={error}"),
+            );
+            return Err(error.to_string());
+        }
         config::save_tray_popup_size_for_app(&app, size)?;
+        log_tray_popup_event(&app, LogLevel::Info, "reset size succeeded");
+    } else {
+        log_tray_popup_event(
+            &app,
+            LogLevel::Warn,
+            "reset size skipped missingWindow=true",
+        );
     }
 
     Ok(())
@@ -317,23 +426,106 @@ pub fn reset_tray_popup_size(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn hide_tray_popup(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
-        window.hide().map_err(|error| error.to_string())?;
+        log_tray_popup_event(
+            &app,
+            LogLevel::Info,
+            &format!(
+                "hide command requested visibleBefore={:?} focusedBefore={:?}",
+                window.is_visible(),
+                window.is_focused()
+            ),
+        );
+        if let Err(error) = window.hide() {
+            log_tray_popup_event(
+                &app,
+                LogLevel::Warn,
+                &format!("hide command failed error={error}"),
+            );
+            return Err(error.to_string());
+        }
+        log_tray_popup_event(
+            &app,
+            LogLevel::Info,
+            &format!(
+                "hide command succeeded visibleAfter={:?} focusedAfter={:?}",
+                window.is_visible(),
+                window.is_focused()
+            ),
+        );
+    } else {
+        log_tray_popup_event(
+            &app,
+            LogLevel::Warn,
+            "hide command skipped missingWindow=true",
+        );
     }
 
     Ok(())
 }
 
 #[tauri::command]
+pub fn e2e_show_tray_popup(app: AppHandle) -> Result<(), String> {
+    ensure_e2e_tray_commands_enabled()?;
+    show_tray_popup(&app, PhysicalPosition::new(960.0, 1040.0));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn e2e_set_tray_popup_size(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    ensure_e2e_tray_commands_enabled()?;
+    if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
+        window
+            .set_size(LogicalSize::new(width, height))
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn e2e_is_tray_popup_visible(app: AppHandle) -> Result<bool, String> {
+    ensure_e2e_tray_commands_enabled()?;
+    Ok(app
+        .get_webview_window(TRAY_POPUP_LABEL)
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false))
+}
+
+#[tauri::command]
+pub fn e2e_focus_main_window(app: AppHandle) -> Result<(), String> {
+    ensure_e2e_tray_commands_enabled()?;
+    if let Some(window) = app.get_webview_window("main") {
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn start_tray_popup_dragging(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
-        suppress_focus_hide_for_drag();
+        log_tray_popup_event(
+            &app,
+            LogLevel::Info,
+            &format!(
+                "drag requested visibleBefore={:?} focusedBefore={:?}",
+                window.is_visible(),
+                window.is_focused()
+            ),
+        );
+        suppress_focus_hide_for_reason(&app, "dragBeforeStart");
         allow_position_save_for_drag();
-        window.start_dragging().map_err(|error| error.to_string())?;
-        suppress_focus_hide_for_drag();
+        if let Err(error) = window.start_dragging() {
+            log_tray_popup_event(&app, LogLevel::Warn, &format!("drag failed error={error}"));
+            return Err(error.to_string());
+        }
+        log_tray_popup_event(&app, LogLevel::Info, "drag started");
+        suppress_focus_hide_for_reason(&app, "dragAfterStart");
         allow_position_save_for_drag();
         if let Ok(position) = window.outer_position() {
             save_tray_popup_position_after_user_move(&app, position);
         }
+    } else {
+        log_tray_popup_event(&app, LogLevel::Warn, "drag skipped missingWindow=true");
     }
 
     Ok(())
@@ -343,44 +535,121 @@ pub fn start_tray_popup_dragging(app: AppHandle) -> Result<(), String> {
 pub fn start_tray_popup_resizing(app: AppHandle) -> Result<(), String> {
     if let Some(webview_window) = app.get_webview_window(TRAY_POPUP_LABEL) {
         let window = webview_window.as_ref().window();
-        suppress_focus_hide_for_drag();
-        window
-            .start_resize_dragging(ResizeDirection::SouthEast)
-            .map_err(|error| error.to_string())?;
-        suppress_focus_hide_for_drag();
+        log_tray_popup_event(
+            &app,
+            LogLevel::Info,
+            &format!(
+                "resize requested visibleBefore={:?} focusedBefore={:?}",
+                webview_window.is_visible(),
+                webview_window.is_focused()
+            ),
+        );
+        suppress_focus_hide_for_reason(&app, "resizeBeforeStart");
+        if let Err(error) = window.start_resize_dragging(ResizeDirection::SouthEast) {
+            log_tray_popup_event(
+                &app,
+                LogLevel::Warn,
+                &format!("resize failed error={error}"),
+            );
+            return Err(error.to_string());
+        }
+        log_tray_popup_event(&app, LogLevel::Info, "resize started");
+        suppress_focus_hide_for_reason(&app, "resizeAfterStart");
+    } else {
+        log_tray_popup_event(&app, LogLevel::Warn, "resize skipped missingWindow=true");
     }
 
     Ok(())
 }
 
-pub fn should_hide_tray_popup_on_focus_lost() -> bool {
+pub(crate) fn tray_popup_focus_hide_decision() -> FocusHideDecision {
     match TRAY_POPUP_FOCUS_HIDE_SUPPRESSED_UNTIL.lock() {
         Ok(mut suppressed_until) => match *suppressed_until {
-            Some(until) if Instant::now() < until => false,
+            Some(suppression) if Instant::now() < suppression.until => {
+                FocusHideDecision::Suppressed {
+                    remaining_ms: suppression
+                        .until
+                        .saturating_duration_since(Instant::now())
+                        .as_millis(),
+                    reason: suppression.reason,
+                }
+            }
             Some(_) => {
                 *suppressed_until = None;
-                true
+                FocusHideDecision::Expired
             }
-            None => true,
+            None => FocusHideDecision::Allow,
         },
-        Err(_) => true,
+        Err(_) => FocusHideDecision::LockPoisoned,
     }
 }
 
-pub fn hide_tray_popup_after_focus_lost(window: Window) {
+fn focus_lost_hide_delay(decision: FocusHideDecision) -> Duration {
+    TRAY_POPUP_FOCUS_LOST_HIDE_DELAY.saturating_add(Duration::from_millis(
+        decision.remaining_ms().min(u128::from(u64::MAX)) as u64,
+    ))
+}
+
+pub fn hide_tray_popup_after_focus_lost(window: Window, initial_decision: FocusHideDecision) {
+    let app = window.app_handle().clone();
+    let delay = focus_lost_hide_delay(initial_decision);
+    log_tray_popup_event(
+        &app,
+        LogLevel::Info,
+        &format!(
+            "focus lost hide scheduled initialDecision={} initialReason={} initialRemainingMs={} delayMs={}",
+            initial_decision.status(),
+            initial_decision.reason(),
+            initial_decision.remaining_ms(),
+            delay.as_millis()
+        ),
+    );
     std::thread::spawn(move || {
-        std::thread::sleep(TRAY_POPUP_FOCUS_LOST_HIDE_DELAY);
-        if should_hide_tray_popup_after_focus_lost_delay(&window) {
-            let _ = window.hide();
+        std::thread::sleep(delay);
+        let should_hide = should_hide_tray_popup_after_focus_lost_delay(&window);
+        if should_hide {
+            match window.hide() {
+                Ok(()) => log_tray_popup_event(
+                    &app,
+                    LogLevel::Info,
+                    &format!(
+                        "focus lost hide succeeded visibleAfter={:?} focusedAfter={:?}",
+                        window.is_visible(),
+                        window.is_focused()
+                    ),
+                ),
+                Err(error) => log_tray_popup_event(
+                    &app,
+                    LogLevel::Warn,
+                    &format!("focus lost hide failed error={error}"),
+                ),
+            }
         }
     });
 }
 
 fn should_hide_tray_popup_after_focus_lost_delay(window: &Window) -> bool {
-    should_hide_tray_popup_on_focus_lost()
-        && window.is_visible().unwrap_or(false)
-        && !window.is_focused().unwrap_or(false)
-        && !is_cursor_inside_tray_popup(window)
+    let app = window.app_handle().clone();
+    let decision = tray_popup_focus_hide_decision();
+    let visible = window.is_visible().unwrap_or(false);
+    let focused = window.is_focused().unwrap_or(false);
+    let cursor_inside = is_cursor_inside_tray_popup(window);
+    let should_hide = decision.should_hide() && visible && !focused;
+    log_tray_popup_event(
+        &app,
+        LogLevel::Info,
+        &format!(
+            "focus lost delay check decision={} reason={} remainingMs={} visible={} focused={} cursorInside={} willHide={}",
+            decision.status(),
+            decision.reason(),
+            decision.remaining_ms(),
+            visible,
+            focused,
+            cursor_inside,
+            should_hide
+        ),
+    );
+    should_hide
 }
 
 fn is_cursor_inside_tray_popup(window: &Window) -> bool {
@@ -402,10 +671,26 @@ fn is_cursor_inside_tray_popup(window: &Window) -> bool {
     cursor.x >= left && cursor.x <= right && cursor.y >= top && cursor.y <= bottom
 }
 
-fn suppress_focus_hide_for_drag() {
+fn suppress_focus_hide(reason: &'static str) {
     if let Ok(mut suppressed_until) = TRAY_POPUP_FOCUS_HIDE_SUPPRESSED_UNTIL.lock() {
-        *suppressed_until = Some(Instant::now() + TRAY_POPUP_DRAG_FOCUS_GRACE);
+        *suppressed_until = Some(FocusHideSuppression {
+            until: Instant::now() + TRAY_POPUP_DRAG_FOCUS_GRACE,
+            reason,
+        });
     }
+}
+
+fn suppress_focus_hide_for_reason(app: &AppHandle, reason: &'static str) {
+    suppress_focus_hide(reason);
+    log_tray_popup_event(
+        app,
+        LogLevel::Info,
+        &format!(
+            "focus hide suppressed reason={} durationMs={}",
+            reason,
+            TRAY_POPUP_DRAG_FOCUS_GRACE.as_millis()
+        ),
+    );
 }
 
 fn allow_position_save_for_drag() {
@@ -437,6 +722,17 @@ pub fn save_tray_popup_position_after_user_move(app: &AppHandle, position: Physi
                 y: position.y,
             },
         );
+        log_tray_popup_event(
+            app,
+            LogLevel::Debug,
+            &format!("position saved x={} y={}", position.x, position.y),
+        );
+    } else {
+        log_tray_popup_event(
+            app,
+            LogLevel::Debug,
+            &format!("position save skipped x={} y={}", position.x, position.y),
+        );
     }
 }
 
@@ -447,6 +743,14 @@ pub fn save_tray_popup_size_after_resize(
 ) {
     let logical_size = tray_popup_logical_size_from_physical(size, scale_factor);
     let _ = config::save_tray_popup_size_for_app(app, logical_size);
+    log_tray_popup_event(
+        app,
+        LogLevel::Debug,
+        &format!(
+            "size saved physicalWidth={} physicalHeight={} scaleFactor={} logicalWidth={} logicalHeight={}",
+            size.width, size.height, scale_factor, logical_size.width, logical_size.height
+        ),
+    );
 }
 
 #[tauri::command]
@@ -509,6 +813,17 @@ fn open_url_external(url: &str) -> Result<(), String> {
     }
 }
 
+fn ensure_e2e_tray_commands_enabled() -> Result<(), String> {
+    if env::var(E2E_TRAY_COMMANDS_ENV)
+        .ok()
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE"))
+    {
+        Ok(())
+    } else {
+        Err("E2E tray commands are disabled".to_string())
+    }
+}
+
 fn handle_tray_event(app: &AppHandle, event: TrayIconEvent) {
     if let TrayIconEvent::Click {
         position,
@@ -533,16 +848,72 @@ fn show_tray_popup(app: &AppHandle, anchor: PhysicalPosition<f64>) {
             .unwrap_or_else(|_| fallback_tray_popup_physical_size());
         let position =
             tray_popup_position_on_visible_work_area(app, desired_position, popup_size, anchor);
-        suppress_focus_hide_for_drag();
-        let _ = window.set_position(PhysicalPosition::new(position.0, position.1));
-        let _ = window.set_always_on_top(true);
-        let _ = window.show();
-        let _ = window.set_focus();
-        let _ = app.emit_to(
+        log_tray_popup_event(
+            app,
+            LogLevel::Info,
+            &format!(
+                "show requested presentationId={} anchorX={} anchorY={} desiredX={} desiredY={} x={} y={} width={} height={} visibleBefore={:?} focusedBefore={:?}",
+                presentation_id,
+                anchor.x,
+                anchor.y,
+                desired_position.0,
+                desired_position.1,
+                position.0,
+                position.1,
+                popup_size.width,
+                popup_size.height,
+                window.is_visible(),
+                window.is_focused()
+            ),
+        );
+        suppress_focus_hide_for_reason(app, "show");
+        if let Err(error) = window.set_position(PhysicalPosition::new(position.0, position.1)) {
+            log_tray_popup_event(
+                app,
+                LogLevel::Warn,
+                &format!("show set position failed error={error}"),
+            );
+        }
+        if let Err(error) = window.set_always_on_top(true) {
+            log_tray_popup_event(
+                app,
+                LogLevel::Warn,
+                &format!("show set always on top failed error={error}"),
+            );
+        }
+        if let Err(error) = window.show() {
+            log_tray_popup_event(app, LogLevel::Warn, &format!("show failed error={error}"));
+        }
+        if let Err(error) = window.set_focus() {
+            log_tray_popup_event(
+                app,
+                LogLevel::Warn,
+                &format!("show set focus failed error={error}"),
+            );
+        }
+        if let Err(error) = app.emit_to(
             TRAY_POPUP_LABEL,
             "tray-popup-shown",
             TrayPopupShownPayload { presentation_id },
+        ) {
+            log_tray_popup_event(
+                app,
+                LogLevel::Warn,
+                &format!("show emit failed error={error}"),
+            );
+        }
+        log_tray_popup_event(
+            app,
+            LogLevel::Info,
+            &format!(
+                "show finished presentationId={} visibleAfter={:?} focusedAfter={:?}",
+                presentation_id,
+                window.is_visible(),
+                window.is_focused()
+            ),
         );
+    } else {
+        log_tray_popup_event(app, LogLevel::Warn, "show skipped missingWindow=true");
     }
 }
 
@@ -848,9 +1219,25 @@ mod tests {
 
     #[test]
     fn focus_loss_hide_is_suppressed_after_drag_starts() {
-        suppress_focus_hide_for_drag();
+        suppress_focus_hide("drag");
 
-        assert!(!should_hide_tray_popup_on_focus_lost());
+        let decision = tray_popup_focus_hide_decision();
+        assert!(!decision.should_hide());
+        assert_eq!(decision.status(), "suppressed");
+        assert_eq!(decision.reason(), "drag");
+    }
+
+    #[test]
+    fn suppressed_focus_loss_recheck_waits_for_remaining_grace() {
+        let delay = focus_lost_hide_delay(FocusHideDecision::Suppressed {
+            remaining_ms: 250,
+            reason: "show",
+        });
+
+        assert_eq!(
+            delay,
+            TRAY_POPUP_FOCUS_LOST_HIDE_DELAY + Duration::from_millis(250)
+        );
     }
 
     #[test]

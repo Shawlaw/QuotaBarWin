@@ -274,13 +274,19 @@ export function TrayPopup() {
           </p>
         </div>
         <div className="tray-popup__actions">
-          <button className="button-compact button-secondary" type="button" onClick={() => void loadSnapshot()}>
+          <button
+            className="button-compact button-secondary"
+            type="button"
+            onClick={() => void loadSnapshot()}
+            data-testid="tray-popup-refresh"
+          >
             {isLoading ? t.tray.refreshingShort : t.tray.refresh}
           </button>
           <button
             className="button-compact button-ghost"
             type="button"
             onClick={() => void hideTrayPopup().catch(() => hideCurrentWindow())}
+            data-testid="tray-popup-close"
           >
             {t.tray.close}
           </button>

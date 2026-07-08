@@ -38,6 +38,7 @@ pub use remote_provider_commands::{
     RemoteProviderCatalogEntry,
 };
 pub use tray::{
+    e2e_focus_main_window, e2e_is_tray_popup_visible, e2e_set_tray_popup_size, e2e_show_tray_popup,
     get_tray_popup_presentation_id, hide_tray_popup, reset_tray_popup_size,
     start_tray_popup_dragging, start_tray_popup_resizing,
 };
@@ -134,18 +135,32 @@ pub fn run() {
             hide_tray_popup,
             reset_tray_popup_size,
             start_tray_popup_dragging,
-            start_tray_popup_resizing
+            start_tray_popup_resizing,
+            e2e_show_tray_popup,
+            e2e_set_tray_popup_size,
+            e2e_is_tray_popup_visible,
+            e2e_focus_main_window
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();
             }
-            tauri::WindowEvent::Focused(false)
-                if window.label() == tray::TRAY_POPUP_LABEL
-                    && tray::should_hide_tray_popup_on_focus_lost() =>
-            {
-                tray::hide_tray_popup_after_focus_lost(window.clone());
+            tauri::WindowEvent::Focused(false) if window.label() == tray::TRAY_POPUP_LABEL => {
+                let decision = tray::tray_popup_focus_hide_decision();
+                tray::log_tray_popup_event(
+                    window.app_handle(),
+                    logger::LogLevel::Info,
+                    &format!(
+                        "focus lost event decision={} reason={} remainingMs={} visible={:?} focused={:?} scheduledRecheck=true",
+                        decision.status(),
+                        decision.reason(),
+                        decision.remaining_ms(),
+                        window.is_visible(),
+                        window.is_focused()
+                    ),
+                );
+                tray::hide_tray_popup_after_focus_lost(window.clone(), decision);
             }
             tauri::WindowEvent::Moved(position) if window.label() == tray::TRAY_POPUP_LABEL => {
                 tray::save_tray_popup_position_after_user_move(window.app_handle(), *position);

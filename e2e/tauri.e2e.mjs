@@ -24,8 +24,10 @@ const nativeDriver = process.env.MSEDGEDRIVER ?? await downloadEdgeDriver();
 const port = Number(process.env.TAURI_DRIVER_PORT ?? 4444);
 const portableDir = path.dirname(appExecutable);
 const configPath = path.join(portableDir, "config.quotaBarWin.json");
+const logPath = path.join(portableDir, "quotabarwin.log");
 const portableMarkerPath = path.join(portableDir, "quotabarwin.portable");
 const e2eProviderRoot = path.join(portableDir, "providers", "remote");
+const trayPopupLabel = "tray-popup";
 
 let driverProcess;
 let app;
@@ -39,7 +41,7 @@ try {
   assertE2eConfigWritten();
 
   driverProcess = spawn(tauriDriver, ["--port", String(port), "--native-driver", nativeDriver], {
-    env: process.env,
+    env: { ...process.env, QBWIN_E2E: "1" },
     stdio: "inherit"
   });
   await waitForPort(port);
@@ -59,6 +61,7 @@ try {
   await assertAppStartedAndShowsQuota();
   await assertConfigCanBeSaved();
   await assertRemoteProviderCanRefreshAndTimeout();
+  await assertTrayPopupInteractions();
   await assertPermissionPromptNamesProvider();
 
   console.log("Tauri WebdriverIO E2E passed");
@@ -182,6 +185,59 @@ async function assertRemoteProviderCanRefreshAndTimeout() {
   });
 }
 
+async function assertTrayPopupInteractions() {
+  const mainHandle = await app.getWindowHandle();
+
+  await showTrayPopupForE2e();
+  const trayHandle = await switchToWindowWithTestId("tray-popup");
+  await byTestId("tray-popup").then((popup) => popup.waitForDisplayed({ timeout: 10000 }));
+  await app.waitUntil(async () => (await currentBodyText()).includes("E2E Remote Fixture"), {
+    timeout: 20000,
+    timeoutMsg: "Tray popup did not render the fixture provider"
+  });
+  const trayText = await currentBodyText();
+  assert.match(trayText, /Daily/);
+  assert.match(trayText, /Weekly limit/);
+
+  const refresh = await byTestId("tray-popup-refresh");
+  await refresh.click();
+  await app.waitUntil(async () => (await currentBodyText()).includes("Daily"), {
+    timeout: 20000,
+    timeoutMsg: "Tray popup refresh did not keep quota output visible"
+  });
+
+  await app.switchToWindow(mainHandle);
+  await invokeInApp("e2e_set_tray_popup_size", { width: 460, height: 610 });
+  await showTrayPopupForE2e();
+  await app.switchToWindow(trayHandle);
+  await byTestId("tray-popup-titlebar").then((titlebar) => titlebar.doubleClick());
+  await app.waitUntil(() => {
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    return config.trayPopupSize?.width === 380 && config.trayPopupSize?.height === 520;
+  }, {
+    timeout: 10000,
+    timeoutMsg: "Tray popup titlebar double-click did not reset the saved size"
+  });
+
+  await byTestId("tray-popup-close").then((close) => close.click());
+  await app.switchToWindow(mainHandle);
+  await waitForTauriWindowVisible(trayPopupLabel, false, "Tray popup close button did not hide the window");
+
+  await showTrayPopupForE2e();
+  await switchToWindowWithTestId("tray-popup");
+  await app.keys("Escape");
+  await app.switchToWindow(mainHandle);
+  await waitForTauriWindowVisible(trayPopupLabel, false, "Tray popup Escape key did not hide the window");
+
+  await showTrayPopupForE2e();
+  await switchToWindowWithTestId("tray-popup");
+  await app.switchToWindow(mainHandle);
+  await invokeInApp("e2e_focus_main_window");
+  await waitForTauriWindowVisible(trayPopupLabel, false, "Tray popup focus loss did not hide the window");
+
+  assertTrayPopupLogs();
+}
+
 async function assertPermissionPromptNamesProvider() {
   await openSettings();
   await clickByTestId("more-provider-e2e-remote-fixture");
@@ -213,6 +269,68 @@ async function clickByTestId(id) {
     target.scrollIntoView({ block: "center", inline: "nearest" });
     target.click();
   }, element);
+}
+
+async function currentBodyText() {
+  const body = await app.$("body");
+  return body.getText();
+}
+
+async function invokeInApp(command, args = {}) {
+  const result = await app.executeAsync((cmd, cmdArgs, done) => {
+    window.__TAURI_INTERNALS__.invoke(cmd, cmdArgs).then(
+      (value) => done({ ok: true, value }),
+      (error) => done({ ok: false, error: String(error?.message ?? error) })
+    );
+  }, command, args);
+
+  if (!result?.ok) {
+    throw new Error(`Tauri invoke failed for ${command}: ${result?.error ?? "unknown error"}`);
+  }
+
+  return result.value;
+}
+
+async function showTrayPopupForE2e() {
+  await invokeInApp("e2e_show_tray_popup");
+}
+
+async function switchToWindowWithTestId(id) {
+  let foundHandle = null;
+  await app.waitUntil(async () => {
+    for (const handle of await app.getWindowHandles()) {
+      await app.switchToWindow(handle);
+      const element = await byTestId(id);
+      if (await element.isExisting()) {
+        foundHandle = handle;
+        return true;
+      }
+    }
+    return false;
+  }, {
+    timeout: 10000,
+    timeoutMsg: `Unable to find a WebDriver window containing [data-testid="${id}"]`
+  });
+
+  return foundHandle;
+}
+
+async function waitForTauriWindowVisible(label, expected, timeoutMsg) {
+  assert.equal(label, trayPopupLabel);
+  await app.waitUntil(async () => {
+    const visible = await invokeInApp("e2e_is_tray_popup_visible");
+    return visible === expected;
+  }, {
+    timeout: 5000,
+    timeoutMsg
+  });
+}
+
+function assertTrayPopupLogs() {
+  const logText = fs.readFileSync(logPath, "utf8");
+  assert.match(logText, /"target":"tray"/);
+  assert.match(logText, /hide command requested|focus lost event/);
+  assert.match(logText, /reset size requested/);
 }
 
 function writeE2eConfig() {
@@ -274,7 +392,7 @@ function cleanupE2eConfig() {
     configPath,
     portableMarkerPath,
     path.join(portableDir, "last_snapshot.quotaBarWin.json"),
-    path.join(portableDir, "quotabarwin.log"),
+    logPath,
     path.join(portableDir, "quotabarwin.log.1")
   ]) {
     try {
