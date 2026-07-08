@@ -76,6 +76,20 @@ Provider configuration type:
 
 ---
 
+## Runtime And Software Dependencies
+
+QuotaBarWin has three separate dependency surfaces: the app itself, remote Providers, and the development environment.
+
+| Scenario | Required software | Notes |
+|---|---|---|
+| Running the released `QuotaBarWin.exe` | Windows; Microsoft Edge WebView2 Runtime | The portable zip / single exe does not require users to install Node.js, npm, Rust, or the Tauri CLI. WebView2 renders the Tauri UI and is usually already available with Windows 10/11 or Microsoft Edge. If it is missing on a target machine, install the WebView2 Evergreen Runtime first. |
+| Installing / running remote Providers | Software matching the manifest `runtime` | QuotaBarWin resolves `runtime` from `PATH` or an absolute path, then validates it with `--version` or `--help` during install / update. If a Provider declares `"runtime": "node"`, that machine needs a working `node`; the same applies to `python`, `pwsh`, or `bash`. All example Providers in this repo currently declare `node`. |
+| Developing, testing, or building this repo | Node.js 22+, npm, Rust stable / Cargo, Windows MSVC build tools | `package.json` requires `node >=22`, and the release workflow also uses Node 22. `npm run tauri ...` and `cargo test ...` need the Rust toolchain; full E2E also needs `tauri-driver`. |
+
+Provider scripts may also call additional CLIs or read local credential files. Those are not universal QuotaBarWin dependencies and should be documented by the individual Provider. For example, the Bash sample in the remote Provider guide requires `jq`.
+
+---
+
 ## Config And Privacy
 
 Windows AppData config:
@@ -119,6 +133,8 @@ Do not put real API keys, tokens, cookies, account IDs, or proxy credentials in 
 ---
 
 ## Development
+
+Before starting, make sure the development prerequisites above are installed.
 
 Install dependencies:
 

@@ -76,6 +76,20 @@ Provider 配置类型：
 
 ---
 
+## 运行环境和软件依赖
+
+需要区分主程序、远程 Provider 和开发环境三类依赖：
+
+| 场景 | 需要安装 | 说明 |
+|---|---|---|
+| 使用发布版 `QuotaBarWin.exe` | Windows；Microsoft Edge WebView2 Runtime | portable zip / 单 exe 不要求用户安装 Node.js、npm、Rust 或 Tauri CLI。WebView2 负责渲染 Tauri 界面，通常已随 Windows 10/11 或 Microsoft Edge 可用；如果目标机器缺失，需要先安装 WebView2 Evergreen Runtime。 |
+| 安装 / 运行远程 Provider | manifest `runtime` 对应的软件 | QuotaBarWin 会从 `PATH` 或绝对路径解析 `runtime`，安装 / 更新时用 `--version` 或 `--help` 校验。若 Provider 声明 `"runtime": "node"`，该机器就需要可执行的 `node`；声明 `python`、`pwsh` 或 `bash` 时同理。当前仓库示例 Provider 均声明 `node`。 |
+| 开发、测试、构建本仓库 | Node.js 22+、npm、Rust stable / Cargo、Windows MSVC build tools | `package.json` 要求 `node >=22`，Release workflow 也使用 Node 22。`npm run tauri ...` 和 `cargo test ...` 需要 Rust 工具链；完整 E2E 还需要 `tauri-driver`。 |
+
+Provider 脚本还可以自行调用其他 CLI 或读取本地凭据文件；这些不属于 QuotaBarWin 的统一依赖，应由对应 Provider 文档声明。例如远程 Provider 指南里的 Bash 示例需要 `jq`。
+
+---
+
 ## 配置和隐私
 
 Windows AppData 配置：
@@ -119,6 +133,8 @@ Secret 占位符：
 ---
 
 ## 开发
+
+开始前请先确认已安装上面的开发环境依赖。
 
 安装依赖：
 
