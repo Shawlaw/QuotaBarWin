@@ -8,11 +8,11 @@
 - 项目元数据：补充 npm/Cargo repository、homepage、bugs、Node 版本要求和贡献者作者信息。
 - 人工确认：MIT 是最终许可证，`https://github.com/Shawlaw/QuotaBarWin` 是最终公开仓库地址。
 - 协作入口：补充 `CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`。
-- GitHub 入口：补充 issue 模板、PR 模板、CI 工作流和 Dependabot 配置。
+- GitHub 入口：补充 issue 模板、PR 模板和 CI 工作流；公开前暂时关闭 Dependabot，避免自动 PR 和 Actions 噪音。
 - 变更记录：补充 `CHANGELOG.md`，为公开 release 提供用户可见变更入口。
 - 依赖安全：修复 `npm audit` 暴露的 `undici` 高危链路，并用 npm override 避开 `esbuild` 低危范围。
 - Rust 依赖安全：安装并运行 `cargo audit`，更新 `src-tauri/Cargo.lock` 修复 `quick-xml` 和 `quinn-proto` 高危漏洞。
-- 供应链检查：CI 运行 `npm audit --audit-level=low`，PR 运行 GitHub dependency review 覆盖 npm/Cargo lockfile。
+- 供应链检查：本地已运行 `npm audit --audit-level=low` 和 `cargo audit`；公开后再按维护节奏恢复 Dependabot / dependency review。
 - Tauri 安全姿态：启用基础 CSP，保留必要的 Tauri IPC source。
 - 防误提交：扩展 `.gitignore`，覆盖常见签名证书、私钥和 keystore 文件。
 - E2E：`e2e/tauri.e2e.mjs` 已改为生成 schema 14 remote Provider 配置和本地 cache；README 说明了单实例限制和临时产物保留开关。
