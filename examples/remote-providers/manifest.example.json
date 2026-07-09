@@ -9,6 +9,23 @@
   "requiredEnvVars": [],
   "output": "provider-snapshot-v1",
   "permissions": [],
+  "defaultConfig": {
+    "name": "Example",
+    "timeoutSeconds": 30,
+    "visibleWindowIds": [],
+    "windowLabelOverrides": {},
+    "envVars": {}
+  },
+  "parameters": [
+    {
+      "name": "EXAMPLE_API_KEY",
+      "label": "Example API Key",
+      "kind": "secret",
+      "required": false,
+      "defaultValue": "${secret:EXAMPLE_API_KEY}",
+      "description": "Optional example parameter hint shown in Settings."
+    }
+  ],
   "checksums": {
     "source": "sha256:<replace-with-sha256-of-provider.cjs>"
   }

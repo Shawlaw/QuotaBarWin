@@ -9,6 +9,47 @@
   "requiredEnvVars": [],
   "output": "provider-snapshot-v1",
   "permissions": ["fs:~/.codex/auth.json", "env:CODEX_ACCESS_TOKEN", "env:CODEX_ACCOUNT_ID", "env:CODEX_AUTH_FILE", "env:QBWIN_PROXY_URL"],
+  "defaultConfig": {
+    "name": "Codex",
+    "windowLabelOverrides": {
+      "5h": "5小时限",
+      "weekly": "周限"
+    }
+  },
+  "parameters": [
+    {
+      "name": "CODEX_ACCESS_TOKEN",
+      "label": "Codex access token",
+      "kind": "secret",
+      "required": false,
+      "defaultValue": "${secret:CODEX_ACCESS_TOKEN}",
+      "description": "Optional override. By default the provider reads the local Codex auth file."
+    },
+    {
+      "name": "CODEX_ACCOUNT_ID",
+      "label": "ChatGPT account id",
+      "kind": "string",
+      "required": false,
+      "defaultValue": "${secret:CODEX_ACCOUNT_ID}",
+      "description": "Optional account id override when the local Codex auth file is not enough."
+    },
+    {
+      "name": "CODEX_AUTH_FILE",
+      "label": "Codex auth file",
+      "kind": "string",
+      "required": false,
+      "placeholder": "C:\\Users\\you\\.codex\\auth.json",
+      "description": "Optional path to a Codex auth.json file."
+    },
+    {
+      "name": "QBWIN_PROXY_URL",
+      "label": "Provider proxy URL",
+      "kind": "string",
+      "required": false,
+      "placeholder": "http://127.0.0.1:7890 or socks5h://127.0.0.1:7890",
+      "description": "Optional runtime proxy for the Codex usage request. Prefer the provider Proxy URL setting; QuotaBarWin injects it as QBWIN_PROXY_URL."
+    }
+  ],
   "checksums": {
     "source": "sha256:b2a0b82dda26945283f9771bf7f914614733134759bc25091ea9a56abc50ac85"
   }

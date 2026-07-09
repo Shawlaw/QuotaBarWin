@@ -3,6 +3,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   checkRemoteUpdates,
   getCachedSnapshot,
+  getInstalledRemoteProviderManifest,
   installRemoteProviderManifest,
   installRemoteProviderRegistry,
   getConfig,
@@ -192,6 +193,18 @@ test("api_invokes_remote_provider_commands", async () => {
     if (cmd === "install_remote_provider_registry") {
       return registryResult;
     }
+    if (cmd === "get_installed_remote_provider_manifest") {
+      return {
+        schemaVersion: 1,
+        id: "remote-kimi",
+        displayName: "Remote Kimi",
+        runtime: "node",
+        entry: "provider.cjs",
+        requiredEnvVars: ["KIMI_API_KEY"],
+        output: "provider-snapshot-v1",
+        parameters: [{ name: "KIMI_API_KEY", kind: "secret", required: true }],
+      };
+    }
     if (cmd === "remove_remote_provider") {
       return null;
     }
@@ -227,6 +240,10 @@ test("api_invokes_remote_provider_commands", async () => {
       true,
     ),
   ).resolves.toEqual(registryResult);
+  await expect(getInstalledRemoteProviderManifest("remote-kimi")).resolves.toMatchObject({
+    id: "remote-kimi",
+    parameters: [{ name: "KIMI_API_KEY", kind: "secret", required: true }],
+  });
   await expect(removeRemoteProvider("remote-kimi")).resolves.toBeNull();
   await expect(refreshRemoteProvider("remote-kimi")).resolves.toEqual({
     id: "remote-kimi",
@@ -252,6 +269,7 @@ test("api_invokes_remote_provider_commands", async () => {
     proxyUrl: "http://proxy.example.com:8080",
     autoUpdate: true,
   });
+  expect(payloads.get_installed_remote_provider_manifest).toEqual({ id: "remote-kimi" });
   expect(payloads.remove_remote_provider).toEqual({ id: "remote-kimi" });
   expect(payloads.refresh_remote_provider).toEqual({ id: "remote-kimi" });
 });

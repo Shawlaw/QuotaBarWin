@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -30,8 +31,73 @@ pub struct ProviderManifest {
     pub output: String,
     #[serde(default)]
     pub permissions: Vec<String>,
+    #[serde(default, skip_serializing_if = "ManifestDefaultConfig::is_empty")]
+    #[serde(rename = "defaultConfig")]
+    pub default_config: ManifestDefaultConfig,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parameters: Vec<ProviderParameter>,
     #[serde(default)]
     pub checksums: Checksums,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestDefaultConfig {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(
+        default,
+        rename = "timeoutSeconds",
+        alias = "timeout_seconds",
+        alias = "timeout-seconds"
+    )]
+    pub timeout_seconds: Option<u64>,
+    #[serde(
+        default,
+        rename = "windowLabelOverrides",
+        alias = "window_label_overrides",
+        alias = "window-label-overrides"
+    )]
+    pub window_label_overrides: HashMap<String, String>,
+    #[serde(
+        default,
+        rename = "visibleWindowIds",
+        alias = "visible_window_ids",
+        alias = "visible-window-ids"
+    )]
+    pub visible_window_ids: Vec<String>,
+    #[serde(default, rename = "envVars", alias = "env_vars", alias = "env-vars")]
+    pub env_vars: HashMap<String, String>,
+}
+
+impl ManifestDefaultConfig {
+    fn is_empty(&self) -> bool {
+        self.name.as_deref().unwrap_or_default().trim().is_empty()
+            && self.timeout_seconds.is_none()
+            && self.window_label_overrides.is_empty()
+            && self.visible_window_ids.is_empty()
+            && self.env_vars.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderParameter {
+    pub name: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default, rename = "defaultValue")]
+    pub default_value: Option<String>,
+    #[serde(default)]
+    pub placeholder: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub options: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -196,6 +262,11 @@ fn fetch_text(
     Err(RemoteProviderError::Network(format!(
         "unsupported URL or file path: {url}"
     )))
+}
+
+fn is_http_url(url: &str) -> bool {
+    let url = url.trim();
+    url.starts_with("http://") || url.starts_with("https://")
 }
 
 pub fn fetch_manifest_text(
@@ -523,9 +594,6 @@ pub fn check_update(
     trusted_checksum: Option<&str>,
     timeout: Duration,
 ) -> Result<UpdateInfo, RemoteProviderError> {
-    let client = build_http_client(per_provider_proxy, global_proxy, timeout)
-        .map_err(RemoteProviderError::Network)?;
-
     let meta_path = provider_dir.join(".meta.json");
     let existing_meta: Option<RemoteProviderMeta> = if meta_path.exists() {
         let contents = fs::read_to_string(&meta_path)?;
@@ -535,44 +603,53 @@ pub fn check_update(
         None
     };
 
-    let mut request = client.get(manifest_url);
-    if let Some(etag) = existing_meta.as_ref().and_then(|meta| meta.etag.as_ref()) {
-        request = request.header("If-None-Match", etag.clone());
-    }
+    let (text, new_etag) = if is_http_url(manifest_url) {
+        let client = build_http_client(per_provider_proxy, global_proxy, timeout)
+            .map_err(RemoteProviderError::Network)?;
+        let mut request = client.get(manifest_url);
+        if let Some(etag) = existing_meta.as_ref().and_then(|meta| meta.etag.as_ref()) {
+            request = request.header("If-None-Match", etag.clone());
+        }
 
-    let response = request
-        .send()
-        .map_err(|error| RemoteProviderError::Network(redact_sensitive(&error.to_string())))?;
-    let status = response.status();
+        let response = request
+            .send()
+            .map_err(|error| RemoteProviderError::Network(redact_sensitive(&error.to_string())))?;
+        let status = response.status();
 
-    if status.as_u16() == 304 {
-        let checked_at = chrono::Utc::now().to_rfc3339();
-        return Ok(UpdateInfo {
-            id: provider_dir
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-            available: false,
-            new_checksum: None,
-            current_version: existing_meta.as_ref().and_then(|meta| meta.version.clone()),
-            new_version: existing_meta.as_ref().and_then(|meta| meta.version.clone()),
-            checked_at: Some(checked_at),
-        });
-    }
+        if status.as_u16() == 304 {
+            let checked_at = chrono::Utc::now().to_rfc3339();
+            return Ok(UpdateInfo {
+                id: provider_dir
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+                available: false,
+                new_checksum: None,
+                current_version: existing_meta.as_ref().and_then(|meta| meta.version.clone()),
+                new_version: existing_meta.as_ref().and_then(|meta| meta.version.clone()),
+                checked_at: Some(checked_at),
+            });
+        }
 
-    if !status.is_success() {
-        return Err(RemoteProviderError::Http(status.as_u16()));
-    }
+        if !status.is_success() {
+            return Err(RemoteProviderError::Http(status.as_u16()));
+        }
 
-    let new_etag = response
-        .headers()
-        .get("etag")
-        .and_then(|value| value.to_str().ok().map(|s| s.to_string()));
-
-    let text = response
-        .text()
-        .map_err(|error| RemoteProviderError::Network(error.to_string()))?;
+        let new_etag = response
+            .headers()
+            .get("etag")
+            .and_then(|value| value.to_str().ok().map(|s| s.to_string()));
+        let text = response
+            .text()
+            .map_err(|error| RemoteProviderError::Network(error.to_string()))?;
+        (text, new_etag)
+    } else {
+        (
+            fetch_manifest_text(manifest_url, per_provider_proxy, global_proxy, timeout)?,
+            None,
+        )
+    };
     let manifest: ProviderManifest = serde_json::from_str(&text)
         .map_err(|error| RemoteProviderError::InvalidManifest(error.to_string()))?;
     validate_manifest(&manifest)?;
@@ -600,6 +677,13 @@ pub fn check_update(
     meta.etag = new_etag;
     meta.last_check_at = Some(checked_at.clone());
     meta.source_url = source_url;
+    if !available && new_checksum.as_deref() == trusted_checksum {
+        meta.version = manifest.version.clone();
+        let manifest_path = provider_dir.join("provider.json");
+        let manifest_json = serde_json::to_string_pretty(&manifest)
+            .map_err(|error| RemoteProviderError::Io(error.to_string()))?;
+        fs::write(manifest_path, manifest_json)?;
+    }
 
     let meta_json = serde_json::to_string_pretty(&meta)
         .map_err(|error| RemoteProviderError::Io(error.to_string()))?;
@@ -618,6 +702,12 @@ pub fn check_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn path_env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn resolve_source_url_with_relative_entry() {
@@ -683,6 +773,8 @@ mod tests {
             required_env_vars: vec![],
             output: "provider-snapshot-v1".to_string(),
             permissions: vec![],
+            default_config: ManifestDefaultConfig::default(),
+            parameters: vec![],
             checksums: Checksums::default(),
         };
         assert!(matches!(
@@ -704,6 +796,8 @@ mod tests {
             required_env_vars: vec![],
             output: "provider-snapshot-v1".to_string(),
             permissions: vec![],
+            default_config: ManifestDefaultConfig::default(),
+            parameters: vec![],
             checksums: Checksums::default(),
         };
         assert!(matches!(
@@ -726,6 +820,8 @@ mod tests {
             required_env_vars: vec!["KIMI_API_KEY".to_string()],
             output: "provider-snapshot-v1".to_string(),
             permissions: vec![],
+            default_config: ManifestDefaultConfig::default(),
+            parameters: vec![],
             checksums: Checksums {
                 source: Some(compute_checksum("// source")),
             },
@@ -751,7 +847,78 @@ mod tests {
     }
 
     #[test]
+    fn check_update_reads_local_manifest_and_refreshes_metadata_when_source_unchanged() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let source = "// source";
+        let source_checksum = compute_checksum(source);
+        let manifest_path = temp.path().join("provider.json");
+
+        let old_manifest = ProviderManifest {
+            schema_version: 1,
+            id: "local".to_string(),
+            display_name: "Local".to_string(),
+            version: Some("1.0.0".to_string()),
+            description: None,
+            runtime: "node".to_string(),
+            entry: "provider.cjs".to_string(),
+            required_env_vars: vec![],
+            output: "provider-snapshot-v1".to_string(),
+            permissions: vec![],
+            default_config: ManifestDefaultConfig::default(),
+            parameters: vec![],
+            checksums: Checksums {
+                source: Some(source_checksum.clone()),
+            },
+        };
+        let provider_dir = cache_remote_provider(
+            temp.path(),
+            "local",
+            &manifest_path.to_string_lossy(),
+            &old_manifest,
+            source,
+            None,
+        )
+        .expect("cache old provider");
+
+        let mut new_manifest = old_manifest.clone();
+        new_manifest.version = Some("1.0.1".to_string());
+        new_manifest.parameters = vec![ProviderParameter {
+            name: "QBWIN_PROXY_URL".to_string(),
+            label: Some("Provider proxy URL".to_string()),
+            kind: Some("string".to_string()),
+            required: false,
+            default_value: None,
+            placeholder: Some("http://127.0.0.1:7890".to_string()),
+            description: Some("Optional proxy".to_string()),
+            options: vec![],
+        }];
+        fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&new_manifest).expect("manifest json"),
+        )
+        .expect("write new manifest");
+
+        let update = check_update(
+            &provider_dir,
+            &manifest_path.to_string_lossy(),
+            None,
+            None,
+            Some(&source_checksum),
+            Duration::from_secs(1),
+        )
+        .expect("check local update");
+
+        assert!(!update.available);
+        assert_eq!(update.new_version.as_deref(), Some("1.0.1"));
+
+        let cached = load_cached_manifest(&provider_dir).expect("load refreshed manifest");
+        assert_eq!(cached.parameters.len(), 1);
+        assert_eq!(cached.parameters[0].name, "QBWIN_PROXY_URL");
+    }
+
+    #[test]
     fn resolve_runtime_finds_executable_in_path() {
+        let _guard = path_env_lock().lock().expect("path env lock");
         let temp = tempfile::tempdir().expect("temp dir");
         let runtime_name = "quotabarwin_test_runtime";
         let script_path = temp.path().join(format!("{runtime_name}.cmd"));
@@ -786,6 +953,7 @@ mod tests {
 
     #[test]
     fn ensure_runtime_resolved_falls_back_when_missing() {
+        let _guard = path_env_lock().lock().expect("path env lock");
         let temp = tempfile::tempdir().expect("temp dir");
         let runtime_name = "quotabarwin_fallback_runtime";
         let script_path = temp.path().join(format!("{runtime_name}.cmd"));

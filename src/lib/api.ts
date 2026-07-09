@@ -8,6 +8,7 @@ import type {
   ProxyConfig,
   RemoteProviderCatalogEntry,
   RemoteProviderConfig,
+  RemoteProviderManifest,
 } from "../types";
 import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "./defaults";
 
@@ -320,6 +321,29 @@ export async function installRemoteProviderRegistry(
     proxyUrl,
     autoUpdate,
   });
+}
+
+export async function getInstalledRemoteProviderManifest(
+  id: string,
+): Promise<RemoteProviderManifest> {
+  if (!hasTauriInternals()) {
+    void id;
+    return {
+      schemaVersion: 1,
+      id: "browser-preview",
+      displayName: "Browser Preview",
+      runtime: "node",
+      entry: "provider.cjs",
+      requiredEnvVars: [],
+      output: "provider-snapshot-v1",
+      permissions: [],
+      defaultConfig: {},
+      parameters: [],
+      checksums: {},
+    };
+  }
+
+  return invoke<RemoteProviderManifest>("get_installed_remote_provider_manifest", { id });
 }
 
 export async function removeRemoteProvider(id: string): Promise<void> {

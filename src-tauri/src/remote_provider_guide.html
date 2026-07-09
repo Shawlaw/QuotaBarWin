@@ -218,6 +218,26 @@
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
   "permissions": ["env:KIMI_API_KEY"],
+  "defaultConfig": {
+    "name": "Kimi",
+    "visibleWindowIds": ["300-minute", "usage"],
+    "windowLabelOverrides": {
+      "300-minute": "5小时限",
+      "usage": "周限"
+    },
+    "envVars": {
+      "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+    }
+  },
+  "parameters": [
+    {
+      "name": "KIMI_API_KEY",
+      "label": "Kimi API Key",
+      "kind": "secret",
+      "required": true,
+      "defaultValue": "${secret:KIMI_API_KEY}"
+    }
+  ],
   "checksums": {
     "source": "sha256:&lt;hex&gt;"
   }
@@ -235,6 +255,8 @@
               <tr><td><code>entry</code></td><td>是</td><td>Source 文件。相对路径按 manifest 所在位置解析。</td></tr>
               <tr><td><code>requiredEnvVars</code></td><td>否</td><td>脚本需要的环境变量。</td></tr>
               <tr><td><code>output</code></td><td>是</td><td>当前使用 <code>provider-snapshot-v1</code>。</td></tr>
+              <tr><td><code>defaultConfig</code></td><td>否</td><td>首次安装时写入本地 provider 配置的默认值。后续更新不会覆盖用户修改。</td></tr>
+              <tr><td><code>parameters</code></td><td>否</td><td>设置页显示的参数提示；不要包含真实凭据。</td></tr>
               <tr><td><code>checksums.source</code></td><td>否</td><td>Source SHA-256。启用安全 auto-update 时需要；<code>version</code> 只用于展示，不替代 checksum。</td></tr>
             </tbody>
           </table>
@@ -531,6 +553,26 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
   "permissions": ["env:KIMI_API_KEY"],
+  "defaultConfig": {
+    "name": "Kimi",
+    "visibleWindowIds": ["300-minute", "usage"],
+    "windowLabelOverrides": {
+      "300-minute": "5h",
+      "usage": "Weekly"
+    },
+    "envVars": {
+      "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+    }
+  },
+  "parameters": [
+    {
+      "name": "KIMI_API_KEY",
+      "label": "Kimi API Key",
+      "kind": "secret",
+      "required": true,
+      "defaultValue": "${secret:KIMI_API_KEY}"
+    }
+  ],
   "checksums": {
     "source": "sha256:&lt;hex&gt;"
   }
@@ -548,6 +590,8 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
               <tr><td><code>entry</code></td><td>yes</td><td>Source file. Relative paths are resolved against the manifest URL/path.</td></tr>
               <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script.</td></tr>
               <tr><td><code>output</code></td><td>yes</td><td>Use <code>provider-snapshot-v1</code>.</td></tr>
+              <tr><td><code>defaultConfig</code></td><td>no</td><td>Default local provider config written during first install. Updates do not overwrite user edits.</td></tr>
+              <tr><td><code>parameters</code></td><td>no</td><td>Parameter hints shown in Settings; do not include real credentials.</td></tr>
               <tr><td><code>checksums.source</code></td><td>no</td><td>Source SHA-256. Required for safe auto-update; <code>version</code> is display metadata and does not replace checksum verification.</td></tr>
             </tbody>
           </table>

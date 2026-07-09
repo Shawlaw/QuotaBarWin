@@ -9,6 +9,27 @@
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
   "permissions": ["env:KIMI_API_KEY"],
+  "defaultConfig": {
+    "name": "Kimi",
+    "visibleWindowIds": ["300-minute", "usage"],
+    "windowLabelOverrides": {
+      "300-minute": "5小时限",
+      "usage": "周限"
+    },
+    "envVars": {
+      "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+    }
+  },
+  "parameters": [
+    {
+      "name": "KIMI_API_KEY",
+      "label": "Kimi API Key",
+      "kind": "secret",
+      "required": true,
+      "defaultValue": "${secret:KIMI_API_KEY}",
+      "description": "Kimi coding quota API token. Store it in secrets/KIMI_API_KEY.txt or change the placeholder for multiple accounts."
+    }
+  ],
   "checksums": {
     "source": "sha256:10218be2b5d00d16e08b35bce6f86323a8aa68d080a29de8fd9e80c32dc5f5c7"
   }

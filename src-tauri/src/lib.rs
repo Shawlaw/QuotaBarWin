@@ -32,10 +32,10 @@ pub use quota::{
     QuotaWindow,
 };
 pub use remote_provider_commands::{
-    apply_remote_update, check_remote_updates, get_network_proxy, install_remote_provider_manifest,
-    install_remote_provider_registry, preview_remote_provider_registry, refresh_remote_provider,
-    remove_remote_provider, set_network_proxy, RegistryInstallFailure, RegistryInstallResult,
-    RemoteProviderCatalogEntry,
+    apply_remote_update, check_remote_updates, get_installed_remote_provider_manifest,
+    get_network_proxy, install_remote_provider_manifest, install_remote_provider_registry,
+    preview_remote_provider_registry, refresh_remote_provider, remove_remote_provider,
+    set_network_proxy, RegistryInstallFailure, RegistryInstallResult, RemoteProviderCatalogEntry,
 };
 pub use tray::{
     e2e_focus_main_window, e2e_is_tray_popup_visible, e2e_set_tray_popup_size, e2e_show_tray_popup,
@@ -124,6 +124,7 @@ pub fn run() {
             get_cached_snapshot,
             get_network_proxy,
             set_network_proxy,
+            get_installed_remote_provider_manifest,
             preview_remote_provider_registry,
             install_remote_provider_manifest,
             install_remote_provider_registry,

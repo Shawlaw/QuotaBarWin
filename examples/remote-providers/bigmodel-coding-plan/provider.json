@@ -9,6 +9,27 @@
   "requiredEnvVars": ["BIGMODEL_API_KEY"],
   "output": "provider-snapshot-v1",
   "permissions": ["env:BIGMODEL_API_KEY"],
+  "defaultConfig": {
+    "name": "智谱",
+    "visibleWindowIds": ["tokens-limit-3-5", "tokens-limit-6-1"],
+    "windowLabelOverrides": {
+      "tokens-limit-3-5": "5小时限",
+      "tokens-limit-6-1": "周限"
+    },
+    "envVars": {
+      "BIGMODEL_API_KEY": "${secret:BIGMODEL_API_KEY}"
+    }
+  },
+  "parameters": [
+    {
+      "name": "BIGMODEL_API_KEY",
+      "label": "BigModel API Key",
+      "kind": "secret",
+      "required": true,
+      "defaultValue": "${secret:BIGMODEL_API_KEY}",
+      "description": "Zhipu/BigModel API token for the coding plan quota endpoint."
+    }
+  ],
   "checksums": {
     "source": "sha256:c06c4bb45000da5c817b10dbce0eb0db61a8eac452c531c7e2fa5969c692da7f"
   }

@@ -9,6 +9,53 @@
   "requiredEnvVars": ["DEEPSEEK_API_KEY"],
   "output": "provider-snapshot-v1",
   "permissions": ["env:DEEPSEEK_API_KEY"],
+  "defaultConfig": {
+    "name": "DeepSeek",
+    "windowLabelOverrides": {
+      "balance-cny": "余额（RMB）"
+    },
+    "envVars": {
+      "DEEPSEEK_API_KEY": "${secret:DEEPSEEK_API_KEY}",
+      "DEEPSEEK_BALANCE_CURRENCY": "CNY",
+      "DEEPSEEK_BALANCE_WARNING_CNY": "20",
+      "DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY": "200"
+    }
+  },
+  "parameters": [
+    {
+      "name": "DEEPSEEK_API_KEY",
+      "label": "DeepSeek API Key",
+      "kind": "secret",
+      "required": true,
+      "defaultValue": "${secret:DEEPSEEK_API_KEY}",
+      "description": "DeepSeek API token for reading account balance."
+    },
+    {
+      "name": "DEEPSEEK_BALANCE_CURRENCY",
+      "label": "Currency",
+      "kind": "string",
+      "required": false,
+      "defaultValue": "CNY",
+      "placeholder": "CNY",
+      "description": "Optional currency filter. Leave empty to show every currency returned by the API."
+    },
+    {
+      "name": "DEEPSEEK_BALANCE_WARNING_CNY",
+      "label": "CNY warning balance",
+      "kind": "number",
+      "required": false,
+      "defaultValue": "20",
+      "description": "Shows a warning when the CNY balance is at or below this amount."
+    },
+    {
+      "name": "DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY",
+      "label": "CNY reference total",
+      "kind": "number",
+      "required": false,
+      "defaultValue": "200",
+      "description": "Reference total used to render the balance progress bar."
+    }
+  ],
   "checksums": {
     "source": "sha256:65c0f8a714e83172b52675d0bea7b59100f4528180138238d7f504e0d70f8dd4"
   }

@@ -4,22 +4,22 @@
     {
       "id": "kimi-coding",
       "providerUrl": "kimi-coding/provider.json",
-      "checksum": "sha256:09117f465ee74c6f69c63af8819d4e29e4f86f3b98bf4ebbf7737abff8485526"
+      "checksum": "sha256:ffefb01a83dc2e2b8aa5415d3c607ff88d4547f1f1ab544067ac6e59e4e0d565"
     },
     {
       "id": "bigmodel-coding-plan",
       "providerUrl": "bigmodel-coding-plan/provider.json",
-      "checksum": "sha256:dc56891ac8833f47721ebae170371fe1edc3735dab3d1735440ec62c4cc6274e"
+      "checksum": "sha256:55c741bc337ad910c5582405e3d63b052884a51a4b83b0cea82421dca05084e0"
     },
     {
       "id": "codex-usage",
       "providerUrl": "codex-usage/provider.json",
-      "checksum": "sha256:310755bdcd498971741d5627fdc9c35ce4754572e49dca119be5f146286f4841"
+      "checksum": "sha256:7730f9ba3bfd9e7c49eac8b6bcb6d8cf2fce59d395449da0288dfbb00e26a1a0"
     },
     {
       "id": "deepseek-balance",
       "providerUrl": "deepseek-balance/provider.json",
-      "checksum": "sha256:463a2e3972cb6a1ad3d76aaaa11df010456266626ef791fc3f34bdc39678cc99"
+      "checksum": "sha256:d6159687d32a13ab615691e8792eed0b953bd66d6607ada5cba13fdcf58796bd"
     }
   ]
 }

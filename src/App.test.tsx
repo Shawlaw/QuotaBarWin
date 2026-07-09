@@ -90,6 +90,16 @@ const mocks = vi.hoisted(() => {
         "Install remote provider manifest not available in browser preview",
       );
     }),
+    getInstalledRemoteProviderManifest: vi.fn(async () => ({
+      schemaVersion: 1,
+      id: "mock",
+      displayName: "Mock",
+      runtime: "node",
+      entry: "provider.cjs",
+      requiredEnvVars: [],
+      output: "provider-snapshot-v1",
+      parameters: [],
+    })),
     previewRemoteProviderRegistry: vi.fn(async () => []),
     removeRemoteProvider: vi.fn(async () => undefined),
     refreshRemoteProvider: vi.fn(async () => ({

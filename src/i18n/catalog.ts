@@ -100,6 +100,13 @@ export type I18nCatalog = {
     providerProxyPlaceholder: string;
     timeout: string;
     timeoutError: string;
+    providerParameters: string;
+    providerParametersHint: string;
+    parameterRequired: string;
+    parameterKind: (kind: string) => string;
+    parameterDefault: (value: string) => string;
+    parameterPlaceholder: (value: string) => string;
+    parameterOptions: (value: string) => string;
     remoteEnvVars: string;
     remoteEnvVarsPlaceholder: string;
     remoteEnvVarsHint: string;
@@ -347,6 +354,13 @@ export const en: I18nCatalog = {
     providerProxyPlaceholder: "Optional, e.g. http://127.0.0.1:7890 or socks5h://127.0.0.1:7890",
     timeout: "Timeout (seconds)",
     timeoutError: "Timeout must be greater than 0.",
+    providerParameters: "Supported parameters",
+    providerParametersHint: "Hints come from this provider's manifest.",
+    parameterRequired: "Required",
+    parameterKind: (kind) => `Type: ${kind}`,
+    parameterDefault: (value) => `Default: ${value}`,
+    parameterPlaceholder: (value) => `Placeholder: ${value}`,
+    parameterOptions: (value) => `Options: ${value}`,
     remoteEnvVars: "Environment variables",
     remoteEnvVarsPlaceholder:
       "KEY=value, one per line\nKIMI_API_KEY=${secret:KIMI_WORK_API_KEY}\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",
@@ -599,6 +613,13 @@ export const zhCN: I18nCatalog = {
     providerProxyPlaceholder: "可选，例如 http://127.0.0.1:7890 或 socks5h://127.0.0.1:7890",
     timeout: "超时（秒）",
     timeoutError: "超时时间必须大于 0。",
+    providerParameters: "支持的参数",
+    providerParametersHint: "提示来自此 Provider 的 manifest。",
+    parameterRequired: "必填",
+    parameterKind: (kind) => `类型：${kind}`,
+    parameterDefault: (value) => `默认：${value}`,
+    parameterPlaceholder: (value) => `占位：${value}`,
+    parameterOptions: (value) => `选项：${value}`,
     remoteEnvVars: "环境变量",
     remoteEnvVarsPlaceholder:
       "每行一个 KEY=value\nKIMI_API_KEY=${secret:KIMI_WORK_API_KEY}\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",

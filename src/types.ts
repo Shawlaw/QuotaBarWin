@@ -90,6 +90,43 @@ export type RemoteProviderCatalogEntry = {
   error?: string | null;
 };
 
+export type RemoteProviderManifestDefaultConfig = {
+  name?: string | null;
+  timeoutSeconds?: number | null;
+  windowLabelOverrides?: Record<string, string>;
+  visibleWindowIds?: string[];
+  envVars?: Record<string, string>;
+};
+
+export type RemoteProviderParameter = {
+  name: string;
+  label?: string | null;
+  kind?: "secret" | "string" | "number" | "select" | string | null;
+  required?: boolean;
+  defaultValue?: string | null;
+  placeholder?: string | null;
+  description?: string | null;
+  options?: string[];
+};
+
+export type RemoteProviderManifest = {
+  schemaVersion: number;
+  id: string;
+  displayName: string;
+  version?: string | null;
+  description?: string | null;
+  runtime: string;
+  entry: string;
+  requiredEnvVars?: string[];
+  output: string;
+  permissions?: string[];
+  defaultConfig?: RemoteProviderManifestDefaultConfig;
+  parameters?: RemoteProviderParameter[];
+  checksums?: {
+    source?: string | null;
+  };
+};
+
 export type TrayPopupPosition = {
   x: number;
   y: number;

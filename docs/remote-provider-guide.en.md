@@ -32,6 +32,27 @@ window display preferences.
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
   "permissions": ["env:KIMI_API_KEY"],
+  "defaultConfig": {
+    "name": "Kimi",
+    "visibleWindowIds": ["300-minute", "usage"],
+    "windowLabelOverrides": {
+      "300-minute": "5h",
+      "usage": "Weekly"
+    },
+    "envVars": {
+      "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+    }
+  },
+  "parameters": [
+    {
+      "name": "KIMI_API_KEY",
+      "label": "Kimi API Key",
+      "kind": "secret",
+      "required": true,
+      "defaultValue": "${secret:KIMI_API_KEY}",
+      "description": "Kimi coding quota API token."
+    }
+  ],
   "checksums": {
     "source": "sha256:<hex>"
   }
@@ -52,6 +73,8 @@ Field descriptions:
 | `requiredEnvVars` | no | Environment variables that the script needs. On refresh, QuotaBarWin resolves each name from provider `envVars`, then `${secret:NAME}`. |
 | `output` | yes | Output contract. Only `provider-snapshot-v1` is supported for remote providers at the moment. |
 | `permissions` | no | Declared capabilities (currently informational). Use `env:<NAME>` to document required env vars. |
+| `defaultConfig` | no | Default local provider config written during first install, such as `name`, `timeoutSeconds`, `visibleWindowIds`, `windowLabelOverrides`, and `envVars`. Provider updates do not overwrite user edits. |
+| `parameters` | no | Parameter hints shown in Settings. Each item may include `name`, `label`, `kind`, `required`, `defaultValue`, `placeholder`, `description`, and `options`. Do not include real credentials. |
 | `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. `version` is display metadata and does not replace checksum verification. |
 
 ## Provider registry (`registry.json`)

@@ -17,9 +17,9 @@ use crate::{
     proxy::ProxyConfig,
     remote_provider::{
         cache_remote_provider, check_update, compute_checksum, fetch_manifest, fetch_manifest_text,
-        fetch_provider_registry, fetch_source, load_cached_meta, parse_manifest,
-        resolve_provider_url, resolve_runtime, resolve_source_url, validate_runtime_executable,
-        ProviderManifest, UpdateInfo,
+        fetch_provider_registry, fetch_source, load_cached_manifest, load_cached_meta,
+        parse_manifest, resolve_provider_url, resolve_runtime, resolve_source_url,
+        validate_runtime_executable, ProviderManifest, UpdateInfo,
     },
 };
 
@@ -134,6 +134,13 @@ fn find_provider_config_mut<'a>(
         .find(|provider| provider_id(provider) == id)
 }
 
+fn find_provider_config<'a>(config: &'a AppConfig, id: &str) -> Option<&'a ProviderConfig> {
+    config
+        .providers
+        .iter()
+        .find(|provider| provider_id(provider) == id)
+}
+
 #[tauri::command]
 pub async fn get_network_proxy(app: AppHandle) -> Result<Option<ProxyConfig>, String> {
     let path = config_path_for_app(&app)?;
@@ -151,6 +158,30 @@ pub async fn set_network_proxy(app: AppHandle, proxy: Option<ProxyConfig>) -> Re
         let mut loaded = load_or_create_config(&path)?;
         loaded.config.network_proxy = proxy;
         save_config_to_path(&path, &loaded.config)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_installed_remote_provider_manifest(
+    app: AppHandle,
+    id: String,
+) -> Result<ProviderManifest, String> {
+    let path = config_path_for_app(&app)?;
+    let app_handle = app.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let loaded = load_or_create_config(&path)?;
+        let provider = find_provider_config(&loaded.config, &id)
+            .ok_or_else(|| "provider not found".to_string())?;
+        let ProviderConfig::Remote { provider_dir, .. } = provider;
+        let provider_dir = match provider_dir {
+            Some(path) => path.clone(),
+            None => remote_provider_dir(&app_handle, &id)
+                .map_err(|e| format!("failed to resolve cache directory: {e}"))?,
+        };
+        load_cached_manifest(&provider_dir).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -180,8 +211,13 @@ fn install_remote_provider_from_manifest(
     );
 
     let (instance_id, instance_index) = unique_provider_id(&loaded.config, &manifest.id);
-    let instance_name =
-        unique_provider_name(&loaded.config, &manifest.display_name, instance_index);
+    let default_name = manifest
+        .default_config
+        .name
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(&manifest.display_name);
+    let instance_name = unique_provider_name(&loaded.config, default_name, instance_index);
     log_remote(
         log,
         LogLevel::Info,
@@ -293,14 +329,17 @@ fn install_remote_provider_from_manifest(
         proxy_url: proxy_url.map(|s| s.to_string()),
         auto_update: actual_auto_update,
         update_interval_seconds: 3600,
-        timeout_seconds: DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
+        timeout_seconds: manifest
+            .default_config
+            .timeout_seconds
+            .unwrap_or(DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS),
         trusted_checksum: Some(compute_checksum(&source)),
         installed_at: Some(now.clone()),
         updated_at: Some(now.clone()),
         last_checked_at: Some(now),
-        window_label_overrides: Default::default(),
-        visible_window_ids: Default::default(),
-        env_vars: Default::default(),
+        window_label_overrides: manifest.default_config.window_label_overrides.clone(),
+        visible_window_ids: manifest.default_config.visible_window_ids.clone(),
+        env_vars: manifest.default_config.env_vars.clone(),
     };
 
     loaded.config.providers.push(config.clone());

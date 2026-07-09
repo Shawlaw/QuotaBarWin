@@ -35,6 +35,27 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
   "permissions": ["env:KIMI_API_KEY"],
+  "defaultConfig": {
+    "name": "Kimi",
+    "visibleWindowIds": ["300-minute", "usage"],
+    "windowLabelOverrides": {
+      "300-minute": "5小时限",
+      "usage": "周限"
+    },
+    "envVars": {
+      "KIMI_API_KEY": "${secret:KIMI_API_KEY}"
+    }
+  },
+  "parameters": [
+    {
+      "name": "KIMI_API_KEY",
+      "label": "Kimi API Key",
+      "kind": "secret",
+      "required": true,
+      "defaultValue": "${secret:KIMI_API_KEY}",
+      "description": "Kimi coding quota API token."
+    }
+  ],
   "checksums": {
     "source": "sha256:<hex>"
   }
@@ -53,6 +74,8 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 | `requiredEnvVars` | 否 | 脚本需要的环境变量。刷新时会先查 provider `envVars`，再解析 `${secret:NAME}`。 |
 | `output` | 是 | 当前仅支持 `provider-snapshot-v1`。 |
 | `permissions` | 否 | 声明能力，目前主要用于说明。建议用 `env:<NAME>` 标注环境变量。 |
+| `defaultConfig` | 否 | 首次安装时写入本地 provider 配置的默认值，例如 `name`、`timeoutSeconds`、`visibleWindowIds`、`windowLabelOverrides`、`envVars`。后续 provider 更新不会覆盖用户本地修改。 |
+| `parameters` | 否 | 设置页展示的参数提示。每项可包含 `name`、`label`、`kind`、`required`、`defaultValue`、`placeholder`、`description`、`options`。不要放真实凭据。 |
 | `checksums.source` | 否 | Source 文件 SHA-256。启用安全 auto-update 时需要，格式为 `sha256:<hex>`。`version` 只用于展示，不替代 checksum 校验。 |
 
 ## Registry 格式（`registry.json`）

@@ -1,14 +1,17 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AppConfig,
   ConfigStorageInfo,
   ProviderSnapshot,
-  RemoteProviderConfig
+  RemoteProviderConfig,
+  RemoteProviderManifest,
+  RemoteProviderParameter
 } from "../types";
 import {
   applyRemoteUpdate,
   checkRemoteUpdates,
   getConfig,
+  getInstalledRemoteProviderManifest,
   installRemoteProviderManifest,
   openRemoteProviderGuide,
   previewRemoteProviderRegistry,
@@ -39,6 +42,8 @@ type SettingsPanelProps = {
   onSave: () => void | Promise<void>;
   onSetPortableMode: (enabled: boolean) => void;
 };
+
+type ProviderManifestState = Record<string, RemoteProviderManifest | null>;
 
 function updateProvider(
   config: AppConfig,
@@ -103,6 +108,25 @@ function providerTimeoutSeconds(provider: RemoteProviderConfig): number {
   return provider.timeoutSeconds ?? DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS;
 }
 
+function parameterHintsFromManifest(
+  manifest: RemoteProviderManifest | null | undefined
+): RemoteProviderParameter[] {
+  if (!manifest) {
+    return [];
+  }
+
+  if (manifest.parameters?.length) {
+    return manifest.parameters;
+  }
+
+  return (manifest.requiredEnvVars ?? []).map((name) => ({
+    name,
+    kind: "secret",
+    required: true,
+    defaultValue: `\${secret:${name}}`
+  }));
+}
+
 function remoteProviderRegistrySettings(config: AppConfig) {
   return (
     config.remoteProviderRegistry ?? {
@@ -148,6 +172,7 @@ export function SettingsPanel({
   const [expandedProviderActions, setExpandedProviderActions] = useState<Record<string, boolean>>({});
   const [envVarDrafts, setEnvVarDrafts] = useState<Record<string, string>>({});
   const [updateInfo, setUpdateInfo] = useState<Record<string, Awaited<ReturnType<typeof refreshRemoteProvider>>>>({});
+  const [providerManifests, setProviderManifests] = useState<ProviderManifestState>({});
   const [remoteMessage, setRemoteMessage] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
   const [providerSettingsView, setProviderSettingsView] = useState<"main" | "add" | "sources">("main");
@@ -174,6 +199,34 @@ export function SettingsPanel({
     !isSaving;
   const isPortableMode = configStorageInfo?.mode === "portable";
   const storageModeLabel = isPortableMode ? t.settings.portableMode : t.settings.appDataMode;
+
+  useEffect(() => {
+    const providerIds = config.providers
+      .filter((provider) => expandedProviders[provider.id] && !(provider.id in providerManifests))
+      .map((provider) => provider.id);
+    if (providerIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    for (const providerId of providerIds) {
+      void getInstalledRemoteProviderManifest(providerId)
+        .then((manifest) => {
+          if (!cancelled) {
+            setProviderManifests((current) => ({ ...current, [providerId]: manifest }));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setProviderManifests((current) => ({ ...current, [providerId]: null }));
+          }
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [config.providers, expandedProviders, providerManifests]);
 
   async function saveSettings() {
     setSaveMessage(t.settings.saving);
@@ -231,6 +284,53 @@ export function SettingsPanel({
     return snapshotProviders.find((provider) => provider.id === providerId)?.windows ?? [];
   }
 
+  function renderProviderParameters(provider: RemoteProviderConfig) {
+    const manifest = providerManifests[provider.id];
+    const parameters = parameterHintsFromManifest(manifest);
+    if (parameters.length === 0) {
+      return null;
+    }
+
+    return (
+      <section className="provider-parameters args-field" aria-label={t.settings.providerParameters}>
+        <div className="provider-parameters__header">
+          <h4>{t.settings.providerParameters}</h4>
+          <span>{t.settings.providerParametersHint}</span>
+        </div>
+        <div className="provider-parameters__list">
+          {parameters.map((parameter) => {
+            const details = [
+              parameter.kind ? t.settings.parameterKind(parameter.kind) : null,
+              parameter.required ? t.settings.parameterRequired : t.settings.optional,
+              parameter.defaultValue ? t.settings.parameterDefault(parameter.defaultValue) : null,
+              parameter.placeholder ? t.settings.parameterPlaceholder(parameter.placeholder) : null,
+              parameter.options?.length ? t.settings.parameterOptions(parameter.options.join(", ")) : null
+            ].filter(Boolean);
+            return (
+              <div className="provider-parameters__row" key={parameter.name}>
+                <div>
+                  <strong>{parameter.label ?? parameter.name}</strong>
+                  {parameter.label ? <code>{parameter.name}</code> : null}
+                </div>
+                {details.length > 0 ? <span>{details.join(" · ")}</span> : null}
+                {parameter.description ? <p>{parameter.description}</p> : null}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
+  async function reloadProviderManifest(providerId: string) {
+    try {
+      const manifest = await getInstalledRemoteProviderManifest(providerId);
+      setProviderManifests((current) => ({ ...current, [providerId]: manifest }));
+    } catch {
+      setProviderManifests((current) => ({ ...current, [providerId]: null }));
+    }
+  }
+
   async function handleProviderUpdateCheck(providerId: string) {
     setRemoteMessage(null);
     try {
@@ -239,6 +339,7 @@ export function SettingsPanel({
       setRemoteMessage(
         result.available ? t.remoteProviders.updateAvailable : t.remoteProviders.providerRefreshed
       );
+      await reloadProviderManifest(providerId);
     } catch (error) {
       setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToRefreshProvider);
     }
@@ -251,6 +352,7 @@ export function SettingsPanel({
       setUpdateInfo(Object.fromEntries(result.map((update) => [update.id, update])));
       const updated = await getConfig();
       acceptPersistedConfig(updated);
+      await Promise.all(updated.providers.map((provider) => reloadProviderManifest(provider.id)));
       const availableCount = result.filter((update) => update.available).length;
       setRemoteMessage(
         availableCount > 0
@@ -688,6 +790,7 @@ export function SettingsPanel({
                         <span className="field-error">{t.settings.timeoutError}</span>
                       ) : null}
                     </label>
+                    {renderProviderParameters(provider)}
                     <div className="args-field settings-field">
                       <label htmlFor={`provider-env-vars-${provider.id}`}>
                         {t.settings.remoteEnvVars}

@@ -38,6 +38,25 @@ const apiMocks = vi.hoisted(() => {
       },
     ]),
     getConfig: vi.fn(async () => state.config),
+    getInstalledRemoteProviderManifest: vi.fn(async (id: string) => ({
+      schemaVersion: 1,
+      id,
+      displayName: "Remote Kimi",
+      runtime: "node",
+      entry: "provider.cjs",
+      requiredEnvVars: ["KIMI_API_KEY"],
+      output: "provider-snapshot-v1",
+      parameters: [
+        {
+          name: "KIMI_API_KEY",
+          label: "Kimi API Key",
+          kind: "secret",
+          required: true,
+          defaultValue: "${secret:KIMI_API_KEY}",
+          description: "Used to read Kimi coding quota."
+        }
+      ]
+    })),
     installRemoteProviderRegistry: vi.fn(async () => ({
       installed: [],
       skipped: [],
@@ -222,7 +241,7 @@ function renderSettings(
   return render(<Harness />);
 }
 
-test("settings_renders_registry_and_remote_provider_metadata", () => {
+test("settings_renders_registry_and_remote_provider_metadata", async () => {
   renderSettings();
 
   expect(screen.getByRole("button", { name: "Add Provider" })).toBeInTheDocument();
@@ -237,6 +256,8 @@ test("settings_renders_registry_and_remote_provider_metadata", () => {
   expect(
     screen.getByText(/For multiple accounts, keep the left side as the script env var/)
   ).toBeInTheDocument();
+  expect(await screen.findByText("Kimi API Key")).toBeInTheDocument();
+  expect(screen.getByText(/Default: \$\{secret:KIMI_API_KEY\}/)).toBeInTheDocument();
 });
 
 test("settings_edits_local_log_limit_in_megabytes", () => {
@@ -272,7 +293,7 @@ test("settings_add_provider_page_installs_catalog_provider", async () => {
   expect(await screen.findByText("Catalog Kimi")).toBeInTheDocument();
 });
 
-test("settings_edits_remote_env_vars_and_window_display", () => {
+test("settings_edits_remote_env_vars_and_window_display", async () => {
   renderSettings(configWithProviders([remoteProvider]), [
     providerSnapshot("remote-kimi", [
       quotaWindow("weekly", "Weekly"),
@@ -281,6 +302,7 @@ test("settings_edits_remote_env_vars_and_window_display", () => {
   ]);
 
   fireEvent.click(screen.getByTestId("edit-provider-remote-kimi"));
+  expect(await screen.findByText("Kimi API Key")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Environment variables"), {
     target: { value: "KIMI_API_KEY=${secret:TEAM_KIMI_API_KEY}" },
   });
@@ -296,10 +318,11 @@ test("settings_edits_remote_env_vars_and_window_display", () => {
   expect(screen.getByLabelText("Custom label for daily")).toHaveValue("Team daily");
 });
 
-test("settings_edits_remote_provider_timeout", () => {
+test("settings_edits_remote_provider_timeout", async () => {
   renderSettings();
 
   fireEvent.click(screen.getByTestId("edit-provider-remote-kimi"));
+  expect(await screen.findByText("Kimi API Key")).toBeInTheDocument();
   const timeoutInput = screen.getByLabelText("Timeout (seconds)");
   expect(timeoutInput).toHaveValue(30);
 
@@ -361,10 +384,11 @@ test("settings_save_bar_tracks_dirty_state_and_validation", () => {
   expect(screen.getByTestId("save-settings-button")).toBeDisabled();
 });
 
-test("settings_blocks_invalid_remote_provider_timeout", () => {
+test("settings_blocks_invalid_remote_provider_timeout", async () => {
   renderSettings();
 
   fireEvent.click(screen.getByTestId("edit-provider-remote-kimi"));
+  expect(await screen.findByText("Kimi API Key")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Timeout (seconds)"), {
     target: { value: "0" },
   });
