@@ -481,6 +481,14 @@ export async function resetTrayPopupSize(): Promise<void> {
   return invoke<void>("reset_tray_popup_size");
 }
 
+export async function setTrayPopupAutoHeight(height: number): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  return invoke<void>("set_tray_popup_auto_height", { height });
+}
+
 export async function startDraggingCurrentWindow(): Promise<void> {
   if (!hasTauriInternals()) {
     return;

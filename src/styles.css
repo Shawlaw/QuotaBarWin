@@ -1258,6 +1258,8 @@ button:disabled {
 }
 
 .tray-popup__content {
+  align-content: start;
+  align-items: start;
   display: grid;
   gap: 12px;
   min-height: 0;
@@ -1316,11 +1318,14 @@ button:disabled {
 
 .tray-popup__provider-groups,
 .tray-popup__provider-windows {
+  align-content: start;
+  align-items: start;
   display: grid;
   gap: 8px;
 }
 
 .tray-popup__provider-group {
+  align-self: start;
   background: #ffffff;
   border: 1px solid #d9e2ec;
   border-radius: 8px;

@@ -164,6 +164,7 @@ const mocks = vi.hoisted(() => {
     listeners,
     resetTrayPopupSize: vi.fn(async () => undefined),
     refreshSnapshot: vi.fn(async () => snapshot),
+    setTrayPopupAutoHeight: vi.fn(async () => undefined),
     showMainWindow: vi.fn(async () => undefined),
     state,
     startDraggingCurrentWindow: vi.fn(async () => undefined),
@@ -495,6 +496,77 @@ test("tray_popup_resets_size_from_titlebar_double_click", async () => {
   await waitFor(() =>
     expect(mocks.resetTrayPopupSize).toHaveBeenCalledTimes(1),
   );
+});
+
+test("tray_popup_requests_auto_height_without_manual_size", async () => {
+  const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "scrollHeight",
+  );
+  const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get() {
+      return (this as HTMLElement).classList.contains("tray-popup__content") ? 180 : 0;
+    },
+  });
+  HTMLElement.prototype.getBoundingClientRect = function () {
+    const height = this.classList.contains("tray-popup__header") ? 48 : 0;
+    return {
+      x: 0,
+      y: 0,
+      width: 0,
+      height,
+      top: 0,
+      right: 0,
+      bottom: height,
+      left: 0,
+      toJSON: () => ({}),
+    };
+  };
+
+  try {
+    renderWithEnglish(<TrayPopup />);
+
+    await waitFor(() =>
+      expect(mocks.setTrayPopupAutoHeight).toHaveBeenCalledWith(228),
+    );
+  } finally {
+    if (scrollHeightDescriptor) {
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
+    } else {
+      delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+    }
+    HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+  }
+});
+
+test("tray_popup_skips_auto_height_with_manual_size", async () => {
+  mocks.getConfig.mockResolvedValueOnce({
+    schemaVersion: 14,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "system",
+    trayPopupSize: {
+      width: 440,
+      height: 610,
+    },
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
+    providers: [],
+  });
+
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.getConfig).toHaveBeenCalled());
+  await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+  expect(mocks.setTrayPopupAutoHeight).not.toHaveBeenCalled();
 });
 
 test("tray_popup_starts_native_resizing_from_handle", async () => {

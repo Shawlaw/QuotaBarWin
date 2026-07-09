@@ -39,8 +39,9 @@ pub use remote_provider_commands::{
 };
 pub use tray::{
     e2e_focus_main_window, e2e_is_tray_popup_visible, e2e_set_tray_popup_size, e2e_show_tray_popup,
-    get_tray_popup_presentation_id, hide_tray_popup, reset_tray_popup_size, show_main_window,
-    start_tray_popup_dragging, start_tray_popup_resizing,
+    get_tray_popup_presentation_id, hide_tray_popup, reset_tray_popup_size,
+    set_tray_popup_auto_height, show_main_window, start_tray_popup_dragging,
+    start_tray_popup_resizing,
 };
 
 fn window_title(version: &str) -> String {
@@ -136,6 +137,7 @@ pub fn run() {
             hide_tray_popup,
             show_main_window,
             reset_tray_popup_size,
+            set_tray_popup_auto_height,
             start_tray_popup_dragging,
             start_tray_popup_resizing,
             e2e_show_tray_popup,

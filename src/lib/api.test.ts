@@ -17,6 +17,7 @@ import {
   resetTrayPopupSize,
   saveConfig,
   setNetworkProxy,
+  setTrayPopupAutoHeight,
   showMainWindow,
   startResizingCurrentWindow,
 } from "./api";
@@ -119,9 +120,9 @@ test("api_invokes_network_proxy_commands", async () => {
 });
 
 test("api_invokes_tray_popup_commands", async () => {
-  const calls: string[] = [];
-  mockIPC((cmd) => {
-    calls.push(cmd);
+  const calls: Array<{ cmd: string; payload?: unknown }> = [];
+  mockIPC((cmd, payload) => {
+    calls.push({ cmd, payload });
     if (cmd === "get_tray_popup_presentation_id") {
       return 42;
     }
@@ -134,6 +135,9 @@ test("api_invokes_tray_popup_commands", async () => {
     if (cmd === "start_tray_popup_resizing") {
       return null;
     }
+    if (cmd === "set_tray_popup_auto_height") {
+      return null;
+    }
     throw new Error(`unexpected command ${cmd}`);
   });
 
@@ -141,12 +145,15 @@ test("api_invokes_tray_popup_commands", async () => {
   await expect(resetTrayPopupSize()).resolves.toBeNull();
   await expect(showMainWindow()).resolves.toBeNull();
   await expect(startResizingCurrentWindow()).resolves.toBeNull();
-  expect(calls).toEqual([
+  await expect(setTrayPopupAutoHeight(420)).resolves.toBeNull();
+  expect(calls.map((call) => call.cmd)).toEqual([
     "get_tray_popup_presentation_id",
     "reset_tray_popup_size",
     "show_main_window",
     "start_tray_popup_resizing",
+    "set_tray_popup_auto_height",
   ]);
+  expect(calls.at(-1)?.payload).toEqual({ height: 420 });
 });
 
 test("api_invokes_remote_provider_commands", async () => {

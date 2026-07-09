@@ -10,6 +10,7 @@ import {
   listenForTrayPopupShown,
   resetTrayPopupSize,
   refreshSnapshot,
+  setTrayPopupAutoHeight,
   showMainWindow,
   startDraggingCurrentWindow,
   startResizingCurrentWindow
@@ -26,6 +27,11 @@ import { visibleAppVersion } from "../lib/appVersion";
 import type { AppConfig, AppSnapshot, ProviderSnapshot } from "../types";
 import { useI18n } from "../i18n";
 import { ProgressBar } from "./ProgressBar";
+
+const DEFAULT_TRAY_POPUP_WIDTH = 380;
+const DEFAULT_TRAY_POPUP_HEIGHT = 520;
+const TRAY_POPUP_AUTO_MIN_HEIGHT = 220;
+const TRAY_POPUP_AUTO_MAX_HEIGHT = 640;
 
 type ProviderIssue = {
   provider: ProviderSnapshot;
@@ -68,14 +74,47 @@ function orderedProviderIssues(
     .sort((left, right) => issueStatusPriority[left.status] - issueStatusPriority[right.status]);
 }
 
+function numericCssValue(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isDefaultTrayPopupSize(size: AppConfig["trayPopupSize"]): boolean {
+  if (!size) {
+    return false;
+  }
+
+  return (
+    Math.abs(size.width - DEFAULT_TRAY_POPUP_WIDTH) < 1 &&
+    Math.abs(size.height - DEFAULT_TRAY_POPUP_HEIGHT) < 1
+  );
+}
+
+function shouldAutoSizeTrayPopup(config: AppConfig | null): boolean {
+  if (!config) {
+    return false;
+  }
+
+  if (!config.trayPopupSize) {
+    return true;
+  }
+
+  return isDefaultTrayPopupSize(config.trayPopupSize);
+}
+
 export function TrayPopup() {
   const { t } = useI18n();
+  const popupRef = useRef<HTMLElement | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const refreshInFlight = useRef(false);
   const lastHandledPresentationId = useRef(0);
+  const lastRequestedAutoHeight = useRef<number | null>(null);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasSessionManualSize, setHasSessionManualSize] = useState(false);
 
   const syncCachedSnapshot = useCallback(async () => {
     try {
@@ -210,6 +249,79 @@ export function TrayPopup() {
   const refreshedText = formatShortDateTime(snapshot?.refreshedAt);
   const appVersionLabel = visibleAppVersion(appVersion);
 
+  useEffect(() => {
+    if (hasSessionManualSize || !shouldAutoSizeTrayPopup(config)) {
+      return;
+    }
+
+    let frameId = 0;
+    let disposed = false;
+
+    function requestAutoHeight() {
+      if (disposed) {
+        return;
+      }
+
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        const popup = popupRef.current;
+        const header = headerRef.current;
+        const content = contentRef.current;
+        if (!popup || !header || !content) {
+          return;
+        }
+
+        const popupStyle = window.getComputedStyle(popup);
+        const verticalPadding =
+          numericCssValue(popupStyle.paddingTop) + numericCssValue(popupStyle.paddingBottom);
+        const rowGap = numericCssValue(popupStyle.rowGap || popupStyle.gap);
+        const contentHeight = content.scrollHeight;
+        const headerHeight = header.getBoundingClientRect().height;
+        const desiredHeight = Math.ceil(
+          verticalPadding + headerHeight + rowGap + contentHeight
+        );
+        const nextHeight = Math.max(
+          TRAY_POPUP_AUTO_MIN_HEIGHT,
+          Math.min(TRAY_POPUP_AUTO_MAX_HEIGHT, desiredHeight)
+        );
+
+        if (
+          lastRequestedAutoHeight.current !== null &&
+          Math.abs(lastRequestedAutoHeight.current - nextHeight) < 1
+        ) {
+          return;
+        }
+
+        lastRequestedAutoHeight.current = nextHeight;
+        void setTrayPopupAutoHeight(nextHeight);
+      });
+    }
+
+    requestAutoHeight();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(requestAutoHeight);
+    if (resizeObserver) {
+      if (headerRef.current) {
+        resizeObserver.observe(headerRef.current);
+      }
+      if (contentRef.current) {
+        resizeObserver.observe(contentRef.current);
+      }
+      const contentChild = contentRef.current?.firstElementChild;
+      if (contentChild instanceof HTMLElement) {
+        resizeObserver.observe(contentChild);
+      }
+    }
+    window.addEventListener("resize", requestAutoHeight);
+
+    return () => {
+      disposed = true;
+      window.cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", requestAutoHeight);
+    };
+  }, [appVersionLabel, config, displayMode, hasSessionManualSize, isLoading, snapshot, t]);
+
   function onTitleMouseDown(event: MouseEvent<HTMLElement>) {
     if (event.button !== 0) {
       return;
@@ -223,7 +335,13 @@ export function TrayPopup() {
       return;
     }
 
-    void resetTrayPopupSize();
+    void resetTrayPopupSize()
+      .then(async () => {
+        lastRequestedAutoHeight.current = null;
+        setHasSessionManualSize(false);
+        setConfig(await getConfig());
+      })
+      .catch(() => undefined);
   }
 
   function onResizeHandleMouseDown(event: MouseEvent<HTMLButtonElement>) {
@@ -233,6 +351,7 @@ export function TrayPopup() {
 
     event.preventDefault();
     event.stopPropagation();
+    setHasSessionManualSize(true);
     void startResizingCurrentWindow();
   }
 
@@ -246,8 +365,8 @@ export function TrayPopup() {
   }
 
   return (
-    <main className="tray-popup" data-testid="tray-popup">
-      <header className="tray-popup__header">
+    <main className="tray-popup" data-testid="tray-popup" ref={popupRef}>
+      <header className="tray-popup__header" ref={headerRef}>
         <div
           className="tray-popup__titlebar"
           data-testid="tray-popup-titlebar"
@@ -313,7 +432,7 @@ export function TrayPopup() {
         </div>
       </header>
 
-      <div className="tray-popup__content">
+      <div className="tray-popup__content" ref={contentRef}>
         {hasSnapshot && providers.length === 0 ? (
           <section className="tray-popup__empty">{t.tray.noProviders}</section>
         ) : null}
