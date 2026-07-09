@@ -758,14 +758,28 @@ pub fn get_tray_popup_presentation_id() -> u64 {
     TRAY_POPUP_PRESENTATION_ID.load(Ordering::SeqCst)
 }
 
+#[tauri::command]
+pub fn show_main_window(app: AppHandle) -> Result<(), String> {
+    focus_main_window(&app, "refresh-requested")
+}
+
+fn focus_main_window(app: &AppHandle, refresh_event: &str) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.show().map_err(|error| error.to_string())?;
+        window.unminimize().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        window
+            .emit(refresh_event, ())
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 fn handle_menu_event(app: &AppHandle, id: &MenuId) {
     match id.as_ref() {
         SHOW_ID => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-                let _ = window.emit("refresh-requested", ());
+            if let Err(error) = focus_main_window(app, "refresh-requested") {
+                eprintln!("Failed to show main window from tray menu: {error}");
             }
         }
         OPEN_APP_FOLDER_ID => {

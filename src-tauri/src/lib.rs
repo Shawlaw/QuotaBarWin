@@ -39,7 +39,7 @@ pub use remote_provider_commands::{
 };
 pub use tray::{
     e2e_focus_main_window, e2e_is_tray_popup_visible, e2e_set_tray_popup_size, e2e_show_tray_popup,
-    get_tray_popup_presentation_id, hide_tray_popup, reset_tray_popup_size,
+    get_tray_popup_presentation_id, hide_tray_popup, reset_tray_popup_size, show_main_window,
     start_tray_popup_dragging, start_tray_popup_resizing,
 };
 
@@ -133,6 +133,7 @@ pub fn run() {
             apply_remote_update,
             get_tray_popup_presentation_id,
             hide_tray_popup,
+            show_main_window,
             reset_tray_popup_size,
             start_tray_popup_dragging,
             start_tray_popup_resizing,

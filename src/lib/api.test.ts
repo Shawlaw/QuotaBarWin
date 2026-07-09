@@ -16,6 +16,7 @@ import {
   resetTrayPopupSize,
   saveConfig,
   setNetworkProxy,
+  showMainWindow,
   startResizingCurrentWindow,
 } from "./api";
 import type { AppConfig, AppSnapshot } from "../types";
@@ -126,6 +127,9 @@ test("api_invokes_tray_popup_commands", async () => {
     if (cmd === "reset_tray_popup_size") {
       return null;
     }
+    if (cmd === "show_main_window") {
+      return null;
+    }
     if (cmd === "start_tray_popup_resizing") {
       return null;
     }
@@ -134,10 +138,12 @@ test("api_invokes_tray_popup_commands", async () => {
 
   await expect(getTrayPopupPresentationId()).resolves.toBe(42);
   await expect(resetTrayPopupSize()).resolves.toBeNull();
+  await expect(showMainWindow()).resolves.toBeNull();
   await expect(startResizingCurrentWindow()).resolves.toBeNull();
   expect(calls).toEqual([
     "get_tray_popup_presentation_id",
     "reset_tray_popup_size",
+    "show_main_window",
     "start_tray_popup_resizing",
   ]);
 });

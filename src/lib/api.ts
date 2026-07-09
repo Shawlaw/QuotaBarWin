@@ -440,6 +440,14 @@ export async function hideTrayPopup(): Promise<void> {
   return invoke<void>("hide_tray_popup");
 }
 
+export async function showMainWindow(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  return invoke<void>("show_main_window");
+}
+
 export async function resetTrayPopupSize(): Promise<void> {
   if (!hasTauriInternals()) {
     return;

@@ -10,6 +10,7 @@ import {
   listenForTrayPopupShown,
   resetTrayPopupSize,
   refreshSnapshot,
+  showMainWindow,
   startDraggingCurrentWindow,
   startResizingCurrentWindow
 } from "../lib/api";
@@ -235,6 +236,15 @@ export function TrayPopup() {
     void startResizingCurrentWindow();
   }
 
+  async function openMainWindow() {
+    try {
+      await showMainWindow();
+      await hideTrayPopup().catch(() => hideCurrentWindow());
+    } catch {
+      // Keep the popup open if the main window could not be shown.
+    }
+  }
+
   return (
     <main className="tray-popup" data-testid="tray-popup">
       <header className="tray-popup__header">
@@ -274,6 +284,16 @@ export function TrayPopup() {
           </p>
         </div>
         <div className="tray-popup__actions">
+          <button
+            aria-label={t.tray.openMainWindow}
+            className="button-compact button-secondary"
+            type="button"
+            onClick={() => void openMainWindow()}
+            data-testid="tray-popup-open-main"
+            title={t.tray.openMainWindow}
+          >
+            {t.tray.openMainWindowShort}
+          </button>
           <button
             className="button-compact button-secondary"
             type="button"

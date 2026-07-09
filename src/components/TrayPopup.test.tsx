@@ -164,6 +164,7 @@ const mocks = vi.hoisted(() => {
     listeners,
     resetTrayPopupSize: vi.fn(async () => undefined),
     refreshSnapshot: vi.fn(async () => snapshot),
+    showMainWindow: vi.fn(async () => undefined),
     state,
     startDraggingCurrentWindow: vi.fn(async () => undefined),
     startResizingCurrentWindow: vi.fn(async () => undefined),
@@ -392,6 +393,16 @@ test("tray_popup_hides_popup_on_escape_and_close_button", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
   await waitFor(() => expect(mocks.hideTrayPopup).toHaveBeenCalledTimes(2));
+  expect(mocks.hideCurrentWindow).not.toHaveBeenCalled();
+});
+
+test("tray_popup_opens_main_window_and_hides_popup", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Open main window" }));
+
+  await waitFor(() => expect(mocks.showMainWindow).toHaveBeenCalledTimes(1));
+  expect(mocks.hideTrayPopup).toHaveBeenCalledTimes(1);
   expect(mocks.hideCurrentWindow).not.toHaveBeenCalled();
 });
 

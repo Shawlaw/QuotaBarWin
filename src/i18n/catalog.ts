@@ -44,6 +44,8 @@ export type I18nCatalog = {
   tray: {
     waitingForData: string;
     lastRefreshedAt: (time: string) => string;
+    openMainWindow: string;
+    openMainWindowShort: string;
     refresh: string;
     refreshingShort: string;
     close: string;
@@ -281,6 +283,8 @@ export const en: I18nCatalog = {
   tray: {
     waitingForData: "Waiting for data",
     lastRefreshedAt: (time) => `Last refreshed at ${time}`,
+    openMainWindow: "Open main window",
+    openMainWindowShort: "Open",
     refresh: "Refresh",
     refreshingShort: "...",
     close: "Close",
@@ -531,6 +535,8 @@ export const zhCN: I18nCatalog = {
   tray: {
     waitingForData: "等待数据",
     lastRefreshedAt: (time) => `上次刷新于 ${time}`,
+    openMainWindow: "打开主窗口",
+    openMainWindowShort: "打开",
     refresh: "刷新",
     refreshingShort: "...",
     close: "关闭",
