@@ -166,6 +166,7 @@ function configWithProviders(providers: AppConfig["providers"]): AppConfig {
   return {
     schemaVersion: 14,
     logMaxBytes: 10 * 1024 * 1024,
+    logQuotaData: false,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -269,6 +270,33 @@ test("settings_edits_local_log_limit_in_megabytes", () => {
   fireEvent.change(input, { target: { value: "25" } });
 
   expect(apiMocks.state.config?.logMaxBytes).toBe(25 * 1024 * 1024);
+});
+
+test("settings_confirms_before_enabling_quota_data_logging", () => {
+  const confirm = vi.spyOn(window, "confirm");
+  renderSettings();
+
+  const checkbox = screen.getByRole("checkbox", { name: "Log refreshed quota data" });
+  fireEvent.click(checkbox);
+
+  expect(confirm).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog", { name: "Enable quota data logging?" })).toBeInTheDocument();
+  expect(apiMocks.state.config?.logQuotaData).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+  expect(screen.queryByRole("dialog", { name: "Enable quota data logging?" })).not.toBeInTheDocument();
+  expect(apiMocks.state.config?.logQuotaData).toBe(false);
+
+  fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole("button", { name: "Enable logging" }));
+
+  expect(apiMocks.state.config?.logQuotaData).toBe(true);
+
+  fireEvent.click(screen.getByRole("checkbox", { name: "Log refreshed quota data" }));
+
+  expect(apiMocks.state.config?.logQuotaData).toBe(false);
+  expect(confirm).not.toHaveBeenCalled();
 });
 
 test("settings_add_provider_page_installs_catalog_provider", async () => {

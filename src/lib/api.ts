@@ -24,6 +24,7 @@ const fallbackConfig: AppConfig = {
   launchAtStartup: false,
   logLevel: "info",
   logMaxBytes: 10 * 1024 * 1024,
+  logQuotaData: false,
   language: "zh-CN",
   networkProxy: null,
   remoteProviderRegistry: {

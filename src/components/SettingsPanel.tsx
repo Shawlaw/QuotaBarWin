@@ -176,6 +176,7 @@ export function SettingsPanel({
   const [remoteMessage, setRemoteMessage] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
   const [providerSettingsView, setProviderSettingsView] = useState<"main" | "add" | "sources">("main");
+  const [quotaDataConfirmOpen, setQuotaDataConfirmOpen] = useState(false);
   const initialConfigRef = useRef(JSON.stringify(config));
   const configDraft = JSON.stringify(config);
   const hasChanges = configDraft !== initialConfigRef.current;
@@ -278,6 +279,26 @@ export function SettingsPanel({
     onChange(
       updateProvider(config, provider.id, (current) => ({ ...current, ...patch }))
     );
+  }
+
+  function updateLogQuotaData(enabled: boolean) {
+    if (enabled && !(config.logQuotaData ?? false)) {
+      setQuotaDataConfirmOpen(true);
+      return;
+    }
+
+    onChange({
+      ...config,
+      logQuotaData: enabled
+    });
+  }
+
+  function enableQuotaDataLogging() {
+    setQuotaDataConfirmOpen(false);
+    onChange({
+      ...config,
+      logQuotaData: true
+    });
   }
 
   function snapshotWindowsForProvider(providerId: string) {
@@ -429,6 +450,38 @@ export function SettingsPanel({
     );
   }
 
+  function renderQuotaDataConfirmDialog() {
+    if (!quotaDataConfirmOpen) {
+      return null;
+    }
+
+    return (
+      <div className="dialog-overlay" role="presentation">
+        <section
+          className="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="quota-data-confirm-title"
+        >
+          <h3 id="quota-data-confirm-title">{t.settings.logQuotaDataConfirmTitle}</h3>
+          <p>{t.settings.logQuotaDataConfirm}</p>
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setQuotaDataConfirmOpen(false)}
+            >
+              {t.settings.cancel}
+            </button>
+            <button type="button" onClick={enableQuotaDataLogging}>
+              {t.settings.logQuotaDataConfirmAction}
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   if (providerSettingsView === "add" || providerSettingsView === "sources") {
     return (
       <section className="settings-panel" aria-label={t.settings.title} data-testid="settings-page">
@@ -545,6 +598,17 @@ export function SettingsPanel({
           />
           {logMaxSizeError ? <span className="field-error">{logMaxSizeError}</span> : null}
         </label>
+        <div className="settings-field">
+          <label className="checkbox-row settings-toggle-row">
+            <input
+              type="checkbox"
+              checked={config.logQuotaData ?? false}
+              onChange={(event) => updateLogQuotaData(event.currentTarget.checked)}
+            />
+            {t.settings.logQuotaData}
+          </label>
+          <span className="settings-hint">{t.settings.logQuotaDataHint}</span>
+        </div>
         <label>
           {t.settings.language}
           <select
@@ -833,6 +897,7 @@ export function SettingsPanel({
       </section>
 
       {renderSaveBar()}
+      {renderQuotaDataConfirmDialog()}
     </section>
   );
 }

@@ -986,6 +986,12 @@ button:disabled {
   margin: 0 0 12px;
 }
 
+.dialog p {
+  color: #475569;
+  line-height: 1.5;
+  margin: 0;
+}
+
 .dialog-actions {
   display: flex;
   gap: 12px;

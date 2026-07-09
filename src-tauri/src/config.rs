@@ -36,6 +36,8 @@ pub struct AppConfig {
     pub log_level: String,
     #[serde(default = "default_log_max_bytes")]
     pub log_max_bytes: u64,
+    #[serde(default)]
+    pub log_quota_data: bool,
     #[serde(default = "default_language")]
     pub language: AppLanguage,
     #[serde(default)]
@@ -268,6 +270,7 @@ pub fn default_config() -> AppConfig {
         launch_at_startup: false,
         log_level: default_log_level(),
         log_max_bytes: default_log_max_bytes(),
+        log_quota_data: false,
         language: default_language(),
         network_proxy: None,
         tray_popup_position: None,
@@ -1007,6 +1010,7 @@ mod tests {
             launch_at_startup: true,
             log_level: "debug".to_string(),
             log_max_bytes: DEFAULT_LOG_MAX_BYTES,
+            log_quota_data: true,
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: Some(TrayPopupPosition { x: 111, y: 222 }),
@@ -1410,6 +1414,7 @@ mod tests {
             launch_at_startup: false,
             log_level: "info".to_string(),
             log_max_bytes: DEFAULT_LOG_MAX_BYTES,
+            log_quota_data: true,
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
@@ -1474,6 +1479,7 @@ mod tests {
             value["logMaxBytes"],
             serde_json::json!(DEFAULT_LOG_MAX_BYTES)
         );
+        assert_eq!(value["logQuotaData"], serde_json::json!(true));
         assert_eq!(
             value["providers"][0]["windowLabelOverrides"],
             serde_json::json!({ "300-minute": "5h" })

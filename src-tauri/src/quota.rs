@@ -246,6 +246,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     let loaded = load_or_create_config(path)?;
     let log = LogSink::from_config_path(path, &loaded.config);
     let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let should_log_quota_data = loaded.config.log_quota_data;
     let cached = snapshot_cache()
         .lock()
         .map_err(|_| "Snapshot cache lock poisoned".to_string())?
@@ -312,6 +313,10 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
         refreshed_at: Utc::now().to_rfc3339(),
     };
 
+    if should_log_quota_data {
+        log_quota_data(&log, &snapshot.providers);
+    }
+
     *snapshot_cache()
         .lock()
         .map_err(|_| "Snapshot cache lock poisoned".to_string())? = Some(snapshot.clone());
@@ -344,6 +349,57 @@ fn should_retry_provider_result(providers: &[ProviderSnapshot]) -> bool {
         }
         !is_non_retryable_error(provider)
     })
+}
+
+fn log_quota_data(log: &LogSink, providers: &[ProviderSnapshot]) {
+    for provider in providers {
+        if provider.windows.is_empty() {
+            let _ = log.write_unfiltered(
+                LogLevel::Info,
+                "quota_data",
+                &format!(
+                    "quota data providerId={} providerStatus={} windows=0",
+                    log_string(&provider.id),
+                    log_string(&provider.status)
+                ),
+            );
+            continue;
+        }
+
+        for window in &provider.windows {
+            let _ = log.write_unfiltered(
+                LogLevel::Info,
+                "quota_data",
+                &format!(
+                    "quota data providerId={} providerStatus={} windowId={} used={} limit={} remaining={} usedPercent={} remainingPercent={} resetAt={} confidence={}",
+                    log_string(&provider.id),
+                    log_string(&provider.status),
+                    log_string(&window.id),
+                    log_number(window.used),
+                    log_number(window.limit),
+                    log_number(window.remaining),
+                    log_number(window.used_percent),
+                    log_number(window.remaining_percent),
+                    log_optional_string(window.reset_at.as_deref()),
+                    log_string(&window.confidence)
+                ),
+            );
+        }
+    }
+}
+
+fn log_number(value: Option<f64>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "null".to_string())
+}
+
+fn log_optional_string(value: Option<&str>) -> String {
+    value.map(log_string).unwrap_or_else(|| "null".to_string())
+}
+
+fn log_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
 fn is_non_retryable_error(provider: &ProviderSnapshot) -> bool {
@@ -494,6 +550,7 @@ pub fn refresh_provider_from_config_path(
     let loaded = load_or_create_config(path)?;
     let log = LogSink::from_config_path(path, &loaded.config);
     let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let should_log_quota_data = loaded.config.log_quota_data;
     let _ = log.write(
         LogLevel::Info,
         "quota",
@@ -561,18 +618,24 @@ pub fn refresh_provider_from_config_path(
                 .any(|refreshed_id| refreshed_id == &provider.id)
     });
 
+    let mut final_refreshed_providers = Vec::new();
     for (offset, provider) in refreshed_providers.into_iter().enumerate() {
         let final_provider = if provider.status == "error" {
             merge_failed_provider_with_cache(provider, &cached_providers_before_remove)
         } else {
             provider
         };
+        final_refreshed_providers.push(final_provider.clone());
         snapshot.providers.insert(
             (insert_at + offset).min(snapshot.providers.len()),
             final_provider,
         );
     }
     snapshot.refreshed_at = refreshed_at;
+
+    if should_log_quota_data {
+        log_quota_data(&log, &final_refreshed_providers);
+    }
 
     *snapshot_cache()
         .lock()
@@ -656,6 +719,7 @@ mod tests {
             launch_at_startup: false,
             log_level: "info".to_string(),
             log_max_bytes: crate::config::DEFAULT_LOG_MAX_BYTES,
+            log_quota_data: false,
             language: AppLanguage::System,
             network_proxy: None,
             tray_popup_position: None,
@@ -789,6 +853,45 @@ mod tests {
         assert_eq!(snapshot.providers[0].name, "Remote A");
         assert_eq!(snapshot.providers[0].source, "remote");
         assert_eq!(snapshot.providers[0].windows.len(), 1);
+    }
+
+    #[test]
+    fn quota_data_logging_is_disabled_by_default() {
+        let _cache_guard = isolate_snapshot_cache();
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let config = test_config(vec![remote_provider(
+            &temp, "remote-a", "Remote A", true, 28.0,
+        )]);
+        save_config_to_path(&path, &config).expect("save config");
+
+        build_app_snapshot_from_config_path(&path).expect("snapshot");
+
+        let log_contents =
+            fs::read_to_string(path.with_file_name("quotabarwin.log")).expect("read log");
+        assert!(!log_contents.contains("\"target\":\"quota_data\""));
+    }
+
+    #[test]
+    fn quota_data_logging_writes_refreshed_window_values_when_enabled() {
+        let _cache_guard = isolate_snapshot_cache();
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let mut config = test_config(vec![remote_provider(
+            &temp, "remote-a", "Remote A", true, 28.0,
+        )]);
+        config.log_quota_data = true;
+        save_config_to_path(&path, &config).expect("save config");
+
+        build_app_snapshot_from_config_path(&path).expect("snapshot");
+
+        let log_contents =
+            fs::read_to_string(path.with_file_name("quotabarwin.log")).expect("read log");
+        assert!(log_contents.contains("\"target\":\"quota_data\""));
+        assert!(log_contents.contains("providerId=\\\"remote-a\\\""));
+        assert!(log_contents.contains("windowId=\\\"weekly\\\""));
+        assert!(log_contents.contains("usedPercent=28"));
+        assert!(log_contents.contains("remainingPercent=72"));
     }
 
     #[test]

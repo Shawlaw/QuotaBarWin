@@ -54,6 +54,7 @@ export type AppConfig = {
   launchAtStartup?: boolean;
   logLevel?: "debug" | "info" | "warn" | "error" | string;
   logMaxBytes?: number;
+  logQuotaData?: boolean;
   language: AppLanguage;
   networkProxy?: ProxyConfig | null;
   trayPopupPosition?: TrayPopupPosition | null;

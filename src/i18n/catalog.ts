@@ -74,6 +74,12 @@ export type I18nCatalog = {
     logError: string;
     logMaxSize: string;
     logMaxSizeError: string;
+    logQuotaData: string;
+    logQuotaDataHint: string;
+    logQuotaDataConfirmTitle: string;
+    logQuotaDataConfirm: string;
+    logQuotaDataConfirmAction: string;
+    cancel: string;
     language: string;
     languageSystem: string;
     languageEnglish: string;
@@ -327,6 +333,14 @@ export const en: I18nCatalog = {
     logError: "Error",
     logMaxSize: "Local log limit (MB)",
     logMaxSizeError: "Local log limit must be at least 1 MB.",
+    logQuotaData: "Log refreshed quota data",
+    logQuotaDataHint:
+      "When enabled, each enabled provider's refreshed quota values are written to the local log.",
+    logQuotaDataConfirmTitle: "Enable quota data logging?",
+    logQuotaDataConfirm:
+      "This will write refreshed quota data for all enabled providers to quotabarwin.log. The data may reveal usage patterns, quota state, or account type. Do not share plaintext logs with others after enabling it.",
+    logQuotaDataConfirmAction: "Enable logging",
+    cancel: "Cancel",
     language: "Language",
     languageSystem: "System",
     languageEnglish: "English",
@@ -586,6 +600,14 @@ export const zhCN: I18nCatalog = {
     logError: "错误",
     logMaxSize: "本地日志保留上限（MB）",
     logMaxSizeError: "本地日志保留上限至少为 1 MB。",
+    logQuotaData: "记录刷新后的额度数据",
+    logQuotaDataHint:
+      "开启后，每个已启用 Provider 刷新得到的额度数值都会写入本地日志。",
+    logQuotaDataConfirmTitle: "开启额度数据日志？",
+    logQuotaDataConfirm:
+      "开启后，所有已启用 Provider 的刷新额度数据都会写入 quotabarwin.log。这些数据可能暴露使用节奏、额度状态或账号类型。开启后请不要将明文日志发给他人。",
+    logQuotaDataConfirmAction: "开启日志",
+    cancel: "取消",
     language: "语言",
     languageSystem: "跟随系统",
     languageEnglish: "English",
