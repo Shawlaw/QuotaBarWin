@@ -1237,24 +1237,35 @@ button:disabled {
 
 .tray-popup__header {
   align-items: start;
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
+  display: block;
   min-width: 0;
   user-select: none;
 }
 
 .tray-popup__titlebar {
   cursor: move;
+  display: grid;
+  gap: 6px;
   min-width: 0;
   padding: 2px 0;
+  width: 100%;
 }
 
-.tray-popup__title-line {
+.tray-popup__top-row,
+.tray-popup__meta-row {
   align-items: center;
   display: flex;
-  gap: 7px;
   min-width: 0;
+}
+
+.tray-popup__top-row {
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.tray-popup__meta-row {
+  gap: 8px;
+  justify-content: space-between;
 }
 
 .tray-popup__content {
@@ -1278,7 +1289,12 @@ button:disabled {
   white-space: nowrap;
 }
 
-.tray-popup__header p,
+.tray-popup__header p {
+  color: #64748b;
+  font-size: 12px;
+  margin: 0;
+}
+
 .tray-popup__window p,
 .tray-popup__empty {
   color: #64748b;
@@ -1297,20 +1313,20 @@ button:disabled {
   -webkit-app-region: no-drag;
 }
 
-.tray-popup__title-status {
-  max-width: 160px;
+.tray-popup__action-button {
+  inline-size: 64px;
+  min-height: 30px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 0 6px;
+  text-align: center;
   white-space: nowrap;
 }
 
-.tray-popup__app-version {
-  color: #64748b;
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 650;
+.tray-popup__title-status {
+  flex-shrink: 1;
+  font-size: 12px;
   line-height: 1.2;
-  max-width: 72px;
+  max-width: min(180px, 55%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

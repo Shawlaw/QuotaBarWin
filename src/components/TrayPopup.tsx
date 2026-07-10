@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import {
   getCachedSnapshot,
-  getAppVersion,
   getConfig,
   getTrayPopupPresentationId,
   hideCurrentWindow,
@@ -23,7 +22,6 @@ import {
   formatShortDateTime,
   windowStatus
 } from "../lib/providerStatus";
-import { visibleAppVersion } from "../lib/appVersion";
 import type { AppConfig, AppSnapshot, ProviderSnapshot } from "../types";
 import { useI18n } from "../i18n";
 import { ProgressBar } from "./ProgressBar";
@@ -112,7 +110,6 @@ export function TrayPopup() {
   const lastRequestedAutoHeight = useRef<number | null>(null);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [appVersion, setAppVersion] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSessionManualSize, setHasSessionManualSize] = useState(false);
 
@@ -178,16 +175,12 @@ export function TrayPopup() {
       .catch(() => undefined);
 
     async function initialize() {
-      const [loadedConfig, loadedAppVersion] = await Promise.all([
-        getConfig(),
-        getAppVersion().catch(() => null)
-      ]);
+      const loadedConfig = await getConfig();
       if (!isMounted) {
         return;
       }
 
       setConfig(loadedConfig);
-      setAppVersion(loadedAppVersion);
     }
 
     void initialize();
@@ -247,7 +240,6 @@ export function TrayPopup() {
   const providerIssues = orderedProviderIssues(providers, lowQuotaWarningThreshold);
   const primaryIssue = providerIssues[0] ?? null;
   const refreshedText = formatShortDateTime(snapshot?.refreshedAt);
-  const appVersionLabel = visibleAppVersion(appVersion);
 
   useEffect(() => {
     if (hasSessionManualSize || !shouldAutoSizeTrayPopup(config)) {
@@ -320,7 +312,7 @@ export function TrayPopup() {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", requestAutoHeight);
     };
-  }, [appVersionLabel, config, displayMode, hasSessionManualSize, isLoading, snapshot, t]);
+  }, [config, displayMode, hasSessionManualSize, isLoading, snapshot, t]);
 
   function onTitleMouseDown(event: MouseEvent<HTMLElement>) {
     if (event.button !== 0) {
@@ -374,13 +366,47 @@ export function TrayPopup() {
           onMouseDown={onTitleMouseDown}
           onDoubleClick={onTitleDoubleClick}
         >
-          <div className="tray-popup__title-line">
+          <div className="tray-popup__top-row">
             <h1>QuotaBarWin</h1>
-            {appVersionLabel ? (
-              <span className="tray-popup__app-version" title={t.app.versionTitle(appVersion ?? appVersionLabel)}>
-                {appVersionLabel}
-              </span>
-            ) : null}
+            <div
+              className="tray-popup__actions"
+              onMouseDown={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              <button
+                aria-label={t.tray.openMainWindow}
+                className="button-compact button-secondary tray-popup__action-button"
+                type="button"
+                onClick={() => void openMainWindow()}
+                data-testid="tray-popup-open-main"
+                title={t.tray.openMainWindow}
+              >
+                {t.tray.openMainWindowShort}
+              </button>
+              <button
+                className="button-compact button-secondary tray-popup__action-button"
+                type="button"
+                onClick={() => void loadSnapshot()}
+                data-testid="tray-popup-refresh"
+              >
+                {isLoading ? t.tray.refreshingShort : t.tray.refresh}
+              </button>
+              <button
+                className="button-compact button-ghost tray-popup__action-button"
+                type="button"
+                onClick={() => void hideTrayPopup().catch(() => hideCurrentWindow())}
+                data-testid="tray-popup-close"
+              >
+                {t.tray.close}
+              </button>
+            </div>
+          </div>
+          <div className="tray-popup__meta-row">
+            <p>
+              {refreshedText
+                ? t.tray.lastRefreshedAt(refreshedText)
+                : t.tray.waitingForData}
+            </p>
             {primaryIssue ? (
               <span
                 className={`status status--${primaryIssue.status} tray-popup__title-status`}
@@ -396,39 +422,6 @@ export function TrayPopup() {
               </span>
             ) : null}
           </div>
-          <p>
-            {refreshedText
-              ? t.tray.lastRefreshedAt(refreshedText)
-              : t.tray.waitingForData}
-          </p>
-        </div>
-        <div className="tray-popup__actions">
-          <button
-            aria-label={t.tray.openMainWindow}
-            className="button-compact button-secondary"
-            type="button"
-            onClick={() => void openMainWindow()}
-            data-testid="tray-popup-open-main"
-            title={t.tray.openMainWindow}
-          >
-            {t.tray.openMainWindowShort}
-          </button>
-          <button
-            className="button-compact button-secondary"
-            type="button"
-            onClick={() => void loadSnapshot()}
-            data-testid="tray-popup-refresh"
-          >
-            {isLoading ? t.tray.refreshingShort : t.tray.refresh}
-          </button>
-          <button
-            className="button-compact button-ghost"
-            type="button"
-            onClick={() => void hideTrayPopup().catch(() => hideCurrentWindow())}
-            data-testid="tray-popup-close"
-          >
-            {t.tray.close}
-          </button>
         </div>
       </header>
 

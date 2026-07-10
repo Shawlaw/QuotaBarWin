@@ -205,9 +205,10 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   expect(screen.getByText("Extra window")).toBeInTheDocument();
   expect(screen.getByText("Kimi")).toBeInTheDocument();
   expect(screen.getByText("Kimi Daily")).toBeInTheDocument();
-  expect(screen.getByText("v1.0.0")).toHaveAttribute("title", "Version 1.0.0(abc1234)");
+  expect(screen.queryByText("v1.0.0")).not.toBeInTheDocument();
   expect(screen.queryByText(/abc1234/)).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Provider status")).not.toBeInTheDocument();
+  expect(mocks.getAppVersion).not.toHaveBeenCalled();
 
   await act(async () => {
     mocks.listeners.trayShown?.(2);
@@ -220,6 +221,39 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   });
 
   expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2);
+});
+
+test("tray_popup_keeps_action_button_size_class_while_refreshing", async () => {
+  let resolveRefresh: ((snapshot: AppSnapshot) => void) | undefined;
+  mocks.refreshSnapshot.mockImplementationOnce(
+    () =>
+      new Promise<AppSnapshot>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+  );
+
+  renderWithEnglish(<TrayPopup />);
+
+  const openButton = screen.getByTestId("tray-popup-open-main");
+  const refreshButton = screen.getByTestId("tray-popup-refresh");
+  const closeButton = screen.getByTestId("tray-popup-close");
+
+  expect(openButton).toHaveClass("tray-popup__action-button");
+  expect(refreshButton).toHaveClass("tray-popup__action-button");
+  expect(closeButton).toHaveClass("tray-popup__action-button");
+
+  fireEvent.click(refreshButton);
+
+  await waitFor(() => expect(refreshButton).toHaveTextContent("..."));
+  expect(refreshButton).toHaveClass("tray-popup__action-button");
+
+  await act(async () => {
+    resolveRefresh?.({
+      schemaVersion: 1,
+      refreshedAt: "2026-06-08T10:01:00+08:00",
+      providers: [],
+    });
+  });
 });
 
 test("tray_popup_syncs_cached_snapshot_before_refreshing_when_shown", async () => {
