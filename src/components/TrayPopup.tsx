@@ -384,18 +384,22 @@ export function TrayPopup() {
                 {t.tray.openMainWindowShort}
               </button>
               <button
+                aria-label={t.tray.refresh}
                 className="button-compact button-secondary tray-popup__action-button"
                 type="button"
                 onClick={() => void loadSnapshot()}
                 data-testid="tray-popup-refresh"
+                title={t.tray.refresh}
               >
                 {isLoading ? t.tray.refreshingShort : t.tray.refresh}
               </button>
               <button
+                aria-label={t.tray.close}
                 className="button-compact button-ghost tray-popup__action-button"
                 type="button"
                 onClick={() => void hideTrayPopup().catch(() => hideCurrentWindow())}
                 data-testid="tray-popup-close"
+                title={t.tray.close}
               >
                 {t.tray.close}
               </button>

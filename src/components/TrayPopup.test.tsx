@@ -241,11 +241,17 @@ test("tray_popup_keeps_action_button_size_class_while_refreshing", async () => {
   expect(openButton).toHaveClass("tray-popup__action-button");
   expect(refreshButton).toHaveClass("tray-popup__action-button");
   expect(closeButton).toHaveClass("tray-popup__action-button");
+  expect(openButton).toHaveAttribute("title", "Open main window");
+  expect(refreshButton).toHaveAttribute("title", "Refresh");
+  expect(refreshButton).toHaveAttribute("aria-label", "Refresh");
+  expect(closeButton).toHaveAttribute("title", "Close");
+  expect(closeButton).toHaveAttribute("aria-label", "Close");
 
   fireEvent.click(refreshButton);
 
   await waitFor(() => expect(refreshButton).toHaveTextContent("..."));
   expect(refreshButton).toHaveClass("tray-popup__action-button");
+  expect(refreshButton).toHaveAttribute("aria-label", "Refresh");
 
   await act(async () => {
     resolveRefresh?.({
