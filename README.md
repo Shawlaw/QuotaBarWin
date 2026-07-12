@@ -16,6 +16,7 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 
 - [English README](README.en.md)
 - [远程 Provider 作者指南](docs/remote-provider-guide.md)
+- [Agent / CLI 使用指南](docs/cli.md)
 - [远程 Provider 示例](examples/remote-providers/)
 - [远程 Provider registry 示例](examples/remote-providers/registry.json)
 - [贡献指南](CONTRIBUTING.md)
@@ -138,9 +139,26 @@ KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}
 
 ---
 
+## Agent / CLI
+
+portable 发布包同时包含 `QuotaBarWin.Cli.exe`。它复用已安装 Provider、凭据和配置，为 Agent 或脚本提供只输出 JSON 的额度查询与阈值判断；不会打开窗口、托盘或启动另一个桌面应用实例。
+
+例如，让 Agent 在开始高消耗步骤前刷新 Codex 的 5 小时窗口：
+
+```powershell
+.\QuotaBarWin.Cli.exe check --provider codex-usage --window 5h --min-remaining-percent 20
+```
+
+退出码 `0` 表示可以继续，`10` 表示低于阈值、应延后或切换任务，`11` 表示数据无法安全判断（例如 Provider 已过期），`20` 表示刷新或配置失败。默认会实时刷新；仅想读取最近磁盘快照时，显式传入 `--cached`。
+
+完整的命令、JSON 输出和 Agent 编排示例见 [Agent / CLI 使用指南](docs/cli.md)。`resetAt` 是 Provider 给出的下一次重置或建议重查时间，不保证届时一定恢复到满额。
+
+---
+
 ## 核心能力
 
 - 在概览页按 Provider 展示额度窗口、剩余额度、重置时间、状态和进度条。
+- 附带面向 Agent 与脚本的 JSON CLI，支持刷新、读取快照和按剩余百分比判断是否应延后任务。
 - 支持单个 Provider 手动刷新，也支持按全局间隔自动刷新。
 - 支持 Windows 托盘、隐藏启动、单实例运行和可调整尺寸的托盘弹窗。
 - 支持刷新间隔、显示模式、低额度警告阈值、语言、日志级别、开机启动等通用设置。
@@ -172,7 +190,7 @@ Provider 配置类型：
 
 | 场景 | 需要安装 | 说明 |
 |---|---|---|
-| 使用发布版 `QuotaBarWin.exe` | Windows；Microsoft Edge WebView2 Runtime | portable zip / 单 exe 不要求用户安装 Node.js、npm、Rust 或 Tauri CLI。WebView2 负责渲染 Tauri 界面，通常已随 Windows 10/11 或 Microsoft Edge 可用；如果目标机器缺失，需要先安装 WebView2 Evergreen Runtime。 |
+| 使用发布版 `QuotaBarWin.exe` / `QuotaBarWin.Cli.exe` | Windows；GUI 需要 Microsoft Edge WebView2 Runtime | portable zip 包含桌面程序和 CLI；CLI 不依赖 WebView2。两者都不要求用户安装 Node.js、npm、Rust 或 Tauri CLI。 |
 | 安装 / 运行远程 Provider | manifest `runtime` 对应的软件 | QuotaBarWin 会从 `PATH` 或绝对路径解析 `runtime`，安装 / 更新时用 `--version` 或 `--help` 校验。若 Provider 声明 `"runtime": "node"`，该机器就需要可执行的 `node`；声明 `python`、`pwsh` 或 `bash` 时同理。当前仓库示例 Provider 均声明 `node`。 |
 | 开发、测试、构建本仓库 | Node.js 22+、npm、Rust stable / Cargo、Windows MSVC build tools | `package.json` 要求 `node >=22`，Release workflow 也使用 Node 22。`npm run tauri ...` 和 `cargo test ...` 需要 Rust 工具链；完整 E2E 还需要 `tauri-driver`。 |
 
@@ -282,7 +300,7 @@ cargo install tauri-driver --locked
 npm run tauri -- build --no-bundle
 ```
 
-Windows release 由 `.github/workflows/release.yml` 生成。发布工作流构建 `QuotaBarWin.exe`，并打包为 portable zip，文件名格式为：
+Windows release 由 `.github/workflows/release.yml` 生成。发布工作流构建 `QuotaBarWin.exe` 和 `QuotaBarWin.Cli.exe`，并打包为 portable zip，文件名格式为：
 
 ```text
 QuotaBarWin_<version>_windows_x64_portable_<commit>.zip

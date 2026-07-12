@@ -280,12 +280,16 @@ pub fn default_config() -> AppConfig {
     }
 }
 
+fn app_data_config_path_for_file_name(file_name: &str) -> Result<PathBuf, String> {
+    let app_data = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .ok_or_else(|| "APPDATA is not set".to_string())?;
+    Ok(app_data.join("QuotaBarWin").join(file_name))
+}
+
 fn app_data_config_path_for_app(app: &AppHandle) -> Result<PathBuf, String> {
     if cfg!(windows) {
-        let app_data = std::env::var_os("APPDATA")
-            .map(PathBuf::from)
-            .ok_or_else(|| "APPDATA is not set".to_string())?;
-        Ok(app_data.join("QuotaBarWin").join(CONFIG_FILE_NAME))
+        app_data_config_path_for_file_name(CONFIG_FILE_NAME)
     } else {
         app.path()
             .app_config_dir()
@@ -296,10 +300,7 @@ fn app_data_config_path_for_app(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn legacy_app_data_config_path_for_app(app: &AppHandle) -> Result<PathBuf, String> {
     if cfg!(windows) {
-        let app_data = std::env::var_os("APPDATA")
-            .map(PathBuf::from)
-            .ok_or_else(|| "APPDATA is not set".to_string())?;
-        Ok(app_data.join("QuotaBarWin").join(LEGACY_CONFIG_FILE_NAME))
+        app_data_config_path_for_file_name(LEGACY_CONFIG_FILE_NAME)
     } else {
         app.path()
             .app_config_dir()
@@ -367,6 +368,33 @@ pub fn config_path_for_app(app: &AppHandle) -> Result<PathBuf, String> {
         config_path_from_candidates(legacy_app_data_path, legacy_portable_path, marker_path);
     migrate_legacy_config_path(&preferred_path, &legacy_path)?;
     Ok(preferred_path)
+}
+
+/// Resolves the same portable-or-AppData config location as the desktop app.
+///
+/// The CLI lives beside `QuotaBarWin.exe` in the portable release, so checking
+/// the supplied executable's directory keeps both binaries on the same config,
+/// secrets, provider cache, and snapshot cache.
+pub fn config_path_for_executable(executable: &Path) -> Result<PathBuf, String> {
+    let exe_dir = executable
+        .parent()
+        .ok_or_else(|| "Unable to resolve executable directory".to_string())?;
+    let app_data_path = app_data_config_path_for_file_name(CONFIG_FILE_NAME)?;
+    let legacy_app_data_path = app_data_config_path_for_file_name(LEGACY_CONFIG_FILE_NAME)?;
+    let portable_path = portable_config_path_for_exe_dir(exe_dir);
+    let legacy_portable_path = legacy_portable_config_path_for_exe_dir(exe_dir);
+    let marker_path = portable_marker_path_for_exe_dir(exe_dir);
+    let preferred_path =
+        config_path_from_candidates(app_data_path, portable_path, marker_path.clone());
+    let legacy_path =
+        config_path_from_candidates(legacy_app_data_path, legacy_portable_path, marker_path);
+    migrate_legacy_config_path(&preferred_path, &legacy_path)?;
+    Ok(preferred_path)
+}
+
+pub fn config_path_for_current_executable() -> Result<PathBuf, String> {
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    config_path_for_executable(&executable)
 }
 
 fn config_storage_info_for_app(app: &AppHandle) -> Result<ConfigStorageInfo, String> {

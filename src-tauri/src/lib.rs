@@ -2,6 +2,7 @@
 
 mod app_identity;
 mod app_info;
+mod cli;
 mod config;
 mod diagnostics;
 pub mod logger;
@@ -21,6 +22,7 @@ use tauri::{Emitter, Manager};
 const HIDDEN_STARTUP_ARG: &str = "--hidden";
 
 pub use app_info::get_app_version;
+pub use cli::run_cli;
 pub use config::{
     get_config, get_config_storage_info, migrate_config_file, open_config_folder,
     open_remote_provider_guide, reset_config, save_config, set_portable_mode, AppConfig,

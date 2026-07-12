@@ -105,6 +105,7 @@ fn open_source_metadata_is_present() {
     let manifest = fs::read_to_string(tauri_root.join("Cargo.toml")).expect("cargo manifest");
     assert!(manifest.contains("license = \"MIT\""));
     assert!(manifest.contains("repository = \"https://github.com/Shawlaw/QuotaBarWin\""));
+    assert!(manifest.contains("default-run = \"quotabarwin\""));
 
     let readme = fs::read_to_string(repo_root.join("README.md")).expect("readme");
     assert!(readme.contains("E2E 当前是维护者可选检查"));
@@ -129,6 +130,9 @@ fn release_workflow_yaml_is_valid() {
         Some("write")
     );
     assert!(workflow.contains("tauri -- build --no-bundle"));
+    assert!(workflow.contains("Build CLI companion"));
+    assert!(workflow.contains("--bin quotabarwin-cli"));
+    assert!(workflow.contains("QuotaBarWin.Cli.exe"));
     assert!(workflow.contains("portable"));
     assert!(workflow.contains("quotabarwin.portable"));
     assert!(workflow.contains("Compute release metadata"));

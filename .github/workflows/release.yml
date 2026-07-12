@@ -46,6 +46,9 @@ jobs:
       - name: Build Tauri app
         run: npm run tauri -- build --no-bundle
 
+      - name: Build CLI companion
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release --bin quotabarwin-cli
+
       - name: Compute release metadata
         id: release_meta
         shell: pwsh
@@ -63,8 +66,12 @@ jobs:
             Where-Object { $_.Name -in @("QuotaBarWin.exe", "quotabarwin.exe") } |
             Select-Object -First 1
           if (-not $exe) { throw "QuotaBarWin executable was not found" }
+          $cli = Get-ChildItem -Path src-tauri/target/release -Filter quotabarwin-cli.exe -File |
+            Select-Object -First 1
+          if (-not $cli) { throw "QuotaBarWin CLI executable was not found" }
           New-Item -ItemType Directory -Force -Path artifacts/portable | Out-Null
           Copy-Item $exe.FullName artifacts/portable/QuotaBarWin.exe
+          Copy-Item $cli.FullName artifacts/portable/QuotaBarWin.Cli.exe
           Set-Content -Path artifacts/portable/quotabarwin.portable -Value "QuotaBarWin portable mode"
           Compress-Archive -Path artifacts/portable/* -DestinationPath "artifacts/${{ steps.release_meta.outputs.zip_name }}" -Force
 

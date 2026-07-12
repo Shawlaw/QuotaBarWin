@@ -16,6 +16,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 
 - [Simplified Chinese README](README.md)
 - [Remote Provider Guide](docs/remote-provider-guide.en.md)
+- [Agent / CLI Guide](docs/cli.en.md)
 - [Remote Provider Examples](examples/remote-providers/)
 - [Remote Provider registry example](examples/remote-providers/registry.json)
 - [Contribution Guide](CONTRIBUTING.md)
@@ -138,9 +139,26 @@ Click **Save**, return to **Overview**, or open the tray popup to view quota sta
 
 ---
 
+## Agent / CLI
+
+The portable release also includes `QuotaBarWin.Cli.exe`. It reuses installed Providers, credentials, and configuration to give agents and scripts JSON-only quota queries and threshold decisions. It does not open a window or tray, or start another desktop-app instance.
+
+For example, have an agent refresh Codex's five-hour window before a quota-intensive step:
+
+```powershell
+.\QuotaBarWin.Cli.exe check --provider codex-usage --window 5h --min-remaining-percent 20
+```
+
+Exit code `0` means work can continue, `10` means the quota is below the threshold and work should be deferred or switched, `11` means the data cannot be safely assessed (for example, a stale Provider), and `20` means refresh or configuration failed. The default is a live refresh; explicitly pass `--cached` to read only the latest disk snapshot.
+
+See the [Agent / CLI Guide](docs/cli.en.md) for commands, JSON output, and agent orchestration examples. `resetAt` is a Provider-reported reset or suggested recheck time, not a guarantee that quota will be full then.
+
+---
+
 ## Core Features
 
 - Shows quota windows, remaining usage, reset times, status, and progress bars per Provider.
+- Includes a JSON CLI for agents and scripts, with refresh, cached reads, and remaining-percent threshold decisions.
 - Supports per-Provider manual refresh and global interval-based auto refresh.
 - Includes Windows tray integration, hidden startup, single-instance behavior, and a resizable tray popup.
 - Provides settings for refresh interval, display mode, low-quota warning threshold, language, log level, and launch at startup.
@@ -172,7 +190,7 @@ QuotaBarWin has three separate dependency surfaces: the app itself, remote Provi
 
 | Scenario | Required software | Notes |
 |---|---|---|
-| Running the released `QuotaBarWin.exe` | Windows; Microsoft Edge WebView2 Runtime | The portable zip / single exe does not require users to install Node.js, npm, Rust, or the Tauri CLI. WebView2 renders the Tauri UI and is usually already available with Windows 10/11 or Microsoft Edge. If it is missing on a target machine, install the WebView2 Evergreen Runtime first. |
+| Running the released `QuotaBarWin.exe` / `QuotaBarWin.Cli.exe` | Windows; the GUI needs Microsoft Edge WebView2 Runtime | The portable zip contains the desktop app and CLI. The CLI does not require WebView2. Neither requires users to install Node.js, npm, Rust, or the Tauri CLI. |
 | Installing / running remote Providers | Software matching the manifest `runtime` | QuotaBarWin resolves `runtime` from `PATH` or an absolute path, then validates it with `--version` or `--help` during install / update. If a Provider declares `"runtime": "node"`, that machine needs a working `node`; the same applies to `python`, `pwsh`, or `bash`. All example Providers in this repo currently declare `node`. |
 | Developing, testing, or building this repo | Node.js 22+, npm, Rust stable / Cargo, Windows MSVC build tools | `package.json` requires `node >=22`, and the release workflow also uses Node 22. `npm run tauri ...` and `cargo test ...` need the Rust toolchain; full E2E also needs `tauri-driver`. |
 
@@ -283,7 +301,7 @@ Local release exe build:
 npm run tauri -- build --no-bundle
 ```
 
-Windows releases are produced by `.github/workflows/release.yml`. The release workflow builds `QuotaBarWin.exe` and packages it as a portable zip with this filename format:
+Windows releases are produced by `.github/workflows/release.yml`. The release workflow builds `QuotaBarWin.exe` and `QuotaBarWin.Cli.exe`, then packages them as a portable zip with this filename format:
 
 ```text
 QuotaBarWin_<version>_windows_x64_portable_<commit>.zip

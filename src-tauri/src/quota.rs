@@ -1,10 +1,11 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::{Mutex, MutexGuard, OnceLock},
 };
 
 use chrono::Utc;
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
@@ -13,6 +14,7 @@ use crate::logger::{LogLevel, LogSink};
 use crate::remote_provider_runner::run_remote_provider;
 
 const SNAPSHOT_CACHE_FILE_NAME: &str = "last_snapshot.quotaBarWin.json";
+const REFRESH_LOCK_FILE_NAME: &str = ".refresh.quotaBarWin.lock";
 
 static SNAPSHOT_CACHE: OnceLock<Mutex<Option<AppSnapshot>>> = OnceLock::new();
 static REFRESH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -23,6 +25,27 @@ fn snapshot_cache() -> &'static Mutex<Option<AppSnapshot>> {
 
 fn refresh_lock() -> &'static Mutex<()> {
     REFRESH_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn acquire_refresh_locks(path: &Path) -> Result<(MutexGuard<'static, ()>, fs::File), String> {
+    let lock_path = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(REFRESH_LOCK_FILE_NAME);
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(lock_path)
+        .map_err(|error| error.to_string())?;
+    file.lock_exclusive().map_err(|error| error.to_string())?;
+    let process_lock = refresh_lock()
+        .lock()
+        .map_err(|_| "Refresh lock poisoned".to_string())?;
+    Ok((process_lock, file))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -240,9 +263,7 @@ pub fn get_cached_snapshot_from_config_path(path: &Path) -> Result<Option<AppSna
 }
 
 pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, String> {
-    let _guard = refresh_lock()
-        .lock()
-        .map_err(|_| "Refresh lock poisoned".to_string())?;
+    let _locks = acquire_refresh_locks(path)?;
     let loaded = load_or_create_config(path)?;
     let log = LogSink::from_config_path(path, &loaded.config);
     let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
@@ -544,9 +565,7 @@ pub fn refresh_provider_from_config_path(
     path: &Path,
     provider_id: &str,
 ) -> Result<AppSnapshot, String> {
-    let _guard = refresh_lock()
-        .lock()
-        .map_err(|_| "Refresh lock poisoned".to_string())?;
+    let _locks = acquire_refresh_locks(path)?;
     let loaded = load_or_create_config(path)?;
     let log = LogSink::from_config_path(path, &loaded.config);
     let config_dir = path.parent().unwrap_or_else(|| Path::new("."));

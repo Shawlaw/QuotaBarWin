@@ -1,5 +1,6 @@
 [package]
 name = "quotabarwin"
+default-run = "quotabarwin"
 version = "1.0.0"
 description = "Windows-only desktop app for monitoring AI usage and quota windows."
 authors = ["QuotaBarWin Contributors"]
@@ -13,11 +14,16 @@ readme = "../README.md"
 name = "quotabarwin_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "quotabarwin-cli"
+path = "src/bin/quotabarwin-cli.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
+fs2 = "0.4"
 hex = "0.4"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls", "socks"] }
 serde = { version = "1", features = ["derive"] }
