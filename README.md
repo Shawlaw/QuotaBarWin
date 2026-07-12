@@ -153,6 +153,8 @@ portable 发布包同时包含 `QuotaBarWin.Cli.exe`。它复用已安装 Provid
 
 完整的命令、JSON 输出和 Agent 编排示例见 [Agent / CLI 使用指南](docs/cli.md)。`resetAt` 是 Provider 给出的下一次重置或建议重查时间，不保证届时一定恢复到满额。
 
+CLI 也可在安装前或排障时校验 Provider 配置、manifest、source checksum 和 runtime：`QuotaBarWin.Cli.exe validate --provider codex-usage`。详见指南中的 Provider 校验章节。
+
 ---
 
 ## 核心能力

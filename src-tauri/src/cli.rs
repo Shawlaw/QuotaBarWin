@@ -1,21 +1,30 @@
-use std::path::PathBuf;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use serde::Serialize;
 
 use crate::{
     app_info::app_display_version,
-    config::config_path_for_current_executable,
+    config::{config_path_for_current_executable, load_or_create_config, ProviderConfig},
     quota::{
         build_app_snapshot_from_config_path, get_cached_snapshot_from_config_path, AppSnapshot,
         ProviderSnapshot, QuotaWindow,
     },
     redact::redact_sensitive,
+    remote_provider::{
+        parse_manifest, resolve_runtime, validate_runtime_executable, verify_checksum,
+        ProviderManifest,
+    },
+    remote_provider_runner::run_remote_provider,
 };
 
 const EXIT_READY: i32 = 0;
 const EXIT_LOW_QUOTA: i32 = 10;
 const EXIT_UNKNOWN: i32 = 11;
 const EXIT_FAILURE: i32 = 20;
+const EXIT_INVALID_PROVIDER: i32 = 30;
 const EXIT_USAGE: i32 = 64;
 
 const HELP: &str = r#"QuotaBarWin CLI - machine-readable quota checks for agents
@@ -24,6 +33,7 @@ Usage:
   QuotaBarWin.Cli.exe get [--provider ID] [--window ID] [--refresh|--cached] [--config PATH]
   QuotaBarWin.Cli.exe check --provider ID --window ID --min-remaining-percent NUMBER
                             [--refresh|--cached] [--config PATH]
+  QuotaBarWin.Cli.exe validate (--provider ID | --manifest PATH) [--source PATH] [--config PATH]
 
 Commands always write one JSON object to stdout, except --help and --version.
 
@@ -32,6 +42,7 @@ Exit codes for check:
   10  quota is below the requested threshold; defer or switch work
   11  quota cannot be safely assessed (provider error/stale data/missing percentage)
   20  refresh, configuration, or lookup failed
+  30  provider validation found one or more errors
 
 Options:
   --refresh                         Refresh the Provider before reading (default).
@@ -40,6 +51,9 @@ Options:
   --window ID                       Stable quota window ID, such as 5h or weekly.
   --min-remaining-percent NUMBER    Required by check; range 0 through 100.
   --config PATH                     Use this config file instead of the normal portable/AppData config.
+  --manifest PATH                   Validate a Provider manifest and its adjacent source script.
+  --source PATH                     Source script to validate with --manifest (overrides manifest entry).
+  --run                             With --provider, execute the cached script and validate its output.
   --json                            Accepted for script compatibility; JSON is always used.
   --help, -h                        Show this help.
   --version                         Show the CLI version.
@@ -55,8 +69,18 @@ enum SnapshotMode {
 enum Command {
     Get(Options),
     Check(Options),
+    Validate(ValidationOptions),
     Help,
     Version,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ValidationOptions {
+    provider_id: Option<String>,
+    manifest_path: Option<PathBuf>,
+    source_path: Option<PathBuf>,
+    config_path: Option<PathBuf>,
+    run_script: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -140,6 +164,44 @@ struct CliErrorDetail<'a> {
     message: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ValidationReport {
+    schema_version: u8,
+    target: ValidationTarget,
+    valid: bool,
+    errors: Vec<String>,
+    warnings: Vec<String>,
+    runtime: ValidationRuntime,
+    checksum: ValidationChecksum,
+    script_run: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ValidationTarget {
+    kind: &'static str,
+    provider_id: Option<String>,
+    manifest_path: String,
+    source_path: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ValidationRuntime {
+    declared: Option<String>,
+    configured: Option<String>,
+    resolved: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ValidationChecksum {
+    expected: Option<String>,
+    actual: Option<String>,
+    matches: Option<bool>,
+}
+
 pub fn run_cli() -> i32 {
     match parse_command(std::env::args().skip(1)) {
         Ok(Command::Help) => {
@@ -158,6 +220,17 @@ pub fn run_cli() -> i32 {
             Ok((result, exit_code)) => emit_json(&result, exit_code),
             Err(CheckError::Unknown(result)) => emit_json(&result, EXIT_UNKNOWN),
             Err(CheckError::Failure(error)) => emit_error("check_failed", error, EXIT_FAILURE),
+        },
+        Ok(Command::Validate(options)) => match run_validate(options) {
+            Ok(report) => {
+                let exit_code = if report.valid {
+                    EXIT_READY
+                } else {
+                    EXIT_INVALID_PROVIDER
+                };
+                emit_json(&report, exit_code)
+            }
+            Err(error) => emit_error("validate_failed", error, EXIT_FAILURE),
         },
         Err(error) => emit_error("invalid_arguments", error, EXIT_USAGE),
     }
@@ -274,6 +347,269 @@ fn evaluate_quota_decision(
     }
 }
 
+fn run_validate(options: ValidationOptions) -> Result<ValidationReport, String> {
+    match (&options.provider_id, &options.manifest_path) {
+        (Some(_), None) => validate_installed_provider(&options),
+        (None, Some(manifest_path)) => {
+            validate_provider_files(manifest_path, options.source_path.as_deref())
+        }
+        _ => Err("validate requires exactly one of --provider or --manifest".to_string()),
+    }
+}
+
+fn validate_installed_provider(options: &ValidationOptions) -> Result<ValidationReport, String> {
+    let provider_id = options.provider_id.as_deref().unwrap_or_default();
+    let config_path = options
+        .config_path
+        .clone()
+        .map(Ok)
+        .unwrap_or_else(config_path_for_current_executable)?;
+    let loaded = load_or_create_config(&config_path)?;
+    let provider = loaded
+        .config
+        .providers
+        .iter()
+        .find(|provider| match provider {
+            ProviderConfig::Remote { id, .. } => id == provider_id,
+        })
+        .ok_or_else(|| format!("Provider {provider_id} was not found"))?;
+    let ProviderConfig::Remote {
+        id,
+        name,
+        provider_dir,
+        runtime,
+        resolved_runtime,
+        timeout_seconds,
+        env_vars,
+        proxy_url,
+        window_label_overrides,
+        visible_window_ids,
+        ..
+    } = provider;
+    let provider_dir = provider_dir.as_ref().ok_or_else(|| {
+        format!("Provider {provider_id} has no cached providerDir; reinstall the Provider")
+    })?;
+    let manifest_path = provider_dir.join("provider.json");
+    let manifest_text = fs::read_to_string(&manifest_path).map_err(|error| error.to_string())?;
+    let manifest = parse_manifest(&manifest_text).map_err(|error| error.to_string())?;
+    let source_path = provider_dir.join(source_file_name(&manifest.entry));
+    let mut report = validate_manifest_and_source(
+        "installed",
+        Some(id.clone()),
+        &manifest_path,
+        Some(&source_path),
+        &manifest,
+        Some(runtime),
+        resolved_runtime.as_deref(),
+    );
+    if name.trim().is_empty() {
+        report
+            .errors
+            .push("Provider config is missing name".to_string());
+    }
+    if *timeout_seconds == 0 {
+        report
+            .errors
+            .push("Provider config timeoutSeconds must be at least 1".to_string());
+    }
+    if runtime != &manifest.runtime {
+        report.errors.push(format!(
+            "Provider config runtime '{}' does not match manifest runtime '{}'",
+            runtime, manifest.runtime
+        ));
+    }
+    for required in &manifest.required_env_vars {
+        if !env_vars.contains_key(required) {
+            report.warnings.push(format!(
+                "Required environment variable {required} is not configured; runtime validation may fail"
+            ));
+        }
+    }
+    if options.run_script {
+        let config_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
+        let result = run_remote_provider(
+            id,
+            name,
+            Some(provider_dir),
+            runtime,
+            resolved_runtime.as_deref(),
+            proxy_url.as_deref(),
+            *timeout_seconds,
+            config_dir,
+            env_vars,
+            window_label_overrides,
+            visible_window_ids,
+            None,
+        );
+        if result.iter().any(|provider| provider.status == "error") {
+            let detail = result
+                .iter()
+                .find_map(|provider| provider.error.as_deref())
+                .unwrap_or("Provider script did not produce a valid snapshot");
+            report
+                .errors
+                .push(format!("Provider script run failed: {detail}"));
+            report.script_run = "failed";
+        } else {
+            report.script_run = "passed";
+        }
+    }
+    report.valid = report.errors.is_empty();
+    Ok(report)
+}
+
+fn validate_provider_files(
+    manifest_path: &Path,
+    source_override: Option<&Path>,
+) -> Result<ValidationReport, String> {
+    let manifest_text = fs::read_to_string(manifest_path).map_err(|error| error.to_string())?;
+    let manifest = parse_manifest(&manifest_text).map_err(|error| error.to_string())?;
+    let source_path = source_override.map(Path::to_path_buf).or_else(|| {
+        let entry = Path::new(&manifest.entry);
+        if entry.is_absolute() {
+            Some(entry.to_path_buf())
+        } else if manifest.entry.contains("://") {
+            None
+        } else {
+            manifest_path.parent().map(|parent| parent.join(entry))
+        }
+    });
+    Ok(validate_manifest_and_source(
+        "files",
+        None,
+        manifest_path,
+        source_path.as_deref(),
+        &manifest,
+        None,
+        None,
+    ))
+}
+
+fn validate_manifest_and_source(
+    kind: &'static str,
+    provider_id: Option<String>,
+    manifest_path: &Path,
+    source_path: Option<&Path>,
+    manifest: &ProviderManifest,
+    configured_runtime: Option<&str>,
+    resolved_runtime: Option<&str>,
+) -> ValidationReport {
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+    validate_manifest_contract(manifest, &mut errors, &mut warnings);
+
+    let mut actual_checksum = None;
+    let mut checksum_matches = None;
+    match source_path {
+        Some(path) if path.is_file() => match fs::read_to_string(path) {
+            Ok(source) => {
+                actual_checksum = Some(crate::remote_provider::compute_checksum(&source));
+                if let Some(expected) = manifest.checksums.source.as_deref() {
+                    match verify_checksum(&source, expected) {
+                        Ok(()) => checksum_matches = Some(true),
+                        Err(error) => {
+                            checksum_matches = Some(false);
+                            errors.push(error.to_string());
+                        }
+                    }
+                }
+            }
+            Err(error) => errors.push(format!("Unable to read source script: {error}")),
+        },
+        Some(path) => errors.push(format!("Source script does not exist: {}", path.display())),
+        None => errors.push(
+            "Source script cannot be resolved from manifest entry; pass --source with a local file path"
+                .to_string(),
+        ),
+    }
+
+    let runtime_to_check = configured_runtime.unwrap_or(&manifest.runtime);
+    let mut resolved = None;
+    match resolve_runtime(runtime_to_check) {
+        Ok(path) => {
+            resolved = Some(path.display().to_string());
+            if let Err(error) = validate_runtime_executable(&path) {
+                errors.push(format!("Runtime is not usable: {error}"));
+            }
+        }
+        Err(error) => errors.push(format!("Runtime cannot be resolved: {error}")),
+    }
+    if let Some(stored) = resolved_runtime {
+        if resolved.as_deref() != Some(stored) {
+            warnings.push(
+                "Configured resolvedRuntime differs from the currently resolved runtime"
+                    .to_string(),
+            );
+        }
+    }
+
+    ValidationReport {
+        schema_version: 1,
+        target: ValidationTarget {
+            kind,
+            provider_id,
+            manifest_path: manifest_path.display().to_string(),
+            source_path: source_path.map(|path| path.display().to_string()),
+        },
+        valid: errors.is_empty(),
+        errors,
+        warnings,
+        runtime: ValidationRuntime {
+            declared: Some(manifest.runtime.clone()),
+            configured: configured_runtime.map(str::to_string),
+            resolved,
+        },
+        checksum: ValidationChecksum {
+            expected: manifest.checksums.source.clone(),
+            actual: actual_checksum,
+            matches: checksum_matches,
+        },
+        script_run: "notRun",
+    }
+}
+
+fn validate_manifest_contract(
+    manifest: &ProviderManifest,
+    errors: &mut Vec<String>,
+    warnings: &mut Vec<String>,
+) {
+    if manifest.display_name.trim().is_empty() {
+        errors.push("Manifest is missing displayName".to_string());
+    }
+    if manifest.output != "provider-snapshot-v1" {
+        errors.push(format!(
+            "Manifest output must be provider-snapshot-v1, got '{}'",
+            manifest.output
+        ));
+    }
+    let runtime = manifest.runtime.trim();
+    let supported_runtime =
+        matches!(runtime, "node" | "python" | "pwsh" | "bash") || Path::new(runtime).is_absolute();
+    if !supported_runtime {
+        errors.push(format!(
+            "Manifest runtime must be node, python, pwsh, bash, or an absolute executable path, got '{}'",
+            manifest.runtime
+        ));
+    }
+    if manifest.checksums.source.is_none() {
+        warnings.push(
+            "Manifest has no checksums.source; source integrity and automatic updates cannot be verified"
+                .to_string(),
+        );
+    }
+}
+
+fn source_file_name(entry: &str) -> String {
+    entry
+        .rsplit('/')
+        .next()
+        .unwrap_or(entry)
+        .rsplit('\\')
+        .next()
+        .unwrap_or(entry)
+        .to_string()
+}
+
 fn load_snapshot(options: &Options) -> Result<(AppSnapshot, &'static str), String> {
     let path = match &options.config_path {
         Some(path) => path.clone(),
@@ -367,6 +703,7 @@ fn parse_command(arguments: impl Iterator<Item = String>) -> Result<Command, Str
         "check" => parse_options(&arguments[1..])
             .and_then(validate_check_options)
             .map(Command::Check),
+        "validate" => parse_validation_options(&arguments[1..]).map(Command::Validate),
         command => Err(format!("Unknown command: {command}")),
     }
 }
@@ -380,6 +717,56 @@ fn validate_check_options(options: Options) -> Result<Options, String> {
     }
     if options.min_remaining_percent.is_none() {
         return Err("--min-remaining-percent is required for check".to_string());
+    }
+    Ok(options)
+}
+
+fn parse_validation_options(arguments: &[String]) -> Result<ValidationOptions, String> {
+    let mut options = ValidationOptions {
+        provider_id: None,
+        manifest_path: None,
+        source_path: None,
+        config_path: None,
+        run_script: false,
+    };
+    let mut index = 0;
+    while let Some(argument) = arguments.get(index) {
+        match argument.as_str() {
+            "--provider" => {
+                options.provider_id = Some(option_value(arguments, &mut index, argument)?)
+            }
+            "--manifest" => {
+                options.manifest_path = Some(PathBuf::from(option_value(
+                    arguments, &mut index, argument,
+                )?))
+            }
+            "--source" => {
+                options.source_path = Some(PathBuf::from(option_value(
+                    arguments, &mut index, argument,
+                )?))
+            }
+            "--config" => {
+                options.config_path = Some(PathBuf::from(option_value(
+                    arguments, &mut index, argument,
+                )?))
+            }
+            "--json" => {}
+            "--run" => options.run_script = true,
+            "--help" | "-h" => {
+                return Err("Use `QuotaBarWin.Cli.exe --help` for command help".to_string())
+            }
+            _ => return Err(format!("Unknown option: {argument}")),
+        }
+        index += 1;
+    }
+    if options.provider_id.is_some() == options.manifest_path.is_some() {
+        return Err("validate requires exactly one of --provider or --manifest".to_string());
+    }
+    if options.provider_id.is_some() && options.source_path.is_some() {
+        return Err("--source can only be used with --manifest".to_string());
+    }
+    if options.run_script && options.provider_id.is_none() {
+        return Err("--run can only be used with --provider".to_string());
     }
     Ok(options)
 }
@@ -539,6 +926,48 @@ mod tests {
         )
         .expect_err("missing window fails argument validation");
         assert!(error.contains("--window is required"));
+    }
+
+    #[test]
+    fn parses_manifest_validation_target() {
+        let command = parse_command(
+            [
+                "validate",
+                "--manifest",
+                "provider.json",
+                "--source",
+                "provider.cjs",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("arguments parse");
+        assert_eq!(
+            command,
+            Command::Validate(ValidationOptions {
+                provider_id: None,
+                manifest_path: Some(PathBuf::from("provider.json")),
+                source_path: Some(PathBuf::from("provider.cjs")),
+                config_path: None,
+                run_script: false,
+            })
+        );
+    }
+
+    #[test]
+    fn validation_contract_rejects_unsupported_output_and_runtime() {
+        let manifest = parse_manifest(
+            r#"{"schemaVersion":1,"id":"test","displayName":"Test","runtime":"ruby","entry":"provider.rb","output":"app-snapshot-v1"}"#,
+        )
+        .expect("basic manifest parses");
+        let mut errors = Vec::new();
+        let mut warnings = Vec::new();
+        validate_manifest_contract(&manifest, &mut errors, &mut warnings);
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("provider-snapshot-v1")));
+        assert!(errors.iter().any(|error| error.contains("runtime must be")));
+        assert_eq!(warnings.len(), 1);
     }
 
     #[test]

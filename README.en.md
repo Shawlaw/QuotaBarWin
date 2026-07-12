@@ -153,6 +153,8 @@ Exit code `0` means work can continue, `10` means the quota is below the thresho
 
 See the [Agent / CLI Guide](docs/cli.en.md) for commands, JSON output, and agent orchestration examples. `resetAt` is a Provider-reported reset or suggested recheck time, not a guarantee that quota will be full then.
 
+The CLI can also validate Provider configuration, manifest, source checksum, and runtime before installation or during troubleshooting: `QuotaBarWin.Cli.exe validate --provider codex-usage`. See the Provider validation section of the guide.
+
 ---
 
 ## Core Features
