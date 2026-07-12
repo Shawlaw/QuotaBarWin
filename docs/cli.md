@@ -30,6 +30,8 @@ English version: [`cli.en.md`](cli.en.md)。
 
 `get` 和 `check` 默认使用 `--refresh`。该操作会按已安装 Provider 的配置执行脚本和网络请求，也会更新桌面应用可见的快照。`--cached` 只读取 `last_snapshot.quotaBarWin.json`；快照不存在时命令失败。不要把没有刷新时间约束的缓存数据用于高风险或高消耗决策。
 
+传入 `--provider ID --refresh` 时，CLI 只刷新该实例；不传 `--provider` 才刷新所有已启用 Provider。
+
 可选 `--config C:\path\config.quotaBarWin.json` 使用明确的本地配置文件，方便隔离测试环境。不要在命令行中传入 token、cookie、API key 或代理凭据；仍应使用已有的 `${secret:...}`、`${env:...}` 和 `${file:...}` 配置方式。
 
 ## Provider 校验

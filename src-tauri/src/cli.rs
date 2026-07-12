@@ -9,8 +9,8 @@ use crate::{
     app_info::app_display_version,
     config::{config_path_for_current_executable, load_or_create_config, ProviderConfig},
     quota::{
-        build_app_snapshot_from_config_path, get_cached_snapshot_from_config_path, AppSnapshot,
-        ProviderSnapshot, QuotaWindow,
+        build_app_snapshot_from_config_path, get_cached_snapshot_from_config_path,
+        refresh_provider_from_config_path, AppSnapshot, ProviderSnapshot, QuotaWindow,
     },
     redact::redact_sensitive,
     remote_provider::{
@@ -616,12 +616,31 @@ fn load_snapshot(options: &Options) -> Result<(AppSnapshot, &'static str), Strin
         None => config_path_for_current_executable()?,
     };
     match options.snapshot_mode {
-        SnapshotMode::Refresh => {
-            build_app_snapshot_from_config_path(&path).map(|snapshot| (snapshot, "refresh"))
-        }
+        SnapshotMode::Refresh => match refresh_scope(options.provider_id.as_deref()) {
+            RefreshScope::AllProviders => {
+                build_app_snapshot_from_config_path(&path).map(|snapshot| (snapshot, "refresh"))
+            }
+            RefreshScope::SingleProvider(provider_id) => {
+                refresh_provider_from_config_path(&path, provider_id)
+                    .map(|snapshot| (snapshot, "refresh"))
+            }
+        },
         SnapshotMode::Cached => get_cached_snapshot_from_config_path(&path)?
             .map(|snapshot| (snapshot, "cache"))
             .ok_or_else(|| "No cached snapshot is available; retry without --cached".to_string()),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RefreshScope<'a> {
+    AllProviders,
+    SingleProvider(&'a str),
+}
+
+fn refresh_scope(provider_id: Option<&str>) -> RefreshScope<'_> {
+    match provider_id {
+        Some(provider_id) => RefreshScope::SingleProvider(provider_id),
+        None => RefreshScope::AllProviders,
     }
 }
 
@@ -915,6 +934,15 @@ mod tests {
         )
         .expect_err("conflicting modes fail");
         assert!(error.contains("cannot be used together"));
+    }
+
+    #[test]
+    fn provider_filter_selects_single_provider_refresh() {
+        assert_eq!(refresh_scope(None), RefreshScope::AllProviders);
+        assert_eq!(
+            refresh_scope(Some("codex-usage")),
+            RefreshScope::SingleProvider("codex-usage")
+        );
     }
 
     #[test]

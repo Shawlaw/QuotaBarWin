@@ -30,6 +30,8 @@ In the portable release, `QuotaBarWin.Cli.exe` is next to `QuotaBarWin.exe`. Bot
 
 `get` and `check` default to `--refresh`. This runs the installed Provider scripts and their network requests according to their configured settings, and updates the snapshot visible to the desktop app. `--cached` reads only `last_snapshot.quotaBarWin.json`; it fails if no snapshot exists. Do not use an unconstrained-age cached result for high-risk or quota-intensive decisions.
 
+With `--provider ID --refresh`, the CLI refreshes only that instance. It refreshes every enabled Provider only when `--provider` is omitted.
+
 Use `--config C:\path\config.quotaBarWin.json` to select an explicit local config, for example in an isolated test environment. Do not pass tokens, cookies, API keys, or proxy credentials on the command line. Continue to use the existing `${secret:...}`, `${env:...}`, and `${file:...}` configuration mechanisms.
 
 ## Provider validation
