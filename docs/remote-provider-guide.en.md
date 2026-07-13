@@ -104,6 +104,45 @@ Field descriptions:
 | `providers[].providerUrl` | yes | URL or local path to the provider's `provider.json`. Relative paths are resolved against the registry URL/path. |
 | `providers[].checksum` | no | SHA-256 checksum of the referenced manifest text. If provided, QuotaBarWin verifies the manifest before installing. |
 
+## Validate a Provider with the CLI
+
+After writing or updating a Provider, validate its manifest, source, checksum,
+and runtime with `QuotaBarWin.Cli.exe validate` before installing or publishing
+it. The command always writes JSON to stdout, so it also works well in CI and
+scripts that branch on its exit code.
+
+```powershell
+# Validate a local manifest. A relative local entry automatically locates its source.
+.\QuotaBarWin.Cli.exe validate --manifest .\provider.json
+
+# If entry is an HTTPS or file URL, specify the local source to validate.
+.\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.cjs
+
+# After installation, validate the effective config, cached manifest, source checksum, and runtime.
+.\QuotaBarWin.Cli.exe validate --provider my-provider
+
+# Also run the installed script and validate its provider-snapshot-v1 output; this can call account APIs.
+.\QuotaBarWin.Cli.exe validate --provider my-provider --run
+```
+
+Validation does not run a script or make Provider API requests unless `--run` is
+specified. `--run` is available only for an installed Provider and uses that
+instance's configured runtime, secret placeholders, and proxy. Do not put
+tokens, cookies, API keys, or proxy credentials on the command line.
+
+Validation checks `schemaVersion`, a non-empty `displayName`, the `output`
+protocol, runtime availability, source presence, `checksums.source`, and the
+configured required environment-variable names for an installed Provider.
+`checksums.source` remains optional in the current public contract: a missing
+value is a warning, not a validation failure by itself. With `--run`, the CLI
+also confirms that stdout is accepted by the current `provider-snapshot-v1`
+parser; Provider stderr, secrets, and environment-variable values are not
+included in the report.
+
+A validation failure exits with code `30`; command-level failures such as an
+unreadable manifest or config exit with code `20`. See [the CLI guide](cli.en.md)
+for the complete protocol.
+
 ## Source script output contract
 
 When `output` is `provider-snapshot-v1`, the script must print a single JSON

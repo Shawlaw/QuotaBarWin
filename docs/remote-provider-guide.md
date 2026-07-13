@@ -103,6 +103,39 @@ Registry 可以用一个 URL 安装多个 Provider：
 | `providers[].providerUrl` | 是 | `provider.json` 的 URL 或本地路径。相对路径按 registry 所在位置解析。 |
 | `providers[].checksum` | 否 | Manifest 文本 SHA-256；提供后安装前会校验。 |
 
+## 用 CLI 校验 Provider
+
+编写或更新 Provider 后，建议在安装和发布前使用 `QuotaBarWin.Cli.exe validate`
+校验 manifest、source、checksum 和 runtime。此命令的 stdout 始终是 JSON，适合在
+CI 或脚本中根据退出码处理。
+
+```powershell
+# 校验本地 manifest；entry 是相对本地路径时会自动找到 source
+.\QuotaBarWin.Cli.exe validate --manifest .\provider.json
+
+# entry 为 HTTPS / file URL 时，明确指定本地待校验 source
+.\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.cjs
+
+# Provider 已安装后，校验实际配置、缓存 manifest、source checksum 和 runtime
+.\QuotaBarWin.Cli.exe validate --provider my-provider
+
+# 额外执行一次已安装脚本，校验 provider-snapshot-v1 输出；可能访问账户 API
+.\QuotaBarWin.Cli.exe validate --provider my-provider --run
+```
+
+默认校验不会运行脚本或发起 Provider API 请求。`--run` 只适用于已安装的 Provider，
+会沿用该实例配置的 runtime、secret 占位符和代理；不要在命令行中传入 token、Cookie、
+API key 或代理凭据。
+
+校验会检查 `schemaVersion`、非空 `displayName`、`output` 协议、runtime、source 是否
+存在、`checksums.source` 是否匹配，以及已安装 Provider 所需环境变量是否已配置。
+`checksums.source` 在当前公共协议中仍是可选项：缺失会给出 warning，不会单独导致失败。
+`--run` 还会确认 stdout 能被当前的 `provider-snapshot-v1` 解析器接受；Provider stderr、
+secret 和环境变量值不会写入报告。
+
+校验不通过时退出码为 `30`；manifest 或配置无法读取等命令级错误退出码为 `20`。详情请见
+[`cli.md`](cli.md)。
+
 ## Source Script 输出协议
 
 当 `output` 为 `provider-snapshot-v1` 时，脚本必须向 stdout 输出一个 JSON 对象。
