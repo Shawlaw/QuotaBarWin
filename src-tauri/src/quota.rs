@@ -4,7 +4,7 @@ use std::{
     sync::{Mutex, MutexGuard, OnceLock},
 };
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -15,6 +15,9 @@ use crate::remote_provider_runner::run_remote_provider;
 
 const SNAPSHOT_CACHE_FILE_NAME: &str = "last_snapshot.quotaBarWin.json";
 const REFRESH_LOCK_FILE_NAME: &str = ".refresh.quotaBarWin.lock";
+const OPTIMISTIC_PERCENT_JUMP_THRESHOLD: f64 = 20.0;
+const CONFIRMATION_PERCENT_TOLERANCE: f64 = 20.0;
+const RESET_REGRESSION_TOLERANCE_SECONDS: i64 = 2 * 60;
 
 static SNAPSHOT_CACHE: OnceLock<Mutex<Option<AppSnapshot>>> = OnceLock::new();
 static REFRESH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -242,15 +245,22 @@ fn read_snapshot_cache_from_disk(
 pub fn get_cached_snapshot_from_config_path(path: &Path) -> Result<Option<AppSnapshot>, String> {
     let loaded = load_or_create_config(path)?;
 
+    cached_snapshot_for_refresh(path, &loaded.config)
+}
+
+fn cached_snapshot_for_refresh(
+    path: &Path,
+    config: &AppConfig,
+) -> Result<Option<AppSnapshot>, String> {
     if let Some(snapshot) = snapshot_cache()
         .lock()
         .map_err(|_| "Snapshot cache lock poisoned".to_string())?
         .clone()
     {
-        return Ok(Some(filter_snapshot_for_config(snapshot, &loaded.config)));
+        return Ok(Some(filter_snapshot_for_config(snapshot, config)));
     }
 
-    let snapshot = match read_snapshot_cache_from_disk(path, &loaded.config) {
+    let snapshot = match read_snapshot_cache_from_disk(path, config) {
         Ok(snapshot) => snapshot,
         Err(_) => None,
     };
@@ -268,10 +278,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     let log = LogSink::from_config_path(path, &loaded.config);
     let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
     let should_log_quota_data = loaded.config.log_quota_data;
-    let cached = snapshot_cache()
-        .lock()
-        .map_err(|_| "Snapshot cache lock poisoned".to_string())?
-        .clone();
+    let cached = cached_snapshot_for_refresh(path, &loaded.config)?;
     let old_providers = cached
         .as_ref()
         .map(|s| s.providers.as_slice())
@@ -291,14 +298,22 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
 
     for provider in loaded.config.providers {
         let provider_id = provider_config_id(&provider).to_string();
-        for result in run_provider_with_retry(
-            provider,
+        let results = run_provider_with_retry(
+            provider.clone(),
             config_dir,
             &loaded.recovery_messages,
             &[
                 std::time::Duration::from_secs(1),
                 std::time::Duration::from_secs(2),
             ],
+            Some(&log),
+        );
+        for result in stabilize_provider_results(
+            &provider,
+            results,
+            old_providers,
+            config_dir,
+            &loaded.recovery_messages,
             Some(&log),
         ) {
             if result.status == "error" {
@@ -517,6 +532,325 @@ fn run_provider_with_retry(
     result
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VerificationReason {
+    InvalidProviderUpdatedAt,
+    RegressedProviderUpdatedAt,
+    InvalidResetAt,
+    RegressedResetAt,
+    OptimisticPercentJump,
+}
+
+impl VerificationReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidProviderUpdatedAt => "invalid-provider-updated-at",
+            Self::RegressedProviderUpdatedAt => "regressed-provider-updated-at",
+            Self::InvalidResetAt => "invalid-reset-at",
+            Self::RegressedResetAt => "regressed-reset-at",
+            Self::OptimisticPercentJump => "optimistic-percent-jump",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConfirmationDecision {
+    AcceptConfirmed,
+    AcceptReverted,
+    PreservePrevious,
+}
+
+fn stabilize_provider_results(
+    provider_config: &ProviderConfig,
+    initial_results: Vec<ProviderSnapshot>,
+    previous_providers: &[ProviderSnapshot],
+    config_dir: &Path,
+    recovery_messages: &[String],
+    log: Option<&LogSink>,
+) -> Vec<ProviderSnapshot> {
+    let candidates = initial_results
+        .iter()
+        .filter_map(|provider| {
+            if provider.status == "error" {
+                return None;
+            }
+            let previous = previous_providers
+                .iter()
+                .find(|previous| previous.id == provider.id)?;
+            let (window_id, reason) = verification_required(previous, provider)?;
+            Some((provider.id.as_str(), window_id, reason))
+        })
+        .collect::<Vec<_>>();
+
+    if candidates.is_empty() {
+        return initial_results;
+    }
+
+    if let Some(log) = log {
+        for (provider_id, window_id, reason) in &candidates {
+            let _ = log.write(
+                LogLevel::Warn,
+                "quota",
+                &format!(
+                    "quota verification detected id={} windowId={} reason={} action=confirm",
+                    provider_id,
+                    window_id,
+                    reason.as_str()
+                ),
+            );
+        }
+        let _ = log.write(
+            LogLevel::Info,
+            "quota",
+            &format!(
+                "quota verification refresh started providerId={} candidates={}",
+                provider_config_id(provider_config),
+                candidates.len()
+            ),
+        );
+    }
+
+    let confirmation_results = run_provider_with_retry(
+        provider_config.clone(),
+        config_dir,
+        recovery_messages,
+        &[
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(2),
+        ],
+        log,
+    );
+
+    initial_results
+        .into_iter()
+        .map(|initial| {
+            let Some(previous) = previous_providers
+                .iter()
+                .find(|previous| previous.id == initial.id)
+            else {
+                return initial;
+            };
+            let Some((window_id, reason)) = verification_required(previous, &initial) else {
+                return initial;
+            };
+            let confirmation = confirmation_results
+                .iter()
+                .find(|confirmation| confirmation.id == initial.id);
+            let decision = confirmation
+                .map(|confirmation| confirmation_decision(previous, &initial, confirmation))
+                .unwrap_or(ConfirmationDecision::PreservePrevious);
+
+            if let Some(log) = log {
+                let outcome = match decision {
+                    ConfirmationDecision::AcceptConfirmed => "confirmed",
+                    ConfirmationDecision::AcceptReverted => "reverted",
+                    ConfirmationDecision::PreservePrevious => "pending",
+                };
+                let _ = log.write(
+                    match decision {
+                        ConfirmationDecision::PreservePrevious => LogLevel::Warn,
+                        _ => LogLevel::Info,
+                    },
+                    "quota",
+                    &format!(
+                        "quota verification finished id={} windowId={} reason={} outcome={}",
+                        initial.id,
+                        window_id,
+                        reason.as_str(),
+                        outcome
+                    ),
+                );
+            }
+
+            match decision {
+                ConfirmationDecision::AcceptConfirmed | ConfirmationDecision::AcceptReverted => {
+                    confirmation.cloned().unwrap_or(initial)
+                }
+                ConfirmationDecision::PreservePrevious => {
+                    verification_pending_provider(previous, confirmation, reason)
+                }
+            }
+        })
+        .collect()
+}
+
+fn verification_required(
+    previous: &ProviderSnapshot,
+    candidate: &ProviderSnapshot,
+) -> Option<(String, VerificationReason)> {
+    if let Some(reason) = provider_updated_at_reason(previous, candidate) {
+        return Some(("<provider>".to_string(), reason));
+    }
+
+    for candidate_window in &candidate.windows {
+        let Some(previous_window) = previous
+            .windows
+            .iter()
+            .find(|window| window.id == candidate_window.id)
+        else {
+            continue;
+        };
+        if let Some(reason) = reset_at_reason(previous_window, candidate_window) {
+            return Some((candidate_window.id.clone(), reason));
+        }
+        if is_optimistic_percent_jump(previous_window, candidate_window) {
+            return Some((
+                candidate_window.id.clone(),
+                VerificationReason::OptimisticPercentJump,
+            ));
+        }
+    }
+    None
+}
+
+fn confirmation_decision(
+    previous: &ProviderSnapshot,
+    initial: &ProviderSnapshot,
+    confirmation: &ProviderSnapshot,
+) -> ConfirmationDecision {
+    if confirmation.status != "ok" {
+        return ConfirmationDecision::PreservePrevious;
+    }
+    if provider_updated_at_reason(previous, confirmation).is_some()
+        || confirmation
+            .windows
+            .iter()
+            .filter_map(|window| {
+                previous
+                    .windows
+                    .iter()
+                    .find(|previous_window| previous_window.id == window.id)
+                    .map(|previous_window| reset_at_reason(previous_window, window))
+            })
+            .any(|reason| reason.is_some())
+    {
+        return ConfirmationDecision::PreservePrevious;
+    }
+
+    let still_optimistic = confirmation.windows.iter().any(|confirmation_window| {
+        previous
+            .windows
+            .iter()
+            .find(|previous_window| previous_window.id == confirmation_window.id)
+            .is_some_and(|previous_window| {
+                is_optimistic_percent_jump(previous_window, confirmation_window)
+            })
+    });
+    if !still_optimistic {
+        return ConfirmationDecision::AcceptReverted;
+    }
+
+    if initial_and_confirmation_match_new_state(previous, initial, confirmation) {
+        ConfirmationDecision::AcceptConfirmed
+    } else {
+        ConfirmationDecision::PreservePrevious
+    }
+}
+
+fn provider_updated_at_reason(
+    previous: &ProviderSnapshot,
+    candidate: &ProviderSnapshot,
+) -> Option<VerificationReason> {
+    let candidate_updated_at = candidate.updated_at.as_deref()?;
+    let Some(candidate_time) = parse_rfc3339(candidate_updated_at) else {
+        return Some(VerificationReason::InvalidProviderUpdatedAt);
+    };
+    let previous_time = previous.updated_at.as_deref().and_then(parse_rfc3339);
+    if previous.updated_at.is_some() && previous_time.is_none() {
+        return None;
+    }
+    if previous_time.is_some_and(|previous_time| candidate_time <= previous_time) {
+        return Some(VerificationReason::RegressedProviderUpdatedAt);
+    }
+    None
+}
+
+fn reset_at_reason(previous: &QuotaWindow, candidate: &QuotaWindow) -> Option<VerificationReason> {
+    let Some(candidate_reset_at) = candidate.reset_at.as_deref() else {
+        return None;
+    };
+    let Some(candidate_time) = parse_rfc3339(candidate_reset_at) else {
+        return Some(VerificationReason::InvalidResetAt);
+    };
+    let previous_time = previous.reset_at.as_deref().and_then(parse_rfc3339);
+    if previous.reset_at.is_some() && previous_time.is_none() {
+        return None;
+    }
+    if previous_time.is_some_and(|previous_time| {
+        candidate_time.timestamp() < previous_time.timestamp() - RESET_REGRESSION_TOLERANCE_SECONDS
+    }) {
+        return Some(VerificationReason::RegressedResetAt);
+    }
+    None
+}
+
+fn parse_rfc3339(value: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|time| time.with_timezone(&Utc))
+}
+
+fn is_optimistic_percent_jump(previous: &QuotaWindow, candidate: &QuotaWindow) -> bool {
+    let (Some(previous_used), Some(candidate_used)) =
+        (previous.used_percent, candidate.used_percent)
+    else {
+        return false;
+    };
+    previous_used.is_finite()
+        && candidate_used.is_finite()
+        && previous_used - candidate_used >= OPTIMISTIC_PERCENT_JUMP_THRESHOLD
+}
+
+fn initial_and_confirmation_match_new_state(
+    previous: &ProviderSnapshot,
+    initial: &ProviderSnapshot,
+    confirmation: &ProviderSnapshot,
+) -> bool {
+    confirmation.windows.iter().any(|confirmation_window| {
+        let Some(previous_window) = previous
+            .windows
+            .iter()
+            .find(|window| window.id == confirmation_window.id)
+        else {
+            return false;
+        };
+        let Some(initial_window) = initial
+            .windows
+            .iter()
+            .find(|window| window.id == confirmation_window.id)
+        else {
+            return false;
+        };
+        let (Some(initial_used), Some(confirmation_used)) = (
+            initial_window.used_percent,
+            confirmation_window.used_percent,
+        ) else {
+            return false;
+        };
+        is_optimistic_percent_jump(previous_window, initial_window)
+            && is_optimistic_percent_jump(previous_window, confirmation_window)
+            && (initial_used - confirmation_used).abs() <= CONFIRMATION_PERCENT_TOLERANCE
+    })
+}
+
+fn verification_pending_provider(
+    previous: &ProviderSnapshot,
+    confirmation: Option<&ProviderSnapshot>,
+    reason: VerificationReason,
+) -> ProviderSnapshot {
+    let mut pending = previous.clone();
+    pending.status = "stale".to_string();
+    pending.error = Some(format!(
+        "Latest quota result is awaiting a consistent confirmation ({})",
+        reason.as_str()
+    ));
+    pending.diagnostics = confirmation.and_then(|provider| provider.diagnostics.clone());
+    for window in &mut pending.windows {
+        window.confidence = "unknown".to_string();
+    }
+    pending
+}
+
 fn run_provider_config(
     provider: ProviderConfig,
     config_dir: &Path,
@@ -582,8 +916,17 @@ pub fn refresh_provider_from_config_path(
         .find(|provider| provider_config_id(provider) == provider_id)
         .cloned()
         .ok_or_else(|| format!("Provider {provider_id} was not found"))?;
+    let refreshed_at = Utc::now().to_rfc3339();
+
+    let mut snapshot =
+        cached_snapshot_for_refresh(path, &loaded.config)?.unwrap_or_else(|| AppSnapshot {
+            schema_version: 1,
+            providers: Vec::new(),
+            refreshed_at: refreshed_at.clone(),
+        });
+
     let refreshed_providers = run_provider_with_retry(
-        provider,
+        provider.clone(),
         config_dir,
         &loaded.recovery_messages,
         &[
@@ -592,21 +935,18 @@ pub fn refresh_provider_from_config_path(
         ],
         Some(&log),
     );
+    let refreshed_providers = stabilize_provider_results(
+        &provider,
+        refreshed_providers,
+        &snapshot.providers,
+        config_dir,
+        &loaded.recovery_messages,
+        Some(&log),
+    );
     let refreshed_provider_ids = refreshed_providers
         .iter()
         .map(|provider| provider.id.clone())
         .collect::<Vec<_>>();
-    let refreshed_at = Utc::now().to_rfc3339();
-
-    let mut snapshot = snapshot_cache()
-        .lock()
-        .map_err(|_| "Snapshot cache lock poisoned".to_string())?
-        .clone()
-        .unwrap_or_else(|| AppSnapshot {
-            schema_version: 1,
-            providers: Vec::new(),
-            refreshed_at: refreshed_at.clone(),
-        });
 
     let insert_at = snapshot
         .providers
@@ -854,6 +1194,207 @@ mod tests {
             diagnostics: None,
             metadata: None,
         }
+    }
+
+    fn verification_snapshot(
+        used_percent: f64,
+        updated_at: &str,
+        reset_at: Option<&str>,
+    ) -> ProviderSnapshot {
+        ProviderSnapshot {
+            id: "remote-a".to_string(),
+            name: "Remote A".to_string(),
+            status: "ok".to_string(),
+            source: "remote".to_string(),
+            updated_at: Some(updated_at.to_string()),
+            windows: vec![QuotaWindow {
+                id: "5h".to_string(),
+                label: "5h".to_string(),
+                remaining: None,
+                used: None,
+                limit: None,
+                unit: Some("percent".to_string()),
+                used_percent: Some(used_percent),
+                remaining_percent: Some(100.0 - used_percent),
+                warning_remaining: None,
+                reset_at: reset_at.map(str::to_string),
+                reset_text: None,
+                confidence: "exact".to_string(),
+            }],
+            error: None,
+            diagnostics: None,
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn optimistic_quota_jump_requires_a_matching_second_sample() {
+        let previous =
+            verification_snapshot(80.0, "2026-01-01T00:00:00Z", Some("2030-01-01T00:00:00Z"));
+        let initial =
+            verification_snapshot(5.0, "2026-01-01T00:01:00Z", Some("2030-01-01T00:00:00Z"));
+        let confirmation =
+            verification_snapshot(3.0, "2026-01-01T00:02:00Z", Some("2030-01-01T00:00:00Z"));
+
+        assert_eq!(
+            verification_required(&previous, &initial),
+            Some(("5h".to_string(), VerificationReason::OptimisticPercentJump))
+        );
+        assert_eq!(
+            confirmation_decision(&previous, &initial, &confirmation),
+            ConfirmationDecision::AcceptConfirmed
+        );
+    }
+
+    #[test]
+    fn verification_accepts_a_confirmation_that_reverts_to_the_prior_range() {
+        let previous =
+            verification_snapshot(80.0, "2026-01-01T00:00:00Z", Some("2030-01-01T00:00:00Z"));
+        let initial =
+            verification_snapshot(5.0, "2026-01-01T00:01:00Z", Some("2030-01-01T00:00:00Z"));
+        let confirmation =
+            verification_snapshot(79.0, "2026-01-01T00:02:00Z", Some("2030-01-01T00:00:00Z"));
+
+        assert_eq!(
+            confirmation_decision(&previous, &initial, &confirmation),
+            ConfirmationDecision::AcceptReverted
+        );
+    }
+
+    #[test]
+    fn codex_log_style_quota_rebound_does_not_publish_the_transient_recovery() {
+        // This mirrors the observed Codex pattern: used 75% (25% remaining),
+        // then a one-off used 6% (94% remaining), followed by used 82%
+        // (18% remaining). The middle response must never become the snapshot.
+        let previous =
+            verification_snapshot(75.0, "2026-01-01T00:00:00Z", Some("2030-01-01T00:00:00Z"));
+        let transient_recovery =
+            verification_snapshot(6.0, "2026-01-01T00:01:00Z", Some("2030-01-01T00:00:00Z"));
+        let rebound =
+            verification_snapshot(82.0, "2026-01-01T00:02:00Z", Some("2030-01-01T00:00:00Z"));
+
+        assert_eq!(
+            verification_required(&previous, &transient_recovery),
+            Some(("5h".to_string(), VerificationReason::OptimisticPercentJump))
+        );
+        assert_eq!(
+            confirmation_decision(&previous, &transient_recovery, &rebound),
+            ConfirmationDecision::AcceptReverted
+        );
+    }
+
+    #[test]
+    fn invalid_reset_at_is_confirmed_before_a_new_sample_is_published() {
+        let previous =
+            verification_snapshot(40.0, "2026-01-01T00:00:00Z", Some("2030-01-01T00:00:00Z"));
+        let initial = verification_snapshot(40.0, "2026-01-01T00:01:00Z", Some("not-a-time"));
+        let confirmation =
+            verification_snapshot(40.0, "2026-01-01T00:02:00Z", Some("2030-01-01T00:00:00Z"));
+
+        assert_eq!(
+            verification_required(&previous, &initial),
+            Some(("5h".to_string(), VerificationReason::InvalidResetAt))
+        );
+        assert_eq!(
+            confirmation_decision(&previous, &initial, &confirmation),
+            ConfirmationDecision::AcceptReverted
+        );
+    }
+
+    #[test]
+    fn repeated_invalid_reset_at_preserves_the_previous_snapshot_as_stale() {
+        let previous =
+            verification_snapshot(40.0, "2026-01-01T00:00:00Z", Some("2030-01-01T00:00:00Z"));
+        let initial = verification_snapshot(40.0, "2026-01-01T00:01:00Z", Some("not-a-time"));
+        let confirmation =
+            verification_snapshot(40.0, "2026-01-01T00:02:00Z", Some("still-not-a-time"));
+
+        assert_eq!(
+            confirmation_decision(&previous, &initial, &confirmation),
+            ConfirmationDecision::PreservePrevious
+        );
+        let pending = verification_pending_provider(
+            &previous,
+            Some(&confirmation),
+            VerificationReason::InvalidResetAt,
+        );
+        assert_eq!(pending.status, "stale");
+        assert_eq!(pending.windows[0].confidence, "unknown");
+    }
+
+    #[test]
+    fn regressed_provider_timestamp_requires_confirmation() {
+        let previous =
+            verification_snapshot(40.0, "2026-01-01T00:02:00Z", Some("2030-01-01T00:00:00Z"));
+        let candidate =
+            verification_snapshot(40.0, "2026-01-01T00:01:00Z", Some("2030-01-01T00:00:00Z"));
+
+        assert_eq!(
+            verification_required(&previous, &candidate),
+            Some((
+                "<provider>".to_string(),
+                VerificationReason::RegressedProviderUpdatedAt
+            ))
+        );
+    }
+
+    #[test]
+    fn refresh_confirms_an_optimistic_jump_and_records_the_verification_flow() {
+        let _cache_guard = isolate_snapshot_cache();
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let provider = remote_provider(&temp, "remote-a", "Remote A", true, 80.0);
+        let provider_dir = match &provider {
+            ProviderConfig::Remote { provider_dir, .. } => {
+                provider_dir.clone().expect("provider dir")
+            }
+        };
+        std::fs::write(
+            provider_dir.join("provider.cjs"),
+            r#"
+const fs = require("node:fs");
+const path = require("node:path");
+const statePath = path.join(__dirname, "verification-state.txt");
+const count = Number(fs.existsSync(statePath) ? fs.readFileSync(statePath, "utf8") : "0");
+fs.writeFileSync(statePath, String(count + 1));
+const usedPercent = count === 0 ? 5 : 3;
+console.log(JSON.stringify({
+  status: "ok",
+  updatedAt: new Date().toISOString(),
+  windows: [{
+    id: "5h",
+    label: "5h",
+    usedPercent,
+    resetAt: "2030-01-01T00:00:00Z",
+    confidence: "exact"
+  }]
+}));
+"#,
+        )
+        .expect("write sequenced provider");
+        let config = test_config(vec![provider]);
+        save_config_to_path(&path, &config).expect("save config");
+
+        *snapshot_cache().lock().expect("lock") = Some(AppSnapshot {
+            schema_version: 1,
+            providers: vec![verification_snapshot(
+                80.0,
+                "2026-01-01T00:00:00Z",
+                Some("2030-01-01T00:00:00Z"),
+            )],
+            refreshed_at: "2026-01-01T00:00:00Z".to_string(),
+        });
+
+        let refreshed =
+            refresh_provider_from_config_path(&path, "remote-a").expect("refresh provider");
+        assert_eq!(refreshed.providers[0].status, "ok");
+        assert_eq!(refreshed.providers[0].windows[0].used_percent, Some(3.0));
+
+        let log = fs::read_to_string(path.with_file_name("quotabarwin.log")).expect("read log");
+        assert!(log.contains("quota verification detected id=remote-a windowId=5h"));
+        assert!(log.contains("quota verification refresh started providerId=remote-a candidates=1"));
+        assert!(log.contains("quota verification finished id=remote-a windowId=5h"));
+        assert!(log.contains("outcome=confirmed"));
     }
 
     #[test]

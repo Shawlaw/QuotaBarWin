@@ -34,6 +34,21 @@ English version: [`cli.en.md`](cli.en.md)。
 
 可选 `--config C:\path\config.quotaBarWin.json` 使用明确的本地配置文件，方便隔离测试环境。不要在命令行中传入 token、cookie、API key 或代理凭据；仍应使用已有的 `${secret:...}`、`${env:...}` 和 `${file:...}` 配置方式。
 
+## 异常额度确认
+
+刷新时，QuotaBarWin 会把新结果与最后已确认的快照比较。若发现 Provider 时间戳或窗口
+`resetAt` 无效/倒退，或同一窗口的已用百分比突然下降至少 20 个百分点（即剩余额度突然
+增加），CLI 会保留旧快照并立即只重跑该 Provider 一次确认。
+
+第二次结果回到旧区间时，会采用第二次结果；两次都落在相近的新额度区间时，会采用第二次
+结果。若确认请求失败、仍有无效时间，或两次新值相差过大，则保留旧值并把 Provider 标记为
+`stale`、窗口置信度标记为 `unknown`。因此 `check` 会返回 `unknown`（退出码 `11`），不会
+把未经确认的“额度恢复”当成可以继续高消耗工作的依据。
+
+`quotabarwin.log` 会记录不含凭据和额度原始值的流程事件，例如
+`quota verification detected`、`quota verification refresh started` 与
+`quota verification finished outcome=confirmed|reverted|pending`，用于排查上游响应波动。
+
 ## Provider 校验
 
 `validate` 用于 Provider 作者、CI 和排障场景。默认不会执行 source script 或发起 Provider API 请求；只有显式传入 `--run` 时才会执行。

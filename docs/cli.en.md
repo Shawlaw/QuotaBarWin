@@ -34,6 +34,27 @@ With `--provider ID --refresh`, the CLI refreshes only that instance. It refresh
 
 Use `--config C:\path\config.quotaBarWin.json` to select an explicit local config, for example in an isolated test environment. Do not pass tokens, cookies, API keys, or proxy credentials on the command line. Continue to use the existing `${secret:...}`, `${env:...}`, and `${file:...}` configuration mechanisms.
 
+## Suspicious quota confirmation
+
+During a refresh, QuotaBarWin compares a new result with the last confirmed
+snapshot. If a Provider timestamp or window `resetAt` is invalid or regresses,
+or a window's used percentage suddenly drops by at least 20 percentage points
+(meaning quota suddenly increases), the CLI keeps the prior snapshot and
+immediately reruns only that Provider once for confirmation.
+
+If the second result returns to the prior range, the second result is used. If
+both observations remain within a similar new quota range, the second result is
+used. If confirmation fails, still has invalid time data, or the two new values
+are too far apart, QuotaBarWin retains the prior value and marks the Provider
+`stale` and the windows `unknown`. `check` therefore returns `unknown` (exit
+code `11`) and never treats an unconfirmed quota restoration as permission to
+continue quota-intensive work.
+
+`quotabarwin.log` records credential-free flow events such as `quota
+verification detected`, `quota verification refresh started`, and `quota
+verification finished outcome=confirmed|reverted|pending` for diagnosing
+upstream response fluctuations.
+
 ## Provider validation
 
 `validate` is for Provider authors, CI, and troubleshooting. By default it does not run the source script or make Provider API requests; it runs only when `--run` is explicitly supplied.
