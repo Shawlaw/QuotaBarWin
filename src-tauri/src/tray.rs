@@ -405,6 +405,7 @@ pub fn reset_tray_popup_size(app: AppHandle) -> Result<(), String> {
                 window.is_focused()
             ),
         );
+        allow_size_save_skip_for_auto_resize();
         if let Err(error) = window.set_size(LogicalSize::new(size.width, size.height)) {
             log_tray_popup_event(
                 &app,
@@ -413,8 +414,30 @@ pub fn reset_tray_popup_size(app: AppHandle) -> Result<(), String> {
             );
             return Err(error.to_string());
         }
-        config::clear_tray_popup_size_for_app(&app)?;
-        log_tray_popup_event(&app, LogLevel::Info, "reset size succeeded");
+        if let Err(error) = config::save_tray_popup_size_for_app(&app, size) {
+            log_tray_popup_event(
+                &app,
+                LogLevel::Warn,
+                &format!("reset size persistence failed error={error}"),
+            );
+            return Err(error);
+        }
+        let actual_size = window.outer_size().ok();
+        let scale_factor = window.scale_factor().unwrap_or(1.0);
+        log_tray_popup_event(
+            &app,
+            LogLevel::Info,
+            &format!(
+                "reset size succeeded requestedLogicalWidth={} requestedLogicalHeight={} actualPhysicalWidth={} actualPhysicalHeight={} scaleFactor={} persistedLogicalWidth={} persistedLogicalHeight={}",
+                size.width,
+                size.height,
+                actual_size.map(|actual| actual.width).unwrap_or_default(),
+                actual_size.map(|actual| actual.height).unwrap_or_default(),
+                scale_factor,
+                size.width,
+                size.height
+            ),
+        );
     } else {
         log_tray_popup_event(
             &app,
@@ -473,12 +496,16 @@ pub fn set_tray_popup_auto_height(app: AppHandle, height: f64) -> Result<(), Str
         }
     }
 
+    let actual_size = window.outer_size().ok();
     log_tray_popup_event(
         &app,
-        LogLevel::Debug,
+        LogLevel::Info,
         &format!(
-            "auto height applied width={} height={}",
-            size.width, size.height
+            "auto height applied requestedLogicalWidth={} requestedLogicalHeight={} actualPhysicalWidth={} actualPhysicalHeight={}",
+            size.width,
+            size.height,
+            actual_size.map(|actual| actual.width).unwrap_or_default(),
+            actual_size.map(|actual| actual.height).unwrap_or_default()
         ),
     );
     Ok(())
@@ -843,15 +870,24 @@ pub fn save_tray_popup_size_after_resize(
     }
 
     let logical_size = tray_popup_logical_size_from_physical(size, scale_factor);
-    let _ = config::save_tray_popup_size_for_app(app, logical_size);
-    log_tray_popup_event(
-        app,
-        LogLevel::Debug,
-        &format!(
-            "size saved physicalWidth={} physicalHeight={} scaleFactor={} logicalWidth={} logicalHeight={}",
-            size.width, size.height, scale_factor, logical_size.width, logical_size.height
+    match config::save_tray_popup_size_for_app(app, logical_size) {
+        Ok(()) => log_tray_popup_event(
+            app,
+            LogLevel::Info,
+            &format!(
+                "size persisted source=userResize physicalWidth={} physicalHeight={} scaleFactor={} logicalWidth={} logicalHeight={}",
+                size.width, size.height, scale_factor, logical_size.width, logical_size.height
+            ),
         ),
-    );
+        Err(error) => log_tray_popup_event(
+            app,
+            LogLevel::Warn,
+            &format!(
+                "size persistence failed source=userResize physicalWidth={} physicalHeight={} scaleFactor={} logicalWidth={} logicalHeight={} error={error}",
+                size.width, size.height, scale_factor, logical_size.width, logical_size.height
+            ),
+        ),
+    }
 }
 
 #[tauri::command]
@@ -1394,6 +1430,14 @@ mod tests {
         assert!(!should_save_tray_popup_size_on_resize());
         allow_size_save_for_resize();
         assert!(should_save_tray_popup_size_on_resize());
+    }
+
+    #[test]
+    fn reset_size_revokes_pending_user_resize_persistence() {
+        allow_size_save_for_resize();
+        allow_size_save_skip_for_auto_resize();
+
+        assert!(!should_save_tray_popup_size_on_resize());
     }
 
     #[test]

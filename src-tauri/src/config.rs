@@ -729,16 +729,6 @@ pub fn save_tray_popup_size_for_app(app: &AppHandle, size: TrayPopupSize) -> Res
     save_config_to_path(&path, &config)
 }
 
-pub fn clear_tray_popup_size_for_app(app: &AppHandle) -> Result<(), String> {
-    let path = config_path_for_app(app)?;
-    let mut config = load_or_create_config(&path)?.config;
-    if config.tray_popup_size.is_none() {
-        return Ok(());
-    }
-    config.tray_popup_size = None;
-    save_config_to_path(&path, &config)
-}
-
 pub fn resolve_secret_value(value: &str, config_dir: &Path) -> Result<String, String> {
     if let Some(name) = value
         .strip_prefix("${env:")

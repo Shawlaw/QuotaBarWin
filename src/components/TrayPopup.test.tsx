@@ -517,11 +517,16 @@ test("tray_popup_shows_unhealthy_provider_in_title", async () => {
 
 test("tray_popup_starts_native_dragging_from_titlebar", async () => {
   renderWithEnglish(<TrayPopup />);
+  const titlebar = screen.getByTestId("tray-popup-titlebar");
 
-  fireEvent.mouseDown(screen.getByTestId("tray-popup-titlebar"), { button: 2 });
+  fireEvent.mouseDown(titlebar, { button: 2 });
   expect(mocks.startDraggingCurrentWindow).not.toHaveBeenCalled();
 
-  fireEvent.mouseDown(screen.getByTestId("tray-popup-titlebar"), { button: 0 });
+  fireEvent.mouseDown(titlebar, { button: 0, clientX: 20, clientY: 20 });
+  fireEvent.mouseMove(titlebar, { buttons: 1, clientX: 22, clientY: 22 });
+  expect(mocks.startDraggingCurrentWindow).not.toHaveBeenCalled();
+
+  fireEvent.mouseMove(titlebar, { buttons: 1, clientX: 25, clientY: 24 });
 
   await waitFor(() =>
     expect(mocks.startDraggingCurrentWindow).toHaveBeenCalledTimes(1),
@@ -530,12 +535,18 @@ test("tray_popup_starts_native_dragging_from_titlebar", async () => {
 
 test("tray_popup_resets_size_from_titlebar_double_click", async () => {
   renderWithEnglish(<TrayPopup />);
+  const titlebar = screen.getByTestId("tray-popup-titlebar");
 
-  fireEvent.doubleClick(screen.getByTestId("tray-popup-titlebar"), { button: 0 });
+  fireEvent.mouseDown(titlebar, { button: 0, clientX: 20, clientY: 20, detail: 1 });
+  fireEvent.mouseUp(titlebar, { button: 0, clientX: 20, clientY: 20, detail: 1 });
+  fireEvent.mouseDown(titlebar, { button: 0, clientX: 20, clientY: 20, detail: 2 });
+  fireEvent.mouseUp(titlebar, { button: 0, clientX: 20, clientY: 20, detail: 2 });
+  fireEvent.doubleClick(titlebar, { button: 0, clientX: 20, clientY: 20, detail: 2 });
 
   await waitFor(() =>
     expect(mocks.resetTrayPopupSize).toHaveBeenCalledTimes(1),
   );
+  expect(mocks.startDraggingCurrentWindow).not.toHaveBeenCalled();
 });
 
 test("tray_popup_requests_auto_height_without_manual_size", async () => {

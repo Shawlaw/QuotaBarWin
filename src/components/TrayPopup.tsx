@@ -26,14 +26,18 @@ import type { AppConfig, AppSnapshot, ProviderSnapshot } from "../types";
 import { useI18n } from "../i18n";
 import { ProgressBar } from "./ProgressBar";
 
-const DEFAULT_TRAY_POPUP_WIDTH = 380;
-const DEFAULT_TRAY_POPUP_HEIGHT = 520;
 const TRAY_POPUP_AUTO_MIN_HEIGHT = 220;
 const TRAY_POPUP_AUTO_MAX_HEIGHT = 640;
+const TITLE_DRAG_START_DISTANCE = 4;
 
 type ProviderIssue = {
   provider: ProviderSnapshot;
   status: ProviderSnapshot["status"];
+};
+
+type TitleDragStart = {
+  x: number;
+  y: number;
 };
 
 const issueStatusPriority: Record<ProviderSnapshot["status"], number> = {
@@ -77,27 +81,8 @@ function numericCssValue(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function isDefaultTrayPopupSize(size: AppConfig["trayPopupSize"]): boolean {
-  if (!size) {
-    return false;
-  }
-
-  return (
-    Math.abs(size.width - DEFAULT_TRAY_POPUP_WIDTH) < 1 &&
-    Math.abs(size.height - DEFAULT_TRAY_POPUP_HEIGHT) < 1
-  );
-}
-
 function shouldAutoSizeTrayPopup(config: AppConfig | null): boolean {
-  if (!config) {
-    return false;
-  }
-
-  if (!config.trayPopupSize) {
-    return true;
-  }
-
-  return isDefaultTrayPopupSize(config.trayPopupSize);
+  return config?.trayPopupSize == null;
 }
 
 export function TrayPopup() {
@@ -108,6 +93,7 @@ export function TrayPopup() {
   const refreshInFlight = useRef(false);
   const lastHandledPresentationId = useRef(0);
   const lastRequestedAutoHeight = useRef<number | null>(null);
+  const pendingTitleDrag = useRef<TitleDragStart | null>(null);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -319,7 +305,27 @@ export function TrayPopup() {
       return;
     }
 
+    pendingTitleDrag.current = { x: event.clientX, y: event.clientY };
+  }
+
+  function onTitleMouseMove(event: MouseEvent<HTMLElement>) {
+    const start = pendingTitleDrag.current;
+    if (!start || (event.buttons & 1) === 0) {
+      return;
+    }
+
+    const distance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    if (distance < TITLE_DRAG_START_DISTANCE) {
+      return;
+    }
+
+    pendingTitleDrag.current = null;
+    event.preventDefault();
     void startDraggingCurrentWindow();
+  }
+
+  function cancelPendingTitleDrag() {
+    pendingTitleDrag.current = null;
   }
 
   function onTitleDoubleClick(event: MouseEvent<HTMLElement>) {
@@ -327,6 +333,8 @@ export function TrayPopup() {
       return;
     }
 
+    event.preventDefault();
+    cancelPendingTitleDrag();
     void resetTrayPopupSize()
       .then(async () => {
         lastRequestedAutoHeight.current = null;
@@ -364,6 +372,9 @@ export function TrayPopup() {
           data-testid="tray-popup-titlebar"
           title={t.tray.resetSize}
           onMouseDown={onTitleMouseDown}
+          onMouseMove={onTitleMouseMove}
+          onMouseUp={cancelPendingTitleDrag}
+          onMouseLeave={cancelPendingTitleDrag}
           onDoubleClick={onTitleDoubleClick}
         >
           <div className="tray-popup__top-row">
