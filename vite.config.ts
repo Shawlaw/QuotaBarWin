@@ -10,6 +10,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["src/test/setup.ts"],
-    globals: true
+    globals: true,
+    // Example provider scripts use Node's built-in test runner, not Vitest.
+    exclude: ["**/node_modules/**", "examples/remote-providers/**/*.test.cjs"]
   }
 });
