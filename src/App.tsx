@@ -317,7 +317,7 @@ function MainApp({ onLanguageChange }: MainAppProps) {
     };
   }, []);
 
-  async function persistConfig() {
+  async function persistConfig(options: { keepSettingsOpen?: boolean } = {}) {
     if (!config) {
       return;
     }
@@ -329,7 +329,9 @@ function MainApp({ onLanguageChange }: MainAppProps) {
       persistedConfigRef.current = config;
       setConfigStorageInfo(await getConfigStorageInfo());
       setSnapshot((current) => projectSnapshotForConfig(current, config));
-      setSettingsOpen(false);
+      if (!options.keepSettingsOpen) {
+        setSettingsOpen(false);
+      }
       if (needsDataRefresh) {
         await loadSnapshot();
       }

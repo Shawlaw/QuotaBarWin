@@ -39,7 +39,7 @@ type SettingsPanelProps = {
   onChange: (config: AppConfig) => void;
   onOpenConfigFolder: () => Promise<void>;
   onResetConfig: () => Promise<void>;
-  onSave: () => void | Promise<void>;
+  onSave: (options?: { keepSettingsOpen?: boolean }) => void | Promise<void>;
   onSetPortableMode: (enabled: boolean) => void;
 };
 
@@ -232,9 +232,13 @@ export function SettingsPanel({
   async function saveSettings() {
     setSaveMessage(t.settings.saving);
     try {
-      await onSave();
+      const returnToAddProvider = providerSettingsView === "sources";
+      await onSave({ keepSettingsOpen: returnToAddProvider });
       initialConfigRef.current = JSON.stringify(config);
       setSaveMessage(t.settings.saved);
+      if (returnToAddProvider) {
+        setProviderSettingsView("add");
+      }
       window.setTimeout(() => setSaveMessage(t.settings.noChanges), 1600);
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : t.settings.saveFailed);

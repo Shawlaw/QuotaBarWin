@@ -212,6 +212,7 @@ function renderSettings(
   initialConfig = configWithProviders([remoteProvider]),
   snapshotProviders: ProviderSnapshot[] = [],
   storageInfo: ConfigStorageInfo | null = configStorageInfo,
+  onSave: (options?: { keepSettingsOpen?: boolean }) => void | Promise<void> = () => undefined,
 ) {
   apiMocks.state.config = initialConfig;
 
@@ -231,7 +232,7 @@ function renderSettings(
           onChange={handleChange}
           onOpenConfigFolder={async () => undefined}
           onResetConfig={async () => undefined}
-          onSave={() => undefined}
+          onSave={onSave}
           onSetPortableMode={() => undefined}
           snapshotProviders={snapshotProviders}
         />
@@ -319,6 +320,35 @@ test("settings_add_provider_page_installs_catalog_provider", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Back to Settings" }));
   expect(await screen.findByText("Catalog Kimi")).toBeInTheDocument();
+});
+
+test("saving a provider source returns to the catalog and refreshes it with its proxy", async () => {
+  const onSave = vi.fn(async () => undefined);
+  renderSettings(configWithProviders([]), [], configStorageInfo, onSave);
+
+  fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
+  await screen.findByText("Catalog Kimi");
+  fireEvent.click(screen.getByRole("button", { name: "Manage Source" }));
+
+  fireEvent.change(screen.getByLabelText("Provider proxy URL (optional)"), {
+    target: { value: "socks5://127.0.0.1:1080" },
+  });
+  expect(screen.getByLabelText("Provider proxy URL (optional)")).toHaveAttribute(
+    "placeholder",
+    "http://host:port or socks5://host:port",
+  );
+  fireEvent.click(screen.getByTestId("save-settings-button"));
+
+  await waitFor(() =>
+    expect(onSave).toHaveBeenCalledWith({ keepSettingsOpen: true }),
+  );
+  expect(await screen.findByTestId("add-provider-page")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(apiMocks.previewRemoteProviderRegistry).toHaveBeenLastCalledWith(
+      "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json",
+      "socks5://127.0.0.1:1080",
+    ),
+  );
 });
 
 test("settings_edits_remote_env_vars_and_window_display", async () => {

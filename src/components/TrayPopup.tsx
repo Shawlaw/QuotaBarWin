@@ -253,7 +253,17 @@ export function TrayPopup() {
         const verticalPadding =
           numericCssValue(popupStyle.paddingTop) + numericCssValue(popupStyle.paddingBottom);
         const rowGap = numericCssValue(popupStyle.rowGap || popupStyle.gap);
-        const contentHeight = content.scrollHeight;
+        const contentStyle = window.getComputedStyle(content);
+        const contentChild = content.firstElementChild;
+        // The scroll container fills the remaining grid row. Its scrollHeight
+        // therefore includes empty viewport space; measure the natural content
+        // child instead so a single quota window can shrink the popup.
+        const contentHeight =
+          (contentChild instanceof HTMLElement
+            ? contentChild.getBoundingClientRect().height
+            : content.scrollHeight) +
+          numericCssValue(contentStyle.paddingTop) +
+          numericCssValue(contentStyle.paddingBottom);
         const headerHeight = header.getBoundingClientRect().height;
         const desiredHeight = Math.ceil(
           verticalPadding + headerHeight + rowGap + contentHeight
@@ -282,21 +292,19 @@ export function TrayPopup() {
       if (headerRef.current) {
         resizeObserver.observe(headerRef.current);
       }
-      if (contentRef.current) {
-        resizeObserver.observe(contentRef.current);
-      }
+      // Do not observe the scroll container or the browser window: native size
+      // changes alter their box size and would feed a user resize back into the
+      // automatic-height command.
       const contentChild = contentRef.current?.firstElementChild;
       if (contentChild instanceof HTMLElement) {
         resizeObserver.observe(contentChild);
       }
     }
-    window.addEventListener("resize", requestAutoHeight);
 
     return () => {
       disposed = true;
       window.cancelAnimationFrame(frameId);
       resizeObserver?.disconnect();
-      window.removeEventListener("resize", requestAutoHeight);
     };
   }, [config, displayMode, hasSessionManualSize, isLoading, snapshot, t]);
 

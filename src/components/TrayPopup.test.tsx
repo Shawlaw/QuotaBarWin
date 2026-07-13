@@ -593,6 +593,89 @@ test("tray_popup_requests_auto_height_without_manual_size", async () => {
   }
 });
 
+test("tray_popup_uses_natural_content_height instead of the stretched scroll area", async () => {
+  const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "scrollHeight",
+  );
+  const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+
+  const singleWindowSnapshot: AppSnapshot = {
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:00:00+08:00",
+    providers: [
+      {
+        id: "single-provider",
+        name: "Single Provider",
+        status: "ok",
+        source: "remote",
+        updatedAt: "2026-06-08T10:00:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [
+          {
+            id: "single-window",
+            label: "Single window",
+            used: 20,
+            limit: 100,
+            unit: "percent",
+            usedPercent: 20,
+            remainingPercent: 80,
+            resetAt: null,
+            resetText: null,
+            confidence: "estimated",
+          },
+        ],
+      },
+    ],
+  };
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get() {
+      return (this as HTMLElement).classList.contains("tray-popup__content") ? 500 : 0;
+    },
+  });
+  HTMLElement.prototype.getBoundingClientRect = function () {
+    const element = this as HTMLElement;
+    const height = element.classList.contains("tray-popup__header")
+      ? 48
+      : element.classList.contains("tray-popup__provider-groups")
+        ? 180
+        : 0;
+    return {
+      x: 0,
+      y: 0,
+      width: 0,
+      height,
+      top: 0,
+      right: 0,
+      bottom: height,
+      left: 0,
+      toJSON: () => ({}),
+    };
+  };
+
+  try {
+    renderWithEnglish(<TrayPopup />);
+    await waitFor(() => expect(mocks.listeners.snapshotUpdated).toBeDefined());
+    await act(async () => {
+      mocks.listeners.snapshotUpdated?.(singleWindowSnapshot);
+    });
+
+    await waitFor(() =>
+      expect(mocks.setTrayPopupAutoHeight).toHaveBeenLastCalledWith(228),
+    );
+  } finally {
+    if (scrollHeightDescriptor) {
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
+    } else {
+      delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+    }
+    HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+  }
+});
+
 test("tray_popup_skips_auto_height_with_manual_size", async () => {
   mocks.getConfig.mockResolvedValueOnce({
     schemaVersion: 14,
