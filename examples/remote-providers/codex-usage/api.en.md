@@ -37,11 +37,13 @@ The current parser depends on these fields:
   "rate_limit": {
     "primary_window": {
       "used_percent": 32,
-      "reset_after_seconds": 7200
+      "reset_after_seconds": 7200,
+      "limit_window_seconds": 18000
     },
     "secondary_window": {
       "used_percent": 18,
-      "reset_at": 1781913600
+      "reset_at": 1781913600,
+      "limit_window_seconds": 604800
     }
   }
 }
@@ -53,8 +55,8 @@ The current parser depends on these fields:
 
 | Raw field | Output | Notes |
 |-----------|--------|-------|
-| `rate_limit.primary_window` | `windows[].id = "5h"` | Primary window shown as `5h`. |
-| `rate_limit.secondary_window` | `windows[].id = "weekly"` | Secondary window shown as `Weekly limit`. |
+| `rate_limit.*_window.limit_window_seconds` | `windows[].id` | Prefer `18000` seconds for `5h` and `604800` seconds for `weekly`, without trusting primary / secondary position. |
+| `rate_limit.primary_window` / `secondary_window` | `windows[]` | When `limit_window_seconds` is missing or unknown, retain the legacy mapping: primary is `5h`, secondary is `weekly`. |
 | `used_percent` | `windows[].usedPercent` | Converted to a number. |
 | `100 - used_percent` | `windows[].remainingPercent` | Remaining percentage, floored at 0. |
 | `reset_at` | `windows[].resetAt` | Unix epoch seconds converted to ISO time. |
@@ -68,8 +70,8 @@ The Codex usage API currently reports percentages rather than absolute counters,
 
 | Window ID | Label | Source |
 |-----------|-------|--------|
-| `5h` | `5h` | `rate_limit.primary_window`. |
-| `weekly` | `Weekly limit` | `rate_limit.secondary_window`. |
+| `5h` | `5h` | Window with `limit_window_seconds = 18000`; falls back to `primary_window` when absent. |
+| `weekly` | `Weekly limit` | Window with `limit_window_seconds = 604800`; falls back to `secondary_window` when absent. |
 
 ## Errors And Status
 

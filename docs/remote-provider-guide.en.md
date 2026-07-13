@@ -372,7 +372,7 @@ Example raw Codex usage response:
 }
 ```
 
-The Codex example reports percentages rather than absolute counters, so `used` and `limit` stay `null`, `used_percent` becomes `usedPercent`, and reset values are converted from seconds or relative seconds into ISO timestamps.
+The Codex example identifies its 5h and weekly windows from `limit_window_seconds`, avoiding an API swap of `primary_window` / `secondary_window`; when that field is absent, it retains the legacy positional mapping. It reports percentages rather than absolute counters, so `used` and `limit` stay `null`, `used_percent` becomes `usedPercent`, and reset values are converted from seconds or relative seconds into ISO timestamps.
 
 Example raw DeepSeek balance response:
 

@@ -70,7 +70,7 @@ Examples:
 
 - BigModel maps `data.limits[]` to `windows[]`, with stable IDs like `tokens-limit-6-1`, plus `currentValue -> used`, `usage -> limit`, `percentage -> usedPercent`, and `nextResetTime -> resetAt`.
 - Kimi maps the 300-minute `limits[].detail` entry to id `300-minute` with label `5h`, maps `usage` to id `usage` with label `Weekly limit`, and derives total quota usage from `totalQuota.limit - totalQuota.remaining`.
-- Codex maps `rate_limit.primary_window` to id/label `5h` and `rate_limit.secondary_window` to id `weekly` with label `Weekly limit`; because the API reports percentages, `used` and `limit` remain `null`.
+- Codex prefers `limit_window_seconds`: 18000 seconds maps to id/label `5h`, and 604800 seconds maps to id `weekly` with label `Weekly limit`, avoiding an API swap of primary / secondary positions. When the field is absent, it retains the legacy primary/secondary mapping. Because the API reports percentages, `used` and `limit` remain `null`.
 - DeepSeek maps each `balance_infos[]` currency to a stable id like `balance-cny`. Because the API reports current balance rather than a quota limit, set optional local env vars such as `DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200` and `DEEPSEEK_BALANCE_WARNING_CNY=20` when you want a progress bar and absolute low-balance warning.
 
 ## Updating checksums

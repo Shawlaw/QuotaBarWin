@@ -37,11 +37,13 @@ Token 和 account id 来源按优先级读取：
   "rate_limit": {
     "primary_window": {
       "used_percent": 32,
-      "reset_after_seconds": 7200
+      "reset_after_seconds": 7200,
+      "limit_window_seconds": 18000
     },
     "secondary_window": {
       "used_percent": 18,
-      "reset_at": 1781913600
+      "reset_at": 1781913600,
+      "limit_window_seconds": 604800
     }
   }
 }
@@ -53,8 +55,8 @@ Token 和 account id 来源按优先级读取：
 
 | 原始字段 | 输出位置 | 说明 |
 |----------|----------|------|
-| `rate_limit.primary_window` | `windows[].id = "5h"` | 主窗口显示为 `5h`。 |
-| `rate_limit.secondary_window` | `windows[].id = "weekly"` | 次窗口显示为 `Weekly limit`。 |
+| `rate_limit.*_window.limit_window_seconds` | `windows[].id` | 优先按 `18000` 秒识别为 `5h`，按 `604800` 秒识别为 `weekly`，不依赖 primary / secondary 位置。 |
+| `rate_limit.primary_window` / `secondary_window` | `windows[]` | `limit_window_seconds` 缺失或未知时，兼容旧响应：primary 映射为 `5h`、secondary 映射为 `weekly`。 |
 | `used_percent` | `windows[].usedPercent` | 转为数字。 |
 | `100 - used_percent` | `windows[].remainingPercent` | 剩余百分比，下限为 0。 |
 | `reset_at` | `windows[].resetAt` | Unix epoch 秒转 ISO 时间。 |
@@ -68,8 +70,8 @@ Codex usage API 当前主要返回百分比，不返回绝对计数，所以脚�
 
 | 窗口 ID | Label | 来源 |
 |---------|-------|------|
-| `5h` | `5h` | `rate_limit.primary_window`。 |
-| `weekly` | `Weekly limit` | `rate_limit.secondary_window`。 |
+| `5h` | `5h` | `limit_window_seconds = 18000` 的窗口；缺失时回退为 `primary_window`。 |
+| `weekly` | `Weekly limit` | `limit_window_seconds = 604800` 的窗口；缺失时回退为 `secondary_window`。 |
 
 ## 错误与状态
 

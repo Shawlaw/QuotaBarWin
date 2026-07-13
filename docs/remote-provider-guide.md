@@ -297,9 +297,9 @@ console.log(JSON.stringify({
   `nextResetTime -> resetAt`。
 - Kimi：将 300-minute `limits[].detail` 映射为 `300-minute` / `5h`，将 `usage`
   映射为 weekly，并从 `totalQuota.limit - totalQuota.remaining` 推导总额度用量。
-- Codex：将 `rate_limit.primary_window` 映射为 `5h`，将
-  `rate_limit.secondary_window` 映射为 `weekly`；因为 API 主要返回百分比，
-  `used` 和 `limit` 可以为 `null`。
+- Codex：优先按 `limit_window_seconds` 识别 5 小时和周窗口，避免 API 调换
+  `primary_window` / `secondary_window` 的位置；该字段缺失时兼容旧的位置映射。因为 API
+  主要返回百分比，`used` 和 `limit` 可以为 `null`。
 - DeepSeek：将每个 `balance_infos[]` 货币映射为类似 `balance-cny` 的窗口，
   `remaining` 为 `total_balance`，`unit` 为币种。可用本地 env var 提供参考总额和
   低余额阈值。

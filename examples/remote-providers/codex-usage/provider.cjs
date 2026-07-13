@@ -8,6 +8,8 @@ const tls = require("node:tls");
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const CODEX_USAGE_TIMEOUT_MS = 30_000;
 const PROVIDER_ID = process.env.QBWIN_PROVIDER_ID || "codex-usage";
+const CODEX_SESSION_WINDOW_SECONDS = 5 * 60 * 60;
+const CODEX_WEEKLY_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 
 async function main() {
   logStep("info", "provider.start", "Codex provider started");
@@ -33,21 +35,20 @@ async function main() {
   // {
   //   plan_type, credits,
   //   rate_limit: {
-  //     primary_window: { used_percent, reset_at, reset_after_seconds },
-  //     secondary_window: { used_percent, reset_at, reset_after_seconds }
+  //     primary_window: { used_percent, reset_at, reset_after_seconds, limit_window_seconds },
+  //     secondary_window: { used_percent, reset_at, reset_after_seconds, limit_window_seconds }
   //   }
   // }
-  // The two rate-limit windows become provider-snapshot-v1 windows; account and
-  // plan details stay in metadata.
+  // Match semantic windows by duration instead of trusting primary/secondary
+  // position. Codex can return those positions swapped. Without a duration,
+  // retain the legacy primary=5h, secondary=weekly mapping.
+  const normalized = normalizeRateLimitWindows(raw?.rate_limit);
   const windows = [];
-  const primary = raw?.rate_limit?.primary_window;
-  if (primary && typeof primary.used_percent === "number") {
-    windows.push(windowFromUsage("5h", "5h", primary));
+  if (normalized.session) {
+    windows.push(windowFromUsage("5h", "5h", normalized.session));
   }
-
-  const secondary = raw?.rate_limit?.secondary_window;
-  if (secondary && typeof secondary.used_percent === "number") {
-    windows.push(windowFromUsage("weekly", "Weekly limit", secondary));
+  if (normalized.weekly) {
+    windows.push(windowFromUsage("weekly", "Weekly limit", normalized.weekly));
   }
   logStep("info", "snapshot.ready", "Codex snapshot ready", {
     status: windows.length > 0 ? "ok" : "warning",
@@ -513,6 +514,41 @@ function windowFromUsage(id, label, usage) {
   };
 }
 
+function normalizeRateLimitWindows(rateLimit) {
+  const primary = usageWindowOrNull(rateLimit?.primary_window);
+  const secondary = usageWindowOrNull(rateLimit?.secondary_window);
+  const candidates = [primary, secondary].filter(Boolean);
+
+  let session = candidates.find((window) => rateWindowRole(window) === "session") || null;
+  let weekly = candidates.find((window) => rateWindowRole(window) === "weekly") || null;
+
+  // Preserve the old mapping when the service does not send a usable duration.
+  // Exclude a recognized semantic lane so a window can never be emitted twice.
+  if (!session) {
+    session = [primary, secondary].find((window) => window && window !== weekly) || null;
+  }
+  if (!weekly) {
+    weekly = [secondary, primary].find((window) => window && window !== session) || null;
+  }
+
+  return { session, weekly };
+}
+
+function usageWindowOrNull(window) {
+  return window && typeof window.used_percent === "number" ? window : null;
+}
+
+function rateWindowRole(window) {
+  const seconds = numberOrNull(window?.limit_window_seconds);
+  if (seconds === CODEX_SESSION_WINDOW_SECONDS) {
+    return "session";
+  }
+  if (seconds === CODEX_WEEKLY_WINDOW_SECONDS) {
+    return "weekly";
+  }
+  return "unknown";
+}
+
 function resetIsoFromWindow(usage) {
   if (typeof usage.reset_at === "number" && usage.reset_at > 0) {
     return new Date(usage.reset_at * 1000).toISOString();
@@ -568,5 +604,6 @@ function logStep(level, stage, message, fields = {}) {
 
 module.exports = {
   firstNonEmpty,
+  normalizeRateLimitWindows,
   readCodexAuth
 };

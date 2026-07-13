@@ -67,7 +67,7 @@ Provider 窗口 ID 是面向用户配置的键。QuotaBarWin 支持用 `visibleW
 
 - BigModel 将 `data.limits[]` 映射到 `windows[]`，使用 `tokens-limit-6-1` 等稳定 ID，并将 `currentValue -> used`、`usage -> limit`、`percentage -> usedPercent`、`nextResetTime -> resetAt`。
 - Kimi 将 300 分钟 `limits[].detail` 条目映射为 id `300-minute`、label `5h`，将 `usage` 映射为 id `usage`、label `Weekly limit`，并从 `totalQuota.limit - totalQuota.remaining` 推导总额度用量。
-- Codex 将 `rate_limit.primary_window` 映射为 id/label `5h`，将 `rate_limit.secondary_window` 映射为 id `weekly`、label `Weekly limit`；因为 API 返回百分比，`used` 和 `limit` 保持为 `null`。
+- Codex 优先按 `limit_window_seconds` 将 18000 秒窗口映射为 id/label `5h`、604800 秒窗口映射为 id `weekly`、label `Weekly limit`，避免 API 调换 primary / secondary 位置；缺失该字段时兼容旧的 primary/secondary 映射。因为 API 返回百分比，`used` 和 `limit` 保持为 `null`。
 - DeepSeek 将每个 `balance_infos[]` 币种映射为 `balance-cny` 这样的稳定 ID。由于 API 返回的是当前余额而非额度上限，如需进度条和绝对低余额警告，可以设置 `DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200`、`DEEPSEEK_BALANCE_WARNING_CNY=20` 等本地环境变量。
 
 ## 更新 checksum
