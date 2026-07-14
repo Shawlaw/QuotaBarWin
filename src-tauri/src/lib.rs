@@ -92,8 +92,16 @@ pub fn run() {
             tray::create_tray(app.handle())?;
             let app_handle = app.handle().clone();
             match config::config_path_for_app(&app_handle).and_then(|path| {
-                let loaded = config::load_or_create_config(&path)?;
+                let mut loaded = config::load_or_create_config(&path)?;
                 let log = logger::LogSink::from_config_path(&path, &loaded.config);
+                if let Err(error) = config::repair_remote_provider_cache_paths(&path, &mut loaded.config)
+                {
+                    let _ = log.write_unfiltered(
+                        logger::LogLevel::Warn,
+                        "app",
+                        &format!("provider cache path migration failed: {error}"),
+                    );
+                }
                 let _ = log.write_unfiltered(
                     logger::LogLevel::Info,
                     "app",

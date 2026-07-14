@@ -221,7 +221,7 @@ Remote provider script cache:
 %APPDATA%\QuotaBarWin\providers\remote\<provider-id>\
 ```
 
-In portable mode, the remote provider cache is stored beside the exe with the rest of the portable data.
+In portable mode, the remote provider cache is stored beside the exe with the rest of the portable data. Switching storage modes or starting an updated app migrates existing Provider caches; a migration or config-write failure rolls back to avoid a partial move.
 
 Secret placeholders:
 

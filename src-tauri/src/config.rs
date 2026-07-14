@@ -724,6 +724,180 @@ pub fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(), String
     fs::write(path, contents).map_err(|error| error.to_string())
 }
 
+#[derive(Debug)]
+struct ProviderCacheMove {
+    source: PathBuf,
+    destination: PathBuf,
+}
+
+#[derive(Debug, Default)]
+struct ProviderCacheMigration {
+    moves: Vec<ProviderCacheMove>,
+    config_changed: bool,
+}
+
+impl ProviderCacheMigration {
+    fn rollback(&self) -> Result<(), String> {
+        let mut errors = Vec::new();
+        for moved in self.moves.iter().rev() {
+            if let Err(error) = move_provider_cache_dir(&moved.destination, &moved.source) {
+                errors.push(format!(
+                    "{} -> {}: {error}",
+                    moved.destination.display(),
+                    moved.source.display()
+                ));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+}
+
+fn copy_provider_cache_dir(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir(destination).map_err(|error| error.to_string())?;
+    for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type().map_err(|error| error.to_string())?;
+        if file_type.is_dir() {
+            copy_provider_cache_dir(&source_path, &destination_path)?;
+        } else {
+            fs::copy(&source_path, &destination_path).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn move_provider_cache_dir(source: &Path, destination: &Path) -> Result<(), String> {
+    if destination.exists() {
+        return Err(format!(
+            "destination already exists: {}",
+            destination.display()
+        ));
+    }
+    if !source.is_dir() {
+        return Err(format!(
+            "provider cache is not a directory: {}",
+            source.display()
+        ));
+    }
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    if fs::rename(source, destination).is_ok() {
+        return Ok(());
+    }
+
+    if let Err(error) = copy_provider_cache_dir(source, destination) {
+        let _ = fs::remove_dir_all(destination);
+        return Err(error);
+    }
+    if let Err(error) = fs::remove_dir_all(source) {
+        let rollback_error = fs::remove_dir_all(destination).err();
+        return Err(match rollback_error {
+            Some(rollback_error) => format!(
+                "failed to remove source {} after copying it: {error}; failed to remove copied destination {}: {rollback_error}",
+                source.display(),
+                destination.display()
+            ),
+            None => format!(
+                "failed to remove source {} after copying it: {error}",
+                source.display()
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn migrate_remote_provider_cache_dirs(
+    config: &mut AppConfig,
+    source_config_path: &Path,
+    destination_config_path: &Path,
+) -> Result<ProviderCacheMigration, String> {
+    let original_config = config.clone();
+    let mut migration = ProviderCacheMigration::default();
+
+    for provider in &mut config.providers {
+        let ProviderConfig::Remote {
+            id, provider_dir, ..
+        } = provider;
+        let source =
+            provider_dir
+                .clone()
+                .unwrap_or(crate::remote_provider_commands::remote_provider_dir(
+                    source_config_path,
+                    id,
+                )?);
+        let destination =
+            crate::remote_provider_commands::remote_provider_dir(destination_config_path, id)?;
+
+        if source != destination && source.exists() {
+            if let Err(error) = move_provider_cache_dir(&source, &destination) {
+                let rollback_error = migration.rollback().err();
+                *config = original_config;
+                return Err(match rollback_error {
+                    Some(rollback_error) => format!(
+                        "failed to move provider cache {} to {}: {error}; rollback failed: {rollback_error}",
+                        source.display(),
+                        destination.display()
+                    ),
+                    None => format!(
+                        "failed to move provider cache {} to {}: {error}",
+                        source.display(),
+                        destination.display()
+                    ),
+                });
+            }
+            migration.moves.push(ProviderCacheMove {
+                source: source.clone(),
+                destination: destination.clone(),
+            });
+        }
+
+        if provider_dir.as_ref() != Some(&destination) {
+            *provider_dir = Some(destination);
+            migration.config_changed = true;
+        }
+    }
+
+    Ok(migration)
+}
+
+fn restore_file(path: &Path, original: Option<&[u8]>) -> Result<(), String> {
+    match original {
+        Some(contents) => fs::write(path, contents).map_err(|error| error.to_string()),
+        None if path.exists() => fs::remove_file(path).map_err(|error| error.to_string()),
+        None => Ok(()),
+    }
+}
+
+pub fn repair_remote_provider_cache_paths(
+    config_path: &Path,
+    config: &mut AppConfig,
+) -> Result<bool, String> {
+    let original_config = config.clone();
+    let migration = migrate_remote_provider_cache_dirs(config, config_path, config_path)?;
+    if !migration.config_changed {
+        return Ok(false);
+    }
+    if let Err(error) = save_config_to_path(config_path, config) {
+        let rollback_error = migration.rollback().err();
+        *config = original_config;
+        return Err(match rollback_error {
+            Some(rollback_error) => format!(
+                "failed to persist repaired provider cache paths: {error}; rollback failed: {rollback_error}"
+            ),
+            None => format!("failed to persist repaired provider cache paths: {error}"),
+        });
+    }
+    Ok(true)
+}
+
 pub fn load_tray_popup_position_for_app(app: &AppHandle) -> Option<TrayPopupPosition> {
     let path = config_path_for_app(app).ok()?;
     load_or_create_config(&path)
@@ -884,16 +1058,49 @@ pub async fn set_portable_mode(app: AppHandle, enabled: bool) -> Result<ConfigSt
     let (portable_path, _, marker_path) = portable_paths_for_app(&app)?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let config = load_or_create_config(&current_path)?.config;
-        if enabled {
-            save_config_to_path(&portable_path, &config)?;
-            fs::write(&marker_path, "QuotaBarWin portable mode\n")
-                .map_err(|error| error.to_string())?;
+        let mut config = load_or_create_config(&current_path)?.config;
+        let destination_path = if enabled {
+            &portable_path
         } else {
-            save_config_to_path(&app_data_path, &config)?;
-            if marker_path.exists() {
-                fs::remove_file(&marker_path).map_err(|error| error.to_string())?;
-            }
+            &app_data_path
+        };
+        let destination_original = fs::read(destination_path).ok();
+        let migration =
+            migrate_remote_provider_cache_dirs(&mut config, &current_path, destination_path)?;
+
+        if let Err(error) = save_config_to_path(destination_path, &config) {
+            let rollback_error = migration.rollback().err();
+            return Err(match rollback_error {
+                Some(rollback_error) => format!(
+                    "failed to save config while switching storage mode: {error}; provider cache rollback failed: {rollback_error}"
+                ),
+                None => format!(
+                    "failed to save config while switching storage mode: {error}"
+                ),
+            });
+        }
+
+        let marker_result = if enabled {
+            fs::write(&marker_path, "QuotaBarWin portable mode\n").map_err(|error| error.to_string())
+        } else if marker_path.exists() {
+            fs::remove_file(&marker_path).map_err(|error| error.to_string())
+        } else {
+            Ok(())
+        };
+        if let Err(error) = marker_result {
+            let restore_error = restore_file(destination_path, destination_original.as_deref()).err();
+            let rollback_error = migration.rollback().err();
+            return Err(format!(
+                "failed to switch storage mode marker: {error}{}{}",
+                restore_error
+                    .as_ref()
+                    .map(|value| format!("; failed to restore destination config: {value}"))
+                    .unwrap_or_default(),
+                rollback_error
+                    .as_ref()
+                    .map(|value| format!("; provider cache rollback failed: {value}"))
+                    .unwrap_or_default()
+            ));
         }
         Ok::<(), String>(())
     })
@@ -1087,6 +1294,130 @@ mod tests {
 
         assert_eq!(loaded.config, config);
         assert!(loaded.recovery_messages.is_empty());
+    }
+
+    #[test]
+    fn provider_cache_migration_moves_cache_and_can_roll_back() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let source_config_path = temp.path().join("app-data").join("config.json");
+        let destination_config_path = temp.path().join("portable").join("config.json");
+        let source_cache =
+            crate::remote_provider_commands::remote_provider_dir(&source_config_path, "provider-a")
+                .expect("source cache path");
+        fs::create_dir_all(&source_cache).expect("create source cache");
+        fs::write(source_cache.join("provider.json"), "source cache").expect("write cache");
+
+        let mut config = default_config();
+        let mut provider = remote_provider_config("provider-a");
+        let ProviderConfig::Remote { provider_dir, .. } = &mut provider;
+        *provider_dir = Some(source_cache.clone());
+        config.providers.push(provider);
+
+        let migration = migrate_remote_provider_cache_dirs(
+            &mut config,
+            &source_config_path,
+            &destination_config_path,
+        )
+        .expect("migrate cache");
+        let destination_cache = crate::remote_provider_commands::remote_provider_dir(
+            &destination_config_path,
+            "provider-a",
+        )
+        .expect("destination cache path");
+
+        assert!(!source_cache.exists());
+        assert_eq!(
+            fs::read_to_string(destination_cache.join("provider.json")).expect("read cache"),
+            "source cache"
+        );
+        assert!(migration.config_changed);
+
+        migration.rollback().expect("roll back cache migration");
+        assert!(source_cache.exists());
+        assert!(!destination_cache.exists());
+    }
+
+    #[test]
+    fn provider_cache_migration_rolls_back_earlier_moves_when_later_cache_collides() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let source_config_path = temp.path().join("app-data").join("config.json");
+        let destination_config_path = temp.path().join("portable").join("config.json");
+        let source_first = crate::remote_provider_commands::remote_provider_dir(
+            &source_config_path,
+            "provider-first",
+        )
+        .expect("first source cache");
+        let source_second = crate::remote_provider_commands::remote_provider_dir(
+            &source_config_path,
+            "provider-second",
+        )
+        .expect("second source cache");
+        let destination_second = crate::remote_provider_commands::remote_provider_dir(
+            &destination_config_path,
+            "provider-second",
+        )
+        .expect("second destination cache");
+        for path in [&source_first, &source_second, &destination_second] {
+            fs::create_dir_all(path).expect("create cache directory");
+        }
+
+        let mut config = default_config();
+        for (id, cache) in [
+            ("provider-first", source_first.clone()),
+            ("provider-second", source_second.clone()),
+        ] {
+            let mut provider = remote_provider_config(id);
+            let ProviderConfig::Remote { provider_dir, .. } = &mut provider;
+            *provider_dir = Some(cache);
+            config.providers.push(provider);
+        }
+        let original_config = config.clone();
+
+        let error = migrate_remote_provider_cache_dirs(
+            &mut config,
+            &source_config_path,
+            &destination_config_path,
+        )
+        .expect_err("collision rejects migration");
+
+        assert!(error.contains("destination already exists"));
+        assert!(source_first.exists());
+        assert!(source_second.exists());
+        assert_eq!(config, original_config);
+    }
+
+    #[test]
+    fn repair_moves_legacy_provider_cache_to_active_config_directory() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let legacy_config_path = temp.path().join("app-data").join("config.json");
+        let portable_config_path = temp.path().join("portable").join("config.json");
+        let legacy_cache =
+            crate::remote_provider_commands::remote_provider_dir(&legacy_config_path, "provider-a")
+                .expect("legacy cache path");
+        fs::create_dir_all(&legacy_cache).expect("create legacy cache");
+        fs::write(legacy_cache.join("provider.json"), "legacy cache").expect("write cache");
+
+        let mut config = default_config();
+        let mut provider = remote_provider_config("provider-a");
+        let ProviderConfig::Remote { provider_dir, .. } = &mut provider;
+        *provider_dir = Some(legacy_cache.clone());
+        config.providers.push(provider);
+        save_config_to_path(&portable_config_path, &config).expect("save portable config");
+
+        assert!(
+            repair_remote_provider_cache_paths(&portable_config_path, &mut config)
+                .expect("repair cache paths")
+        );
+        let portable_cache = crate::remote_provider_commands::remote_provider_dir(
+            &portable_config_path,
+            "provider-a",
+        )
+        .expect("portable cache path");
+        assert!(!legacy_cache.exists());
+        assert!(portable_cache.join("provider.json").exists());
+        let loaded = load_or_create_config(&portable_config_path).expect("load repaired config");
+        let ProviderConfig::Remote { provider_dir, .. } = &loaded.config.providers[0];
+        assert_eq!(provider_dir.as_ref(), Some(&portable_cache));
     }
 
     #[test]
@@ -1460,7 +1791,10 @@ mod tests {
             migrated["schemaVersion"],
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
-        assert_eq!(migrated["providers"][0]["showInTray"], serde_json::json!(true));
+        assert_eq!(
+            migrated["providers"][0]["showInTray"],
+            serde_json::json!(true)
+        );
     }
 
     #[test]

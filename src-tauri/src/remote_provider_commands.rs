@@ -6,7 +6,7 @@ use std::{
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::{
     config::{
@@ -26,9 +26,21 @@ use crate::{
 const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 const REMOTE_PROVIDERS_DIR: &str = "providers/remote";
 
-fn remote_provider_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    Ok(app_data_dir.join(REMOTE_PROVIDERS_DIR).join(id))
+pub(crate) fn remote_provider_dir(config_path: &Path, id: &str) -> Result<PathBuf, String> {
+    let config_dir = config_path
+        .parent()
+        .ok_or_else(|| "Unable to resolve config directory for provider cache".to_string())?;
+    Ok(config_dir.join(REMOTE_PROVIDERS_DIR).join(id))
+}
+
+fn cached_provider_dir(config_path: &Path, provider: &ProviderConfig) -> Result<PathBuf, String> {
+    match provider {
+        ProviderConfig::Remote {
+            provider_dir: Some(provider_dir),
+            ..
+        } => Ok(provider_dir.clone()),
+        ProviderConfig::Remote { id, .. } => remote_provider_dir(config_path, id),
+    }
 }
 
 fn provider_id(provider: &ProviderConfig) -> &str {
@@ -169,18 +181,13 @@ pub async fn get_installed_remote_provider_manifest(
     id: String,
 ) -> Result<ProviderManifest, String> {
     let path = config_path_for_app(&app)?;
-    let app_handle = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let loaded = load_or_create_config(&path)?;
         let provider = find_provider_config(&loaded.config, &id)
             .ok_or_else(|| "provider not found".to_string())?;
-        let ProviderConfig::Remote { provider_dir, .. } = provider;
-        let provider_dir = match provider_dir {
-            Some(path) => path.clone(),
-            None => remote_provider_dir(&app_handle, &id)
-                .map_err(|e| format!("failed to resolve cache directory: {e}"))?,
-        };
+        let provider_dir = cached_provider_dir(&path, provider)
+            .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
         load_cached_manifest(&provider_dir).map_err(|e| e.to_string())
     })
     .await
@@ -188,7 +195,6 @@ pub async fn get_installed_remote_provider_manifest(
 }
 
 fn install_remote_provider_from_manifest(
-    app_handle: &AppHandle,
     path: &Path,
     url: &str,
     proxy_url: Option<&str>,
@@ -288,7 +294,7 @@ fn install_remote_provider_from_manifest(
         ),
     );
 
-    let provider_dir = remote_provider_dir(app_handle, &instance_id)
+    let provider_dir = remote_provider_dir(path, &instance_id)
         .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
 
     let parent = provider_dir
@@ -503,7 +509,6 @@ pub async fn install_remote_provider_manifest(
     auto_update: bool,
 ) -> Result<ProviderConfig, String> {
     let path = config_path_for_app(&app)?;
-    let app_handle = app.clone();
     let proxy_url_ref = proxy_url.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -539,7 +544,6 @@ pub async fn install_remote_provider_manifest(
 
         let manifest = parse_manifest(&manifest_text).map_err(|e| e.to_string())?;
         install_remote_provider_from_manifest(
-            &app_handle,
             &path,
             &url,
             proxy_url_ref.as_deref(),
@@ -560,7 +564,6 @@ pub async fn install_remote_provider_registry(
     auto_update: bool,
 ) -> Result<RegistryInstallResult, String> {
     let path = config_path_for_app(&app)?;
-    let app_handle = app.clone();
     let proxy_url_ref = proxy_url.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -737,7 +740,6 @@ pub async fn install_remote_provider_registry(
             };
 
             match install_remote_provider_from_manifest(
-                &app_handle,
                 &path,
                 &provider_url,
                 proxy_url_ref.as_deref(),
@@ -789,7 +791,6 @@ pub async fn install_remote_provider_registry(
 #[tauri::command]
 pub async fn remove_remote_provider(app: AppHandle, id: String) -> Result<(), String> {
     let path = config_path_for_app(&app)?;
-    let app_handle = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut loaded = load_or_create_config(&path)?;
@@ -799,6 +800,14 @@ pub async fn remove_remote_provider(app: AppHandle, id: String) -> Result<(), St
             LogLevel::Info,
             &format!("provider remove started id={id}"),
         );
+        let provider_dir = loaded
+            .config
+            .providers
+            .iter()
+            .find(|provider| provider_id(provider) == id)
+            .map(|provider| cached_provider_dir(&path, provider))
+            .transpose()?
+            .unwrap_or(remote_provider_dir(&path, &id)?);
         loaded
             .config
             .providers
@@ -810,8 +819,6 @@ pub async fn remove_remote_provider(app: AppHandle, id: String) -> Result<(), St
             &format!("provider removed from config id={id}"),
         );
 
-        let provider_dir = remote_provider_dir(&app_handle, &id)
-            .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
         if provider_dir.exists() {
             fs::remove_dir_all(&provider_dir).map_err(|e| e.to_string())?;
             log_remote(
@@ -867,7 +874,6 @@ async fn check_remote_updates_inner(
     only_id: Option<String>,
 ) -> Result<Vec<UpdateInfo>, String> {
     let path = config_path_for_app(&app)?;
-    let app_handle = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut loaded = load_or_create_config(&path)?;
@@ -889,6 +895,7 @@ async fn check_remote_updates_inner(
             let ProviderConfig::Remote {
                 id,
                 manifest_url,
+                provider_dir,
                 proxy_url,
                 trusted_checksum,
                 auto_update,
@@ -910,8 +917,9 @@ async fn check_remote_updates_inner(
                 LogLevel::Info,
                 &format!("remote update check provider started id={} manifestUrl={}", id, manifest_url),
             );
-            let provider_dir = remote_provider_dir(&app_handle, id)
-                .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
+            let provider_dir = provider_dir
+                .clone()
+                .unwrap_or(remote_provider_dir(&path, id)?);
             let mut update = check_update(
                 &provider_dir,
                 manifest_url,
@@ -1064,7 +1072,6 @@ async fn check_remote_updates_inner(
 #[tauri::command]
 pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), String> {
     let path = config_path_for_app(&app)?;
-    let app_handle = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut loaded = load_or_create_config(&path)?;
@@ -1086,7 +1093,7 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
 
         let manifest_url = manifest_url.clone();
         let proxy_url = proxy_url.clone();
-        let provider_dir = remote_provider_dir(&app_handle, &id)
+        let provider_dir = cached_provider_dir(&path, provider)
             .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
 
         log_remote(

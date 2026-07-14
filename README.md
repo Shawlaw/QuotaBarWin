@@ -221,7 +221,7 @@ Windows AppData 配置：
 %APPDATA%\QuotaBarWin\providers\remote\<provider-id>\
 ```
 
-启用便携模式后，远程 Provider 缓存会改为使用 exe 同目录下的 portable 存储。
+启用便携模式后，远程 Provider 缓存会改为使用 exe 同目录下的 portable 存储。切换模式或启动新版应用时，会迁移已有的 Provider 缓存；迁移或写入配置失败时会回退，避免留下半迁移状态。
 
 Secret 占位符：
 
