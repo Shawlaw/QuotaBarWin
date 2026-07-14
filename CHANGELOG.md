@@ -2,6 +2,17 @@
 
 本文记录 QuotaBarWin 的用户可见变化。默认以简体中文维护；如果未来需要英文 release notes，可从本文件同步整理。
 
+## [1.0.3] - 2026-07-15
+
+### Changed
+
+- 安装源代理仅用于下载 registry、manifest 和 Provider 脚本；Provider 运行期代理改为优先使用其环境变量 `QBWIN_PROXY_URL`，未设置时才使用项目全局代理兜底。
+- 配置 schema 升至 16；升级时会清除旧版遗留的 Provider `proxyUrl`，避免它覆盖 Provider 自己的运行期代理配置。
+
+### Fixed
+
+- 修复 Provider 目录加载时旧网络请求晚于新请求返回，导致成功列表被“安装源没有数据”错误覆盖的问题。
+
 ## [1.0.2] - 2026-07-14
 
 ### Added
