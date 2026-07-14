@@ -273,4 +273,57 @@ describe("RemoteProviderSettings", () => {
       "http://proxy:8080"
     );
   });
+
+  test("late catalog failure does not overwrite a newer successful load", async () => {
+    let rejectInitialLoad: (reason?: unknown) => void = () => undefined;
+    let resolveLatestLoad: (entries: RemoteProviderCatalogEntry[]) => void = () => undefined;
+    const onPreviewRegistry = vi.fn(
+      (_url: string, proxyUrl: string | null) =>
+        new Promise<RemoteProviderCatalogEntry[]>((resolve, reject) => {
+          if (proxyUrl) {
+            resolveLatestLoad = resolve;
+          } else {
+            rejectInitialLoad = reject;
+          }
+        })
+    );
+    const initialSettings: RemoteProviderRegistrySettings = {
+      registryUrl: "https://example.com/registry.json",
+      providerProxyUrl: null,
+      autoUpdate: true
+    };
+    const { rerender } = renderRemoteProviderSettings({
+      registrySettings: initialSettings,
+      onPreviewRegistry
+    });
+
+    await waitFor(() => expect(onPreviewRegistry).toHaveBeenCalledTimes(1));
+    rerender(
+      <I18nProvider language="en">
+        <RemoteProviderSettings
+          view="add"
+          registrySettings={{
+            ...initialSettings,
+            providerProxyUrl: "socks5h://127.0.0.1:10818"
+          }}
+          installedProviderIds={[]}
+          onRegistrySettingsChange={vi.fn()}
+          onPreviewRegistry={onPreviewRegistry}
+          onInstallManifest={vi.fn(async () => installedProvider)}
+          onOpenGuide={vi.fn(async () => undefined)}
+          onBackToSettings={vi.fn()}
+          onBackToAddProvider={vi.fn()}
+          onManageSources={vi.fn()}
+        />
+      </I18nProvider>
+    );
+    await waitFor(() => expect(onPreviewRegistry).toHaveBeenCalledTimes(2));
+
+    resolveLatestLoad([{ ...catalog[0], displayName: "Fresh Catalog" }]);
+    expect(await screen.findByText("Fresh Catalog")).toBeInTheDocument();
+
+    rejectInitialLoad(new Error("Network error: stale request"));
+    await waitFor(() => expect(screen.getByText("Fresh Catalog")).toBeInTheDocument());
+    expect(screen.queryByText(/stale request/)).not.toBeInTheDocument();
+  });
 });

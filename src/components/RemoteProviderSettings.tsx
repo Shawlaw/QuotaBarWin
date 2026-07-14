@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   RemoteProviderCatalogEntry,
   RemoteProviderConfig,
@@ -113,6 +113,7 @@ export function RemoteProviderSettings({
   const [manifestChecksum, setManifestChecksum] = useState("");
   const [directInstallLoading, setDirectInstallLoading] = useState(false);
   const [installMessage, setInstallMessage] = useState<string | null>(null);
+  const catalogRequestId = useRef(0);
   const catalogSourceFingerprint = sourceFingerprint(sources);
 
   function persistSources(nextSources: RemoteProviderRegistrySource[]) {
@@ -159,9 +160,14 @@ export function RemoteProviderSettings({
   }
 
   async function loadCatalog() {
+    const requestId = ++catalogRequestId.current;
+    const isLatestRequest = () => requestId === catalogRequestId.current;
+
     if (enabledSources.length === 0) {
-      setCatalog([]);
-      setCatalogMessage(t.remoteProviders.noCatalogProviders);
+      if (isLatestRequest()) {
+        setCatalog([]);
+        setCatalogMessage(t.remoteProviders.noCatalogProviders);
+      }
       return;
     }
 
@@ -188,6 +194,10 @@ export function RemoteProviderSettings({
           }
         })
       );
+
+      if (!isLatestRequest()) {
+        return;
+      }
 
       const loadErrors = sourceResults
         .filter((result) => result.error)
@@ -240,14 +250,21 @@ export function RemoteProviderSettings({
           .join(" · ") || null
       );
     } finally {
-      setCatalogLoading(false);
+      if (isLatestRequest()) {
+        setCatalogLoading(false);
+      }
     }
   }
 
   useEffect(() => {
     if (view === "add") {
       void loadCatalog();
+      return () => {
+        // Invalidate a request that outlives this view or source configuration.
+        catalogRequestId.current += 1;
+      };
     }
+    catalogRequestId.current += 1;
     // Loading is intentionally tied to source fields, so returning from source
     // management reflects the latest draft without an extra click.
     // eslint-disable-next-line react-hooks/exhaustive-deps
