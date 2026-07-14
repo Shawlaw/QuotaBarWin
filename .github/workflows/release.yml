@@ -59,6 +59,17 @@ jobs:
           "artifact_name=quotabarwin-release($($versionName)_$commitId)" >> $env:GITHUB_OUTPUT
           "zip_name=QuotaBarWin_$($versionName)_windows_x64_portable_$commitId.zip" >> $env:GITHUB_OUTPUT
 
+      - name: Generate release notes
+        shell: pwsh
+        run: |
+          $versionName = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $changelog = Get-Content CHANGELOG.md -Raw
+          $pattern = "(?ms)^## \[$([regex]::Escape($versionName))\].*?(?=^## \[|\z)"
+          $notes = [regex]::Match($changelog, $pattern)
+          if (-not $notes.Success) { throw "CHANGELOG.md does not contain release notes for $versionName" }
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Set-Content -Path artifacts/release-notes.md -Value $notes.Value.Trim()
+
       - name: Create portable zip
         shell: pwsh
         run: |
@@ -86,3 +97,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/${{ steps.release_meta.outputs.zip_name }}
+          body_path: artifacts/release-notes.md

@@ -30,7 +30,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 
 - Platform: **Windows**
 - Distribution: **portable zip + single exe**
-- Current version: **v1.0.1**
+- Current version: **v1.0.2**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
 - Current config schema version: **15**
 
@@ -310,7 +310,7 @@ Windows releases are produced by `.github/workflows/release.yml`. The release wo
 QuotaBarWin_<version>_windows_x64_portable_<commit>.zip
 ```
 
-The zip includes `quotabarwin.portable`, so extracted releases use portable config beside the executable by default. On `v*` tags, the zip is uploaded as a GitHub Release asset; manual workflow runs keep it as an Actions artifact.
+The zip includes `quotabarwin.portable`, so extracted releases use portable config beside the executable by default. On `v*` tags, the zip is uploaded as a GitHub Release asset and the matching `CHANGELOG.md` section becomes the Release notes; manual workflow runs keep it as an Actions artifact.
 
 ---
 

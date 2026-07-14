@@ -136,6 +136,8 @@ fn release_workflow_yaml_is_valid() {
     assert!(workflow.contains("portable"));
     assert!(workflow.contains("quotabarwin.portable"));
     assert!(workflow.contains("Compute release metadata"));
+    assert!(workflow.contains("Generate release notes"));
+    assert!(workflow.contains("CHANGELOG.md does not contain release notes"));
     assert!(workflow
         .contains("zip_name=QuotaBarWin_$($versionName)_windows_x64_portable_$commitId.zip"));
     assert!(workflow.contains("softprops/action-gh-release@v2"));
@@ -144,4 +146,5 @@ fn release_workflow_yaml_is_valid() {
     assert!(workflow.contains("artifact_name=quotabarwin-release($($versionName)_$commitId)"));
     assert!(workflow.contains("steps.release_meta.outputs.artifact_name"));
     assert!(workflow.contains("steps.release_meta.outputs.zip_name"));
+    assert!(workflow.contains("body_path: artifacts/release-notes.md"));
 }

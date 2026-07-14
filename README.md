@@ -30,7 +30,7 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 
 - 平台：**Windows**
 - 分发方式：**绿色版 portable zip + 单 exe**
-- 当前版本：**v1.0.1**
+- 当前版本：**v1.0.2**
 - 技术栈：Tauri 2、Rust 2021、React 19、TypeScript、Vite
 - 当前配置 schema version：**15**
 
@@ -309,7 +309,7 @@ Windows release 由 `.github/workflows/release.yml` 生成。发布工作流构�
 QuotaBarWin_<version>_windows_x64_portable_<commit>.zip
 ```
 
-zip 内包含 `quotabarwin.portable`，解压后默认使用可执行文件旁的 portable 配置。推送 `v*` tag 时，zip 会上传为 GitHub Release asset；手动触发工作流时会保留为 Actions artifact。
+zip 内包含 `quotabarwin.portable`，解压后默认使用可执行文件旁的 portable 配置。推送 `v*` tag 时，zip 会上传为 GitHub Release asset，并自动将 `CHANGELOG.md` 中对应版本的段落写入 Release 说明；手动触发工作流时会保留为 Actions artifact。
 
 ---
 
