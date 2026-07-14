@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "time-flies",
+  "displayName": "光阴似箭 (Time Flies)",
+  "version": "1.0.0",
+  "description": "Shows the minutes remaining today, this week, this month, and this year in the local timezone.",
+  "runtime": "node",
+  "entry": "provider.cjs",
+  "requiredEnvVars": [],
+  "output": "provider-snapshot-v1",
+  "permissions": [],
+  "defaultConfig": {
+    "name": "光阴似箭",
+    "visibleWindowIds": ["today", "week-monday", "week-sunday", "month", "year"],
+    "windowLabelOverrides": {
+      "today": "本日余时",
+      "week-monday": "本周余时（周一开始）",
+      "week-sunday": "本周余时（周日开始）",
+      "month": "本月余时",
+      "year": "本年余时"
+    },
+    "timeoutSeconds": 5
+  },
+  "checksums": {
+    "source": "sha256:2d51c31f7b70805329d22039de7df9d3a363cc22f41728ece83952ef319a485a"
+  }
+}

@@ -20,6 +20,11 @@
       "id": "deepseek-balance",
       "providerUrl": "deepseek-balance/provider.json",
       "checksum": "sha256:d6159687d32a13ab615691e8792eed0b953bd66d6607ada5cba13fdcf58796bd"
+    },
+    {
+      "id": "time-flies",
+      "providerUrl": "time-flies/provider.json",
+      "checksum": "sha256:a98ac2abfe5626e9a5b1cce340f8b9f6a31e46f1316c838de7b1f2c9acc30afe"
     }
   ]
 }

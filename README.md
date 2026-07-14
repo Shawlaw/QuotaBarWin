@@ -79,6 +79,7 @@ QuotaBarWin 项目维护的 registry 当前包含以下 manifest；实际可安�
 | `bigmodel-coding-plan` | BigModel Coding Plan | 智谱 / BigModel coding plan 额度 | `BIGMODEL_API_KEY` |
 | `codex-usage` | Codex Usage | ChatGPT / Codex 5h 与 weekly 用量 | 默认读取本机 Codex auth，可用 `CODEX_ACCESS_TOKEN` 等覆盖；代理见第 5 节。 |
 | `deepseek-balance` | DeepSeek Balance | DeepSeek 按量付费余额 | `DEEPSEEK_API_KEY`，可选参考总额、低余额阈值和币种。 |
+| `time-flies` | 光阴似箭 (Time Flies) | 以分钟显示本日、本周、本月和本年余时 | 无；只读取本机时区和当前时间。 |
 
 ### 3. 安装 Provider
 

@@ -79,6 +79,7 @@ The QuotaBarWin-maintained registry currently contains these manifests; the actu
 | `bigmodel-coding-plan` | BigModel Coding Plan | Zhipu / BigModel coding plan quota | `BIGMODEL_API_KEY` |
 | `codex-usage` | Codex Usage | ChatGPT / Codex 5h and weekly usage | Reads local Codex auth by default; can be overridden with `CODEX_ACCESS_TOKEN`; proxy notes are in section 5. |
 | `deepseek-balance` | DeepSeek Balance | DeepSeek pay-as-you-go balance | `DEEPSEEK_API_KEY`, with optional reference total, low-balance threshold, and currency. |
+| `time-flies` | 光阴似箭 (Time Flies) | Minutes remaining today, this week, this month, and this year | None; uses only the local timezone and current time. |
 
 ### 3. Install A Provider
 

@@ -990,6 +990,7 @@ fn example_remote_provider_manifests_are_valid() {
         "bigmodel-coding-plan",
         "codex-usage",
         "deepseek-balance",
+        "time-flies",
     ] {
         let dir = examples_dir.join(provider_id);
         let manifest_path = dir.join("provider.json");

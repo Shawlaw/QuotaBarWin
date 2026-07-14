@@ -33,6 +33,7 @@ https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-provi
 | `bigmodel-coding-plan` | `GET https://open.bigmodel.cn/api/monitor/usage/quota/limit` | `BIGMODEL_API_KEY` | [`api.md`](bigmodel-coding-plan/api.md) / [`EN`](bigmodel-coding-plan/api.en.md) | 智谱 / BigModel 编程套餐额度。 |
 | `codex-usage` | `GET https://chatgpt.com/backend-api/wham/usage` | 默认无 | [`api.md`](codex-usage/api.md) / [`EN`](codex-usage/api.en.md) | ChatGPT / Codex 5h 与 weekly 用量。默认读取 `~/.codex/auth.json`；可选 `CODEX_ACCESS_TOKEN`、`CODEX_ACCOUNT_ID` 或 `CODEX_AUTH_FILE` 覆盖本地 Codex auth 文件；支持通过 `QBWIN_PROXY_URL` 注入运行时代理。 |
 | `deepseek-balance` | `GET https://api.deepseek.com/user/balance` | `DEEPSEEK_API_KEY` | [`api.md`](deepseek-balance/api.md) / [`EN`](deepseek-balance/api.en.md) | DeepSeek 按量付费余额。可选 `DEEPSEEK_BALANCE_REFERENCE_TOTAL`、`DEEPSEEK_BALANCE_WARNING` 和 `DEEPSEEK_BALANCE_CURRENCY`；也可以追加 `_CNY` 或其他币种代码做按币种覆盖。 |
+| `time-flies` | 本机时区与当前时间 | 无 | [`api.md`](time-flies/api.md) / [`EN`](time-flies/api.en.md) | 光阴似箭：以分钟显示本日、本周（周一 / 周日开始）、本月和本年的剩余时间；不访问网络或账号凭据。 |
 
 ## 使用方式
 
