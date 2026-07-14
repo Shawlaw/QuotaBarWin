@@ -32,7 +32,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 - Distribution: **portable zip + single exe**
 - Current version: **v1.0.2**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
-- Current config schema version: **15**
+- Current config schema version: **16**
 
 ---
 
@@ -111,7 +111,7 @@ When Codex usage needs a proxy, you can set it in that Provider's **Environment 
 HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
-The Codex usage script checks proxies in this order: `QBWIN_PROXY_URL`, `HTTPS_PROXY`, `HTTP_PROXY`, then `ALL_PROXY`. Supported protocols are `socks5:`, `socks5h:`, `http:`, and `https:`. If a proxy URL was configured for that Provider during installation, QuotaBarWin injects it as `QBWIN_PROXY_URL`, which has the highest priority. For complete request, auth, and proxy notes, see [`examples/remote-providers/codex-usage/api.en.md`](examples/remote-providers/codex-usage/api.en.md).
+The Codex usage script checks proxies in this order: the Provider environment variable `QBWIN_PROXY_URL`, the project-wide proxy, `HTTPS_PROXY`, `HTTP_PROXY`, then `ALL_PROXY`. Supported protocols are `socks5:`, `socks5h:`, `http:`, and `https:`. An installation-source proxy is used only to download registries, manifests, and scripts; it is never injected into a Provider runtime. For complete request, auth, and proxy notes, see [`examples/remote-providers/codex-usage/api.en.md`](examples/remote-providers/codex-usage/api.en.md).
 
 ### 6. Multiple Accounts
 

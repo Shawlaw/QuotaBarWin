@@ -15,8 +15,9 @@ Remote providers let you install quota providers from a hosted manifest + script
 The same manifest can be installed more than once to query multiple accounts
 for the same provider. QuotaBarWin generates a stable local provider id for
 each account instance, such as `kimi-coding` and `kimi-coding-2`, and each
-instance can have its own name, environment variables, proxy, timeout, and
-window display preferences.
+instance can have its own name, environment variables, timeout, and window
+display preferences. Configure runtime proxy through Provider environment
+variables; the project-wide proxy is only a fallback when that value is absent.
 
 ## Manifest format (`provider.json`)
 
@@ -207,7 +208,7 @@ The host injects these reserved environment variables before running the script:
 | `QBWIN_PROVIDER_VERSION` | Manifest `version`; omitted when not set. |
 | `QBWIN_PROVIDER_SOURCE_CHECKSUM` | Manifest `checksums.source`; omitted when not set. |
 | `QBWIN_PROVIDER_TIMEOUT_SECONDS` | Current host timeout in seconds. |
-| `QBWIN_PROXY_URL` | Optional; injected when a provider proxy is configured, so scripts can use it for network requests. Log only whether it is enabled or its protocol, never the full value. |
+| `QBWIN_PROXY_URL` | Optional; the Provider environment value takes priority. When absent, the host injects the project-wide proxy. An installation-source proxy is only used to download registries, manifests, and scripts. Log only whether it is enabled or its protocol, never the full value. |
 
 Node.js example:
 

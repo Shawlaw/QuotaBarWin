@@ -46,7 +46,7 @@ pub fn build_http_client(
     builder.build().map_err(|error| error.to_string())
 }
 
-fn select_proxy_url(
+pub fn select_proxy_url(
     per_provider_proxy: Option<&str>,
     global_proxy: Option<&ProxyConfig>,
 ) -> Option<String> {

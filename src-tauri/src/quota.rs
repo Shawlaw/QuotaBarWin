@@ -277,6 +277,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     let loaded = load_or_create_config(path)?;
     let log = LogSink::from_config_path(path, &loaded.config);
     let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let global_proxy = loaded.config.network_proxy.clone();
     let should_log_quota_data = loaded.config.log_quota_data;
     let cached = cached_snapshot_for_refresh(path, &loaded.config)?;
     let old_providers = cached
@@ -295,12 +296,12 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
         "quota",
         &format!("snapshot refresh started providers={enabled_count}"),
     );
-
     for provider in loaded.config.providers {
         let provider_id = provider_config_id(&provider).to_string();
         let results = run_provider_with_retry(
             provider.clone(),
             config_dir,
+            global_proxy.as_ref(),
             &loaded.recovery_messages,
             &[
                 std::time::Duration::from_secs(1),
@@ -313,6 +314,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
             results,
             old_providers,
             config_dir,
+            global_proxy.as_ref(),
             &loaded.recovery_messages,
             Some(&log),
         ) {
@@ -504,12 +506,19 @@ fn is_non_retryable_error(provider: &ProviderSnapshot) -> bool {
 fn run_provider_with_retry(
     provider: ProviderConfig,
     config_dir: &Path,
+    global_proxy: Option<&crate::proxy::ProxyConfig>,
     recovery_messages: &[String],
     delays: &[std::time::Duration],
     log: Option<&LogSink>,
 ) -> Vec<ProviderSnapshot> {
     let provider_id = provider_config_id(&provider).to_string();
-    let mut result = run_provider_config(provider.clone(), config_dir, recovery_messages, log);
+    let mut result = run_provider_config(
+        provider.clone(),
+        config_dir,
+        global_proxy,
+        recovery_messages,
+        log,
+    );
     for (attempt, delay) in delays.iter().enumerate() {
         if !should_retry_provider_result(&result) {
             break;
@@ -527,7 +536,13 @@ fn run_provider_with_retry(
             );
         }
         std::thread::sleep(*delay);
-        result = run_provider_config(provider.clone(), config_dir, recovery_messages, log);
+        result = run_provider_config(
+            provider.clone(),
+            config_dir,
+            global_proxy,
+            recovery_messages,
+            log,
+        );
     }
     result
 }
@@ -565,6 +580,7 @@ fn stabilize_provider_results(
     initial_results: Vec<ProviderSnapshot>,
     previous_providers: &[ProviderSnapshot],
     config_dir: &Path,
+    global_proxy: Option<&crate::proxy::ProxyConfig>,
     recovery_messages: &[String],
     log: Option<&LogSink>,
 ) -> Vec<ProviderSnapshot> {
@@ -613,6 +629,7 @@ fn stabilize_provider_results(
     let confirmation_results = run_provider_with_retry(
         provider_config.clone(),
         config_dir,
+        global_proxy,
         recovery_messages,
         &[
             std::time::Duration::from_secs(1),
@@ -854,6 +871,7 @@ fn verification_pending_provider(
 fn run_provider_config(
     provider: ProviderConfig,
     config_dir: &Path,
+    global_proxy: Option<&crate::proxy::ProxyConfig>,
     _recovery_messages: &[String],
     log: Option<&LogSink>,
 ) -> Vec<ProviderSnapshot> {
@@ -865,7 +883,6 @@ fn run_provider_config(
             provider_dir,
             runtime,
             resolved_runtime,
-            proxy_url,
             timeout_seconds,
             window_label_overrides,
             visible_window_ids,
@@ -877,7 +894,7 @@ fn run_provider_config(
             provider_dir.as_deref(),
             &runtime,
             resolved_runtime.as_deref(),
-            proxy_url.as_deref(),
+            global_proxy,
             timeout_seconds,
             config_dir,
             &env_vars,
@@ -903,6 +920,7 @@ pub fn refresh_provider_from_config_path(
     let loaded = load_or_create_config(path)?;
     let log = LogSink::from_config_path(path, &loaded.config);
     let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let global_proxy = loaded.config.network_proxy.clone();
     let should_log_quota_data = loaded.config.log_quota_data;
     let _ = log.write(
         LogLevel::Info,
@@ -928,6 +946,7 @@ pub fn refresh_provider_from_config_path(
     let refreshed_providers = run_provider_with_retry(
         provider.clone(),
         config_dir,
+        global_proxy.as_ref(),
         &loaded.recovery_messages,
         &[
             std::time::Duration::from_secs(1),
@@ -940,6 +959,7 @@ pub fn refresh_provider_from_config_path(
         refreshed_providers,
         &snapshot.providers,
         config_dir,
+        global_proxy.as_ref(),
         &loaded.recovery_messages,
         Some(&log),
     );

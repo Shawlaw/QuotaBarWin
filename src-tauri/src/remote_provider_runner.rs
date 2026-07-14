@@ -16,6 +16,7 @@ use serde::Deserialize;
 use crate::{
     config::resolve_secret_value,
     logger::{LogLevel, LogSink},
+    proxy::{select_proxy_url, ProxyConfig},
     quota::{
         clamp_snapshot_percentages, AppSnapshot, ProviderDiagnostics, ProviderSnapshot, QuotaWindow,
     },
@@ -80,7 +81,7 @@ pub fn run_remote_provider(
     provider_dir: Option<&Path>,
     runtime: &str,
     resolved_runtime: Option<&str>,
-    proxy_url: Option<&str>,
+    global_proxy: Option<&ProxyConfig>,
     timeout_seconds: u64,
     config_dir: &Path,
     env_vars: &HashMap<String, String>,
@@ -215,8 +216,16 @@ pub fn run_remote_provider(
             return vec![provider_error_snapshot(id, name, &error)];
         }
     };
-    if let Some(proxy_url) = proxy_url.map(str::trim).filter(|value| !value.is_empty()) {
-        match resolve_secret_value(proxy_url, config_dir) {
+    // A Provider's explicitly configured environment value owns its runtime
+    // proxy. The project proxy is a fallback only and never overrides it.
+    let configured_proxy = env
+        .get("QBWIN_PROXY_URL")
+        .map(String::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| select_proxy_url(None, global_proxy));
+    if let Some(proxy_url) = configured_proxy {
+        match resolve_secret_value(&proxy_url, config_dir) {
             Ok(proxy_url) if !proxy_url.trim().is_empty() => {
                 env.insert("QBWIN_PROXY_URL".to_string(), proxy_url.trim().to_string());
                 log_provider(log, LogLevel::Debug, id, "provider proxy URL resolved");
@@ -964,6 +973,7 @@ fn diagnostics_from_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::{ProxyConfig, ProxyKind};
 
     fn node_command(script: &str) -> RemoteCommandSpec {
         RemoteCommandSpec {
@@ -1272,7 +1282,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_provider_injects_proxy_url_from_provider_config() {
+    fn remote_provider_injects_global_proxy_url_as_a_fallback() {
         let temp = tempfile::tempdir().expect("temp dir");
         let provider_dir = temp.path().join("provider");
         std::fs::create_dir(&provider_dir).expect("create provider dir");
@@ -1302,7 +1312,10 @@ mod tests {
             Some(&provider_dir),
             "node",
             None,
-            Some("socks5h://localhost:10818"),
+            Some(&ProxyConfig {
+                kind: ProxyKind::Socks5,
+                url: "socks5h://localhost:10818".to_string(),
+            }),
             crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
             temp.path(),
             &HashMap::new(),
@@ -1313,5 +1326,57 @@ mod tests {
 
         assert_eq!(providers[0].status, "ok");
         assert_eq!(providers[0].windows[0].label, "socks5h://localhost:10818");
+    }
+
+    #[test]
+    fn remote_provider_environment_proxy_overrides_global_proxy() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let provider_dir = temp.path().join("provider");
+        std::fs::create_dir(&provider_dir).expect("create provider dir");
+        std::fs::write(
+            provider_dir.join("provider.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "id": "remote-proxy-precedence",
+                "displayName": "Remote Proxy Precedence",
+                "runtime": "node",
+                "entry": "provider.cjs",
+                "requiredEnvVars": [],
+                "output": "provider-snapshot-v1"
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+        std::fs::write(
+            provider_dir.join("provider.cjs"),
+            r#"console.log(JSON.stringify({windows:[{id:"proxy",label:process.env.QBWIN_PROXY_URL || "",remainingPercent:50,confidence:"exact"}]}));"#,
+        )
+        .expect("write source");
+
+        let env_vars = HashMap::from([(
+            "QBWIN_PROXY_URL".to_string(),
+            "socks5h://provider:1080".to_string(),
+        )]);
+        let global_proxy = ProxyConfig {
+            kind: ProxyKind::Http,
+            url: "http://global:8080".to_string(),
+        };
+        let providers = run_remote_provider(
+            "remote-proxy-precedence",
+            "Remote Proxy Precedence",
+            Some(&provider_dir),
+            "node",
+            None,
+            Some(&global_proxy),
+            crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
+            temp.path(),
+            &env_vars,
+            &HashMap::new(),
+            &[],
+            None,
+        );
+
+        assert_eq!(providers[0].status, "ok");
+        assert_eq!(providers[0].windows[0].label, "socks5h://provider:1080");
     }
 }

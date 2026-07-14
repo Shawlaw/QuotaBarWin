@@ -32,7 +32,7 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 - 分发方式：**绿色版 portable zip + 单 exe**
 - 当前版本：**v1.0.2**
 - 技术栈：Tauri 2、Rust 2021、React 19、TypeScript、Vite
-- 当前配置 schema version：**15**
+- 当前配置 schema version：**16**
 
 ---
 
@@ -111,7 +111,7 @@ Codex usage 需要代理时，可以在该 Provider 的 **环境变量** 中配�
 HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
-Codex usage 脚本的代理优先级是 `QBWIN_PROXY_URL`、`HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY`，支持 `socks5:`、`socks5h:`、`http:` 和 `https:`。如果安装 Provider 时已经为该 Provider 配置了代理 URL，QuotaBarWin 会以 `QBWIN_PROXY_URL` 注入，优先级最高。更完整的请求、鉴权和代理说明见 [`examples/remote-providers/codex-usage/api.md`](examples/remote-providers/codex-usage/api.md)。
+Codex usage 脚本的代理优先级是 Provider 环境变量 `QBWIN_PROXY_URL`、项目全局代理、`HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY`，支持 `socks5:`、`socks5h:`、`http:` 和 `https:`。安装源的代理仅用于下载 registry、manifest 和脚本，不会注入 Provider 运行环境。更完整的请求、鉴权和代理说明见 [`examples/remote-providers/codex-usage/api.md`](examples/remote-providers/codex-usage/api.md)。
 
 ### 6. 多账号
 
@@ -168,7 +168,7 @@ CLI 也可在安装前或排障时校验 Provider 配置、manifest、source che
 - 支持 AppData 配置和便携模式；便携模式会把配置、日志、secrets 和远程 Provider 缓存放在 exe 旁。
 - 支持 Provider 启用状态、排序、自定义窗口显示和窗口名称覆盖。
 - 支持从 remote registry / manifest 安装 Provider，并进行缓存、SHA-256 校验和更新检查。
-- 支持全局代理和单 Provider 代理，代理类型包含 HTTP 与 SOCKS5。
+- 支持用于远程安装/更新和 Provider 运行兜底的全局代理，代理类型包含 HTTP 与 SOCKS5；Provider 可通过环境变量配置自己的运行期代理。
 - 支持 secret 占位符，避免在配置和日志中直接保存真实密钥。
 
 ---

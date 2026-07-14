@@ -12,7 +12,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 15;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 16;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_REMOTE_PROVIDER_REGISTRY_URL: &str =
@@ -678,6 +678,27 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
             }
         }
         value["schemaVersion"] = serde_json::json!(15);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(15);
+    if version < 16 {
+        if let Some(providers) = value
+            .get_mut("providers")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for provider in providers {
+                if provider.get("kind").and_then(serde_json::Value::as_str) == Some("remote") {
+                    provider
+                        .as_object_mut()
+                        .expect("remote provider config must be an object")
+                        .remove("proxyUrl");
+                }
+            }
+        }
+        value["schemaVersion"] = serde_json::json!(16);
     }
 
     Ok(value)
@@ -1795,6 +1816,31 @@ mod tests {
             migrated["providers"][0]["showInTray"],
             serde_json::json!(true)
         );
+    }
+
+    #[test]
+    fn config_migration_v15_removes_legacy_provider_runtime_proxy() {
+        let value = serde_json::json!({
+            "schemaVersion": 15,
+            "providers": [{
+                "kind": "remote",
+                "id": "remote-codex",
+                "name": "Codex",
+                "enabled": true,
+                "manifestUrl": "https://example.com/provider.json",
+                "sourceUrl": "https://example.com/provider.cjs",
+                "runtime": "node",
+                "proxyUrl": "socks://legacy:1080"
+            }]
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert!(migrated["providers"][0].get("proxyUrl").is_none());
     }
 
     #[test]

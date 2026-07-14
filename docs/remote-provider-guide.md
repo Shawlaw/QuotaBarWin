@@ -19,7 +19,8 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 
 同一个 manifest 可以安装多次，用于查询同一 Provider 的多个账号。QuotaBarWin 会为
 每个本地账号实例生成稳定的 Provider id，例如 `kimi-coding`、`kimi-coding-2`，
-每个实例可以配置不同的名称、环境变量、代理、超时和窗口显示偏好。
+每个实例可以配置不同的名称、环境变量、超时和窗口显示偏好。运行期代理通过 Provider
+环境变量配置；项目全局代理只在该变量未配置时作为兜底。
 
 ## Manifest 格式（`provider.json`）
 
@@ -197,7 +198,7 @@ stderr 摘要会进入 Provider diagnostics 的 `stderr` 字段，方便区分 p
 | `QBWIN_PROVIDER_VERSION` | manifest `version`，缺省时不设置。 |
 | `QBWIN_PROVIDER_SOURCE_CHECKSUM` | manifest `checksums.source`，缺省时不设置。 |
 | `QBWIN_PROVIDER_TIMEOUT_SECONDS` | 当前宿主等待脚本退出的秒数。 |
-| `QBWIN_PROXY_URL` | 可选；配置了 provider 代理时注入，脚本可用它发起网络请求。日志中只记录是否启用或协议，不要输出完整值。 |
+| `QBWIN_PROXY_URL` | 可选；优先使用 Provider 环境变量中的该值；未配置时宿主注入项目全局代理。安装源代理只用于下载 registry、manifest 和脚本。日志中只记录是否启用或协议，不要输出完整值。 |
 
 Node.js 示例：
 

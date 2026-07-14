@@ -342,10 +342,10 @@ test("saving a provider source returns to the catalog and refreshes it with its 
   await screen.findByText("Catalog Kimi");
   fireEvent.click(screen.getByRole("button", { name: "Manage Source" }));
 
-  fireEvent.change(screen.getByLabelText("Provider proxy URL (optional)"), {
+  fireEvent.change(screen.getByLabelText("Installation source proxy URL (optional)"), {
     target: { value: "socks5://127.0.0.1:1080" },
   });
-  expect(screen.getByLabelText("Provider proxy URL (optional)")).toHaveAttribute(
+  expect(screen.getByLabelText("Installation source proxy URL (optional)")).toHaveAttribute(
     "placeholder",
     "http://host:port or socks5://host:port",
   );

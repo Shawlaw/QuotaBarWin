@@ -332,7 +332,9 @@ fn install_remote_provider_from_manifest(
         provider_dir: Some(provider_dir.clone()),
         runtime: manifest.runtime.clone(),
         resolved_runtime: Some(resolved_runtime_path.display().to_string()),
-        proxy_url: proxy_url.map(|s| s.to_string()),
+        // This proxy is scoped to downloading the registry/manifest/source.
+        // Runtime proxy selection belongs to the Provider environment instead.
+        proxy_url: None,
         auto_update: actual_auto_update,
         update_interval_seconds: 3600,
         timeout_seconds: manifest
@@ -896,7 +898,6 @@ async fn check_remote_updates_inner(
                 id,
                 manifest_url,
                 provider_dir,
-                proxy_url,
                 trusted_checksum,
                 auto_update,
                 version,
@@ -923,7 +924,7 @@ async fn check_remote_updates_inner(
             let mut update = check_update(
                 &provider_dir,
                 manifest_url,
-                proxy_url.as_deref(),
+                None,
                 global_proxy.as_ref(),
                 trusted_checksum.as_deref(),
                 FETCH_TIMEOUT,
@@ -964,7 +965,7 @@ async fn check_remote_updates_inner(
                     );
                     let manifest = fetch_manifest(
                         manifest_url,
-                        proxy_url.as_deref(),
+                        None,
                         global_proxy.as_ref(),
                         FETCH_TIMEOUT,
                     )
@@ -984,7 +985,7 @@ async fn check_remote_updates_inner(
                     );
                     let source = fetch_source(
                         &new_source_url,
-                        proxy_url.as_deref(),
+                        None,
                         global_proxy.as_ref(),
                         FETCH_TIMEOUT,
                     )
@@ -1085,14 +1086,9 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
 
         let provider =
             find_provider_config_mut(&mut loaded.config, &id).ok_or("provider not found")?;
-        let ProviderConfig::Remote {
-            manifest_url,
-            proxy_url,
-            ..
-        } = provider;
+        let ProviderConfig::Remote { manifest_url, .. } = provider;
 
         let manifest_url = manifest_url.clone();
-        let proxy_url = proxy_url.clone();
         let provider_dir = cached_provider_dir(&path, provider)
             .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
 
@@ -1104,23 +1100,18 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
                 id, manifest_url
             ),
         );
-        let manifest = fetch_manifest(
-            &manifest_url,
-            proxy_url.as_deref(),
-            global_proxy.as_ref(),
-            FETCH_TIMEOUT,
-        )
-        .map_err(|e| {
-            log_remote(
-                &log,
-                LogLevel::Warn,
-                &format!(
-                    "remote update apply manifest fetch failed id={} error={}",
-                    id, e
-                ),
-            );
-            e.to_string()
-        })?;
+        let manifest = fetch_manifest(&manifest_url, None, global_proxy.as_ref(), FETCH_TIMEOUT)
+            .map_err(|e| {
+                log_remote(
+                    &log,
+                    LogLevel::Warn,
+                    &format!(
+                        "remote update apply manifest fetch failed id={} error={}",
+                        id, e
+                    ),
+                );
+                e.to_string()
+            })?;
         let new_source_url = resolve_source_url(&manifest_url, &manifest.entry);
         log_remote(
             &log,
@@ -1130,23 +1121,18 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
                 id, new_source_url
             ),
         );
-        let source = fetch_source(
-            &new_source_url,
-            proxy_url.as_deref(),
-            global_proxy.as_ref(),
-            FETCH_TIMEOUT,
-        )
-        .map_err(|e| {
-            log_remote(
-                &log,
-                LogLevel::Warn,
-                &format!(
-                    "remote update apply source fetch failed id={} error={}",
-                    id, e
-                ),
-            );
-            e.to_string()
-        })?;
+        let source = fetch_source(&new_source_url, None, global_proxy.as_ref(), FETCH_TIMEOUT)
+            .map_err(|e| {
+                log_remote(
+                    &log,
+                    LogLevel::Warn,
+                    &format!(
+                        "remote update apply source fetch failed id={} error={}",
+                        id, e
+                    ),
+                );
+                e.to_string()
+            })?;
 
         if let Some(expected) = manifest.checksums.source.as_ref() {
             crate::remote_provider::verify_checksum(&source, expected).map_err(|e| {

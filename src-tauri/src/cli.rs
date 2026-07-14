@@ -365,6 +365,7 @@ fn validate_installed_provider(options: &ValidationOptions) -> Result<Validation
         .map(Ok)
         .unwrap_or_else(config_path_for_current_executable)?;
     let loaded = load_or_create_config(&config_path)?;
+    let global_proxy = loaded.config.network_proxy.clone();
     let provider = loaded
         .config
         .providers
@@ -381,7 +382,6 @@ fn validate_installed_provider(options: &ValidationOptions) -> Result<Validation
         resolved_runtime,
         timeout_seconds,
         env_vars,
-        proxy_url,
         window_label_overrides,
         visible_window_ids,
         ..
@@ -433,7 +433,7 @@ fn validate_installed_provider(options: &ValidationOptions) -> Result<Validation
             Some(provider_dir),
             runtime,
             resolved_runtime.as_deref(),
-            proxy_url.as_deref(),
+            global_proxy.as_ref(),
             *timeout_seconds,
             config_dir,
             env_vars,
