@@ -223,6 +223,97 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2);
 });
 
+test("tray_popup_hides_providers_disabled_for_tray_display", async () => {
+  const hiddenConfig: AppConfig = {
+    schemaVersion: 15,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "system",
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
+    providers: [
+      {
+        id: "remote-kimi",
+        name: "Kimi",
+        enabled: true,
+        kind: "remote",
+        manifestUrl: "https://example.test/kimi/provider.json",
+        sourceUrl: "https://example.test/kimi/provider.cjs",
+        runtime: "node",
+        autoUpdate: false,
+        updateIntervalSeconds: 3600,
+        timeoutSeconds: 30,
+        showInTray: false,
+      },
+    ],
+  };
+  mocks.getConfig.mockResolvedValueOnce(hiddenConfig).mockResolvedValueOnce(hiddenConfig);
+
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
+  expect(screen.queryByText("Kimi")).not.toBeInTheDocument();
+  expect(screen.queryByText("Kimi Daily")).not.toBeInTheDocument();
+  expect(screen.getByText("Codex Mock")).toBeInTheDocument();
+});
+
+test("tray_popup_reloads_tray_visibility_when_presented", async () => {
+  const enabledConfig: AppConfig = {
+    schemaVersion: 15,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "system",
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
+    providers: [
+      {
+        id: "remote-kimi",
+        name: "Kimi",
+        enabled: true,
+        kind: "remote",
+        manifestUrl: "https://example.test/kimi/provider.json",
+        sourceUrl: "https://example.test/kimi/provider.cjs",
+        runtime: "node",
+        autoUpdate: false,
+        updateIntervalSeconds: 3600,
+        timeoutSeconds: 30,
+        showInTray: true,
+      },
+    ],
+  };
+  const hiddenConfig: AppConfig = {
+    ...enabledConfig,
+    providers: enabledConfig.providers.map((provider) => ({ ...provider, showInTray: false })),
+  };
+  mocks.getConfig.mockResolvedValueOnce(enabledConfig).mockResolvedValueOnce(hiddenConfig);
+
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.getConfig).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+
+  await waitFor(() => expect(mocks.getConfig).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalled());
+  expect(screen.queryByText("Kimi")).not.toBeInTheDocument();
+  expect(screen.queryByText("Kimi Daily")).not.toBeInTheDocument();
+});
+
 test("tray_popup_keeps_action_button_size_class_while_refreshing", async () => {
   let resolveRefresh: ((snapshot: AppSnapshot) => void) | undefined;
   mocks.refreshSnapshot.mockImplementationOnce(

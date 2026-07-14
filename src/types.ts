@@ -177,5 +177,6 @@ export type RemoteProviderConfig = {
   lastCheckedAt?: string | null;
   windowLabelOverrides?: Record<string, string>;
   visibleWindowIds?: string[];
+  showInTray?: boolean;
   envVars?: Record<string, string>;
 };

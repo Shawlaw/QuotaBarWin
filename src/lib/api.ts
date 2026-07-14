@@ -17,7 +17,7 @@ function hasTauriInternals(): boolean {
 }
 
 const fallbackConfig: AppConfig = {
-  schemaVersion: 14,
+  schemaVersion: 15,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,

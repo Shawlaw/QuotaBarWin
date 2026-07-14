@@ -139,6 +139,7 @@ export function TrayPopup() {
     }
 
     lastHandledPresentationId.current = presentationId;
+    void getConfig().then(setConfig).catch(() => undefined);
     void loadSnapshot();
   }, [loadSnapshot]);
 
@@ -220,7 +221,10 @@ export function TrayPopup() {
   }, []);
 
   const hasSnapshot = snapshot !== null;
-  const providers = snapshot?.providers ?? [];
+  const providers = (snapshot?.providers ?? []).filter(
+    (provider) =>
+      config?.providers.find((configuredProvider) => configuredProvider.id === provider.id)?.showInTray !== false
+  );
   const lowQuotaWarningThreshold = config?.lowQuotaWarningThreshold ?? 20;
   const displayMode = config?.displayMode ?? "remaining";
   const providersWithWindows = providers.filter((provider) => provider.windows.length > 0);

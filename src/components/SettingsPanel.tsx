@@ -858,6 +858,19 @@ export function SettingsPanel({
                         <span className="field-error">{t.settings.timeoutError}</span>
                       ) : null}
                     </label>
+                    <label className="checkbox-row settings-toggle-row">
+                      <input
+                        type="checkbox"
+                        data-testid={`provider-show-in-tray-${provider.id}`}
+                        checked={provider.showInTray !== false}
+                        onChange={(event) =>
+                          updateRemoteProvider(provider, {
+                            showInTray: event.currentTarget.checked
+                          })
+                        }
+                      />
+                      {t.settings.showInTray}
+                    </label>
                     {renderProviderParameters(provider)}
                     <div className="args-field settings-field">
                       <label htmlFor={`provider-env-vars-${provider.id}`}>

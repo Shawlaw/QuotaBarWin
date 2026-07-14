@@ -119,6 +119,7 @@ export type I18nCatalog = {
     windowLabelOverrides: string;
     windowLabelOverridesPlaceholder: string;
     displayedWindows: string;
+    showInTray: string;
     displayedWindowsPlaceholder: string;
     windowDisplay: string;
     windowDisplayNoSnapshot: string;
@@ -383,6 +384,7 @@ export const en: I18nCatalog = {
     windowLabelOverrides: "Window label overrides",
     windowLabelOverridesPlaceholder: "window-id=Display name\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "Displayed windows",
+    showInTray: "Show in tray popup",
     displayedWindowsPlaceholder: "Leave empty to show all\n5h\nweekly\nWeekly limit",
     windowDisplay: "Window display",
     windowDisplayNoSnapshot: "No recent snapshot windows yet.",
@@ -650,6 +652,7 @@ export const zhCN: I18nCatalog = {
     windowLabelOverrides: "窗口标签覆盖",
     windowLabelOverridesPlaceholder: "window-id=显示名称\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "显示的窗口",
+    showInTray: "在托盘小窗中显示",
     displayedWindowsPlaceholder: "留空显示全部\n5h\nweekly\nWeekly limit",
     windowDisplay: "窗口显示",
     windowDisplayNoSnapshot: "暂无最近快照窗口。",

@@ -262,6 +262,18 @@ test("settings_renders_registry_and_remote_provider_metadata", async () => {
   expect(screen.getByText(/Default: \$\{secret:KIMI_API_KEY\}/)).toBeInTheDocument();
 });
 
+test("settings_toggles_provider_tray_visibility", async () => {
+  renderSettings();
+
+  fireEvent.click(screen.getByTestId("edit-provider-remote-kimi"));
+  const trayToggle = await screen.findByTestId("provider-show-in-tray-remote-kimi");
+  expect(trayToggle).toBeChecked();
+
+  fireEvent.click(trayToggle);
+
+  expect(apiMocks.state.config?.providers[0].showInTray).toBe(false);
+});
+
 test("settings_edits_local_log_limit_in_megabytes", () => {
   renderSettings();
 

@@ -59,7 +59,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `14`.
+Current config schema version: `15`.
 
 Supported persisted provider config kind:
 
@@ -81,6 +81,7 @@ Remote provider public contract:
   `resolvedRuntime`.
 - `timeoutSeconds` is part of remote provider config and defaults to `30`.
   Schema `13 -> 14` migration adds it to existing remote providers.
+- `showInTray` defaults to `true`; Schema `14 -> 15` adds it to existing remote providers.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.

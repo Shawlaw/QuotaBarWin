@@ -339,6 +339,7 @@ fn install_remote_provider_from_manifest(
         last_checked_at: Some(now),
         window_label_overrides: manifest.default_config.window_label_overrides.clone(),
         visible_window_ids: manifest.default_config.visible_window_ids.clone(),
+        show_in_tray: true,
         env_vars: manifest.default_config.env_vars.clone(),
     };
 
@@ -1250,6 +1251,7 @@ mod tests {
             last_checked_at: None,
             window_label_overrides: HashMap::new(),
             visible_window_ids: Vec::new(),
+            show_in_tray: true,
             env_vars: HashMap::new(),
         }
     }

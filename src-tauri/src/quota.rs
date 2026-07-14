@@ -1140,6 +1140,7 @@ mod tests {
             last_checked_at: None,
             window_label_overrides: std::collections::HashMap::new(),
             visible_window_ids: Vec::new(),
+            show_in_tray: true,
             env_vars: std::collections::HashMap::new(),
         }
     }
@@ -1165,6 +1166,7 @@ mod tests {
             last_checked_at: None,
             window_label_overrides: std::collections::HashMap::new(),
             visible_window_ids: Vec::new(),
+            show_in_tray: true,
             env_vars: std::collections::HashMap::new(),
         }
     }

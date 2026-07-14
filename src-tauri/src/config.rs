@@ -12,7 +12,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 14;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 15;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_REMOTE_PROVIDER_REGISTRY_URL: &str =
@@ -207,6 +207,13 @@ pub enum ProviderConfig {
             alias = "visible-window-ids"
         )]
         visible_window_ids: Vec<String>,
+        #[serde(
+            default = "default_show_in_tray",
+            rename = "showInTray",
+            alias = "show_in_tray",
+            alias = "show-in-tray"
+        )]
+        show_in_tray: bool,
         #[serde(default, rename = "envVars", alias = "env_vars", alias = "env-vars")]
         env_vars: HashMap<String, String>,
     },
@@ -254,6 +261,10 @@ fn default_remote_provider_auto_update() -> bool {
 }
 
 fn default_remote_provider_source_enabled() -> bool {
+    true
+}
+
+fn default_show_in_tray() -> bool {
     true
 }
 
@@ -649,6 +660,26 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(14);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(14);
+    if version < 15 {
+        if let Some(providers) = value
+            .get_mut("providers")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for provider in providers {
+                if provider.get("kind").and_then(serde_json::Value::as_str) == Some("remote")
+                    && provider.get("showInTray").is_none()
+                {
+                    provider["showInTray"] = serde_json::Value::Bool(true);
+                }
+            }
+        }
+        value["schemaVersion"] = serde_json::json!(15);
+    }
+
     Ok(value)
 }
 
@@ -1011,6 +1042,7 @@ mod tests {
             last_checked_at: Some("2026-06-18T00:00:00Z".to_string()),
             window_label_overrides: HashMap::new(),
             visible_window_ids: Vec::new(),
+            show_in_tray: true,
             env_vars: HashMap::new(),
         }
     }
@@ -1400,6 +1432,38 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v14_to_current_enables_tray_display_for_remote_providers() {
+        let value = serde_json::json!({
+            "schemaVersion": 14,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "providers": [
+                {
+                    "kind": "remote",
+                    "id": "remote-kimi",
+                    "name": "Remote Kimi",
+                    "enabled": true,
+                    "manifestUrl": "https://example.com/provider.json",
+                    "sourceUrl": "https://example.com/provider.cjs",
+                    "runtime": "node",
+                    "autoUpdate": true,
+                    "updateIntervalSeconds": 1800,
+                    "timeoutSeconds": 30
+                }
+            ]
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(migrated["providers"][0]["showInTray"], serde_json::json!(true));
+    }
+
+    #[test]
     fn non_remote_provider_configs_are_rejected() {
         let mock = serde_json::json!({
             "kind": "mock",
@@ -1479,6 +1543,7 @@ mod tests {
                     "5h".to_string(),
                 )]),
                 visible_window_ids: vec!["5h".to_string()],
+                show_in_tray: true,
                 env_vars: HashMap::from([(
                     "KIMI_API_KEY".to_string(),
                     "${secret:KIMI_API_KEY}".to_string(),
@@ -1516,6 +1581,7 @@ mod tests {
             value["providers"][0]["visibleWindowIds"],
             serde_json::json!(["5h"])
         );
+        assert_eq!(value["providers"][0]["showInTray"], serde_json::json!(true));
         assert_eq!(
             value["providers"][0]["envVars"],
             serde_json::json!({ "KIMI_API_KEY": "${secret:KIMI_API_KEY}" })
@@ -1554,6 +1620,7 @@ mod tests {
             "lastCheckedAt": "2026-06-18T00:00:00Z",
             "windowLabelOverrides": { "300-minute": "5h" },
             "visibleWindowIds": ["5h"],
+            "showInTray": false,
             "envVars": { "KIMI_API_KEY": "${secret:KIMI_API_KEY}" }
         });
 
@@ -1563,6 +1630,7 @@ mod tests {
         let ProviderConfig::Remote {
             window_label_overrides,
             visible_window_ids,
+            show_in_tray,
             env_vars,
             version,
             installed_at,
@@ -1577,6 +1645,7 @@ mod tests {
             Some(&"5h".to_string())
         );
         assert_eq!(visible_window_ids, vec!["5h".to_string()]);
+        assert!(!show_in_tray);
         assert_eq!(
             env_vars.get("KIMI_API_KEY"),
             Some(&"${secret:KIMI_API_KEY}".to_string())
