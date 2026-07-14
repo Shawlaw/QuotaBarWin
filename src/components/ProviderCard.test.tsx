@@ -69,7 +69,7 @@ test("provider_card_renders_used_percent_when_display_mode_is_used", () => {
   expect(screen.queryByText(/72% remaining/)).not.toBeInTheDocument();
 });
 
-test("provider_card_renders_balance_amount_detail", () => {
+test("provider_card_exposes_amount_detail_on_hover", () => {
   renderWithEnglish(
     <ProviderCard
       provider={{
@@ -91,7 +91,10 @@ test("provider_card_renders_balance_amount_detail", () => {
     />
   );
 
-  expect(screen.getByText("Remaining 12 CNY / 100 CNY · warning 20 CNY")).toBeInTheDocument();
+  expect(screen.getByTestId("quota-row-codex-mock-balance-cny")).toHaveAttribute(
+    "title",
+    "Remaining 12 CNY / 100 CNY · warning 20 CNY"
+  );
 });
 
 test("provider_card_fades_used_mode_opacity_as_usage_increases", () => {
@@ -211,7 +214,7 @@ test("provider_card_renders_reset_time_for_each_window", () => {
     />
   );
 
-  expect(screen.getAllByText("resets 06/08/2026, 10:00 AM GMT+8").length).toBeGreaterThan(0);
+  expect(screen.getByText("resets 06/08/2026, 10:00 AM GMT+8")).toBeInTheDocument();
   expect(screen.getByText("resets 06/30/2026, 10:00 AM GMT+8")).toBeInTheDocument();
 });
 

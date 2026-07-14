@@ -96,6 +96,36 @@ export function remainingAmountForWindow(window: QuotaWindow): number | null {
   return null;
 }
 
+export function formatAmountDetail(window: QuotaWindow): string | null {
+  const unit = window.unit?.trim();
+  const shouldShowAmount =
+    Boolean(unit && unit !== "percent") ||
+    window.warningRemaining !== null && window.warningRemaining !== undefined;
+  if (!shouldShowAmount) {
+    return null;
+  }
+
+  const remaining = remainingAmountForWindow(window);
+  if (remaining === null) {
+    return null;
+  }
+
+  const suffix = unit ? ` ${unit}` : "";
+  const parts = [`Remaining ${formatAmount(remaining)}${suffix}`];
+  if (typeof window.limit === "number" && Number.isFinite(window.limit)) {
+    parts[0] += ` / ${formatAmount(window.limit)}${suffix}`;
+  }
+  if (
+    window.warningRemaining !== null &&
+    window.warningRemaining !== undefined &&
+    Number.isFinite(window.warningRemaining)
+  ) {
+    parts.push(`warning ${formatAmount(window.warningRemaining)}${suffix}`);
+  }
+
+  return parts.join(" · ");
+}
+
 export function displayPercentForWindow(window: QuotaWindow, displayMode: DisplayMode): number | null {
   if (displayMode === "remaining") {
     return window.remainingPercent ?? null;
@@ -123,6 +153,10 @@ export function formatDisplayValue(
   }
 
   return catalog.format.displayValue(Math.round(Math.min(100, Math.max(0, percent))), displayMode);
+}
+
+function formatAmount(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
 export function formatShortDateTime(value: string | null | undefined, now = new Date()): string | null {

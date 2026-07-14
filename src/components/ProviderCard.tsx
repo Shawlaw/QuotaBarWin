@@ -3,9 +3,9 @@ import type { ProviderDiagnostics, ProviderSnapshot, QuotaWindow } from "../type
 import {
   calculateProviderStatus,
   displayPercentForWindow,
+  formatAmountDetail,
   formatDisplayValue,
   formatQuotaReset,
-  remainingAmountForWindow,
   formatShortDateTime,
   windowStatus
 } from "../lib/providerStatus";
@@ -149,6 +149,7 @@ function QuotaWindowRow({
     <section
       className={`quota-window quota-window--${status}`}
       data-testid={`quota-row-${providerId}-${window.id}`}
+      title={amountDetail ?? undefined}
     >
       <div className="quota-window__meta">
         <strong>{window.label}</strong>
@@ -156,10 +157,11 @@ function QuotaWindowRow({
           {formatDisplayValue(window, displayMode, t)}
         </span>
       </div>
-      <div className="quota-window__details">
-        {amountDetail ? <span>{amountDetail}</span> : null}
-        {resetText ? <span>{resetText}</span> : amountDetail ? null : <span>{t.providerCard.noResetTime}</span>}
-      </div>
+      {resetText ? (
+        <div className="quota-window__details">{resetText}</div>
+      ) : amountDetail ? null : (
+        <div className="quota-window__details">{t.providerCard.noResetTime}</div>
+      )}
       {displayedPercent !== null ? (
         <ProgressBar
           percent={displayedPercent}
@@ -172,40 +174,6 @@ function QuotaWindowRow({
       )}
     </section>
   );
-}
-
-function formatAmountDetail(window: QuotaWindow): string | null {
-  const unit = window.unit?.trim();
-  const shouldShowAmount =
-    Boolean(unit && unit !== "percent") ||
-    window.warningRemaining !== null && window.warningRemaining !== undefined;
-  if (!shouldShowAmount) {
-    return null;
-  }
-
-  const remaining = remainingAmountForWindow(window);
-  if (remaining === null) {
-    return null;
-  }
-
-  const suffix = unit ? ` ${unit}` : "";
-  const parts = [`Remaining ${formatAmount(remaining)}${suffix}`];
-  if (typeof window.limit === "number" && Number.isFinite(window.limit)) {
-    parts[0] += ` / ${formatAmount(window.limit)}${suffix}`;
-  }
-  if (
-    window.warningRemaining !== null &&
-    window.warningRemaining !== undefined &&
-    Number.isFinite(window.warningRemaining)
-  ) {
-    parts.push(`warning ${formatAmount(window.warningRemaining)}${suffix}`);
-  }
-
-  return parts.join(" · ");
-}
-
-function formatAmount(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
 function StatusDetails({

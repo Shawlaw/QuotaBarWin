@@ -17,6 +17,7 @@ import {
 import {
   calculateProviderStatus,
   displayPercentForWindow,
+  formatAmountDetail,
   formatDisplayValue,
   formatQuotaReset,
   formatShortDateTime,
@@ -477,8 +478,14 @@ export function TrayPopup() {
                           ? 100 - window.usedPercent
                           : null);
                       const resetText = formatQuotaReset(window, new Date(), t);
+                      const amountDetail = formatAmountDetail(window);
                       return (
-                        <section className="tray-popup__window" key={window.id}>
+                        <section
+                          className="tray-popup__window"
+                          data-testid={`tray-popup-window-${provider.id}-${window.id}`}
+                          key={window.id}
+                          title={amountDetail ?? undefined}
+                        >
                           <div className="tray-popup__window-title">
                             <strong>{window.label}</strong>
                             <span>{formatDisplayValue(window, displayMode, t)}</span>

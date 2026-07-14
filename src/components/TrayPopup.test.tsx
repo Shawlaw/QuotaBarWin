@@ -406,6 +406,53 @@ test("tray_popup_groups_windows_by_provider_and_reset_stays_secondary", async ()
   ).not.toBeInTheDocument();
 });
 
+test("tray_popup_exposes_amount_detail_on_hover", async () => {
+  mocks.refreshSnapshot.mockResolvedValueOnce({
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:00:00+08:00",
+    providers: [
+      {
+        id: "time-flies",
+        name: "Time Flies",
+        status: "ok",
+        source: "remote",
+        updatedAt: "2026-06-08T10:00:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [
+          {
+            id: "today",
+            label: "Today remaining",
+            remaining: 148,
+            used: 1292,
+            limit: 1440,
+            unit: "minutes",
+            usedPercent: 89.72,
+            remainingPercent: 10.28,
+            resetAt: null,
+            resetText: "resets tonight",
+            confidence: "exact",
+          },
+        ],
+      },
+    ],
+  });
+
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+
+  expect(screen.getByTestId("tray-popup-window-time-flies-today")).toHaveAttribute(
+    "title",
+    "Remaining 148 minutes / 1440 minutes"
+  );
+  expect(screen.getByText("resets tonight")).toBeInTheDocument();
+});
+
 test("tray_popup_colors_each_window_by_its_own_warning_status", async () => {
   renderWithEnglish(<TrayPopup />);
 
