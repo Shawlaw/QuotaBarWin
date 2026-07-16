@@ -158,6 +158,16 @@ async function assertConfigCanBeSaved() {
     timeoutMsg: "Save button did not become enabled"
   });
   await clickByTestId("save-settings-button");
+  await app.waitUntil(async () => {
+    const current = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    return current.refreshIntervalSeconds === 120;
+  }, {
+    timeout: 20000,
+    timeoutMsg: "Config file was not saved with the updated refresh interval"
+  });
+
+  const overviewButton = await app.$('//button[normalize-space(.)="Overview"]');
+  await app.execute((target) => target.click(), overviewButton);
   await byTestId("overview-page").then((overview) => overview.waitForDisplayed({ timeout: 20000 }));
 
   const saved = JSON.parse(fs.readFileSync(configPath, "utf8"));

@@ -114,30 +114,34 @@ function providerRefreshSignature(provider: RemoteProviderConfig) {
   };
 }
 
-function configNeedsDataRefresh(
+type DataRefreshTarget = "all" | string[];
+
+function configRefreshTargets(
   previousConfig: AppConfig | null,
   nextConfig: AppConfig
-): boolean {
+): DataRefreshTarget | null {
   if (!previousConfig) {
-    return true;
+    return "all";
   }
 
   if (JSON.stringify(previousConfig.networkProxy ?? null) !== JSON.stringify(nextConfig.networkProxy ?? null)) {
-    return true;
+    return "all";
   }
 
   const previousProviders = new Map(previousConfig.providers.map((provider) => [provider.id, provider]));
+  const providerIds: string[] = [];
   for (const nextProvider of nextConfig.providers) {
     const previousProvider = previousProviders.get(nextProvider.id);
     if (!previousProvider) {
       if (nextProvider.enabled) {
-        return true;
+        providerIds.push(nextProvider.id);
       }
       continue;
     }
 
     if (!previousProvider.enabled && nextProvider.enabled) {
-      return true;
+      providerIds.push(nextProvider.id);
+      continue;
     }
 
     if (!nextProvider.enabled) {
@@ -148,11 +152,11 @@ function configNeedsDataRefresh(
       JSON.stringify(providerRefreshSignature(previousProvider)) !==
       JSON.stringify(providerRefreshSignature(nextProvider))
     ) {
-      return true;
+      providerIds.push(nextProvider.id);
     }
   }
 
-  return false;
+  return providerIds.length > 0 ? providerIds : null;
 }
 
 export function App() {
@@ -190,6 +194,7 @@ type MainAppProps = {
 function MainApp({ onLanguageChange }: MainAppProps) {
   const { t } = useI18n();
   const refreshInFlight = useRef(false);
+  const queuedGlobalRefresh = useRef(false);
   const persistedConfigRef = useRef<AppConfig | null>(null);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -215,21 +220,27 @@ function MainApp({ onLanguageChange }: MainAppProps) {
 
   const loadSnapshot = useCallback(async () => {
     if (refreshInFlight.current) {
+      // Coalesce refresh requests arriving while a refresh is running into a
+      // single trailing run instead of dropping them silently.
+      queuedGlobalRefresh.current = true;
       return;
     }
 
-    refreshInFlight.current = true;
-    setIsLoading(true);
-    try {
-      await syncCachedSnapshot();
-      setSnapshot(await refreshSnapshot());
-    } catch (error) {
-      const cached = await syncCachedSnapshot();
-      setSnapshot(cached ?? fallbackSnapshot(error));
-    } finally {
-      refreshInFlight.current = false;
-      setIsLoading(false);
-    }
+    do {
+      queuedGlobalRefresh.current = false;
+      refreshInFlight.current = true;
+      setIsLoading(true);
+      try {
+        await syncCachedSnapshot();
+        setSnapshot(await refreshSnapshot());
+      } catch (error) {
+        const cached = await syncCachedSnapshot();
+        setSnapshot(cached ?? fallbackSnapshot(error));
+      } finally {
+        refreshInFlight.current = false;
+        setIsLoading(false);
+      }
+    } while (queuedGlobalRefresh.current);
   }, [syncCachedSnapshot]);
 
   useEffect(() => {
@@ -317,23 +328,71 @@ function MainApp({ onLanguageChange }: MainAppProps) {
     };
   }, []);
 
-  async function persistConfig(options: { keepSettingsOpen?: boolean } = {}) {
+  const dataRefreshActive = useRef(false);
+  const dataRefreshPending = useRef<"all" | Set<string> | null>(null);
+
+  async function runDataRefresh(target: "all" | Set<string>) {
+    dataRefreshActive.current = true;
+    try {
+      if (target === "all") {
+        await loadSnapshot();
+      } else {
+        for (const providerId of target) {
+          setRefreshingProviderIds((current) => ({ ...current, [providerId]: true }));
+          try {
+            setSnapshot(await refreshProvider(providerId));
+          } catch (error) {
+            const cached = await getCachedSnapshot();
+            setSnapshot(cached ?? fallbackSnapshot(error));
+          } finally {
+            setRefreshingProviderIds((current) => {
+              const next = { ...current };
+              delete next[providerId];
+              return next;
+            });
+          }
+        }
+      }
+    } finally {
+      dataRefreshActive.current = false;
+      const pending = dataRefreshPending.current;
+      dataRefreshPending.current = null;
+      if (pending) {
+        void runDataRefresh(pending);
+      }
+    }
+  }
+
+  // Fire-and-forget refresh after a config save. Requests arriving while a
+  // save-triggered refresh is running are merged into at most one queued run.
+  function queueDataRefresh(target: DataRefreshTarget) {
+    if (dataRefreshActive.current) {
+      const pending = dataRefreshPending.current;
+      if (pending === "all" || target === "all") {
+        dataRefreshPending.current = "all";
+      } else {
+        dataRefreshPending.current = new Set([...(pending ?? []), ...target]);
+      }
+      return;
+    }
+
+    void runDataRefresh(target === "all" ? "all" : new Set(target));
+  }
+
+  async function persistConfig() {
     if (!config) {
       return;
     }
 
     setIsSaving(true);
     try {
-      const needsDataRefresh = configNeedsDataRefresh(persistedConfigRef.current, config);
+      const refreshTarget = configRefreshTargets(persistedConfigRef.current, config);
       await saveConfig(config);
       persistedConfigRef.current = config;
       setConfigStorageInfo(await getConfigStorageInfo());
       setSnapshot((current) => projectSnapshotForConfig(current, config));
-      if (!options.keepSettingsOpen) {
-        setSettingsOpen(false);
-      }
-      if (needsDataRefresh) {
-        await loadSnapshot();
+      if (refreshTarget) {
+        queueDataRefresh(refreshTarget);
       }
     } finally {
       setIsSaving(false);

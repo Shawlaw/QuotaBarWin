@@ -136,7 +136,7 @@ Create the matching files:
 
 ### 7. Save And View
 
-Click **Save**, return to **Overview**, or open the tray popup to view quota status. You can refresh all Providers globally or refresh one Provider from its card.
+Click **Save** (or press Ctrl+S). The settings page stays open after saving, so you can keep adjusting other Providers; changes that affect data fetching (such as environment variables or proxy settings) refresh the affected Providers in the background. When you are done, click **Overview** in the header to return, or open the tray popup to view quota status. You can refresh all Providers globally or refresh one Provider from its card.
 
 ---
 

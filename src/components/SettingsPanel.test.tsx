@@ -212,7 +212,7 @@ function renderSettings(
   initialConfig = configWithProviders([remoteProvider]),
   snapshotProviders: ProviderSnapshot[] = [],
   storageInfo: ConfigStorageInfo | null = configStorageInfo,
-  onSave: (options?: { keepSettingsOpen?: boolean }) => void | Promise<void> = () => undefined,
+  onSave: () => void | Promise<void> = () => undefined,
 ) {
   apiMocks.state.config = initialConfig;
 
@@ -352,7 +352,7 @@ test("saving a provider source returns to the catalog and refreshes it with its 
   fireEvent.click(screen.getByTestId("save-settings-button"));
 
   await waitFor(() =>
-    expect(onSave).toHaveBeenCalledWith({ keepSettingsOpen: true }),
+    expect(onSave).toHaveBeenCalled(),
   );
   expect(await screen.findByTestId("add-provider-page")).toBeInTheDocument();
   await waitFor(() =>
@@ -361,6 +361,37 @@ test("saving a provider source returns to the catalog and refreshes it with its 
       "socks5://127.0.0.1:1080",
     ),
   );
+});
+
+test("saved message stays visible until the next edit", async () => {
+  const onSave = vi.fn(async () => undefined);
+  renderSettings(configWithProviders([remoteProvider]), [], configStorageInfo, onSave);
+
+  fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+  fireEvent.click(screen.getByTestId("save-settings-button"));
+
+  await waitFor(() => expect(onSave).toHaveBeenCalled());
+  expect(await screen.findByText("Saved")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "180" } });
+  expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+  expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+});
+
+test("ctrl+s saves when there are unsaved changes", async () => {
+  const onSave = vi.fn(async () => undefined);
+  renderSettings(configWithProviders([remoteProvider]), [], configStorageInfo, onSave);
+
+  expect(screen.getByTestId("save-settings-button")).toHaveAttribute("title", "Save (Ctrl+S)");
+
+  fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+  expect(onSave).not.toHaveBeenCalled();
+
+  fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+  fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+
+  await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText("Saved")).toBeInTheDocument();
 });
 
 test("settings_edits_remote_env_vars_and_window_display", async () => {

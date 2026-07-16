@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
-import type { AppConfig, AppSnapshot } from "./types";
+import type { AppConfig, AppSnapshot, RemoteProviderConfig } from "./types";
 
 const mocks = vi.hoisted(() => {
   const config: AppConfig = {
@@ -445,6 +445,12 @@ test("saving_provider_reorder_projects_cached_snapshot_without_refreshing_data",
   fireEvent.click(screen.getByTestId("save-settings-button"));
 
   await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  expect(screen.getByTestId("settings-page")).toBeInTheDocument();
+  expect(screen.queryByTestId("overview-page")).not.toBeInTheDocument();
+  expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
+  expect(mocks.refreshProvider).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
   await waitFor(() => expect(screen.getByTestId("overview-page")).toBeInTheDocument());
   expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
 
@@ -452,4 +458,110 @@ test("saving_provider_reorder_projects_cached_snapshot_without_refreshing_data",
   expect(overviewText.indexOf("Remote B")).toBeGreaterThanOrEqual(0);
   expect(overviewText.indexOf("Remote A")).toBeGreaterThanOrEqual(0);
   expect(overviewText.indexOf("Remote B")).toBeLessThan(overviewText.indexOf("Remote A"));
+});
+
+function buildRemoteProvider(id: string, name: string): RemoteProviderConfig {
+  return {
+    id,
+    name,
+    enabled: true,
+    kind: "remote",
+    manifestUrl: `https://example.test/${id}/provider.json`,
+    sourceUrl: `https://example.test/${id}/provider.cjs`,
+    runtime: "node",
+    autoUpdate: false,
+    updateIntervalSeconds: 3600,
+    timeoutSeconds: 30,
+  };
+}
+
+function buildTwoProviderConfig(): AppConfig {
+  return {
+    schemaVersion: 14,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "en",
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
+    providers: [
+      buildRemoteProvider("remote-a", "Remote A"),
+      buildRemoteProvider("remote-b", "Remote B"),
+    ],
+  };
+}
+
+function buildTwoProviderSnapshot(): AppSnapshot {
+  return {
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:00:00+08:00",
+    providers: [
+      {
+        id: "remote-a",
+        name: "Remote A",
+        status: "ok",
+        source: "remote",
+        updatedAt: "2026-06-08T10:00:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [],
+      },
+      {
+        id: "remote-b",
+        name: "Remote B",
+        status: "ok",
+        source: "remote",
+        updatedAt: "2026-06-08T10:00:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [],
+      },
+    ],
+  };
+}
+
+test("saving_provider_env_var_change_refreshes_only_that_provider", async () => {
+  mocks.getConfig.mockResolvedValueOnce(buildTwoProviderConfig());
+  mocks.getCachedSnapshot.mockResolvedValueOnce(buildTwoProviderSnapshot());
+  mocks.refreshSnapshot.mockResolvedValueOnce(buildTwoProviderSnapshot());
+
+  render(<App />);
+
+  expect(await screen.findByText("Remote A")).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByTestId("edit-provider-remote-a"));
+  fireEvent.change(screen.getByLabelText("Environment variables"), {
+    target: { value: "REMOTE_A_TOKEN=${secret:REMOTE_A_TOKEN}" },
+  });
+  fireEvent.click(screen.getByTestId("save-settings-button"));
+
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(mocks.refreshProvider).toHaveBeenCalledWith("remote-a"));
+  expect(mocks.refreshProvider).toHaveBeenCalledTimes(1);
+  expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
+});
+
+test("saving_network_proxy_change_triggers_full_refresh", async () => {
+  mocks.getConfig.mockResolvedValueOnce(buildTwoProviderConfig());
+  mocks.getCachedSnapshot.mockResolvedValueOnce(buildTwoProviderSnapshot());
+  mocks.refreshSnapshot.mockResolvedValueOnce(buildTwoProviderSnapshot());
+
+  render(<App />);
+
+  expect(await screen.findByText("Remote A")).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.change(screen.getByTestId("proxy-kind-select"), { target: { value: "http" } });
+  fireEvent.change(screen.getByTestId("proxy-url-input"), {
+    target: { value: "http://127.0.0.1:7890" },
+  });
+  fireEvent.click(screen.getByTestId("save-settings-button"));
+
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+  expect(mocks.refreshProvider).not.toHaveBeenCalled();
 });

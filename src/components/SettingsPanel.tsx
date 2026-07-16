@@ -39,7 +39,7 @@ type SettingsPanelProps = {
   onChange: (config: AppConfig) => void;
   onOpenConfigFolder: () => Promise<void>;
   onResetConfig: () => Promise<void>;
-  onSave: (options?: { keepSettingsOpen?: boolean }) => void | Promise<void>;
+  onSave: () => void | Promise<void>;
   onSetPortableMode: (enabled: boolean) => void;
 };
 
@@ -229,17 +229,30 @@ export function SettingsPanel({
     };
   }, [config.providers, expandedProviders, providerManifests]);
 
+  useEffect(() => {
+    function handleSaveShortcut(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (canSave) {
+          void saveSettings();
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleSaveShortcut);
+    return () => window.removeEventListener("keydown", handleSaveShortcut);
+  });
+
   async function saveSettings() {
     setSaveMessage(t.settings.saving);
     try {
       const returnToAddProvider = providerSettingsView === "sources";
-      await onSave({ keepSettingsOpen: returnToAddProvider });
+      await onSave();
       initialConfigRef.current = JSON.stringify(config);
       setSaveMessage(t.settings.saved);
       if (returnToAddProvider) {
         setProviderSettingsView("add");
       }
-      window.setTimeout(() => setSaveMessage(t.settings.noChanges), 1600);
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : t.settings.saveFailed);
     }
@@ -255,7 +268,6 @@ export function SettingsPanel({
     initialConfigRef.current = JSON.stringify(updated);
     onChange(updated);
     setSaveMessage(t.settings.saved);
-    window.setTimeout(() => setSaveMessage(t.settings.noChanges), 1600);
   }
 
   function updateWindowConfigProvider(
@@ -446,7 +458,7 @@ export function SettingsPanel({
           <button type="button" className="button-secondary" onClick={resetChanges} disabled={!hasChanges || isSaving}>
             {t.settings.resetChanges}
           </button>
-          <button type="button" onClick={() => void saveSettings()} disabled={!canSave} data-testid="save-settings-button">
+          <button type="button" onClick={() => void saveSettings()} disabled={!canSave} data-testid="save-settings-button" title={`${t.settings.save} (Ctrl+S)`}>
             {isSaving ? t.settings.saving : t.settings.save}
           </button>
         </div>
