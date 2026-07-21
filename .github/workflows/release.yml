@@ -44,10 +44,15 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
       - name: Build Tauri app
+        env:
+          QUOTABARWIN_UPDATE_PUBLIC_KEY: ${{ vars.QUOTABARWIN_UPDATE_PUBLIC_KEY }}
         run: npm run tauri -- build --no-bundle
 
       - name: Build CLI companion
         run: cargo build --manifest-path src-tauri/Cargo.toml --release --bin quotabarwin-cli
+
+      - name: Build update helper
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release --bin quotabarwin-updater
 
       - name: Compute release metadata
         id: release_meta
@@ -56,6 +61,7 @@ jobs:
           $package = Get-Content package.json -Raw | ConvertFrom-Json
           $versionName = $package.version
           $commitId = "${{ github.sha }}".Substring(0, 7)
+          "version=$versionName" >> $env:GITHUB_OUTPUT
           "artifact_name=quotabarwin-release($($versionName)_$commitId)" >> $env:GITHUB_OUTPUT
           "zip_name=QuotaBarWin_$($versionName)_windows_x64_portable_$commitId.zip" >> $env:GITHUB_OUTPUT
 
@@ -80,9 +86,13 @@ jobs:
           $cli = Get-ChildItem -Path src-tauri/target/release -Filter quotabarwin-cli.exe -File |
             Select-Object -First 1
           if (-not $cli) { throw "QuotaBarWin CLI executable was not found" }
+          $updater = Get-ChildItem -Path src-tauri/target/release -Filter quotabarwin-updater.exe -File |
+            Select-Object -First 1
+          if (-not $updater) { throw "QuotaBarWin update helper executable was not found" }
           New-Item -ItemType Directory -Force -Path artifacts/portable | Out-Null
           Copy-Item $exe.FullName artifacts/portable/QuotaBarWin.exe
           Copy-Item $cli.FullName artifacts/portable/QuotaBarWin.Cli.exe
+          Copy-Item $updater.FullName artifacts/portable/QuotaBarWin.Updater.exe
           Set-Content -Path artifacts/portable/quotabarwin.portable -Value "QuotaBarWin portable mode"
           Compress-Archive -Path artifacts/portable/* -DestinationPath "artifacts/${{ steps.release_meta.outputs.zip_name }}" -Force
 
@@ -98,3 +108,14 @@ jobs:
         with:
           files: artifacts/${{ steps.release_meta.outputs.zip_name }}
           body_path: artifacts/release-notes.md
+
+      - name: Publish signed application update manifest
+        if: startsWith(github.ref, 'refs/tags/v') && vars.QUOTABARWIN_UPDATE_PUBLIC_KEY != ''
+        uses: Shawlaw/DeskFoundry/actions/publish-portable-update@v0.1.3
+        with:
+          app-id: com.quotabarwin.app
+          version: ${{ steps.release_meta.outputs.version }}
+          asset-path: artifacts/${{ steps.release_meta.outputs.zip_name }}
+          asset-url: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.release_meta.outputs.zip_name }}
+          notes-url: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+          private-key: ${{ secrets.DESKTOP_UPDATE_PRIVATE_KEY }}

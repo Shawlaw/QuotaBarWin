@@ -1,7 +1,10 @@
 import { afterEach, expect, test } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
+  applyAppUpdate,
   checkRemoteUpdates,
+  checkAppUpdate,
+  downloadAppUpdate,
   getCachedSnapshot,
   getInstalledRemoteProviderManifest,
   installRemoteProviderManifest,
@@ -117,6 +120,40 @@ test("api_invokes_network_proxy_commands", async () => {
   expect(payloads.set_network_proxy).toEqual({
     proxy: { kind: "socks5", url: "socks5://proxy.example.com:1080" },
   });
+});
+
+test("api_invokes_application_update_commands", async () => {
+  const calls: Array<{ cmd: string; payload?: unknown }> = [];
+  const update = {
+    configured: true,
+    currentVersion: "1.0.3",
+    available: true,
+    version: "1.0.4",
+    notesUrl: "https://example.com/releases/v1.0.4",
+    downloaded: false,
+  };
+  mockIPC((cmd, payload) => {
+    calls.push({ cmd, payload });
+    if (cmd === "check_app_update") {
+      return update;
+    }
+    if (cmd === "download_app_update") {
+      return { ...update, downloaded: true };
+    }
+    if (cmd === "apply_app_update") {
+      return null;
+    }
+    throw new Error(`unexpected command ${cmd}`);
+  });
+
+  await expect(checkAppUpdate()).resolves.toEqual(update);
+  await expect(downloadAppUpdate()).resolves.toEqual({ ...update, downloaded: true });
+  await expect(applyAppUpdate()).resolves.toBeNull();
+  expect(calls.map((call) => call.cmd)).toEqual([
+    "check_app_update",
+    "download_app_update",
+    "apply_app_update",
+  ]);
 });
 
 test("api_invokes_tray_popup_commands", async () => {

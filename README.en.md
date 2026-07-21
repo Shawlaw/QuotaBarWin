@@ -30,7 +30,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 
 - Platform: **Windows**
 - Distribution: **portable zip + single exe**
-- Current version: **v1.0.3**
+- Current version: **v1.0.4**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
 - Current config schema version: **16**
 
@@ -304,7 +304,7 @@ Local release exe build:
 npm run tauri -- build --no-bundle
 ```
 
-Windows releases are produced by `.github/workflows/release.yml`. The release workflow builds `QuotaBarWin.exe` and `QuotaBarWin.Cli.exe`, then packages them as a portable zip with this filename format:
+Windows releases are produced by `.github/workflows/release.yml`. The current release workflow builds `QuotaBarWin.exe`, `QuotaBarWin.Cli.exe`, and `QuotaBarWin.Updater.exe`, then packages them as a portable zip with this filename format:
 
 ```text
 QuotaBarWin_<version>_windows_x64_portable_<commit>.zip
@@ -312,11 +312,19 @@ QuotaBarWin_<version>_windows_x64_portable_<commit>.zip
 
 The zip includes `quotabarwin.portable`, so extracted releases use portable config beside the executable by default. On `v*` tags, the zip is uploaded as a GitHub Release asset and the matching `CHANGELOG.md` section becomes the Release notes; manual workflow runs keep it as an Actions artifact.
 
+### Application-update release setup
+
+Application updates use DeskFoundry's `desktop-updater`. The client reads signed `updates/stable.json` and `.sig` data from GitHub Raw and downloads the ZIP from GitHub Releases. It replaces only allow-listed executables; the `quotabarwin.portable` marker, configuration, logs, secrets, Provider caches, and user files are retained.
+
+Before enabling the first production update, maintainers must create a distinct QuotaBarWin Ed25519 key as described in the [DeskFoundry portable-update guide](https://github.com/Shawlaw/DeskFoundry/blob/main/docs/portable-update-guide.md). Store the private key as repository Actions secret `DESKTOP_UPDATE_PRIVATE_KEY`, and set its public key as repository variable `QUOTABARWIN_UPDATE_PUBLIC_KEY`. The Release workflow compiles that public key into the client, packages `QuotaBarWin.Updater.exe`, and uses the fixed `DeskFoundry@v0.1.3` Action to sign and commit the Raw update pointer; `desktop-update.toml` defines only the ZIP replacement allow-list.
+
 ---
 
 ## Install And Uninstall
 
 Install: download the portable zip from GitHub Releases, extract it to any folder, and run `QuotaBarWin.exe`.
+
+The first release containing the updater must still be installed manually. Later releases can be checked from **Settings → Application update** and installed with **Download and restart to update**.
 
 Uninstall: quit QuotaBarWin from the tray menu, then delete the extracted folder.
 

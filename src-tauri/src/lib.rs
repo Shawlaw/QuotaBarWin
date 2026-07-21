@@ -2,6 +2,7 @@
 
 mod app_identity;
 mod app_info;
+mod app_update;
 mod cli;
 mod config;
 mod diagnostics;
@@ -22,6 +23,7 @@ use tauri::{Emitter, Manager};
 const HIDDEN_STARTUP_ARG: &str = "--hidden";
 
 pub use app_info::get_app_version;
+pub use app_update::{apply_app_update, check_app_update, download_app_update, AppUpdateState};
 pub use cli::run_cli;
 pub use config::{
     get_config, get_config_storage_info, migrate_config_file, open_config_folder,
@@ -64,6 +66,7 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .manage(AppUpdateState::default())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -90,6 +93,9 @@ pub fn run() {
             }
             tray::create_tray_popup_window(app.handle())?;
             tray::create_tray(app.handle())?;
+            if let Err(error) = app_update::acknowledge_applied_update() {
+                eprintln!("Failed to acknowledge applied application update: {error}");
+            }
             let app_handle = app.handle().clone();
             match config::config_path_for_app(&app_handle).and_then(|path| {
                 let mut loaded = config::load_or_create_config(&path)?;
@@ -124,6 +130,9 @@ pub fn run() {
             get_config,
             get_config_storage_info,
             get_app_version,
+            check_app_update,
+            download_app_update,
+            apply_app_update,
             export_diagnostics,
             open_config_folder,
             open_remote_provider_guide,

@@ -158,6 +158,20 @@ export type I18nCatalog = {
     resetChanges: string;
     save: string;
   };
+  appUpdate: {
+    title: string;
+    currentVersion: (version: string) => string;
+    check: string;
+    checking: string;
+    upToDate: string;
+    available: (version: string) => string;
+    downloadAndRestart: string;
+    downloading: string;
+    notes: string;
+    unavailable: string;
+    failedToCheck: string;
+    failedToDownload: string;
+  };
   networkProxy: {
     label: string;
     noProxy: string;
@@ -423,6 +437,20 @@ export const en: I18nCatalog = {
     unsavedChanges: "Unsaved changes",
     resetChanges: "Reset changes",
     save: "Save"
+  },
+  appUpdate: {
+    title: "Application update",
+    currentVersion: (version) => `Current version: ${version}`,
+    check: "Check for updates",
+    checking: "Checking...",
+    upToDate: "QuotaBarWin is up to date.",
+    available: (version) => `QuotaBarWin ${version} is available.`,
+    downloadAndRestart: "Download and restart to update",
+    downloading: "Downloading update...",
+    notes: "Release notes",
+    unavailable: "Application updates are not configured in this build.",
+    failedToCheck: "Failed to check application updates",
+    failedToDownload: "Failed to download application update"
   },
   networkProxy: {
     label: "Network proxy",
@@ -691,6 +719,20 @@ export const zhCN: I18nCatalog = {
     unsavedChanges: "未保存的更改",
     resetChanges: "重置更改",
     save: "保存"
+  },
+  appUpdate: {
+    title: "应用更新",
+    currentVersion: (version) => `当前版本：${version}`,
+    check: "检查应用更新",
+    checking: "正在检查...",
+    upToDate: "QuotaBarWin 已是最新版本。",
+    available: (version) => `发现 QuotaBarWin ${version}。`,
+    downloadAndRestart: "下载并重启更新",
+    downloading: "正在下载更新...",
+    notes: "查看发布说明",
+    unavailable: "此构建尚未配置应用更新。",
+    failedToCheck: "检查应用更新失败",
+    failedToDownload: "下载应用更新失败"
   },
   networkProxy: {
     label: "网络代理",

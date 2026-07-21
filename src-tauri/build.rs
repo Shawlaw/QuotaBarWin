@@ -7,6 +7,7 @@ use std::{
 fn main() {
     println!("cargo:rerun-if-env-changed=QUOTABARWIN_GIT_COMMIT");
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
+    println!("cargo:rerun-if-env-changed=QUOTABARWIN_UPDATE_PUBLIC_KEY");
     emit_git_rerun_directives();
 
     let git_commit = env_commit().or_else(git_short_commit).unwrap_or_default();

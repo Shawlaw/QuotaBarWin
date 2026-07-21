@@ -233,6 +233,48 @@ export type UpdateInfo = {
   checkedAt?: string | null;
 };
 
+export type AppUpdateInfo = {
+  configured: boolean;
+  currentVersion: string;
+  available: boolean;
+  version: string | null;
+  notesUrl: string | null;
+  downloaded: boolean;
+};
+
+const unavailableAppUpdate: AppUpdateInfo = {
+  configured: false,
+  currentVersion: "Browser Preview",
+  available: false,
+  version: null,
+  notesUrl: null,
+  downloaded: false,
+};
+
+export async function checkAppUpdate(): Promise<AppUpdateInfo> {
+  if (!hasTauriInternals()) {
+    return unavailableAppUpdate;
+  }
+
+  return invoke<AppUpdateInfo>("check_app_update");
+}
+
+export async function downloadAppUpdate(): Promise<AppUpdateInfo> {
+  if (!hasTauriInternals()) {
+    return unavailableAppUpdate;
+  }
+
+  return invoke<AppUpdateInfo>("download_app_update");
+}
+
+export async function applyAppUpdate(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  return invoke<void>("apply_app_update");
+}
+
 export async function getNetworkProxy(): Promise<ProxyConfig | null> {
   if (!hasTauriInternals()) {
     return null;

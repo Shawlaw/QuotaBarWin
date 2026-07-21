@@ -30,7 +30,7 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 
 - 平台：**Windows**
 - 分发方式：**绿色版 portable zip + 单 exe**
-- 当前版本：**v1.0.3**
+- 当前版本：**v1.0.4**
 - 技术栈：Tauri 2、Rust 2021、React 19、TypeScript、Vite
 - 当前配置 schema version：**16**
 
@@ -303,7 +303,7 @@ cargo install tauri-driver --locked
 npm run tauri -- build --no-bundle
 ```
 
-Windows release 由 `.github/workflows/release.yml` 生成。发布工作流构建 `QuotaBarWin.exe` 和 `QuotaBarWin.Cli.exe`，并打包为 portable zip，文件名格式为：
+Windows release 由 `.github/workflows/release.yml` 生成。当前发布工作流构建 `QuotaBarWin.exe`、`QuotaBarWin.Cli.exe` 和 `QuotaBarWin.Updater.exe`，并打包为 portable zip，文件名格式为：
 
 ```text
 QuotaBarWin_<version>_windows_x64_portable_<commit>.zip
@@ -311,11 +311,19 @@ QuotaBarWin_<version>_windows_x64_portable_<commit>.zip
 
 zip 内包含 `quotabarwin.portable`，解压后默认使用可执行文件旁的 portable 配置。推送 `v*` tag 时，zip 会上传为 GitHub Release asset，并自动将 `CHANGELOG.md` 中对应版本的段落写入 Release 说明；手动触发工作流时会保留为 Actions artifact。
 
+### 应用自动更新发布配置
+
+应用更新由 DeskFoundry 的 `desktop-updater` 提供。客户端从 GitHub Raw 读取已签名的 `updates/stable.json` 和 `.sig`，再从 GitHub Release 下载 ZIP；它只覆盖发布包白名单中的 exe，`quotabarwin.portable`、配置、日志、secrets、Provider 缓存和用户文件都会保留。
+
+首次启用前，维护者必须按 [DeskFoundry portable 更新规范](https://github.com/Shawlaw/DeskFoundry/blob/main/docs/portable-update-guide.md) 为 QuotaBarWin 生成独立 Ed25519 密钥：私钥写入仓库 Actions secret `DESKTOP_UPDATE_PRIVATE_KEY`，公钥写入仓库变量 `QUOTABARWIN_UPDATE_PUBLIC_KEY`。Release 工作流会把公钥编译进客户端、打包 `QuotaBarWin.Updater.exe`，然后通过固定版本的 `DeskFoundry@v0.1.3` Action 签名并提交 Raw 更新指针；`desktop-update.toml` 仅定义 ZIP 覆盖白名单。
+
 ---
 
 ## 安装和卸载
 
 安装：从 GitHub Release 下载 portable zip，解压到任意目录后直接启动 `QuotaBarWin.exe`。
+
+首次包含更新器的版本仍需手动下载安装。之后可在“设置 → 应用更新”检查新版并选择“下载并重启更新”。
 
 卸载：先从托盘菜单退出 QuotaBarWin，然后删除解压目录。
 

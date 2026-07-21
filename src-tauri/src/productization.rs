@@ -133,6 +133,12 @@ fn release_workflow_yaml_is_valid() {
     assert!(workflow.contains("Build CLI companion"));
     assert!(workflow.contains("--bin quotabarwin-cli"));
     assert!(workflow.contains("QuotaBarWin.Cli.exe"));
+    assert!(workflow.contains("Build update helper"));
+    assert!(workflow.contains("--bin quotabarwin-updater"));
+    assert!(workflow.contains("QuotaBarWin.Updater.exe"));
+    assert!(workflow.contains("QUOTABARWIN_UPDATE_PUBLIC_KEY"));
+    assert!(workflow.contains("publish-portable-update@v0.1.3"));
+    assert!(workflow.contains("DESKTOP_UPDATE_PRIVATE_KEY"));
     assert!(workflow.contains("portable"));
     assert!(workflow.contains("quotabarwin.portable"));
     assert!(workflow.contains("Compute release metadata"));

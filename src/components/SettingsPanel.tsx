@@ -8,8 +8,11 @@ import type {
   RemoteProviderParameter
 } from "../types";
 import {
+  applyAppUpdate,
   applyRemoteUpdate,
+  checkAppUpdate,
   checkRemoteUpdates,
+  downloadAppUpdate,
   getConfig,
   getInstalledRemoteProviderManifest,
   installRemoteProviderManifest,
@@ -18,6 +21,7 @@ import {
   refreshRemoteProvider,
   removeRemoteProvider
 } from "../lib/api";
+import type { AppUpdateInfo } from "../lib/api";
 import { DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS } from "../lib/defaults";
 import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
@@ -174,6 +178,9 @@ export function SettingsPanel({
   const [updateInfo, setUpdateInfo] = useState<Record<string, Awaited<ReturnType<typeof refreshRemoteProvider>>>>({});
   const [providerManifests, setProviderManifests] = useState<ProviderManifestState>({});
   const [remoteMessage, setRemoteMessage] = useState<string | null>(null);
+  const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [appUpdateMessage, setAppUpdateMessage] = useState<string | null>(null);
+  const [isAppUpdateBusy, setIsAppUpdateBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
   const [providerSettingsView, setProviderSettingsView] = useState<"main" | "add" | "sources">("main");
   const [quotaDataConfirmOpen, setQuotaDataConfirmOpen] = useState(false);
@@ -430,6 +437,39 @@ export function SettingsPanel({
       setRemoteMessage(t.remoteProviders.providerRemoved);
     } catch (error) {
       setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToRemoveProvider);
+    }
+  }
+
+  async function handleAppUpdateCheck() {
+    setIsAppUpdateBusy(true);
+    setAppUpdateMessage(null);
+    try {
+      const result = await checkAppUpdate();
+      setAppUpdateInfo(result);
+      setAppUpdateMessage(
+        !result.configured
+          ? t.appUpdate.unavailable
+          : result.available && result.version
+            ? t.appUpdate.available(result.version)
+            : t.appUpdate.upToDate
+      );
+    } catch (error) {
+      setAppUpdateMessage(error instanceof Error ? error.message : t.appUpdate.failedToCheck);
+    } finally {
+      setIsAppUpdateBusy(false);
+    }
+  }
+
+  async function handleDownloadAndApplyAppUpdate() {
+    setIsAppUpdateBusy(true);
+    setAppUpdateMessage(t.appUpdate.downloading);
+    try {
+      const downloaded = await downloadAppUpdate();
+      setAppUpdateInfo(downloaded);
+      await applyAppUpdate();
+    } catch (error) {
+      setAppUpdateMessage(error instanceof Error ? error.message : t.appUpdate.failedToDownload);
+      setIsAppUpdateBusy(false);
     }
   }
 
@@ -722,6 +762,38 @@ export function SettingsPanel({
               {t.settings.resetConfig}
             </button>
           </div>
+        </section>
+        <section className="settings-section" aria-label={t.appUpdate.title} data-testid="app-update-section">
+          <div className="settings-section-title">
+            <h3>{t.appUpdate.title}</h3>
+            <span>{t.appUpdate.currentVersion(appUpdateInfo?.currentVersion ?? "-")}</span>
+          </div>
+          <div className="settings-actions settings-actions--inline">
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={isAppUpdateBusy}
+              onClick={() => void handleAppUpdateCheck()}
+            >
+              {isAppUpdateBusy ? t.appUpdate.checking : t.appUpdate.check}
+            </button>
+            {appUpdateInfo?.available ? (
+              <button
+                type="button"
+                className="button-primary"
+                disabled={isAppUpdateBusy}
+                onClick={() => void handleDownloadAndApplyAppUpdate()}
+              >
+                {isAppUpdateBusy ? t.appUpdate.downloading : t.appUpdate.downloadAndRestart}
+              </button>
+            ) : null}
+            {appUpdateInfo?.notesUrl ? (
+              <a className="button-secondary" href={appUpdateInfo.notesUrl} target="_blank" rel="noreferrer">
+                {t.appUpdate.notes}
+              </a>
+            ) : null}
+          </div>
+          {appUpdateMessage ? <div className="settings-message">{appUpdateMessage}</div> : null}
         </section>
       </section>
 

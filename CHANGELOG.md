@@ -2,6 +2,17 @@
 
 本文记录 QuotaBarWin 的用户可见变化。默认以简体中文维护；如果未来需要英文 release notes，可从本文件同步整理。
 
+## [1.0.4] - 2026-07-21
+
+### Added
+
+- 新增由 DeskFoundry `desktop-updater` 提供的 portable 应用更新基础：已签名 GitHub Raw 更新清单、GitHub Release ZIP 下载、SHA-256 校验、独立 helper 替换与启动确认回滚。
+- 设置页新增“应用更新”检查入口；发现新版后可执行“下载并重启更新”。
+
+### Security
+
+- 应用更新仅接受 Ed25519 签名清单，且 ZIP 只允许覆盖发布包白名单中的可执行文件；portable marker、配置、日志、secrets、Provider 缓存和用户文件都会保留。
+
 ## [1.0.3] - 2026-07-15
 
 ### Changed

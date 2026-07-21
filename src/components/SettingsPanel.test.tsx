@@ -15,6 +15,7 @@ const apiMocks = vi.hoisted(() => {
   const state: { config: AppConfig | null } = { config: null };
   return {
     state,
+    applyAppUpdate: vi.fn(async () => undefined),
     applyRemoteUpdate: vi.fn(async (id: string) => {
       if (state.config) {
         state.config = {
@@ -27,6 +28,14 @@ const apiMocks = vi.hoisted(() => {
         };
       }
     }),
+    checkAppUpdate: vi.fn(async () => ({
+      configured: true,
+      currentVersion: "1.0.3",
+      available: true,
+      version: "1.0.4",
+      notesUrl: "https://example.com/releases/v1.0.4",
+      downloaded: false,
+    })),
     checkRemoteUpdates: vi.fn(async () => [
       {
         id: "remote-kimi",
@@ -37,6 +46,14 @@ const apiMocks = vi.hoisted(() => {
         checkedAt: "2026-06-18T09:00:00Z",
       },
     ]),
+    downloadAppUpdate: vi.fn(async () => ({
+      configured: true,
+      currentVersion: "1.0.3",
+      available: true,
+      version: "1.0.4",
+      notesUrl: "https://example.com/releases/v1.0.4",
+      downloaded: true,
+    })),
     getConfig: vi.fn(async () => state.config),
     getInstalledRemoteProviderManifest: vi.fn(async (id: string) => ({
       schemaVersion: 1,
@@ -260,6 +277,17 @@ test("settings_renders_registry_and_remote_provider_metadata", async () => {
   ).toBeInTheDocument();
   expect(await screen.findByText("Kimi API Key")).toBeInTheDocument();
   expect(screen.getByText(/Default: \$\{secret:KIMI_API_KEY\}/)).toBeInTheDocument();
+});
+
+test("settings_checks_and_applies_signed application updates", async () => {
+  renderSettings();
+
+  fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+  expect(await screen.findByText("QuotaBarWin 1.0.4 is available.")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Download and restart to update" }));
+  await waitFor(() => expect(apiMocks.downloadAppUpdate).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(apiMocks.applyAppUpdate).toHaveBeenCalledTimes(1));
 });
 
 test("settings_toggles_provider_tray_visibility", async () => {
