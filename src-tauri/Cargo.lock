@@ -815,8 +815,8 @@ dependencies = [
 
 [[package]]
 name = "desktop-updater"
-version = "0.1.3"
-source = "git+https://github.com/Shawlaw/DeskFoundry.git?tag=v0.1.3#3ccbec41854ca015a1fb66755bd5b8ac7d918123"
+version = "0.1.4"
+source = "git+https://github.com/Shawlaw/DeskFoundry.git?tag=v0.1.4#85ae97aba2cf36b1603bfa42b0f9f5e90412d98f"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",

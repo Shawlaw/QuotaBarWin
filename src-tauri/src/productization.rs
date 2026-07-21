@@ -137,8 +137,9 @@ fn release_workflow_yaml_is_valid() {
     assert!(workflow.contains("--bin quotabarwin-updater"));
     assert!(workflow.contains("QuotaBarWin.Updater.exe"));
     assert!(workflow.contains("QUOTABARWIN_UPDATE_PUBLIC_KEY"));
-    assert!(workflow.contains("publish-portable-update@v0.1.3"));
+    assert!(workflow.contains("publish-portable-update@v0.1.4"));
     assert!(workflow.contains("DESKTOP_UPDATE_PRIVATE_KEY"));
+    assert!(workflow.contains("public-key: ${{ vars.QUOTABARWIN_UPDATE_PUBLIC_KEY }}"));
     assert!(workflow.contains("portable"));
     assert!(workflow.contains("quotabarwin.portable"));
     assert!(workflow.contains("Compute release metadata"));

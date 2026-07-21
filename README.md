@@ -315,7 +315,7 @@ zip 内包含 `quotabarwin.portable`，解压后默认使用可执行文件旁�
 
 应用更新由 DeskFoundry 的 `desktop-updater` 提供。客户端从 GitHub Raw 读取已签名的 `updates/stable.json` 和 `.sig`，再从 GitHub Release 下载 ZIP；它只覆盖发布包白名单中的 exe，`quotabarwin.portable`、配置、日志、secrets、Provider 缓存和用户文件都会保留。
 
-首次启用前，维护者必须按 [DeskFoundry portable 更新规范](https://github.com/Shawlaw/DeskFoundry/blob/main/docs/portable-update-guide.md) 为 QuotaBarWin 生成独立 Ed25519 密钥：私钥写入仓库 Actions secret `DESKTOP_UPDATE_PRIVATE_KEY`，公钥写入仓库变量 `QUOTABARWIN_UPDATE_PUBLIC_KEY`。Release 工作流会把公钥编译进客户端、打包 `QuotaBarWin.Updater.exe`，然后通过固定版本的 `DeskFoundry@v0.1.3` Action 签名并提交 Raw 更新指针；`desktop-update.toml` 仅定义 ZIP 覆盖白名单。
+首次启用前，维护者必须按 [DeskFoundry portable 更新规范](https://github.com/Shawlaw/DeskFoundry/blob/main/docs/portable-update-guide.md) 为 QuotaBarWin 生成独立 Ed25519 密钥：私钥写入仓库 Actions secret `DESKTOP_UPDATE_PRIVATE_KEY`，公钥写入仓库变量 `QUOTABARWIN_UPDATE_PUBLIC_KEY`。Release 工作流会把公钥编译进客户端、打包 `QuotaBarWin.Updater.exe`，然后通过固定版本的 `DeskFoundry@v0.1.4` Action 签名并提交 Raw 更新指针；该 Action 会先验证 secret 私钥与这个公钥确为同一对，`desktop-update.toml` 仅定义 ZIP 覆盖白名单。
 
 ---
 
