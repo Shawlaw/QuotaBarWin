@@ -4,6 +4,8 @@ target/
 src-tauri/target/
 src-tauri/gen/
 .tmp/
+.zcode/
+.codex/
 .env
 .env.*
 !.env.example
