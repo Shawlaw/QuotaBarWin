@@ -185,9 +185,6 @@ pub fn run() {
                 );
                 tray::hide_tray_popup_after_focus_lost(window.clone(), decision);
             }
-            tauri::WindowEvent::Moved(position) if window.label() == tray::TRAY_POPUP_LABEL => {
-                tray::save_tray_popup_position_after_user_move(window.app_handle(), *position);
-            }
             tauri::WindowEvent::Resized(size) if window.label() == tray::TRAY_POPUP_LABEL => {
                 let scale_factor = window.scale_factor().unwrap_or(1.0);
                 tray::save_tray_popup_size_after_resize(window.app_handle(), *size, scale_factor);

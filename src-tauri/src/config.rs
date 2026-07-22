@@ -42,6 +42,8 @@ pub struct AppConfig {
     pub language: AppLanguage,
     #[serde(default)]
     pub network_proxy: Option<ProxyConfig>,
+    // Legacy data is retained only so existing config files continue to deserialize. Tray quick
+    // views now always anchor to the current tray click and never read or write this value.
     #[serde(default)]
     pub tray_popup_position: Option<TrayPopupPosition>,
     #[serde(default)]
@@ -919,30 +921,9 @@ pub fn repair_remote_provider_cache_paths(
     Ok(true)
 }
 
-pub fn load_tray_popup_position_for_app(app: &AppHandle) -> Option<TrayPopupPosition> {
-    let path = config_path_for_app(app).ok()?;
-    load_or_create_config(&path)
-        .ok()?
-        .config
-        .tray_popup_position
-}
-
 pub fn load_tray_popup_size_for_app(app: &AppHandle) -> Option<TrayPopupSize> {
     let path = config_path_for_app(app).ok()?;
     load_or_create_config(&path).ok()?.config.tray_popup_size
-}
-
-pub fn save_tray_popup_position_for_app(
-    app: &AppHandle,
-    position: TrayPopupPosition,
-) -> Result<(), String> {
-    let path = config_path_for_app(app)?;
-    let mut config = load_or_create_config(&path)?.config;
-    if config.tray_popup_position == Some(position) {
-        return Ok(());
-    }
-    config.tray_popup_position = Some(position);
-    save_config_to_path(&path, &config)
 }
 
 pub fn save_tray_popup_size_for_app(app: &AppHandle, size: TrayPopupSize) -> Result<(), String> {
