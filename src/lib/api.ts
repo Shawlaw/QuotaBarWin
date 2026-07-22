@@ -179,6 +179,15 @@ export async function getAppVersion(): Promise<string> {
   return invoke<string>("get_app_version");
 }
 
+export async function openProjectGithub(): Promise<void> {
+  if (!hasTauriInternals()) {
+    window.open("https://github.com/Shawlaw/QuotaBarWin", "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  return invoke<void>("open_project_github");
+}
+
 export async function saveConfig(config: AppConfig): Promise<void> {
   if (!hasTauriInternals()) {
     void config;
@@ -273,6 +282,15 @@ export async function applyAppUpdate(): Promise<void> {
   }
 
   return invoke<void>("apply_app_update");
+}
+
+export async function openAppUpdateNotes(notesUrl: string): Promise<void> {
+  if (!hasTauriInternals()) {
+    window.open(notesUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  return invoke<void>("open_app_update_notes", { notesUrl });
 }
 
 export async function getNetworkProxy(): Promise<ProxyConfig | null> {

@@ -143,10 +143,15 @@ button:disabled {
 
 .github-link {
   align-items: center;
+  background: transparent;
+  border: 0;
   color: #64748b;
+  cursor: pointer;
   display: inline-flex;
+  font: inherit;
   font-size: 13px;
   min-height: 34px;
+  padding: 0;
   text-decoration: none;
 }
 

@@ -6,6 +6,7 @@ mod app_update;
 mod cli;
 mod config;
 mod diagnostics;
+mod external_links;
 pub mod logger;
 #[cfg(test)]
 mod productization;
@@ -133,6 +134,8 @@ pub fn run() {
             check_app_update,
             download_app_update,
             apply_app_update,
+            external_links::open_project_github,
+            external_links::open_app_update_notes,
             export_diagnostics,
             open_config_folder,
             open_remote_provider_guide,

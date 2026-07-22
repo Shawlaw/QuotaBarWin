@@ -171,6 +171,7 @@ export type I18nCatalog = {
     unavailable: string;
     failedToCheck: string;
     failedToDownload: string;
+    failedToOpenNotes: string;
   };
   networkProxy: {
     label: string;
@@ -450,7 +451,8 @@ export const en: I18nCatalog = {
     notes: "Release notes",
     unavailable: "Application updates are not configured in this build.",
     failedToCheck: "Failed to check application updates",
-    failedToDownload: "Failed to download application update"
+    failedToDownload: "Failed to download application update",
+    failedToOpenNotes: "Failed to open release notes"
   },
   networkProxy: {
     label: "Network proxy",
@@ -732,7 +734,8 @@ export const zhCN: I18nCatalog = {
     notes: "查看发布说明",
     unavailable: "此构建尚未配置应用更新。",
     failedToCheck: "检查应用更新失败",
-    failedToDownload: "下载应用更新失败"
+    failedToDownload: "下载应用更新失败",
+    failedToOpenNotes: "无法打开发行说明"
   },
   networkProxy: {
     label: "网络代理",

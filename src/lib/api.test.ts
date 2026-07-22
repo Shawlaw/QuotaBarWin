@@ -11,6 +11,8 @@ import {
   installRemoteProviderRegistry,
   getConfig,
   getNetworkProxy,
+  openAppUpdateNotes,
+  openProjectGithub,
   previewRemoteProviderRegistry,
   getTrayPopupPresentationId,
   refreshProvider,
@@ -143,17 +145,28 @@ test("api_invokes_application_update_commands", async () => {
     if (cmd === "apply_app_update") {
       return null;
     }
+    if (cmd === "open_project_github") {
+      return null;
+    }
+    if (cmd === "open_app_update_notes") {
+      return null;
+    }
     throw new Error(`unexpected command ${cmd}`);
   });
 
   await expect(checkAppUpdate()).resolves.toEqual(update);
   await expect(downloadAppUpdate()).resolves.toEqual({ ...update, downloaded: true });
   await expect(applyAppUpdate()).resolves.toBeNull();
+  await expect(openProjectGithub()).resolves.toBeNull();
+  await expect(openAppUpdateNotes(update.notesUrl)).resolves.toBeNull();
   expect(calls.map((call) => call.cmd)).toEqual([
     "check_app_update",
     "download_app_update",
     "apply_app_update",
+    "open_project_github",
+    "open_app_update_notes",
   ]);
+  expect(calls.at(-1)?.payload).toEqual({ notesUrl: update.notesUrl });
 });
 
 test("api_invokes_tray_popup_commands", async () => {

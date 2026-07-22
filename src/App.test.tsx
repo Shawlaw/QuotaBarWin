@@ -79,6 +79,7 @@ const mocks = vi.hoisted(() => {
     listenForSingleInstance: vi.fn(async () => () => undefined),
     hideCurrentWindow: vi.fn(async () => undefined),
     openConfigFolder: vi.fn(async () => undefined),
+    openProjectGithub: vi.fn(async () => undefined),
     openRemoteProviderGuide: vi.fn(async () => undefined),
     installRemoteProviderRegistry: vi.fn(async () => {
       throw new Error(
@@ -134,6 +135,15 @@ test("refresh_button_calls_refresh_snapshot", async () => {
 
   fireEvent.click(screen.getAllByRole("button", { name: "Refresh" })[0]);
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+});
+
+test("main_app_opens_the_project_in_the_default_browser", async () => {
+  render(<App />);
+
+  expect(await screen.findByText("Codex Mock")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "GitHub" }));
+
+  expect(mocks.openProjectGithub).toHaveBeenCalledTimes(1);
 });
 
 test("main_app_refreshes_when_native_refresh_requested", async () => {

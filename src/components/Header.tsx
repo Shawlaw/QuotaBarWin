@@ -8,6 +8,7 @@ type HeaderProps = {
   onOpenOverview: () => void;
   onRefresh: () => void;
   onOpenSettings: () => void;
+  onOpenGithub: () => void;
 };
 
 export function Header({
@@ -16,7 +17,8 @@ export function Header({
   isLoading,
   onOpenOverview,
   onRefresh,
-  onOpenSettings
+  onOpenSettings,
+  onOpenGithub
 }: HeaderProps) {
   const { t } = useI18n();
   const appVersionLabel = visibleAppVersion(appVersion);
@@ -56,14 +58,13 @@ export function Header({
             {isLoading ? t.header.refreshing : t.header.refresh}
           </span>
         </button>
-        <a
+        <button
+          type="button"
           className="github-link"
-          href="https://github.com/Shawlaw/QuotaBarWin"
-          target="_blank"
-          rel="noreferrer"
+          onClick={onOpenGithub}
         >
           GitHub
-        </a>
+        </button>
       </div>
     </header>
   );

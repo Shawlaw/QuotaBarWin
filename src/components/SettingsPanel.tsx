@@ -16,6 +16,7 @@ import {
   getConfig,
   getInstalledRemoteProviderManifest,
   installRemoteProviderManifest,
+  openAppUpdateNotes,
   openRemoteProviderGuide,
   previewRemoteProviderRegistry,
   refreshRemoteProvider,
@@ -35,6 +36,7 @@ const LOG_BYTES_PER_MB = 1024 * 1024;
 const DEFAULT_LOG_MAX_BYTES = 10 * LOG_BYTES_PER_MB;
 
 type SettingsPanelProps = {
+  appVersion: string;
   config: AppConfig;
   configStorageInfo: ConfigStorageInfo | null;
   isConfigStorageBusy: boolean;
@@ -160,6 +162,7 @@ function shortChecksum(value: string | null | undefined): string | null {
 }
 
 export function SettingsPanel({
+  appVersion,
   config,
   configStorageInfo,
   isConfigStorageBusy,
@@ -473,6 +476,19 @@ export function SettingsPanel({
     }
   }
 
+  async function handleOpenAppUpdateNotes() {
+    const notesUrl = appUpdateInfo?.notesUrl;
+    if (!notesUrl) {
+      return;
+    }
+
+    try {
+      await openAppUpdateNotes(notesUrl);
+    } catch (error) {
+      setAppUpdateMessage(error instanceof Error ? error.message : t.appUpdate.failedToOpenNotes);
+    }
+  }
+
   async function handleInstallManifest(
     url: string,
     checksum: string | null,
@@ -766,7 +782,7 @@ export function SettingsPanel({
         <section className="settings-section" aria-label={t.appUpdate.title} data-testid="app-update-section">
           <div className="settings-section-title">
             <h3>{t.appUpdate.title}</h3>
-            <span>{t.appUpdate.currentVersion(appUpdateInfo?.currentVersion ?? "-")}</span>
+            <span>{t.appUpdate.currentVersion(appUpdateInfo?.currentVersion ?? appVersion)}</span>
           </div>
           <div className="settings-actions settings-actions--inline">
             <button
@@ -788,9 +804,14 @@ export function SettingsPanel({
               </button>
             ) : null}
             {appUpdateInfo?.notesUrl ? (
-              <a className="button-secondary" href={appUpdateInfo.notesUrl} target="_blank" rel="noreferrer">
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={isAppUpdateBusy}
+                onClick={() => void handleOpenAppUpdateNotes()}
+              >
                 {t.appUpdate.notes}
-              </a>
+              </button>
             ) : null}
           </div>
           {appUpdateMessage ? <div className="settings-message">{appUpdateMessage}</div> : null}

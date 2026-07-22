@@ -10,12 +10,12 @@ use tauri_runtime::ResizeDirection;
 use crate::{
     app_info,
     config::{self, AppLanguage, TrayPopupSize},
+    external_links,
     logger::{LogLevel, LogSink},
 };
 
 use std::{
     env,
-    process::Command,
     sync::{
         atomic::{AtomicU64, Ordering},
         Mutex,
@@ -37,7 +37,6 @@ pub const OPEN_APP_FOLDER_ID: &str = "open-app-folder";
 pub const QUIT_ID: &str = "quit";
 pub const TRAY_POPUP_LABEL: &str = "tray-popup";
 pub const TRAY_POPUP_VIEW: &str = "index.html?view=tray";
-const GITHUB_URL: &str = "https://github.com/Shawlaw/QuotaBarWin";
 const TRAY_POPUP_WIDTH: f64 = 380.0;
 const TRAY_POPUP_HEIGHT: f64 = 520.0;
 const TRAY_POPUP_MIN_WIDTH: f64 = 320.0;
@@ -884,42 +883,12 @@ fn handle_menu_event(app: &AppHandle, id: &MenuId) {
             }
         }
         VERSION_ID => {
-            if let Err(error) = open_url_external(GITHUB_URL) {
+            if let Err(error) = external_links::open_project_github() {
                 eprintln!("Failed to open GitHub from tray menu: {error}");
             }
         }
         QUIT_ID => app.exit(0),
         _ => {}
-    }
-}
-
-fn open_url_external(url: &str) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        Command::new("rundll32")
-            .arg("url.dll,FileProtocolHandler")
-            .arg(url)
-            .spawn()
-            .map_err(|error| error.to_string())?;
-        return Ok(());
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg(url)
-            .spawn()
-            .map_err(|error| error.to_string())?;
-        return Ok(());
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        Command::new("xdg-open")
-            .arg(url)
-            .spawn()
-            .map_err(|error| error.to_string())?;
-        return Ok(());
     }
 }
 

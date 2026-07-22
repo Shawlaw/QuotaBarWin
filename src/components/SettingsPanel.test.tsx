@@ -101,6 +101,7 @@ const apiMocks = vi.hoisted(() => {
       }
       return provider;
     }),
+    openAppUpdateNotes: vi.fn(async () => undefined),
     openRemoteProviderGuide: vi.fn(async () => undefined),
     previewRemoteProviderRegistry: vi.fn(async () => [
       {
@@ -242,6 +243,7 @@ function renderSettings(
     return (
       <I18nProvider language="en">
         <SettingsPanel
+          appVersion="1.0.5-test"
           config={config}
           configStorageInfo={storageInfo}
           isConfigStorageBusy={false}
@@ -282,8 +284,17 @@ test("settings_renders_registry_and_remote_provider_metadata", async () => {
 test("settings_checks_and_applies_signed application updates", async () => {
   renderSettings();
 
+  expect(screen.getByText("Current version: 1.0.5-test")).toBeInTheDocument();
+
   fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
   expect(await screen.findByText("QuotaBarWin 1.0.4 is available.")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Release notes" }));
+  await waitFor(() =>
+    expect(apiMocks.openAppUpdateNotes).toHaveBeenCalledWith(
+      "https://example.com/releases/v1.0.4"
+    )
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "Download and restart to update" }));
   await waitFor(() => expect(apiMocks.downloadAppUpdate).toHaveBeenCalledTimes(1));

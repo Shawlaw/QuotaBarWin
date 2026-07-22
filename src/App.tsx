@@ -13,6 +13,7 @@ import {
   listenForSnapshotUpdates,
   listenForSingleInstance,
   openConfigFolder,
+  openProjectGithub,
   refreshProvider,
   refreshSnapshot,
   resetConfig,
@@ -463,9 +464,11 @@ function MainApp({ onLanguageChange }: MainAppProps) {
         onOpenOverview={() => setSettingsOpen(false)}
         onOpenSettings={() => setSettingsOpen(true)}
         onRefresh={loadSnapshot}
+        onOpenGithub={() => void openProjectGithub()}
       />
       {settingsOpen && config ? (
         <SettingsPanel
+          appVersion={appVersion}
           config={config}
           configStorageInfo={configStorageInfo}
           isConfigStorageBusy={isConfigStorageBusy}
