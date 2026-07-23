@@ -922,8 +922,11 @@ fn show_tray_popup(app: &AppHandle, anchor: PhysicalPosition<f64>) {
         // a prior absolute position: it becomes misleading when the tray moves, a monitor is
         // disconnected, or Windows changes the display scale.
         let display = tray_popup_display_for_anchor(app, anchor);
-        let preferred_size =
-            tray_popup_preferred_logical_size(&window, config::load_tray_popup_size_for_app(app));
+        let preferred_size = tray_popup_preferred_logical_size(
+            config::load_tray_popup_size_for_app(app),
+            window.inner_size().ok(),
+            window.scale_factor().unwrap_or(1.0),
+        );
         allow_size_save_skip_for_auto_resize();
         if let Err(error) = set_tray_popup_size_for_display(&window, preferred_size, display) {
             log_tray_popup_event(
@@ -1047,17 +1050,16 @@ fn tray_popup_size_from_saved(saved: Option<TrayPopupSize>) -> TrayPopupSize {
 }
 
 fn tray_popup_preferred_logical_size(
-    window: &tauri::WebviewWindow,
     saved: Option<TrayPopupSize>,
+    current_inner_size: Option<PhysicalSize<u32>>,
+    scale_factor: f64,
 ) -> TrayPopupSize {
     saved
         .map(|size| tray_popup_size_from_saved(Some(size)))
         .unwrap_or_else(|| {
             tray_popup_logical_size_from_physical(
-                window
-                    .outer_size()
-                    .unwrap_or_else(|_| fallback_tray_popup_physical_size()),
-                window.scale_factor().unwrap_or(1.0),
+                current_inner_size.unwrap_or_else(fallback_tray_popup_physical_size),
+                scale_factor,
             )
         })
 }
@@ -1607,6 +1609,35 @@ mod tests {
                 width: 380.0,
                 height: 520.0
             }
+        );
+    }
+
+    #[test]
+    fn tray_popup_unsaved_size_reuses_the_current_inner_size() {
+        let display = TrayPopupDisplay {
+            work_area: TrayPopupWorkArea {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            },
+            scale_factor: 1.25,
+        };
+        let current_inner_size = PhysicalSize::new(475, 650);
+
+        let preferred =
+            tray_popup_preferred_logical_size(None, Some(current_inner_size), display.scale_factor);
+
+        assert_eq!(
+            preferred,
+            TrayPopupSize {
+                width: 380.0,
+                height: 520.0,
+            }
+        );
+        assert_eq!(
+            tray_popup_physical_size_for_display(preferred, display),
+            current_inner_size
         );
     }
 }
