@@ -1381,6 +1381,73 @@ mod tests {
     }
 
     #[test]
+    fn official_time_flies_provider_runs_on_builtin_js() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let provider_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root")
+            .join("examples")
+            .join("remote-providers")
+            .join("time-flies");
+        let providers = run_remote_provider(
+            "time-flies",
+            "Time Flies",
+            Some(&provider_dir),
+            "builtin-js",
+            None,
+            None,
+            5,
+            temp.path(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+            None,
+        );
+
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].status, "ok");
+        assert_eq!(providers[0].windows.len(), 5);
+        assert!(providers[0]
+            .windows
+            .iter()
+            .all(|window| window.unit.as_deref() == Some("minutes")));
+    }
+
+    #[test]
+    fn official_builtin_js_providers_load_without_node_modules() {
+        let providers_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root")
+            .join("examples")
+            .join("remote-providers");
+        for provider_id in [
+            "kimi-coding",
+            "bigmodel-coding-plan",
+            "deepseek-balance",
+            "codex-usage",
+        ] {
+            let provider_dir = providers_root.join(provider_id);
+            let manifest = load_cached_manifest(&provider_dir).expect("manifest");
+            let source =
+                std::fs::read_to_string(provider_dir.join(&manifest.entry)).expect("source");
+            let result = run_builtin_js_provider(BuiltinJsRun {
+                provider_id,
+                provider_name: provider_id,
+                manifest: &manifest,
+                source: &format!("{source}\nfunction main(qb) {{ return {{ windows: [] }}; }}"),
+                env: &HashMap::new(),
+                timeout: Duration::from_secs(5),
+                proxy_url: None,
+                log: None,
+            });
+            assert!(
+                result.is_ok(),
+                "{provider_id} should parse in builtin-js: {result:?}"
+            );
+        }
+    }
+
+    #[test]
     fn remote_provider_injects_host_metadata_env_vars() {
         let temp = tempfile::tempdir().expect("temp dir");
         let provider_dir = temp.path().join("provider");

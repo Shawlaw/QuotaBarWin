@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script.",
-  "runtime": "node",
-  "entry": "provider.cjs",
+  "runtime": "builtin-js",
+  "entry": "provider.js",
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
-  "permissions": ["env:KIMI_API_KEY"],
+  "permissions": ["env:KIMI_API_KEY", "net:https://api.kimi.com"],
   "defaultConfig": {
     "name": "Kimi",
     "visibleWindowIds": ["300-minute", "usage"],
@@ -31,6 +31,6 @@
     }
   ],
   "checksums": {
-    "source": "sha256:10218be2b5d00d16e08b35bce6f86323a8aa68d080a29de8fd9e80c32dc5f5c7"
+    "source": "sha256:5e8f75b12b7ca090c14f7ba48216464d27fb53daf1609bf7450afcbc867a8dcc"
   }
 }

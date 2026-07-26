@@ -220,6 +220,15 @@ impl BuiltinJsHost {
             .ok_or_else(|| format!("builtin-js environment value '{name}' is not configured"))
     }
 
+    fn read_optional_env(&self, name: &str) -> Result<Option<String>, String> {
+        if !self.capabilities.allows_env(name) {
+            return Err(format!(
+                "builtin-js environment access is not permitted for '{name}'"
+            ));
+        }
+        Ok(self.environment.get(name).cloned())
+    }
+
     fn read_text_file(&self, requested_path: &str) -> Result<String, String> {
         let actual_path = fs::canonicalize(requested_path).map_err(|error| {
             format!(
@@ -427,6 +436,15 @@ fn install_host_functions(
                 .map_err(|error| Error::new_from_js_message("builtin-js", "environment", error))
         })?,
     )?;
+    let optional_env_host = host.clone();
+    globals.set(
+        "__qb_optional_env",
+        Function::new(ctx.clone(), move |name: String| {
+            optional_env_host
+                .read_optional_env(&name)
+                .map_err(|error| Error::new_from_js_message("builtin-js", "environment", error))
+        })?,
+    )?;
     let fs_host = host.clone();
     globals.set(
         "__qb_read_text",
@@ -522,7 +540,10 @@ fn expand_home_path(raw: &str) -> PathBuf {
 
 const BUILTIN_JS_BOOTSTRAP: &str = r#"
 const qb = Object.freeze({
-  env: Object.freeze({ get: (name) => __qb_env(String(name)) }),
+  env: Object.freeze({
+    get: (name) => __qb_env(String(name)),
+    getOptional: (name) => __qb_optional_env(String(name))
+  }),
   fs: Object.freeze({ readText: (path) => __qb_read_text(String(path)) }),
   http: Object.freeze({
     request: (url, options = {}) => JSON.parse(__qb_http_request(String(url), JSON.stringify(options)))
@@ -538,6 +559,7 @@ const qb = Object.freeze({
 mod tests {
     use super::*;
     use crate::remote_provider::{Checksums, ManifestDefaultConfig, ProviderParameter};
+    use std::{io::Write, net::TcpListener, thread};
 
     fn manifest(permissions: &[&str]) -> ProviderManifest {
         ProviderManifest {
@@ -645,6 +667,61 @@ mod tests {
         assert!(denied_file
             .unwrap_err()
             .contains("cannot read requested file"));
+    }
+
+    #[test]
+    fn optional_environment_returns_null_without_granting_undeclared_access() {
+        let manifest = manifest(&["env:OPTIONAL_VALUE"]);
+        let env = HashMap::new();
+        let result = run_builtin_js_provider(BuiltinJsRun {
+            provider_id: "builtin-test",
+            provider_name: "Builtin Test",
+            manifest: &manifest,
+            source: "function main(qb) { return { configured: qb.env.getOptional('OPTIONAL_VALUE') }; }",
+            env: &env,
+            timeout: Duration::from_secs(1),
+            proxy_url: None,
+            log: None,
+        })
+        .expect("optional environment result");
+        let value: serde_json::Value = serde_json::from_str(&result.json).expect("JSON result");
+        assert!(value["configured"].is_null());
+    }
+
+    #[test]
+    fn http_capability_uses_only_the_declared_origin() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("connection");
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).expect("request");
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}",
+                )
+                .expect("response");
+        });
+        let origin = format!("http://{address}");
+        let manifest = manifest(&[&format!("net:{origin}")]);
+        let env = HashMap::new();
+        let result = run_builtin_js_provider(BuiltinJsRun {
+            provider_id: "builtin-test",
+            provider_name: "Builtin Test",
+            manifest: &manifest,
+            source: &format!(
+                "function main(qb) {{ const response = qb.http.request('{origin}/usage'); return {{ status: response.status, body: JSON.parse(response.body) }}; }}"
+            ),
+            env: &env,
+            timeout: Duration::from_secs(2),
+            proxy_url: None,
+            log: None,
+        })
+        .expect("HTTP result");
+        server.join().expect("server");
+        let value: serde_json::Value = serde_json::from_str(&result.json).expect("JSON result");
+        assert_eq!(value["status"], 200);
+        assert_eq!(value["body"]["ok"], true);
     }
 
     #[test]
