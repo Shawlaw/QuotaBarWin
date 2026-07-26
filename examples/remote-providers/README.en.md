@@ -9,7 +9,7 @@ These are complete, hostable remote provider examples for QuotaBarWin.
 Each subdirectory contains:
 
 - `provider.json` — the remote provider manifest.
-- `provider.cjs` — the source script executed by QuotaBarWin.
+- `provider.js` — the `builtin-js` source script used by project-maintained Providers.
 - `api.md` — request, response, field mapping, and fixture notes for the provider.
 - `api.en.md` — English version of `api.md`.
 
@@ -19,7 +19,7 @@ Each subdirectory contains:
 
 ## Providers
 
-The top-level README is only an index. Each provider directory's `api.md` records the request, response, field mapping, and local fixtures used by the current example script. Update that API note whenever `provider.cjs` changes.
+The top-level README is only an index. Each provider directory's `api.md` records the request, response, and field mapping used by the current example script. Update that API note whenever `provider.js` changes.
 
 | Provider | Data source | Required env var | API notes | Description |
 |----------|-------------|------------------|-----------|-------------|
@@ -45,15 +45,15 @@ For the manifest format and output contract, see [`docs/remote-provider-guide.md
 
 ## Parsing pattern
 
-Each `provider.cjs` keeps provider-specific API parsing local to the script and prints the normalized `provider-snapshot-v1` object expected by QuotaBarWin.
+Each `provider.js` keeps provider-specific API parsing local to the script and returns the normalized `provider-snapshot-v1` object from `main(qb)`. They use manifest-permission-gated `qb.env`, `qb.fs`, and `qb.http` host capabilities and do not depend on Node.js.
 
 Use this pattern when adapting the examples:
 
-1. Fetch the raw API response or load a fixture while testing.
+1. Fetch the raw API response with `qb.http.request()`; for a local file, declare and use an exact `fs:` permission.
 2. Add a short comment showing the raw response shape that the parser expects.
 3. Convert raw quota records into `windows[]` entries with stable `id`, readable `label`, numeric `used`/`limit` values where available, percentages, and ISO reset times.
 4. Move provider-specific details such as plan level, model usage, account metadata, or raw status codes into `metadata`.
-5. Keep credentials local. These examples read `process.env.NAME`; QuotaBarWin can inject values from installed provider `envVars`, `${secret:NAME}` files under `<config-dir>/secrets/NAME.txt`, or environment fallback instead of embedding secrets in remote source.
+5. Keep credentials local. These examples call `qb.env.get("NAME")` for manifest-declared variables; QuotaBarWin can resolve values from installed provider `envVars`, `${secret:NAME}` files under `<config-dir>/secrets/NAME.txt`, or environment fallback instead of embedding secrets in remote source.
 
 For multiple accounts on the same provider, each local account instance still
 injects the env var name expected by the script, but can map it to a different
@@ -78,7 +78,7 @@ Examples:
 If you edit a source script, recompute the SHA-256 checksum and update `provider.json`:
 
 ```bash
-sha256sum provider.cjs
+sha256sum provider.js
 ```
 
 Then set `checksums.source` to `sha256:<hex>`.

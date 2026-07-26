@@ -25,7 +25,7 @@ English version: [`cli.en.md`](cli.en.md)。
 .\QuotaBarWin.Cli.exe validate --provider codex-usage
 
 # 在安装前校验本地 manifest 和 source 文件
-.\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.cjs
+.\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.js
 ```
 
 `get` 和 `check` 默认使用 `--refresh`。该操作会按已安装 Provider 的配置执行脚本和网络请求，也会更新桌面应用可见的快照。`--cached` 只读取 `last_snapshot.quotaBarWin.json`；快照不存在时命令失败。不要把没有刷新时间约束的缓存数据用于高风险或高消耗决策。
@@ -53,12 +53,12 @@ English version: [`cli.en.md`](cli.en.md)。
 
 `validate` 用于 Provider 作者、CI 和排障场景。默认不会执行 source script 或发起 Provider API 请求；只有显式传入 `--run` 时才会执行。
 
-- `validate --provider ID`：读取本地配置和已缓存 Provider，检查 `providerDir`、`timeoutSeconds`、config runtime 与 manifest runtime 是否一致、required env var 是否已配置、manifest、source 文件、checksum 和 runtime 是否可用。
+- `validate --provider ID`：读取本地配置和已缓存 Provider，检查 `providerDir`、`timeoutSeconds`、config runtime 与 manifest runtime 是否一致、required env var 是否已配置、manifest、source 文件、checksum 和 runtime 是否可用。`builtin-js` 显示为内置 runtime，不要求外部可执行文件。
 - `validate --manifest PATH`：检查本地 manifest；若 `entry` 是相对本地路径，会自动定位 source。entry 是 URL 时必须传 `--source PATH`。
 
-如需连同实际输出协议一起检查，使用 `validate --provider ID --run`。它会按照该 Provider 已配置的 runtime、secret 和代理执行一次缓存脚本，并确认 stdout 能被当前 `provider-snapshot-v1` 解析器接受；这可能访问网络和账户 API，因此默认不会执行。结果的 `scriptRun` 为 `notRun`、`passed` 或 `failed`。
+如需连同实际输出协议一起检查，使用 `validate --provider ID --run`。它会按照该 Provider 已配置的 runtime、secret 和代理执行一次缓存脚本，并确认结果能被当前 `provider-snapshot-v1` 解析器接受；外部 runtime 解析 stdout，`builtin-js` 解析 `main(qb)` 返回值。这可能访问网络和账户 API，因此默认不会执行。结果的 `scriptRun` 为 `notRun`、`passed` 或 `failed`。
 
-它要求当前公开的 `provider-snapshot-v1` 输出协议、`node` / `python` / `pwsh` / `bash` 或绝对 runtime 路径，以及非空的 `displayName`。`checksums.source` 目前在公共契约中是可选的：缺失会产生 warning，但不会单独使校验失败。校验结果不会输出配置的环境变量值、secret 或 Provider stderr。
+它要求当前公开的 `provider-snapshot-v1` 输出协议、`builtin-js`、`node` / `python` / `pwsh` / `bash` 或绝对 runtime 路径，以及非空的 `displayName`。`checksums.source` 目前在公共契约中是可选的：缺失会产生 warning，但不会单独使校验失败。校验结果不会输出配置的环境变量值、secret 或 Provider stderr。
 
 成功或失败时 stdout 都是 JSON。`valid: false` 时退出码为 `30`；无法读取配置或 manifest 等命令级错误为 `20`。例如：
 

@@ -13,9 +13,10 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
    `file://` 和普通本地路径。
 2. QuotaBarWin 读取 registry，拉取每个 Provider manifest，校验可选 checksum，
    并下载 source script。
-3. Source script 会缓存到本机，并使用 manifest 声明的 runtime 执行，例如
-   `node`、`python`、`pwsh`、`bash` 或绝对路径。
-4. 每次刷新时，QuotaBarWin 运行缓存脚本，并把 stdout 解析为标准额度窗口。
+3. Source script 会缓存到本机，并使用 manifest 声明的 runtime 执行。`builtin-js`
+   使用应用内置的 QuickJS，不需要用户安装 Node.js；`node`、`python`、`pwsh`、`bash`
+   和绝对路径仍会启动对应的外部进程。
+4. 每次刷新时，QuotaBarWin 运行缓存脚本，并归一化为标准额度窗口。
 
 同一个 manifest 可以安装多次，用于查询同一 Provider 的多个账号。QuotaBarWin 会为
 每个本地账号实例生成稳定的 Provider id，例如 `kimi-coding`、`kimi-coding-2`，
@@ -29,13 +30,13 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script",
-  "runtime": "node",
-  "entry": "provider.cjs",
+  "runtime": "builtin-js",
+  "entry": "provider.js",
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
-  "permissions": ["env:KIMI_API_KEY"],
+  "permissions": ["env:KIMI_API_KEY", "net:https://api.kimi.com"],
   "defaultConfig": {
     "name": "Kimi",
     "visibleWindowIds": ["300-minute", "usage"],
@@ -70,14 +71,79 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 | `displayName` | 是 | UI 中显示的人类可读名称。 |
 | `version` | 否 | 人类可读版本号，会显示在设置页，建议使用 SemVer。缺省时 UI 会回退显示短 checksum。 |
 | `description` | 否 | 简短说明。 |
-| `runtime` | 是 | 执行 `entry` 的 runtime，例如 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
+| `runtime` | 是 | 执行 `entry` 的 runtime。`builtin-js` 使用内置 QuickJS；也可用 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
 | `entry` | 是 | Source 文件名。相对路径按 manifest 所在位置解析；也支持 HTTPS / file / 本地路径。 |
 | `requiredEnvVars` | 否 | 脚本需要的环境变量。刷新时会先查 provider `envVars`，再解析 `${secret:NAME}`。 |
 | `output` | 是 | 当前仅支持 `provider-snapshot-v1`。 |
-| `permissions` | 否 | 声明能力，目前主要用于说明。建议用 `env:<NAME>` 标注环境变量。 |
+| `permissions` | 否 | 对外部 runtime 是说明字段；对 `builtin-js` 是强制能力边界，格式和用法见下一节。 |
 | `defaultConfig` | 否 | 首次安装时写入本地 provider 配置的默认值，例如 `name`、`timeoutSeconds`、`visibleWindowIds`、`windowLabelOverrides`、`envVars`。后续 provider 更新不会覆盖用户本地修改。 |
 | `parameters` | 否 | 设置页展示的参数提示。每项可包含 `name`、`label`、`kind`、`required`、`defaultValue`、`placeholder`、`description`、`options`。不要放真实凭据。 |
 | `checksums.source` | 否 | Source 文件 SHA-256。启用安全 auto-update 时需要，格式为 `sha256:<hex>`。`version` 只用于展示，不替代 checksum 校验。 |
+
+## 内置 JavaScript runtime（`builtin-js`）
+
+`builtin-js` 面向不想让普通用户额外安装 Node.js 的 Provider。它运行在应用内置的
+QuickJS 沙箱中，入口必须是 `.js` 文件，`output` 必须为 `provider-snapshot-v1`，并导出
+一个同步的全局函数 `main(qb)`：函数直接返回快照对象，**不使用** `console.log`、stdout
+或 `process.exit`。官方 Provider 都使用此 runtime。
+
+```js
+function main(qb) {
+  const token = qb.env.get("EXAMPLE_API_TOKEN");
+  const response = qb.http.request("https://api.example.com/usage", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Usage API returned ${response.status}`);
+  const raw = JSON.parse(response.body);
+  qb.log({ level: "info", stage: "snapshot.ready", message: "Usage loaded" });
+  return {
+    status: "ok",
+    updatedAt: qb.now(),
+    windows: [{ id: "monthly", label: "Monthly", remainingPercent: raw.remaining, confidence: "exact" }]
+  };
+}
+```
+
+对应 manifest 至少要显式授予脚本使用的能力：
+
+```json
+{
+  "runtime": "builtin-js",
+  "entry": "provider.js",
+  "output": "provider-snapshot-v1",
+  "requiredEnvVars": ["EXAMPLE_API_TOKEN"],
+  "permissions": ["env:EXAMPLE_API_TOKEN", "net:https://api.example.com"]
+}
+```
+
+### `qb` API 与权限
+
+| API | 所需 permission | 行为与边界 |
+|---|---|---|
+| `qb.env.get(name)` | `env:NAME` 或 `env-prefix:PREFIX_` | 读取已配置的值；未配置时抛错。`requiredEnvVars` 中的每项必须有匹配的 env permission。 |
+| `qb.env.getOptional(name)` | 同上 | 未配置时返回 `null`；未声明仍会抛错。适用于可选阈值或筛选项。 |
+| `qb.fs.readText(path)` | `fs:C:\exact\path`、`fs:~/.codex/auth.json` 或 `fs:env:NAME` | 只读 UTF-8 文本；宿主会规范化实际路径并拒绝未授权路径。`fs:env:NAME` 允许读取该环境变量指向的一个文件。 |
+| `qb.http.request(url, options)` | `net:http`、`net:https`，或精确 origin 如 `net:https://api.example.com` | 同步 HTTP 请求，返回 `{ status, ok, body }`。Provider 专用代理或项目全局代理由宿主使用；脚本看不到代理凭据。请求体最多 1 MiB，响应文本最多 2 MiB。 |
+| `qb.now()` / `qb.timezone()` | 无 | 分别返回当前 UTC ISO 时间和本机 UTC 偏移（如 `UTC+08:00`）。 |
+| `qb.log(entry)` | 无 | 写入本地结构化应用日志。建议传 `{ level, stage, message }`，不要传 secret、token 或完整响应。 |
+| `qb.meta` | 无 | 只读通用元信息：`providerId`、`manifestId`、`name`、`version`、`sourceChecksum`、`timeoutSeconds`。 |
+
+`net:https://api.example.com` 只允许该 scheme、主机和端口，路径由脚本决定；`net:https`
+允许任意 HTTPS origin，应只在确有需要时使用。`env-prefix:` 适合
+`DEEPSEEK_BALANCE_WARNING_` 这种按币种动态命名的可选参数。`QBWIN_` 是宿主保留前缀，
+不能通过 `env:` 或 `fs:env:` 授权；通用元信息用 `qb.meta` 读取，代理由 `qb.http` 自动使用。
+
+### 支持范围与非目标
+
+可使用标准同步 JavaScript 及 `Date`、`JSON`、`RegExp`、`Map`、`Set`。`main(qb)` 必须
+同步返回可 JSON 序列化的对象；不支持 Promise、顶层 await、ES module/import、`require`、
+Node/Bun/Deno API、`process`、`console`、子进程、任意 socket、任意文件访问或动态加载。
+`eval` 也不是受支持能力。运行时限制为 16 MiB 内存、512 KiB JS 栈，以及实例配置中的整体
+`timeoutSeconds`；每个 HTTP 请求还会受剩余总时间限制。
+
+这套边界是平台能力，不包含任何 Provider 专属 API、鉴权格式或响应解析。URL、Header、
+本地 auth 文件格式和 `windows[]` 映射都仍由 Provider 脚本维护。外部 runtime 继续可用，
+但不获得这套强制沙箱。
 
 ## Registry 格式（`registry.json`）
 
@@ -115,7 +181,7 @@ CI 或脚本中根据退出码处理。
 .\QuotaBarWin.Cli.exe validate --manifest .\provider.json
 
 # entry 为 HTTPS / file URL 时，明确指定本地待校验 source
-.\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.cjs
+.\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.js
 
 # Provider 已安装后，校验实际配置、缓存 manifest、source checksum 和 runtime
 .\QuotaBarWin.Cli.exe validate --provider my-provider
@@ -139,11 +205,11 @@ secret 和环境变量值不会写入报告。
 
 ## Source Script 输出协议
 
-当 `output` 为 `provider-snapshot-v1` 时，脚本必须向 stdout 输出一个 JSON 对象。
-stdout 应只包含这个最终对象；流程、调试和错误日志请写入 stderr，否则宿主会把
-stdout 当成 JSON 解析并失败。`id`、`name` 和 `source` 可以省略；即使脚本提供，
-QuotaBarWin 也会优先使用本地安装配置中的 Provider id 和名称，以支持同一 manifest
-的多账号实例。
+当 `output` 为 `provider-snapshot-v1` 时，外部 runtime 脚本必须向 stdout 输出一个 JSON
+对象，且 stdout 只能包含这个最终对象；流程、调试和错误日志请写 stderr。`builtin-js`
+不使用 stdout/stderr：它的 `main(qb)` 直接返回同形状对象，并使用 `qb.log()` 写日志。
+`id`、`name` 和 `source` 可以省略；即使脚本提供，QuotaBarWin 也会优先使用本地安装
+配置中的 Provider id 和名称，以支持同一 manifest 的多账号实例。
 
 ```json
 {
@@ -307,8 +373,9 @@ console.log(JSON.stringify({
 
 ## 本地配置与 Secret
 
-远程脚本不应该包含凭据。脚本仍然读取 `process.env.NAME`，但 QuotaBarWin 只会把
-配置中的环境变量注入到子进程。
+远程脚本不应该包含凭据。外部 runtime 脚本读取 `process.env.NAME`；`builtin-js` 脚本
+通过受 permission 约束的 `qb.env.get("NAME")` 或 `qb.env.getOptional("NAME")` 读取。
+QuotaBarWin 只会解析和提供实例配置中的环境变量。
 
 `${secret:NAME}` 会优先读取 `<config-dir>/secrets/NAME.txt`，找不到时回退到环境变量
 `NAME`。`${env:NAME}` 和 `${file:C:\path\secret.txt}` 也仍然支持。

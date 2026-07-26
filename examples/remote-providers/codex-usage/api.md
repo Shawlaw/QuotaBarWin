@@ -2,7 +2,7 @@
 
 English version: [`api.en.md`](api.en.md).
 
-本文记录 `codex-usage/provider.cjs` 当前实现依据的请求、响应形状和字段映射。它是示例 Provider 的实现说明，不代表第三方 API 的稳定官方契约；接口变化时应同步更新脚本和本文档。
+本文记录 `codex-usage/provider.js`（`builtin-js`）当前实现依据的请求、响应形状和字段映射。它是示例 Provider 的实现说明，不代表第三方 API 的稳定官方契约；接口变化时应同步更新脚本和本文档。
 
 ## 请求
 
@@ -11,9 +11,9 @@ English version: [`api.en.md`](api.en.md).
 | Method | `GET` |
 | URL | `https://chatgpt.com/backend-api/wham/usage` |
 | 鉴权 | `Authorization: Bearer <access token>` |
-| 固定请求头 | `User-Agent: QuotaBarWin/0.0` |
+| 固定请求头 | `User-Agent: QuotaBarWin/1.1` |
 | 可选请求头 | `ChatGPT-Account-Id: <account id>` |
-| 超时 | `30000` ms |
+| 超时 | Provider 实例的 `timeoutSeconds`（默认 30 秒） |
 
 Token 和 account id 来源按优先级读取：
 
@@ -21,7 +21,7 @@ Token 和 account id 来源按优先级读取：
 2. `CODEX_AUTH_FILE` 指向的 JSON 文件
 3. `~/.codex/auth.json`
 
-本地 Codex auth 文件当前读取 `tokens.access_token` 和 `tokens.account_id`。脚本还支持运行时代理，优先使用 `QBWIN_PROXY_URL`，然后依次尝试 `HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY`。在 QuotaBarWin 中可通过该 Provider 的环境变量显式设置 `QBWIN_PROXY_URL`；未设置时，宿主会使用项目全局代理作为兜底。安装源代理只用于下载 registry、manifest 和脚本，不会注入 Provider 运行环境。支持 `socks5:`、`socks5h:`、`http:` 和 `https:` 代理。
+本地 Codex auth 文件当前读取 `tokens.access_token` 和 `tokens.account_id`。脚本通过受限 `qb.fs.readText()` 读取 manifest 允许的 auth 文件，并通过 `qb.http.request()` 请求 API；代理由宿主处理，Provider 环境中的 `QBWIN_PROXY_URL` 优先，项目全局代理为兜底。安装源代理只用于下载 registry、manifest 和脚本。支持 `socks5:`、`socks5h:`、`http:` 和 `https:` 代理。
 
 ## 响应形状
 
@@ -82,6 +82,6 @@ Codex usage API 当前主要返回百分比，不返回绝对计数，所以脚�
 
 ## 本地参考
 
-- 示例脚本：[`provider.cjs`](provider.cjs)
+- 示例脚本：[`provider.js`](provider.js)
 - Manifest：[`provider.json`](provider.json)
 - 输出协议说明：[`../../../docs/remote-provider-guide.md`](../../../docs/remote-provider-guide.md)

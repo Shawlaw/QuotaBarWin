@@ -9,7 +9,7 @@ English version: [`README.en.md`](README.en.md).
 每个子目录包含：
 
 - `provider.json`：远程 Provider manifest。
-- `provider.cjs`：QuotaBarWin 执行的源脚本。
+- `provider.js`：项目维护 Provider 使用的 `builtin-js` 源脚本。
 - `api.md`：该 Provider 当前实现依据的请求、响应、字段映射和 fixture。
 - `api.en.md`：`api.md` 的英文版本。
 
@@ -25,7 +25,7 @@ https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-provi
 
 ## Provider 列表
 
-顶层 README 只负责发现和导航。每个 Provider 目录下的 `api.md` 记录该示例脚本当前依据的请求、响应、字段映射和本地 fixture；修改 `provider.cjs` 时应同步更新同目录 API 文档。
+顶层 README 只负责发现和导航。每个 Provider 目录下的 `api.md` 记录该示例脚本当前依据的请求、响应和字段映射；修改 `provider.js` 时应同步更新同目录 API 文档。
 
 | Provider | 数据来源 | 必需环境变量 | API 依据 | 说明 |
 |----------|----------|--------------|----------|------|
@@ -46,15 +46,15 @@ Manifest 格式和输出协议见 [`docs/remote-provider-guide.md`](../../docs/r
 
 ## 解析模式
 
-每个 `provider.cjs` 都把 Provider 专属 API 解析逻辑留在脚本内部，并向 QuotaBarWin 输出标准化的 `provider-snapshot-v1` 对象。
+每个 `provider.js` 都把 Provider 专属 API 解析逻辑留在脚本内部，并从 `main(qb)` 返回标准化的 `provider-snapshot-v1` 对象。它们通过受 manifest permission 约束的 `qb.env`、`qb.fs` 和 `qb.http` 访问宿主能力，不依赖 Node.js。
 
 改造这些示例时，建议沿用这个模式：
 
-1. 请求原始 API 响应，或在测试时读取 fixture。
+1. 通过 `qb.http.request()` 请求原始 API 响应；需要本地文件时，只声明并使用精确的 `fs:` permission。
 2. 用简短注释说明解析器期望的原始响应形状。
 3. 将原始额度记录转换为 `windows[]`，使用稳定的 `id`、可读的 `label`、可用时提供数值型 `used` / `limit`、百分比和 ISO 重置时间。
 4. 将套餐等级、模型用量、账户元数据、原始状态码等 Provider 专属细节放进 `metadata`。
-5. 凭据只保留在本地。这些示例读取 `process.env.NAME`；QuotaBarWin 可从已安装 Provider 的 `envVars`、`<config-dir>/secrets/NAME.txt` 下的 `${secret:NAME}` 文件，或环境变量 fallback 注入，而不需要把密钥写进远程源码。
+5. 凭据只保留在本地。这些示例通过 `qb.env.get("NAME")` 读取 manifest 声明的变量；QuotaBarWin 可从已安装 Provider 的 `envVars`、`<config-dir>/secrets/NAME.txt` 下的 `${secret:NAME}` 文件，或环境变量 fallback 解析它们，而不需要把密钥写进远程源码。
 
 同一 Provider 配多个账号时，每个本地账号实例仍向脚本注入同一个变量名，但可以映射到不同 secret 文件，例如 `KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}`。完整示例见 [`docs/remote-provider-guide.md`](../../docs/remote-provider-guide.md#本地配置与-secret)。
 
@@ -76,7 +76,7 @@ Provider 窗口 ID 是面向用户配置的键。QuotaBarWin 支持用 `visibleW
 如果修改源脚本，请重新计算 SHA-256 checksum 并更新 `provider.json`：
 
 ```bash
-sha256sum provider.cjs
+sha256sum provider.js
 ```
 
 然后将 `checksums.source` 设置为 `sha256:<hex>`。

@@ -198,8 +198,8 @@
           <ol>
             <li>在设置页提供 registry URL 或本地路径，例如 <code>registry.json</code>。</li>
             <li>QuotaBarWin 读取 registry，拉取每个 Provider manifest，校验可选 checksum，并下载 source script。</li>
-            <li>脚本会缓存到本机，并使用 manifest 声明的 runtime 执行，例如 <code>node</code>、<code>python</code>、<code>pwsh</code>、<code>bash</code> 或绝对路径。</li>
-            <li>每次刷新时，QuotaBarWin 运行缓存脚本，并把 stdout 解析为标准额度窗口。</li>
+            <li>脚本会缓存到本机。<code>builtin-js</code> 用内置 QuickJS 执行，不需要 Node.js；其他 runtime 可为 <code>node</code>、<code>python</code>、<code>pwsh</code>、<code>bash</code> 或绝对路径。</li>
+            <li>每次刷新时，QuotaBarWin 运行缓存脚本，并归一化为标准额度窗口。</li>
           </ol>
           <p>同一个 manifest 可以安装多次，用于查询同一 Provider 的多个账号。QuotaBarWin 会生成 <code>kimi-coding</code>、<code>kimi-coding-2</code> 这类稳定的本地 Provider id。</p>
         </section>
@@ -213,11 +213,11 @@
   "displayName": "Kimi Coding Usage",
   "version": "1.0.0",
   "description": "Kimi coding quota usage via remote provider script.",
-  "runtime": "node",
-  "entry": "provider.cjs",
+  "runtime": "builtin-js",
+  "entry": "provider.js",
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
-  "permissions": ["env:KIMI_API_KEY"],
+  "permissions": ["env:KIMI_API_KEY", "net:https://api.kimi.com"],
   "defaultConfig": {
     "name": "Kimi",
     "visibleWindowIds": ["300-minute", "usage"],
@@ -251,7 +251,7 @@
               <tr><td><code>id</code></td><td>是</td><td>稳定 manifest id。重复安装同一 manifest 时，QuotaBarWin 会生成不冲突的本地 Provider id。</td></tr>
               <tr><td><code>displayName</code></td><td>是</td><td>UI 中显示的人类可读名称。</td></tr>
               <tr><td><code>version</code></td><td>否</td><td>设置页显示的人类可读版本号；缺省时显示短 checksum。</td></tr>
-              <tr><td><code>runtime</code></td><td>是</td><td>执行 <code>entry</code> 的 runtime，可为命令名或绝对路径。</td></tr>
+              <tr><td><code>runtime</code></td><td>是</td><td><code>builtin-js</code> 使用内置 QuickJS；也可为外部命令名或绝对路径。</td></tr>
               <tr><td><code>entry</code></td><td>是</td><td>Source 文件。相对路径按 manifest 所在位置解析。</td></tr>
               <tr><td><code>requiredEnvVars</code></td><td>否</td><td>脚本需要的环境变量。</td></tr>
               <tr><td><code>output</code></td><td>是</td><td>当前使用 <code>provider-snapshot-v1</code>。</td></tr>
@@ -281,8 +281,32 @@
         </section>
 
         <section>
+          <h2>内置 JavaScript runtime（<code>builtin-js</code>）</h2>
+          <p><code>builtin-js</code> 不需要安装 Node.js。入口是 <code>.js</code>，必须定义同步的 <code>main(qb)</code> 并直接返回 <code>provider-snapshot-v1</code> 对象；不要使用 <code>console.log</code>、stdout 或 <code>process.exit</code>。</p>
+          <pre>function main(qb) {
+  const token = qb.env.get("EXAMPLE_API_TOKEN");
+  const response = qb.http.request("https://api.example.com/usage", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  qb.log({ level: "info", stage: "snapshot.ready", message: "Usage loaded" });
+  return { status: "ok", updatedAt: qb.now(), windows: [] };
+}</pre>
+          <table>
+            <thead><tr><th>API</th><th>需要的 permission</th><th>边界</th></tr></thead>
+            <tbody>
+              <tr><td><code>qb.env.get</code> / <code>getOptional</code></td><td><code>env:NAME</code> 或 <code>env-prefix:PREFIX_</code></td><td>读取已配置变量；<code>getOptional</code> 未配置时返回 null。</td></tr>
+              <tr><td><code>qb.fs.readText</code></td><td><code>fs:路径</code> 或 <code>fs:env:NAME</code></td><td>只读 UTF-8，规范化实际路径后拒绝未授权访问。</td></tr>
+              <tr><td><code>qb.http.request</code></td><td><code>net:http</code>、<code>net:https</code> 或精确 origin</td><td>同步请求，返回 <code>{status, ok, body}</code>；代理与超时由宿主处理。</td></tr>
+              <tr><td><code>qb.now</code>、<code>qb.timezone</code>、<code>qb.log</code>、<code>qb.meta</code></td><td>无</td><td>通用时间、结构化日志和只读 Provider 元信息。</td></tr>
+            </tbody>
+          </table>
+          <p>可用同步 JavaScript、Date、JSON、RegExp、Map 和 Set。没有 Promise、import、require、Node/Bun/Deno API、process、console、子进程、任意 socket、任意文件访问或动态加载；内存 16 MiB、JS 栈 512 KiB，并受 Provider <code>timeoutSeconds</code> 限制。<code>QBWIN_</code> 是保留前缀，不能授予 env/file 访问；元信息用 <code>qb.meta</code>，代理由 <code>qb.http</code> 自动使用。URL、鉴权格式和响应解析仍属于 Provider 脚本，不属于平台。</p>
+        </section>
+
+        <section>
           <h2>Source Script 输出协议</h2>
-          <p>脚本必须向 stdout 输出一个 JSON 对象。诊断信息请写 stderr。</p>
+          <p>外部 runtime 脚本必须向 stdout 输出一个 JSON 对象，诊断写 stderr。<code>builtin-js</code> 从 <code>main(qb)</code> 直接返回同形状对象，并通过 <code>qb.log()</code> 写日志。</p>
           <p><code>id</code>、<code>name</code> 和 <code>source</code> 可以省略；即使脚本提供，QuotaBarWin 也会优先使用本地安装配置中的 Provider id 和名称，以支持多账号实例。</p>
           <pre>{
   "status": "ok",
@@ -313,7 +337,7 @@
         <section>
           <h2>本地配置与 Secret</h2>
           <p>
-            远程脚本不应该包含凭据。脚本读取 <code>process.env.NAME</code>，QuotaBarWin 会把配置中的 env vars 注入子进程。
+            远程脚本不应该包含凭据。外部 runtime 读取 <code>process.env.NAME</code>；<code>builtin-js</code> 使用受 permission 约束的 <code>qb.env.get("NAME")</code>。
           </p>
           <p>
             单账号可直接使用 <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY.txt</code> 这类同名 secret。多账号时，在每个账号实例的“环境变量”里显式映射：等号左侧保持脚本需要的变量名，右侧换成该账号的 secret 名。
@@ -533,8 +557,8 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
           <ol>
             <li>You provide a registry URL or local file path such as <code>registry.json</code>.</li>
             <li>QuotaBarWin reads the registry, fetches each provider manifest, verifies optional checksums, and downloads source scripts.</li>
-            <li>Each script is cached locally and executed with its declared runtime, such as <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path.</li>
-            <li>On every refresh, QuotaBarWin runs the cached scripts and parses stdout into quota windows.</li>
+            <li>Each script is cached locally. <code>builtin-js</code> uses embedded QuickJS and needs no Node.js; other runtimes can be <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path.</li>
+            <li>On every refresh, QuotaBarWin runs the cached scripts and normalizes their results into quota windows.</li>
           </ol>
           <p>The same manifest can be installed more than once for multiple accounts. QuotaBarWin generates stable local provider ids such as <code>kimi-coding</code> and <code>kimi-coding-2</code>.</p>
         </section>
@@ -548,11 +572,11 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
   "displayName": "Kimi Coding Usage",
   "version": "1.0.0",
   "description": "Kimi coding quota usage via remote provider script.",
-  "runtime": "node",
-  "entry": "provider.cjs",
+  "runtime": "builtin-js",
+  "entry": "provider.js",
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
-  "permissions": ["env:KIMI_API_KEY"],
+  "permissions": ["env:KIMI_API_KEY", "net:https://api.kimi.com"],
   "defaultConfig": {
     "name": "Kimi",
     "visibleWindowIds": ["300-minute", "usage"],
@@ -586,7 +610,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
               <tr><td><code>id</code></td><td>yes</td><td>Stable manifest id. When installed more than once, QuotaBarWin generates a non-conflicting local provider id.</td></tr>
               <tr><td><code>displayName</code></td><td>yes</td><td>Human-readable name shown in the UI.</td></tr>
               <tr><td><code>version</code></td><td>no</td><td>Human-readable version shown in Settings; if omitted, a short checksum is shown.</td></tr>
-              <tr><td><code>runtime</code></td><td>yes</td><td>Runtime used to execute <code>entry</code>. It can be a command name or absolute path.</td></tr>
+              <tr><td><code>runtime</code></td><td>yes</td><td><code>builtin-js</code> uses embedded QuickJS; an external command name or absolute path is also supported.</td></tr>
               <tr><td><code>entry</code></td><td>yes</td><td>Source file. Relative paths are resolved against the manifest URL/path.</td></tr>
               <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script.</td></tr>
               <tr><td><code>output</code></td><td>yes</td><td>Use <code>provider-snapshot-v1</code>.</td></tr>
@@ -616,8 +640,32 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
         </section>
 
         <section>
+          <h2>Embedded JavaScript runtime (<code>builtin-js</code>)</h2>
+          <p><code>builtin-js</code> needs no installed Node.js. Its <code>.js</code> entry defines synchronous <code>main(qb)</code> and returns a <code>provider-snapshot-v1</code> object directly; do not use <code>console.log</code>, stdout, or <code>process.exit</code>.</p>
+          <pre>function main(qb) {
+  const token = qb.env.get("EXAMPLE_API_TOKEN");
+  const response = qb.http.request("https://api.example.com/usage", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  qb.log({ level: "info", stage: "snapshot.ready", message: "Usage loaded" });
+  return { status: "ok", updatedAt: qb.now(), windows: [] };
+}</pre>
+          <table>
+            <thead><tr><th>API</th><th>Required permission</th><th>Boundary</th></tr></thead>
+            <tbody>
+              <tr><td><code>qb.env.get</code> / <code>getOptional</code></td><td><code>env:NAME</code> or <code>env-prefix:PREFIX_</code></td><td>Reads configured values; <code>getOptional</code> returns null when absent.</td></tr>
+              <tr><td><code>qb.fs.readText</code></td><td><code>fs:path</code> or <code>fs:env:NAME</code></td><td>UTF-8 read only; canonical real paths outside the grant are rejected.</td></tr>
+              <tr><td><code>qb.http.request</code></td><td><code>net:http</code>, <code>net:https</code>, or an exact origin</td><td>Synchronous request returning <code>{status, ok, body}</code>; the host handles proxy and timeout.</td></tr>
+              <tr><td><code>qb.now</code>, <code>qb.timezone</code>, <code>qb.log</code>, <code>qb.meta</code></td><td>none</td><td>Generic time, structured log, and read-only Provider metadata.</td></tr>
+            </tbody>
+          </table>
+          <p>Use synchronous JavaScript, Date, JSON, RegExp, Map, and Set. Promises, import, require, Node/Bun/Deno APIs, process, console, subprocesses, arbitrary sockets, arbitrary files, and dynamic loading are unavailable. Limits are 16 MiB memory, a 512 KiB JS stack, and Provider <code>timeoutSeconds</code>. <code>QBWIN_</code> is reserved and cannot be granted env/file access; use <code>qb.meta</code> for metadata and let <code>qb.http</code> use the proxy. URLs, auth formats, and response parsing remain Provider-owned.</p>
+        </section>
+
+        <section>
           <h2>Source script output contract</h2>
-          <p>The script must print one JSON object to stdout. Write diagnostics to stderr.</p>
+          <p>External-runtime scripts print one JSON object to stdout and write diagnostics to stderr. <code>builtin-js</code> returns the same-shaped object from <code>main(qb)</code> and logs through <code>qb.log()</code>.</p>
           <p><code>id</code>, <code>name</code>, and <code>source</code> are optional; even when provided, QuotaBarWin prefers the local installed provider id and name so one manifest can back multiple accounts.</p>
           <pre>{
   "status": "ok",
@@ -648,7 +696,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
         <section>
           <h2>Local config and secrets</h2>
           <p>
-            Remote provider source should not contain credentials. Scripts read <code>process.env.NAME</code>; QuotaBarWin injects configured env vars into the child process.
+            Remote provider source should not contain credentials. External runtimes read <code>process.env.NAME</code>; <code>builtin-js</code> uses permission-gated <code>qb.env.get("NAME")</code>.
           </p>
           <p>
             A single account can use a same-name secret such as <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY.txt</code>. For multiple accounts, set each account instance's Environment variables explicitly: keep the left side as the script env var and change the secret name on the right.

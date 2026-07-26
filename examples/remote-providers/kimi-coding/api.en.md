@@ -2,7 +2,7 @@
 
 Default documentation is Simplified Chinese: [`api.md`](api.md).
 
-This file documents the request, response shape, and field mapping used by `kimi-coding/provider.cjs`. It describes the example provider implementation, not a stable official third-party API contract. If the API changes, update the script, fixtures, and this document together.
+This file documents the request, response shape, and field mapping used by `kimi-coding/provider.js` (`builtin-js`). It describes the example provider implementation, not a stable official third-party API contract. If the API changes, update the script and this document together.
 
 ## Request
 
@@ -12,9 +12,6 @@ This file documents the request, response shape, and field mapping used by `kimi
 | URL | `https://api.kimi.com/coding/v1/usages` |
 | Auth | `Authorization: Bearer <KIMI_API_KEY>` |
 | Required env var | `KIMI_API_KEY` |
-| Fixture env var | `QUOTABARWIN_KIMI_FIXTURE` |
-
-When `QUOTABARWIN_KIMI_FIXTURE` is set, the script skips the network request and reads local JSON instead.
 
 ## Response Shape
 
@@ -99,7 +96,6 @@ If the 300-minute window has no `used`, `remaining`, or `limit`, the script trea
 
 ## Local References
 
-- Script: [`provider.cjs`](provider.cjs)
+- Script: [`provider.js`](provider.js)
 - Manifest: [`provider.json`](provider.json)
 - Raw response fixture: [`../../../fixtures/provider_outputs/kimi_coding_usage.json`](../../../fixtures/provider_outputs/kimi_coding_usage.json)
-- Command fixture wrapper: [`../../../fixtures/commands/kimi_usage_fixture.js`](../../../fixtures/commands/kimi_usage_fixture.js)

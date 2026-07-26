@@ -2,13 +2,13 @@
 
 Default documentation is Simplified Chinese: [`api.md`](api.md).
 
-`time-flies/provider.cjs` does not access the network, files, or account credentials. It uses only the local timezone and current time of the machine that runs it to emit Time Flies windows in minutes.
+`time-flies/provider.js` uses `builtin-js` and does not access the network, files, or account credentials. It uses only the local timezone and current time of the machine that runs it to emit Time Flies windows in minutes.
 
 ## Runtime Requirements
 
 | Item | Value |
 |------|-------|
-| Runtime | `node` |
+| Runtime | `builtin-js` |
 | Required environment variables | None |
 | Network / credential / file permissions | None |
 | Output protocol | `provider-snapshot-v1` |
@@ -34,6 +34,6 @@ Each window supplies `remaining`, `used`, `limit`, `remainingPercent`, `usedPerc
 
 ## Local References
 
-- Script: [`provider.cjs`](provider.cjs)
+- Script: [`provider.js`](provider.js)
 - Manifest: [`provider.json`](provider.json)
 - Output contract: [`../../../docs/remote-provider-guide.en.md`](../../../docs/remote-provider-guide.en.md)

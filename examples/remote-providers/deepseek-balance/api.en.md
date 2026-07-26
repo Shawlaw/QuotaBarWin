@@ -2,7 +2,7 @@
 
 Default documentation is Simplified Chinese: [`api.md`](api.md).
 
-This file documents the request, response shape, and field mapping used by `deepseek-balance/provider.cjs`. It describes the example provider implementation, not a stable official third-party API contract. If the API changes, update the script, fixtures, and this document together.
+This file documents the request, response shape, and field mapping used by `deepseek-balance/provider.js` (`builtin-js`). It describes the example provider implementation, not a stable official third-party API contract. If the API changes, update the script and this document together.
 
 ## Request
 
@@ -13,7 +13,6 @@ This file documents the request, response shape, and field mapping used by `deep
 | Auth | `Authorization: Bearer <DEEPSEEK_API_KEY>` |
 | Fixed header | `Accept: application/json` |
 | Required env var | `DEEPSEEK_API_KEY` |
-| Fixture env var | `QUOTABARWIN_DEEPSEEK_FIXTURE` |
 
 Optional local display configuration:
 
@@ -24,8 +23,6 @@ Optional local display configuration:
 | `DEEPSEEK_BALANCE_REFERENCE_TOTAL_<CURRENCY>` | Per-currency reference total override, for example `DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY`. |
 | `DEEPSEEK_BALANCE_WARNING` | Low-balance warning threshold. |
 | `DEEPSEEK_BALANCE_WARNING_<CURRENCY>` | Per-currency warning override, for example `DEEPSEEK_BALANCE_WARNING_CNY`. |
-
-When `QUOTABARWIN_DEEPSEEK_FIXTURE` is set, the script skips the network request and reads local JSON instead.
 
 ## Response Shape
 
@@ -81,6 +78,6 @@ DeepSeek returns balance, not a recurring quota. Without a reference total, the 
 
 ## Local References
 
-- Script: [`provider.cjs`](provider.cjs)
+- Script: [`provider.js`](provider.js)
 - Manifest: [`provider.json`](provider.json)
 - Raw response fixture: [`../../../fixtures/provider_outputs/deepseek_balance.json`](../../../fixtures/provider_outputs/deepseek_balance.json)

@@ -57,17 +57,13 @@ The QuotaBarWin release package does not include your account credentials and do
 
 [QuotaBarWin-maintained Provider registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
 
-**Security notice: only install and use Providers you trust. Provider scripts can directly read the AI credentials you configure for them and make network requests.**
+**Security notice: only install and use Providers you trust. `builtin-js` can access only manifest-declared environment values, files, and network origins; external-runtime Providers run with the permissions of their own runtime.**
 
 ### 1. Install And Run
 
 1. Download the Windows portable zip from GitHub Releases and extract it to any folder.
 2. Run `QuotaBarWin.exe`. For the portable zip, config, logs, secrets, and Provider cache are stored beside the exe by default.
-3. The current example Providers use `node` as their runtime. Before installing or refreshing them, make sure this works on the machine:
-
-```powershell
-node --version
-```
+3. Project-maintained example Providers use the embedded `builtin-js` runtime, so installing and refreshing them does not require Node.js. A third-party Provider needs `node`, `python`, `pwsh`, `bash`, or another executable only when its manifest declares that runtime.
 
 ### 2. Choose A Project-Maintained Provider
 
@@ -111,7 +107,7 @@ When Codex usage needs a proxy, you can set it in that Provider's **Environment 
 HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
-The Codex usage script checks proxies in this order: the Provider environment variable `QBWIN_PROXY_URL`, the project-wide proxy, `HTTPS_PROXY`, `HTTP_PROXY`, then `ALL_PROXY`. Supported protocols are `socks5:`, `socks5h:`, `http:`, and `https:`. An installation-source proxy is used only to download registries, manifests, and scripts; it is never injected into a Provider runtime. For complete request, auth, and proxy notes, see [`examples/remote-providers/codex-usage/api.en.md`](examples/remote-providers/codex-usage/api.en.md).
+The embedded runtime host handles Codex usage proxies: Provider `QBWIN_PROXY_URL` takes priority and the project-wide proxy is the fallback. When the project proxy is set to System, it reads the Windows process `HTTPS_PROXY` / `HTTP_PROXY` environment. Supported protocols are `socks5:`, `socks5h:`, `http:`, and `https:`. An installation-source proxy is used only to download registries, manifests, and scripts. For complete request, auth, and proxy notes, see [`examples/remote-providers/codex-usage/api.en.md`](examples/remote-providers/codex-usage/api.en.md).
 
 ### 6. Multiple Accounts
 
@@ -183,7 +179,7 @@ Provider configuration type:
 
 | Kind | Source | Notes |
 |---|---|---|
-| `remote` | Cached external script | Installed from a registry/manifest and executed with its declared runtime, such as `node`, `python`, `pwsh`, `bash`, or an absolute executable path. |
+| `remote` | Cached Provider script | Installed from a registry/manifest. Official Providers use embedded `builtin-js`; `node`, `python`, `pwsh`, `bash`, and absolute executable paths remain supported. |
 
 ---
 
@@ -194,10 +190,10 @@ QuotaBarWin has three separate dependency surfaces: the app itself, remote Provi
 | Scenario | Required software | Notes |
 |---|---|---|
 | Running the released `QuotaBarWin.exe` / `QuotaBarWin.Cli.exe` | Windows; the GUI needs Microsoft Edge WebView2 Runtime | The portable zip contains the desktop app and CLI. The CLI does not require WebView2. Neither requires users to install Node.js, npm, Rust, or the Tauri CLI. |
-| Installing / running remote Providers | Software matching the manifest `runtime` | QuotaBarWin resolves `runtime` from `PATH` or an absolute path, then validates it with `--version` or `--help` during install / update. If a Provider declares `"runtime": "node"`, that machine needs a working `node`; the same applies to `python`, `pwsh`, or `bash`. All example Providers in this repo currently declare `node`. |
+| Installing / running remote Providers | No extra software for `builtin-js`; matching software for any other runtime | `builtin-js` uses embedded QuickJS, and every project-maintained Provider currently uses it. External runtimes are resolved from `PATH` or an absolute path and validated during install / update; a Provider declaring `"runtime": "node"` needs a working `node`. |
 | Developing, testing, or building this repo | Node.js 22+, npm, Rust stable / Cargo, Windows MSVC build tools | `package.json` requires `node >=22`, and the release workflow also uses Node 22. `npm run tauri ...` and `cargo test ...` need the Rust toolchain; full E2E also needs `tauri-driver`. |
 
-Provider scripts may also call additional CLIs or read local credential files. Those are not universal QuotaBarWin dependencies and should be documented by the individual Provider. For example, the Bash sample in the remote Provider guide requires `jq`.
+External-runtime Provider scripts may also call additional CLIs or read local credential files. Those are not universal QuotaBarWin dependencies and should be documented by the individual Provider. `builtin-js` provides neither subprocesses nor arbitrary file access; see the [remote Provider guide](docs/remote-provider-guide.en.md#embedded-javascript-runtime-builtin-js).
 
 ---
 
