@@ -30,7 +30,7 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 
 - 平台：**Windows**
 - 分发方式：**绿色版 portable zip + 单 exe**
-- 当前版本：**v1.0.7**
+- 当前版本：**v1.1.0**
 - 技术栈：Tauri 2、Rust 2021、React 19、TypeScript、Vite
 - 当前配置 schema version：**16**
 

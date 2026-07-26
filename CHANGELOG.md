@@ -2,6 +2,22 @@
 
 本文记录 QuotaBarWin 的用户可见变化。默认以简体中文维护；如果未来需要英文 release notes，可从本文件同步整理。
 
+## [1.1.0] - 2026-07-26
+
+### Added
+
+- 内置 QuickJS Provider runtime：官方 Provider 不再依赖用户本机的 Node.js；Provider 作者可使用受控的 `qb` API 读取已声明的环境变量、文件及 HTTP 接口。
+- 新增完整的 `builtin-js` Provider 作者文档、CLI 说明和示例，包含权限声明、执行模型、输出协议与支持边界。
+
+### Changed
+
+- 所有维护中的官方 Provider（Kimi、智谱 Coding Plan、DeepSeek、Codex Usage、光阴似箭）均已迁移到 `builtin-js`。
+- Provider 运行期代理遵循应用的显式代理策略；未选择“系统代理”时不会隐式读取系统 HTTP(S) 代理环境变量。
+
+### Security
+
+- `builtin-js` 按 manifest 权限限制环境变量、文件与网络访问，保留 `QBWIN_*` 宿主变量给平台内部使用。
+
 ## [1.0.7] - 2026-07-23
 
 ### Fixed
