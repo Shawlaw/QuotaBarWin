@@ -17,7 +17,7 @@ use crate::{
     proxy::ProxyConfig,
     remote_provider::{
         cache_remote_provider, check_update, compute_checksum, fetch_manifest, fetch_manifest_text,
-        fetch_provider_registry, fetch_source, load_cached_manifest, load_cached_meta,
+        fetch_provider_registry, fetch_source, is_builtin_js_runtime, load_cached_manifest,
         parse_manifest, resolve_provider_url, resolve_runtime, resolve_source_url,
         validate_runtime_executable, ProviderManifest, UpdateInfo,
     },
@@ -134,6 +134,19 @@ fn unique_provider_name(config: &AppConfig, base_name: &str, preferred_index: us
 
 fn log_remote(log: &LogSink, level: LogLevel, message: &str) {
     let _ = log.write(level, "remote_provider_commands", message);
+}
+
+fn resolve_manifest_runtime(manifest: &ProviderManifest) -> Result<Option<PathBuf>, String> {
+    if is_builtin_js_runtime(&manifest.runtime) {
+        return Ok(None);
+    }
+    resolve_runtime(&manifest.runtime)
+        .and_then(|path| {
+            validate_runtime_executable(&path)?;
+            Ok(path)
+        })
+        .map(Some)
+        .map_err(|error| error.to_string())
 }
 
 fn find_provider_config_mut<'a>(
@@ -277,22 +290,27 @@ fn install_remote_provider_from_manifest(
             instance_id, manifest.id, manifest.runtime
         ),
     );
-    let resolved_runtime_path = resolve_runtime(&manifest.runtime)
-        .and_then(|path| {
-            validate_runtime_executable(&path)?;
-            Ok(path)
-        })
-        .map_err(|e| e.to_string())?;
-    log_remote(
-        log,
-        LogLevel::Info,
-        &format!(
-            "provider runtime resolved providerId={} manifestId={} path={}",
-            instance_id,
-            manifest.id,
-            resolved_runtime_path.display()
+    let resolved_runtime_path = resolve_manifest_runtime(&manifest)?;
+    match &resolved_runtime_path {
+        Some(path) => log_remote(
+            log,
+            LogLevel::Info,
+            &format!(
+                "provider runtime resolved providerId={} manifestId={} path={}",
+                instance_id,
+                manifest.id,
+                path.display()
+            ),
         ),
-    );
+        None => log_remote(
+            log,
+            LogLevel::Info,
+            &format!(
+                "provider runtime resolved providerId={} manifestId={} runtime=builtin-js embedded=true",
+                instance_id, manifest.id
+            ),
+        ),
+    }
 
     let provider_dir = remote_provider_dir(path, &instance_id)
         .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
@@ -307,7 +325,7 @@ fn install_remote_provider_from_manifest(
         url,
         &manifest,
         &source,
-        Some(&resolved_runtime_path),
+        resolved_runtime_path.as_deref(),
     )
     .map_err(|e| e.to_string())?;
     log_remote(
@@ -331,7 +349,7 @@ fn install_remote_provider_from_manifest(
         source_url,
         provider_dir: Some(provider_dir.clone()),
         runtime: manifest.runtime.clone(),
-        resolved_runtime: Some(resolved_runtime_path.display().to_string()),
+        resolved_runtime: resolved_runtime_path.map(|path| path.display().to_string()),
         // This proxy is scoped to downloading the registry/manifest/source.
         // Runtime proxy selection belongs to the Provider environment instead.
         proxy_url: None,
@@ -902,6 +920,8 @@ async fn check_remote_updates_inner(
                 auto_update,
                 version,
                 source_url,
+                runtime,
+                resolved_runtime,
                 updated_at,
                 last_checked_at,
                 ..
@@ -1016,17 +1036,14 @@ async fn check_remote_updates_inner(
                         .parent()
                         .expect("provider dir has parent")
                         .to_path_buf();
-                    let resolved_runtime = load_cached_meta(&provider_dir)
-                        .map_err(|e| e.to_string())?
-                        .and_then(|meta| meta.resolved_runtime)
-                        .map(PathBuf::from);
+                    let new_resolved_runtime = resolve_manifest_runtime(&manifest)?;
                     cache_remote_provider(
                         &parent,
                         id,
                         manifest_url,
                         &manifest,
                         &source,
-                        resolved_runtime.as_deref(),
+                        new_resolved_runtime.as_deref(),
                     )
                     .map_err(|e| {
                         log_remote(
@@ -1039,6 +1056,10 @@ async fn check_remote_updates_inner(
                     *trusted_checksum = Some(compute_checksum(&source));
                     *source_url = new_source_url;
                     *version = manifest.version.clone();
+                    *runtime = manifest.runtime.clone();
+                    *resolved_runtime = new_resolved_runtime
+                        .as_ref()
+                        .map(|path| path.display().to_string());
                     *updated_at = Some(Utc::now().to_rfc3339());
                     config_changed = true;
                     log_remote(
@@ -1161,17 +1182,14 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
             .parent()
             .expect("provider dir has parent")
             .to_path_buf();
-        let resolved_runtime = load_cached_meta(&provider_dir)
-            .map_err(|e| e.to_string())?
-            .and_then(|meta| meta.resolved_runtime)
-            .map(PathBuf::from);
+        let new_resolved_runtime = resolve_manifest_runtime(&manifest)?;
         cache_remote_provider(
             &parent,
             &id,
             &manifest_url,
             &manifest,
             &source,
-            resolved_runtime.as_deref(),
+            new_resolved_runtime.as_deref(),
         )
         .map_err(|e| {
             log_remote(
@@ -1195,6 +1213,8 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
             ref mut trusted_checksum,
             ref mut source_url,
             ref mut version,
+            ref mut runtime,
+            ref mut resolved_runtime,
             ref mut updated_at,
             ref mut last_checked_at,
             ..
@@ -1202,6 +1222,10 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
         *trusted_checksum = Some(compute_checksum(&source));
         *source_url = new_source_url;
         *version = manifest.version;
+        *runtime = manifest.runtime;
+        *resolved_runtime = new_resolved_runtime
+            .as_ref()
+            .map(|path| path.display().to_string());
         let now = Utc::now().to_rfc3339();
         *updated_at = Some(now.clone());
         *last_checked_at = Some(now);
@@ -1222,6 +1246,15 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn embedded_runtime_requires_no_external_executable() {
+        let manifest = crate::remote_provider::parse_manifest(
+            r#"{"schemaVersion":1,"id":"builtin","displayName":"Builtin","runtime":"builtin-js","entry":"provider.js","output":"provider-snapshot-v1"}"#,
+        )
+        .expect("builtin manifest");
+        assert_eq!(resolve_manifest_runtime(&manifest).expect("runtime"), None);
+    }
 
     fn remote_provider(id: &str, name: &str, manifest_url: &str) -> ProviderConfig {
         ProviderConfig::Remote {

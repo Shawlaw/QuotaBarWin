@@ -2,13 +2,21 @@
   "schemaVersion": 1,
   "id": "deepseek-balance",
   "displayName": "DeepSeek Balance",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DeepSeek pay-as-you-go account balance via remote provider script.",
-  "runtime": "node",
-  "entry": "provider.cjs",
+  "runtime": "builtin-js",
+  "entry": "provider.js",
   "requiredEnvVars": ["DEEPSEEK_API_KEY"],
   "output": "provider-snapshot-v1",
-  "permissions": ["env:DEEPSEEK_API_KEY"],
+  "permissions": [
+    "env:DEEPSEEK_API_KEY",
+    "env:DEEPSEEK_BALANCE_CURRENCY",
+    "env:DEEPSEEK_BALANCE_REFERENCE_TOTAL",
+    "env-prefix:DEEPSEEK_BALANCE_REFERENCE_TOTAL_",
+    "env:DEEPSEEK_BALANCE_WARNING",
+    "env-prefix:DEEPSEEK_BALANCE_WARNING_",
+    "net:https://api.deepseek.com"
+  ],
   "defaultConfig": {
     "name": "DeepSeek",
     "windowLabelOverrides": {
@@ -57,6 +65,6 @@
     }
   ],
   "checksums": {
-    "source": "sha256:65c0f8a714e83172b52675d0bea7b59100f4528180138238d7f504e0d70f8dd4"
+    "source": "sha256:4dfb71cfad46ab43f633f659560f2ee9554df3ef4a366cd9f7bfe1fca35b02cc"
   }
 }

@@ -2,7 +2,7 @@
 
 Default documentation is Simplified Chinese: [`api.md`](api.md).
 
-This file documents the request, response shape, and field mapping used by `codex-usage/provider.cjs`. It describes the example provider implementation, not a stable official third-party API contract. If the API changes, update the script and this document together.
+This file documents the request, response shape, and field mapping used by `codex-usage/provider.js` (`builtin-js`). It describes the example provider implementation, not a stable official third-party API contract. If the API changes, update the script and this document together.
 
 ## Request
 
@@ -11,9 +11,9 @@ This file documents the request, response shape, and field mapping used by `code
 | Method | `GET` |
 | URL | `https://chatgpt.com/backend-api/wham/usage` |
 | Auth | `Authorization: Bearer <access token>` |
-| Fixed header | `User-Agent: QuotaBarWin/0.0` |
+| Fixed header | `User-Agent: QuotaBarWin/1.1` |
 | Optional header | `ChatGPT-Account-Id: <account id>` |
-| Timeout | `30000` ms |
+| Timeout | Provider instance `timeoutSeconds` (30 seconds by default) |
 
 Token and account id sources, in priority order:
 
@@ -21,7 +21,7 @@ Token and account id sources, in priority order:
 2. The JSON file pointed to by `CODEX_AUTH_FILE`
 3. `~/.codex/auth.json`
 
-The local Codex auth file currently reads `tokens.access_token` and `tokens.account_id`. The script also supports runtime proxies, preferring `QBWIN_PROXY_URL`, then `HTTPS_PROXY`, `HTTP_PROXY`, and `ALL_PROXY`. In QuotaBarWin, set `QBWIN_PROXY_URL` explicitly through that Provider's environment variables; when absent, the host uses the project-wide proxy as a fallback. An installation-source proxy is only used to download registries, manifests, and scripts, and is never injected into the Provider runtime. Supported proxy protocols are `socks5:`, `socks5h:`, `http:`, and `https:`.
+The local Codex auth file currently reads `tokens.access_token` and `tokens.account_id`. The script uses permission-gated `qb.fs.readText()` for the manifest-allowed auth file and `qb.http.request()` for the API; the host handles proxying, with Provider `QBWIN_PROXY_URL` taking precedence and the project-wide proxy as fallback. An installation-source proxy is only used to download registries, manifests, and scripts. Supported proxy protocols are `socks5:`, `socks5h:`, `http:`, and `https:`.
 
 ## Response Shape
 
@@ -82,6 +82,6 @@ The Codex usage API currently reports percentages rather than absolute counters,
 
 ## Local References
 
-- Script: [`provider.cjs`](provider.cjs)
+- Script: [`provider.js`](provider.js)
 - Manifest: [`provider.json`](provider.json)
 - Output contract: [`../../../docs/remote-provider-guide.md`](../../../docs/remote-provider-guide.md)

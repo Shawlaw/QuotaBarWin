@@ -2,7 +2,7 @@
 
 Default documentation is Simplified Chinese: [`api.md`](api.md).
 
-This file documents the request, response shape, and field mapping used by `bigmodel-coding-plan/provider.cjs`. It describes the example provider implementation, not a stable official third-party API contract. If the API changes, update the script, fixtures, and this document together.
+This file documents the request, response shape, and field mapping used by `bigmodel-coding-plan/provider.js` (`builtin-js`). It describes the example provider implementation, not a stable official third-party API contract. If the API changes, update the script and this document together.
 
 ## Request
 
@@ -12,9 +12,6 @@ This file documents the request, response shape, and field mapping used by `bigm
 | URL | `https://open.bigmodel.cn/api/monitor/usage/quota/limit` |
 | Auth | `Authorization: Bearer <BIGMODEL_API_KEY>` |
 | Required env var | `BIGMODEL_API_KEY` |
-| Fixture env var | `QUOTABARWIN_BIGMODEL_FIXTURE` |
-
-When `QUOTABARWIN_BIGMODEL_FIXTURE` is set, the script skips the network request and reads local JSON instead.
 
 ## Response Shape
 
@@ -86,7 +83,6 @@ The script sorts windows in that order and places unknown IDs last. Unit labels 
 
 ## Local References
 
-- Script: [`provider.cjs`](provider.cjs)
+- Script: [`provider.js`](provider.js)
 - Manifest: [`provider.json`](provider.json)
 - Raw response fixture: [`../../../fixtures/provider_outputs/bigmodel_quota_limit.json`](../../../fixtures/provider_outputs/bigmodel_quota_limit.json)
-- Command fixture wrapper: [`../../../fixtures/commands/bigmodel_quota_fixture.js`](../../../fixtures/commands/bigmodel_quota_fixture.js)

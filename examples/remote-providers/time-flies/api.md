@@ -2,13 +2,13 @@
 
 English version: [`api.en.md`](api.en.md).
 
-`time-flies/provider.cjs` 不访问网络、文件或账号凭据；它只根据运行机器的本机时区和当前时间，以分钟为单位输出「光阴似箭」的剩余时间窗口。
+`time-flies/provider.js` 使用 `builtin-js`，不访问网络、文件或账号凭据；它只根据运行机器的本机时区和当前时间，以分钟为单位输出「光阴似箭」的剩余时间窗口。
 
 ## 运行要求
 
 | 项目 | 值 |
 |------|----|
-| Runtime | `node` |
+| Runtime | `builtin-js` |
 | 必需环境变量 | 无 |
 | 网络 / 凭据 / 文件权限 | 无 |
 | 输出协议 | `provider-snapshot-v1` |
@@ -34,6 +34,6 @@ English version: [`api.en.md`](api.en.md).
 
 ## 本地参考
 
-- 示例脚本：[`provider.cjs`](provider.cjs)
+- 示例脚本：[`provider.js`](provider.js)
 - Manifest：[`provider.json`](provider.json)
 - 输出协议说明：[`../../../docs/remote-provider-guide.md`](../../../docs/remote-provider-guide.md)

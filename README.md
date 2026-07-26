@@ -57,17 +57,13 @@ QuotaBarWin 发布包不会内置你的账号凭据，也不会默认启用某�
 
 [QuotaBarWin 项目维护的 Provider registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
 
-**安全提示：只安装使用可信任的 Provider。Provider 脚本可以直接读取你配置的各类 AI 鉴权信息，并发起网络通讯。**
+**安全提示：只安装使用可信任的 Provider。`builtin-js` 只能访问 manifest 明确声明的环境变量、文件和网络 origin；外部 runtime Provider 则按其自身 runtime 的权限运行。**
 
 ### 1. 安装并启动
 
 1. 从 GitHub Release 下载 Windows portable zip，解压到任意目录。
 2. 运行 `QuotaBarWin.exe`。如果是 portable zip，配置、日志、secrets 和 Provider 缓存默认都会放在 exe 旁。
-3. 示例 Provider 目前都使用 `node` 作为 runtime；安装或刷新这些 Provider 前，请先确认本机能运行：
-
-```powershell
-node --version
-```
+3. 项目维护的示例 Provider 都使用内置 `builtin-js` runtime，安装和刷新不要求 Node.js。第三方 Provider 若声明 `node`、`python`、`pwsh`、`bash` 或绝对可执行路径，才需要安装其对应 runtime。
 
 ### 2. 选择项目维护的 Provider
 
@@ -111,7 +107,7 @@ Codex usage 需要代理时，可以在该 Provider 的 **环境变量** 中配�
 HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
-Codex usage 脚本的代理优先级是 Provider 环境变量 `QBWIN_PROXY_URL`、项目全局代理、`HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY`，支持 `socks5:`、`socks5h:`、`http:` 和 `https:`。安装源的代理仅用于下载 registry、manifest 和脚本，不会注入 Provider 运行环境。更完整的请求、鉴权和代理说明见 [`examples/remote-providers/codex-usage/api.md`](examples/remote-providers/codex-usage/api.md)。
+Codex usage 的代理由内置 runtime 宿主处理：Provider 环境变量 `QBWIN_PROXY_URL` 优先，项目全局代理为兜底；全局代理选择“系统”时会读取 Windows 进程环境中的 `HTTPS_PROXY` / `HTTP_PROXY`。支持 `socks5:`、`socks5h:`、`http:` 和 `https:`。安装源的代理仅用于下载 registry、manifest 和脚本。更完整的请求、鉴权和代理说明见 [`examples/remote-providers/codex-usage/api.md`](examples/remote-providers/codex-usage/api.md)。
 
 ### 6. 多账号
 
@@ -183,7 +179,7 @@ Provider 配置类型：
 
 | Kind | 来源 | 说明 |
 |---|---|---|
-| `remote` | 缓存外部脚本 | 从 registry / manifest 安装，并使用声明的 runtime 执行，例如 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
+| `remote` | 缓存 Provider 脚本 | 从 registry / manifest 安装。官方 Provider 使用内置 `builtin-js`；也兼容 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
 
 ---
 
@@ -194,10 +190,10 @@ Provider 配置类型：
 | 场景 | 需要安装 | 说明 |
 |---|---|---|
 | 使用发布版 `QuotaBarWin.exe` / `QuotaBarWin.Cli.exe` | Windows；GUI 需要 Microsoft Edge WebView2 Runtime | portable zip 包含桌面程序和 CLI；CLI 不依赖 WebView2。两者都不要求用户安装 Node.js、npm、Rust 或 Tauri CLI。 |
-| 安装 / 运行远程 Provider | manifest `runtime` 对应的软件 | QuotaBarWin 会从 `PATH` 或绝对路径解析 `runtime`，安装 / 更新时用 `--version` 或 `--help` 校验。若 Provider 声明 `"runtime": "node"`，该机器就需要可执行的 `node`；声明 `python`、`pwsh` 或 `bash` 时同理。当前仓库示例 Provider 均声明 `node`。 |
+| 安装 / 运行远程 Provider | `builtin-js` 不需要额外软件；其他 runtime 需要对应软件 | `builtin-js` 使用应用内置 QuickJS，当前全部项目维护 Provider 都使用它。外部 runtime 会从 `PATH` 或绝对路径解析，并在安装 / 更新时校验；例如声明 `"runtime": "node"` 才需要可执行的 `node`。 |
 | 开发、测试、构建本仓库 | Node.js 22+、npm、Rust stable / Cargo、Windows MSVC build tools | `package.json` 要求 `node >=22`，Release workflow 也使用 Node 22。`npm run tauri ...` 和 `cargo test ...` 需要 Rust 工具链；完整 E2E 还需要 `tauri-driver`。 |
 
-Provider 脚本还可以自行调用其他 CLI 或读取本地凭据文件；这些不属于 QuotaBarWin 的统一依赖，应由对应 Provider 文档声明。例如远程 Provider 指南里的 Bash 示例需要 `jq`。
+外部 runtime Provider 还可以自行调用其他 CLI 或读取本地凭据文件；这些不属于 QuotaBarWin 的统一依赖，应由对应 Provider 文档声明。`builtin-js` 不提供子进程或任意文件访问，详见[远程 Provider 指南](docs/remote-provider-guide.md#内置-javascript-runtimebuiltin-js)。
 
 ---
 

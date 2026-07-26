@@ -14,8 +14,8 @@ use crate::{
     },
     redact::redact_sensitive,
     remote_provider::{
-        parse_manifest, resolve_runtime, validate_runtime_executable, verify_checksum,
-        ProviderManifest,
+        is_builtin_js_runtime, parse_manifest, resolve_runtime, validate_runtime_executable,
+        verify_checksum, ProviderManifest, BUILTIN_JS_RUNTIME,
     },
     remote_provider_runner::run_remote_provider,
 };
@@ -525,14 +525,18 @@ fn validate_manifest_and_source(
 
     let runtime_to_check = configured_runtime.unwrap_or(&manifest.runtime);
     let mut resolved = None;
-    match resolve_runtime(runtime_to_check) {
-        Ok(path) => {
-            resolved = Some(path.display().to_string());
-            if let Err(error) = validate_runtime_executable(&path) {
-                errors.push(format!("Runtime is not usable: {error}"));
+    if is_builtin_js_runtime(runtime_to_check) {
+        resolved = Some(BUILTIN_JS_RUNTIME.to_string());
+    } else {
+        match resolve_runtime(runtime_to_check) {
+            Ok(path) => {
+                resolved = Some(path.display().to_string());
+                if let Err(error) = validate_runtime_executable(&path) {
+                    errors.push(format!("Runtime is not usable: {error}"));
+                }
             }
+            Err(error) => errors.push(format!("Runtime cannot be resolved: {error}")),
         }
-        Err(error) => errors.push(format!("Runtime cannot be resolved: {error}")),
     }
     if let Some(stored) = resolved_runtime {
         if resolved.as_deref() != Some(stored) {
@@ -583,11 +587,11 @@ fn validate_manifest_contract(
         ));
     }
     let runtime = manifest.runtime.trim();
-    let supported_runtime =
-        matches!(runtime, "node" | "python" | "pwsh" | "bash") || Path::new(runtime).is_absolute();
+    let supported_runtime = matches!(runtime, "builtin-js" | "node" | "python" | "pwsh" | "bash")
+        || Path::new(runtime).is_absolute();
     if !supported_runtime {
         errors.push(format!(
-            "Manifest runtime must be node, python, pwsh, bash, or an absolute executable path, got '{}'",
+            "Manifest runtime must be builtin-js, node, python, pwsh, bash, or an absolute executable path, got '{}'",
             manifest.runtime
         ));
     }
@@ -996,6 +1000,25 @@ mod tests {
             .any(|error| error.contains("provider-snapshot-v1")));
         assert!(errors.iter().any(|error| error.contains("runtime must be")));
         assert_eq!(warnings.len(), 1);
+    }
+
+    #[test]
+    fn validation_contract_accepts_builtin_js_without_an_external_path() {
+        let manifest = parse_manifest(
+            r#"{"schemaVersion":1,"id":"builtin","displayName":"Builtin","runtime":"builtin-js","entry":"provider.js","output":"provider-snapshot-v1"}"#,
+        )
+        .expect("builtin manifest parses");
+        let report = validate_manifest_and_source(
+            "files",
+            None,
+            Path::new("provider.json"),
+            None,
+            &manifest,
+            None,
+            None,
+        );
+        assert!(report.errors.iter().all(|error| !error.contains("Runtime")));
+        assert_eq!(report.runtime.resolved.as_deref(), Some("builtin-js"));
     }
 
     #[test]

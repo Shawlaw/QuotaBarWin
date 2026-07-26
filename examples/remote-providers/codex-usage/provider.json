@@ -2,13 +2,20 @@
   "schemaVersion": 1,
   "id": "codex-usage",
   "displayName": "Codex Usage",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "ChatGPT/Codex 5h and weekly usage via remote provider script.",
-  "runtime": "node",
-  "entry": "provider.cjs",
+  "runtime": "builtin-js",
+  "entry": "provider.js",
   "requiredEnvVars": [],
   "output": "provider-snapshot-v1",
-  "permissions": ["fs:~/.codex/auth.json", "env:CODEX_ACCESS_TOKEN", "env:CODEX_ACCOUNT_ID", "env:CODEX_AUTH_FILE", "env:QBWIN_PROXY_URL"],
+  "permissions": [
+    "fs:~/.codex/auth.json",
+    "fs:env:CODEX_AUTH_FILE",
+    "env:CODEX_ACCESS_TOKEN",
+    "env:CODEX_ACCOUNT_ID",
+    "env:CODEX_AUTH_FILE",
+    "net:https://chatgpt.com"
+  ],
   "defaultConfig": {
     "name": "Codex",
     "windowLabelOverrides": {
@@ -51,6 +58,6 @@
     }
   ],
   "checksums": {
-    "source": "sha256:c657c4ba90aabb6223bb4aab258bd42bf63b68163d76b384e5ca021e38f79ecd"
+    "source": "sha256:145d7064538333764ca91cb52cfb704ea8a15220807724002a3d623ca2732004"
   }
 }

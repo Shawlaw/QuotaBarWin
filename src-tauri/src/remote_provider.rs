@@ -13,6 +13,12 @@ use sha2::{Digest, Sha256};
 use crate::proxy::{build_http_client, ProxyConfig};
 use crate::redact::redact_sensitive;
 
+pub const BUILTIN_JS_RUNTIME: &str = "builtin-js";
+
+pub fn is_builtin_js_runtime(runtime: &str) -> bool {
+    runtime.trim() == BUILTIN_JS_RUNTIME
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderManifest {
@@ -219,6 +225,10 @@ fn validate_manifest(manifest: &ProviderManifest) -> Result<(), RemoteProviderEr
         return Err(RemoteProviderError::InvalidManifest(
             "missing output".to_string(),
         ));
+    }
+    if is_builtin_js_runtime(&manifest.runtime) {
+        crate::builtin_js::validate_builtin_js_manifest(manifest)
+            .map_err(RemoteProviderError::InvalidManifest)?;
     }
     Ok(())
 }
@@ -807,6 +817,23 @@ mod tests {
     }
 
     #[test]
+    fn builtin_js_manifest_requires_declared_capabilities() {
+        let invalid = parse_manifest(
+            r#"{"schemaVersion":1,"id":"builtin","displayName":"Builtin","runtime":"builtin-js","entry":"provider.js","requiredEnvVars":["API_TOKEN"],"output":"provider-snapshot-v1"}"#,
+        );
+        assert!(matches!(
+            invalid,
+            Err(RemoteProviderError::InvalidManifest(message)) if message.contains("env:API_TOKEN")
+        ));
+
+        let valid = parse_manifest(
+            r#"{"schemaVersion":1,"id":"builtin","displayName":"Builtin","runtime":"builtin-js","entry":"provider.js","requiredEnvVars":["API_TOKEN"],"output":"provider-snapshot-v1","permissions":["env:API_TOKEN","net:https://api.example.test"]}"#,
+        )
+        .expect("valid builtin manifest");
+        assert!(is_builtin_js_runtime(&valid.runtime));
+    }
+
+    #[test]
     fn cache_round_trip() {
         let temp = tempfile::tempdir().expect("temp dir");
         let manifest = ProviderManifest {
@@ -984,6 +1011,10 @@ fn example_remote_provider_manifests_are_valid() {
     let cargo_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo_root = cargo_dir.parent().expect("repo root");
     let examples_dir = repo_root.join("examples").join("remote-providers");
+    let registry_json = fs::read_to_string(examples_dir.join("registry.json"))
+        .expect("read example provider registry");
+    let registry: ProviderRegistry =
+        serde_json::from_str(&registry_json).expect("parse example provider registry");
 
     for provider_id in [
         "kimi-coding",
@@ -994,7 +1025,6 @@ fn example_remote_provider_manifests_are_valid() {
     ] {
         let dir = examples_dir.join(provider_id);
         let manifest_path = dir.join("provider.json");
-        let source_path = dir.join("provider.cjs");
 
         let manifest_json = fs::read_to_string(&manifest_path)
             .unwrap_or_else(|error| panic!("failed to read {} manifest: {error}", provider_id));
@@ -1002,6 +1032,7 @@ fn example_remote_provider_manifests_are_valid() {
             .unwrap_or_else(|error| panic!("failed to parse {} manifest: {error}", provider_id));
         validate_manifest(&manifest)
             .unwrap_or_else(|error| panic!("{} manifest invalid: {error}", provider_id));
+        let source_path = dir.join(source_file_name(&manifest.entry));
 
         let source = fs::read_to_string(&source_path)
             .unwrap_or_else(|error| panic!("failed to read {} source: {error}", provider_id));
@@ -1012,6 +1043,22 @@ fn example_remote_provider_manifests_are_valid() {
             .unwrap_or_else(|| panic!("{} manifest is missing checksums.source", provider_id));
         verify_checksum(&source, expected_checksum)
             .unwrap_or_else(|error| panic!("{} checksum mismatch: {error}", provider_id));
+
+        let registry_entry = registry
+            .providers
+            .iter()
+            .find(|entry| entry.id == provider_id)
+            .unwrap_or_else(|| panic!("registry is missing {provider_id}"));
+        let expected_manifest_checksum = registry_entry
+            .checksum
+            .as_deref()
+            .unwrap_or_else(|| panic!("registry entry for {provider_id} is missing checksum"));
+        verify_checksum(&manifest_json, expected_manifest_checksum).unwrap_or_else(|error| {
+            panic!(
+                "{} manifest registry checksum mismatch: {error}",
+                provider_id
+            )
+        });
     }
 }
 

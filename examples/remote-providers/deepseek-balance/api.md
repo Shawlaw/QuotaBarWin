@@ -2,7 +2,7 @@
 
 English version: [`api.en.md`](api.en.md).
 
-本文记录 `deepseek-balance/provider.cjs` 当前实现依据的请求、响应形状和字段映射。它是示例 Provider 的实现说明，不代表第三方 API 的稳定官方契约；接口变化时应同步更新脚本、fixture 和本文档。
+本文记录 `deepseek-balance/provider.js`（`builtin-js`）当前实现依据的请求、响应形状和字段映射。它是示例 Provider 的实现说明，不代表第三方 API 的稳定官方契约；接口变化时应同步更新脚本和本文档。
 
 ## 请求
 
@@ -13,7 +13,6 @@ English version: [`api.en.md`](api.en.md).
 | 鉴权 | `Authorization: Bearer <DEEPSEEK_API_KEY>` |
 | 固定请求头 | `Accept: application/json` |
 | 必需环境变量 | `DEEPSEEK_API_KEY` |
-| Fixture 环境变量 | `QUOTABARWIN_DEEPSEEK_FIXTURE` |
 
 可选本地显示配置：
 
@@ -24,8 +23,6 @@ English version: [`api.en.md`](api.en.md).
 | `DEEPSEEK_BALANCE_REFERENCE_TOTAL_<CURRENCY>` | 按币种覆盖参考总额，例如 `DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY`。 |
 | `DEEPSEEK_BALANCE_WARNING` | 低余额警告阈值。 |
 | `DEEPSEEK_BALANCE_WARNING_<CURRENCY>` | 按币种覆盖低余额阈值，例如 `DEEPSEEK_BALANCE_WARNING_CNY`。 |
-
-脚本在设置 `QUOTABARWIN_DEEPSEEK_FIXTURE` 时跳过网络请求并读取本地 JSON，便于离线验证解析逻辑。
 
 ## 响应形状
 
@@ -81,6 +78,6 @@ DeepSeek 返回的是余额，不是周期性 quota。没有参考总额时，�
 
 ## 本地参考
 
-- 示例脚本：[`provider.cjs`](provider.cjs)
+- 示例脚本：[`provider.js`](provider.js)
 - Manifest：[`provider.json`](provider.json)
 - 原始响应 fixture：[`../../../fixtures/provider_outputs/deepseek_balance.json`](../../../fixtures/provider_outputs/deepseek_balance.json)

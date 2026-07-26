@@ -9,8 +9,10 @@ Remote providers let you install quota providers from a hosted manifest + script
 
 1. You provide a registry URL or local file path (`registry.json`) that lists one or more providers. Both `https://` and `file://` URLs, as well as plain local paths like `C:\Providers\registry.json`, are supported.
 2. QuotaBarWin reads the registry, fetches each referenced provider manifest, verifies optional checksums, and downloads the source scripts.
-3. Each script is cached locally and executed with its declared runtime (for example `node`, `python`, or an absolute path).
-4. On every refresh QuotaBarWin runs the cached scripts and parses the output into quota windows.
+3. Each script is cached locally and executed with its declared runtime. `builtin-js`
+   uses the app's embedded QuickJS and needs no user-installed Node.js; `node`,
+   `python`, `pwsh`, `bash`, and absolute paths still start an external process.
+4. On every refresh QuotaBarWin runs the cached scripts and normalizes their results into quota windows.
 
 The same manifest can be installed more than once to query multiple accounts
 for the same provider. QuotaBarWin generates a stable local provider id for
@@ -26,13 +28,13 @@ variables; the project-wide proxy is only a fallback when that value is absent.
   "schemaVersion": 1,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script",
-  "runtime": "node",
-  "entry": "provider.cjs",
+  "runtime": "builtin-js",
+  "entry": "provider.js",
   "requiredEnvVars": ["KIMI_API_KEY"],
   "output": "provider-snapshot-v1",
-  "permissions": ["env:KIMI_API_KEY"],
+  "permissions": ["env:KIMI_API_KEY", "net:https://api.kimi.com"],
   "defaultConfig": {
     "name": "Kimi",
     "visibleWindowIds": ["300-minute", "usage"],
@@ -69,14 +71,87 @@ Field descriptions:
 | `displayName` | yes | Human-readable name shown in the UI. |
 | `version` | no | Human-readable provider version shown in Settings. SemVer is recommended. If omitted, the UI falls back to a short checksum. |
 | `description` | no | Short description. |
-| `runtime` | yes | Runtime used to execute `entry`. Common values: `node`, `python`, `pwsh`, `bash`. Can also be an absolute path like `C:\Tools\node\node.exe`. |
+| `runtime` | yes | Runtime used to execute `entry`. `builtin-js` uses embedded QuickJS; `node`, `python`, `pwsh`, `bash`, and absolute executable paths remain supported. |
 | `entry` | yes | Source file name. Can be a relative path (resolved against the manifest URL/directory), an absolute HTTPS URL, a `file://` URL, or a local file path. |
 | `requiredEnvVars` | no | Environment variables that the script needs. On refresh, QuotaBarWin resolves each name from provider `envVars`, then `${secret:NAME}`. |
 | `output` | yes | Output contract. Only `provider-snapshot-v1` is supported for remote providers at the moment. |
-| `permissions` | no | Declared capabilities (currently informational). Use `env:<NAME>` to document required env vars. |
+| `permissions` | no | Informational for external runtimes; an enforced capability boundary for `builtin-js`. See the next section for its syntax. |
 | `defaultConfig` | no | Default local provider config written during first install, such as `name`, `timeoutSeconds`, `visibleWindowIds`, `windowLabelOverrides`, and `envVars`. Provider updates do not overwrite user edits. |
 | `parameters` | no | Parameter hints shown in Settings. Each item may include `name`, `label`, `kind`, `required`, `defaultValue`, `placeholder`, `description`, and `options`. Do not include real credentials. |
 | `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. `version` is display metadata and does not replace checksum verification. |
+
+## Embedded JavaScript runtime (`builtin-js`)
+
+`builtin-js` is for Providers that should not require end users to install
+Node.js. It runs inside the app's embedded QuickJS sandbox. The entry must be a
+`.js` file, `output` must be `provider-snapshot-v1`, and the script defines a
+synchronous global `main(qb)` function. That function returns the snapshot
+object directly; it does **not** use `console.log`, stdout, or `process.exit`.
+All project-maintained Providers use this runtime.
+
+```js
+function main(qb) {
+  const token = qb.env.get("EXAMPLE_API_TOKEN");
+  const response = qb.http.request("https://api.example.com/usage", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Usage API returned ${response.status}`);
+  const raw = JSON.parse(response.body);
+  qb.log({ level: "info", stage: "snapshot.ready", message: "Usage loaded" });
+  return {
+    status: "ok",
+    updatedAt: qb.now(),
+    windows: [{ id: "monthly", label: "Monthly", remainingPercent: raw.remaining, confidence: "exact" }]
+  };
+}
+```
+
+The manifest must explicitly grant every host capability the script uses:
+
+```json
+{
+  "runtime": "builtin-js",
+  "entry": "provider.js",
+  "output": "provider-snapshot-v1",
+  "requiredEnvVars": ["EXAMPLE_API_TOKEN"],
+  "permissions": ["env:EXAMPLE_API_TOKEN", "net:https://api.example.com"]
+}
+```
+
+### `qb` API and permissions
+
+| API | Required permission | Behavior and limit |
+|---|---|---|
+| `qb.env.get(name)` | `env:NAME` or `env-prefix:PREFIX_` | Reads a configured value and throws when it is absent. Every `requiredEnvVars` item needs a matching env permission. |
+| `qb.env.getOptional(name)` | same | Returns `null` when the value is absent, but still throws for an undeclared name. Use for optional filters or thresholds. |
+| `qb.fs.readText(path)` | `fs:C:\exact\path`, `fs:~/.codex/auth.json`, or `fs:env:NAME` | Reads UTF-8 text only. The host canonicalizes the real path and rejects ungranted paths. `fs:env:NAME` permits the one file named by that environment value. |
+| `qb.http.request(url, options)` | `net:http`, `net:https`, or an exact origin such as `net:https://api.example.com` | Synchronous HTTP request returning `{ status, ok, body }`. The host uses the Provider or project proxy; the script never receives proxy credentials. Request bodies are limited to 1 MiB and response text to 2 MiB. |
+| `qb.now()` / `qb.timezone()` | none | Current UTC ISO timestamp and the machine UTC offset, such as `UTC+08:00`. |
+| `qb.log(entry)` | none | Writes a structured local app log. Prefer `{ level, stage, message }`; never pass secrets, tokens, or full responses. |
+| `qb.meta` | none | Read-only generic metadata: `providerId`, `manifestId`, `name`, `version`, `sourceChecksum`, and `timeoutSeconds`. |
+
+`net:https://api.example.com` permits only that scheme, host, and port; the
+script chooses the path. `net:https` permits any HTTPS origin and should be
+used only when necessary. `env-prefix:` supports optional dynamically named
+settings such as `DEEPSEEK_BALANCE_WARNING_` per currency. `QBWIN_` is a
+reserved host prefix and cannot be granted through `env:` or `fs:env:`; use
+`qb.meta` for generic metadata and let `qb.http` use the proxy automatically.
+
+### Supported scope and intentional exclusions
+
+Use synchronous standard JavaScript plus `Date`, `JSON`, `RegExp`, `Map`, and
+`Set`. `main(qb)` must synchronously return a JSON-serializable object.
+Promises, top-level await, ES modules/import, `require`, Node/Bun/Deno APIs,
+`process`, `console`, subprocesses, arbitrary sockets, arbitrary file access,
+and dynamic loading are unavailable. `eval` is not a supported capability.
+The runtime is limited to 16 MiB memory, a 512 KiB JS stack, and the instance's
+overall `timeoutSeconds`; each HTTP request is also limited by remaining total
+time.
+
+These are platform capabilities only, not provider-specific helpers. URLs,
+headers, local auth-file formats, and conversion to `windows[]` remain in the
+Provider script. External runtimes remain available but do not receive this
+enforced sandbox.
 
 ## Provider registry (`registry.json`)
 
@@ -117,7 +192,7 @@ scripts that branch on its exit code.
 .\QuotaBarWin.Cli.exe validate --manifest .\provider.json
 
 # If entry is an HTTPS or file URL, specify the local source to validate.
-.\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.cjs
+.\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.js
 
 # After installation, validate the effective config, cached manifest, source checksum, and runtime.
 .\QuotaBarWin.Cli.exe validate --provider my-provider
@@ -146,10 +221,11 @@ for the complete protocol.
 
 ## Source script output contract
 
-When `output` is `provider-snapshot-v1`, the script must print a single JSON
-object to stdout. stdout should contain only that final object; write progress,
-debug, and error logs to stderr, otherwise the host will try to parse the logs
-as JSON and fail. `id`, `name`, and `source` are optional; even when provided,
+When `output` is `provider-snapshot-v1`, an external-runtime script must print
+one JSON object to stdout, and stdout must contain only that final object;
+write progress, debug, and error logs to stderr. `builtin-js` does not use
+stdout/stderr: its `main(qb)` returns the same-shaped object and calls `qb.log()`
+for logs. `id`, `name`, and `source` are optional; even when provided,
 QuotaBarWin prefers the local installed provider id and name so one manifest can
 back multiple account instances.
 
@@ -403,7 +479,13 @@ The reference total lets QuotaBarWin render a percentage progress bar. The warni
 
 ### Local config and secrets
 
-Remote provider source should not contain credentials. The script still reads `process.env.NAME`, but QuotaBarWin injects configured environment variables only into the child process. For each manifest `requiredEnvVars` entry, the app first checks the installed provider config `envVars` map; if a key is absent, it resolves `${secret:NAME}`. Extra configured `envVars` are also injected, which is useful for optional provider settings such as reference totals, currency filters, or warning thresholds.
+Remote provider source should not contain credentials. External-runtime scripts
+read `process.env.NAME`; `builtin-js` scripts use permission-gated
+`qb.env.get("NAME")` or `qb.env.getOptional("NAME")`. For each manifest
+`requiredEnvVars` entry, the app first checks the installed provider config
+`envVars` map; if a key is absent, it resolves `${secret:NAME}`. Extra configured
+`envVars` are also available to the Provider, which is useful for optional
+reference totals, currency filters, or warning thresholds.
 
 `${secret:NAME}` reads `<config-dir>/secrets/NAME.txt` first and falls back to environment variable `NAME`. Existing `${file:C:\path\secret.txt}` and `${env:NAME}` placeholders are still supported.
 

@@ -25,7 +25,7 @@ In the portable release, `QuotaBarWin.Cli.exe` is next to `QuotaBarWin.exe`. Bot
 .\QuotaBarWin.Cli.exe validate --provider codex-usage
 
 # Validate local manifest and source files before installation
-.\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.cjs
+.\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.js
 ```
 
 `get` and `check` default to `--refresh`. This runs the installed Provider scripts and their network requests according to their configured settings, and updates the snapshot visible to the desktop app. `--cached` reads only `last_snapshot.quotaBarWin.json`; it fails if no snapshot exists. Do not use an unconstrained-age cached result for high-risk or quota-intensive decisions.
@@ -59,12 +59,12 @@ upstream response fluctuations.
 
 `validate` is for Provider authors, CI, and troubleshooting. By default it does not run the source script or make Provider API requests; it runs only when `--run` is explicitly supplied.
 
-- `validate --provider ID` reads the local config and cached Provider. It checks `providerDir`, `timeoutSeconds`, consistency between config and manifest runtime, configured required env-var names, the manifest, source file, checksum, and runtime availability.
+- `validate --provider ID` reads the local config and cached Provider. It checks `providerDir`, `timeoutSeconds`, consistency between config and manifest runtime, configured required env-var names, the manifest, source file, checksum, and runtime availability. `builtin-js` is reported as embedded and needs no external executable.
 - `validate --manifest PATH` checks a local manifest. It automatically locates the source when `entry` is a relative local path. When entry is a URL, pass `--source PATH`.
 
-To validate the live output protocol too, use `validate --provider ID --run`. It executes the cached script using that Provider's configured runtime, secrets, and proxy, then verifies that stdout is accepted by the current `provider-snapshot-v1` parser. This can access the network and account API, so it is opt-in. The report's `scriptRun` is `notRun`, `passed`, or `failed`.
+To validate the live output protocol too, use `validate --provider ID --run`. It executes the cached script using that Provider's configured runtime, secrets, and proxy, then verifies that the result is accepted by the current `provider-snapshot-v1` parser. External runtimes use stdout; `builtin-js` uses the value returned from `main(qb)`. This can access the network and account API, so it is opt-in. The report's `scriptRun` is `notRun`, `passed`, or `failed`.
 
-It requires the public `provider-snapshot-v1` output protocol, `node`, `python`, `pwsh`, `bash`, or an absolute runtime path, and a non-empty `displayName`. `checksums.source` remains optional in the public contract: its absence causes a warning but does not alone fail validation. The report never emits configured environment-variable values, secrets, or Provider stderr.
+It requires the public `provider-snapshot-v1` output protocol, `builtin-js`, `node`, `python`, `pwsh`, `bash`, or an absolute runtime path, and a non-empty `displayName`. `checksums.source` remains optional in the public contract: its absence causes a warning but does not alone fail validation. The report never emits configured environment-variable values, secrets, or Provider stderr.
 
 Both valid and invalid reports are JSON on stdout. `valid: false` exits `30`; command-level errors such as an unreadable manifest exit `20`. For example:
 

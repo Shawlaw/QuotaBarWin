@@ -14,6 +14,7 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use crate::{
+    builtin_js::{run_builtin_js_provider, BuiltinJsRun},
     config::resolve_secret_value,
     logger::{LogLevel, LogSink},
     proxy::{select_proxy_url, ProxyConfig},
@@ -21,7 +22,10 @@ use crate::{
         clamp_snapshot_percentages, AppSnapshot, ProviderDiagnostics, ProviderSnapshot, QuotaWindow,
     },
     redact::redact_sensitive,
-    remote_provider::{ensure_runtime_resolved, load_cached_manifest, ProviderManifest},
+    remote_provider::{
+        ensure_runtime_resolved, is_builtin_js_runtime, load_cached_manifest, ProviderManifest,
+        BUILTIN_JS_RUNTIME,
+    },
 };
 
 const MAX_CAPTURED_STDERR_BYTES: usize = 16 * 1024;
@@ -143,28 +147,33 @@ pub fn run_remote_provider(
         }
     };
 
-    let executable = match ensure_runtime_resolved(runtime, resolved_runtime) {
-        Ok(path) => {
-            log_provider(
-                log,
-                LogLevel::Info,
-                id,
-                &format!("runtime resolved path={}", path.display()),
-            );
-            path
-        }
-        Err(error) => {
-            log_provider(
-                log,
-                LogLevel::Error,
-                id,
-                &format!("failed to resolve runtime: {error}"),
-            );
-            return vec![provider_error_snapshot(
-                id,
-                name,
-                &format!("Failed to resolve runtime: {error}"),
-            )];
+    let executable = if is_builtin_js_runtime(runtime) {
+        log_provider(log, LogLevel::Info, id, "using embedded builtin-js runtime");
+        None
+    } else {
+        match ensure_runtime_resolved(runtime, resolved_runtime) {
+            Ok(path) => {
+                log_provider(
+                    log,
+                    LogLevel::Info,
+                    id,
+                    &format!("runtime resolved path={}", path.display()),
+                );
+                Some(path)
+            }
+            Err(error) => {
+                log_provider(
+                    log,
+                    LogLevel::Error,
+                    id,
+                    &format!("failed to resolve runtime: {error}"),
+                );
+                return vec![provider_error_snapshot(
+                    id,
+                    name,
+                    &format!("Failed to resolve runtime: {error}"),
+                )];
+            }
         }
     };
 
@@ -248,8 +257,25 @@ pub fn run_remote_provider(
     }
     inject_provider_metadata_env(&mut env, id, name, &manifest, timeout_seconds);
 
+    if is_builtin_js_runtime(runtime) {
+        return run_builtin_js_remote_provider(
+            id,
+            name,
+            &manifest,
+            &source_path,
+            &env,
+            timeout_seconds,
+            window_label_overrides,
+            visible_window_ids,
+            log,
+        );
+    }
+
     let command = RemoteCommandSpec {
-        executable: executable.display().to_string(),
+        executable: executable
+            .expect("external runtime must have a resolved executable")
+            .display()
+            .to_string(),
         args: vec![source_path.display().to_string()],
         cwd: Some(provider_dir.display().to_string()),
         timeout_ms: timeout_seconds.max(1).saturating_mul(1000),
@@ -265,6 +291,113 @@ pub fn run_remote_provider(
         visible_window_ids,
         log,
     )
+}
+
+fn run_builtin_js_remote_provider(
+    id: &str,
+    name: &str,
+    manifest: &ProviderManifest,
+    source_path: &Path,
+    env: &HashMap<String, String>,
+    timeout_seconds: u64,
+    window_label_overrides: &HashMap<String, String>,
+    visible_window_ids: &[String],
+    log: Option<&LogSink>,
+) -> Vec<ProviderSnapshot> {
+    let source = match std::fs::read_to_string(source_path) {
+        Ok(source) => source,
+        Err(error) => {
+            let error = format!(
+                "Failed to read builtin-js source '{}': {}",
+                source_path.display(),
+                error
+            );
+            log_provider(log, LogLevel::Error, id, &error);
+            return vec![error_provider(
+                id,
+                name,
+                &error,
+                None,
+                Some(BUILTIN_JS_RUNTIME),
+            )];
+        }
+    };
+    let proxy_url = env.get("QBWIN_PROXY_URL").map(String::as_str);
+    let result = run_builtin_js_provider(BuiltinJsRun {
+        provider_id: id,
+        provider_name: name,
+        manifest,
+        source: &source,
+        env,
+        timeout: Duration::from_secs(timeout_seconds.max(1)),
+        proxy_url,
+        log,
+    });
+    let result = match result {
+        Ok(result) => result,
+        Err(error) => {
+            let error = redact_sensitive(&error);
+            log_provider(
+                log,
+                LogLevel::Error,
+                id,
+                &format!("builtin-js provider execution failed: {error}"),
+            );
+            return vec![error_provider(
+                id,
+                name,
+                &format!("Builtin-js provider failed: {error}"),
+                None,
+                Some(BUILTIN_JS_RUNTIME),
+            )];
+        }
+    };
+    let mut provider = match parse_remote_provider_snapshot_v1(id, name, &result.json) {
+        Ok(provider) => provider,
+        Err(error) => {
+            log_provider(
+                log,
+                LogLevel::Error,
+                id,
+                &format!("failed to parse builtin-js provider result: {error}"),
+            );
+            return vec![error_provider(
+                id,
+                name,
+                &format!("Failed to parse builtin-js provider result: {error}"),
+                None,
+                Some(BUILTIN_JS_RUNTIME),
+            )];
+        }
+    };
+    let window_count = provider.windows.len();
+    apply_visible_windows(&mut provider, visible_window_ids);
+    apply_window_label_overrides(&mut provider, window_label_overrides);
+    provider.source = "remote".to_string();
+    if provider.diagnostics.is_none() {
+        provider.diagnostics = Some(ProviderDiagnostics {
+            checked_at: Utc::now().to_rfc3339(),
+            messages: Vec::new(),
+            command_path: Some(BUILTIN_JS_RUNTIME.to_string()),
+            exit_code: None,
+            duration_ms: Some(result.duration_ms),
+            timed_out: Some(false),
+            stderr: None,
+        });
+    }
+    clamp_snapshot_percentages(&mut provider);
+    log_provider(
+        log,
+        LogLevel::Info,
+        id,
+        &format!(
+            "builtin-js output parsed providers=1 windows={} durationMs={} resultBytes={}",
+            window_count,
+            result.duration_ms,
+            result.json.len()
+        ),
+    );
+    vec![provider]
 }
 
 fn log_provider(log: Option<&LogSink>, level: LogLevel, id: &str, message: &str) {
@@ -974,6 +1107,56 @@ fn diagnostics_from_result(
 mod tests {
     use super::*;
     use crate::proxy::{ProxyConfig, ProxyKind};
+    use std::{io::Write, net::TcpListener};
+
+    fn run_official_kimi_source(raw: serde_json::Value) -> ProviderSnapshot {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("Kimi test listener");
+        let address = listener.local_addr().expect("Kimi test address");
+        let response_body = serde_json::to_string(&raw).expect("Kimi test response");
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("Kimi test connection");
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("Kimi response");
+        });
+        let provider_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root")
+            .join("examples")
+            .join("remote-providers")
+            .join("kimi-coding");
+        let mut manifest = load_cached_manifest(&provider_dir).expect("Kimi manifest");
+        manifest.permissions = vec![
+            "env:KIMI_API_KEY".to_string(),
+            format!("net:http://{address}"),
+        ];
+        let source = std::fs::read_to_string(provider_dir.join(&manifest.entry))
+            .expect("Kimi source")
+            .replace(
+                "https://api.kimi.com/coding/v1/usages",
+                &format!("http://{address}/coding/v1/usages"),
+            );
+        let env = HashMap::from([("KIMI_API_KEY".to_string(), "test-token".to_string())]);
+        let result = run_builtin_js_provider(BuiltinJsRun {
+            provider_id: "kimi-coding",
+            provider_name: "Kimi Coding",
+            manifest: &manifest,
+            source: &source,
+            env: &env,
+            timeout: Duration::from_secs(2),
+            proxy_url: None,
+            log: None,
+        })
+        .expect("Kimi builtin-js result");
+        server.join().expect("Kimi server");
+        parse_remote_provider_snapshot_v1("kimi-coding", "Kimi Coding", &result.json)
+            .expect("Kimi snapshot")
+    }
 
     fn node_command(script: &str) -> RemoteCommandSpec {
         RemoteCommandSpec {
@@ -983,6 +1166,52 @@ mod tests {
             timeout_ms: 2000,
             env: HashMap::new(),
         }
+    }
+
+    #[test]
+    fn builtin_kimi_treats_unknown_five_hour_usage_as_full_remaining() {
+        let provider = run_official_kimi_source(serde_json::json!({
+            "user": { "region": "REGION_CN", "membership": { "level": "LEVEL_INTERMEDIATE" } },
+            "usage": { "limit": "100", "used": "15", "remaining": "85", "resetTime": "2026-06-12T02:35:14.207781Z" },
+            "limits": [{
+                "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+                "detail": { "used": "", "remaining": "", "limit": "", "resetTime": "2026-06-07T16:35:14.207781Z" }
+            }]
+        }));
+        let five_hour = provider
+            .windows
+            .iter()
+            .find(|window| window.id == "300-minute")
+            .expect("five-hour window");
+        assert_eq!(five_hour.used, None);
+        assert_eq!(five_hour.remaining, None);
+        assert_eq!(five_hour.limit, None);
+        assert_eq!(five_hour.used_percent, Some(0.0));
+        assert_eq!(five_hour.remaining_percent, Some(100.0));
+        assert_eq!(five_hour.confidence, "estimated");
+    }
+
+    #[test]
+    fn builtin_kimi_does_not_create_a_missing_five_hour_window() {
+        let provider = run_official_kimi_source(serde_json::json!({
+            "usage": { "limit": "100", "used": "15", "remaining": "85", "resetTime": "2026-06-12T02:35:14.207781Z" },
+            "limits": [{
+                "window": { "duration": 60, "timeUnit": "TIME_UNIT_MINUTE" },
+                "detail": { "used": "", "remaining": "", "limit": "" }
+            }]
+        }));
+        assert!(!provider
+            .windows
+            .iter()
+            .any(|window| window.id == "300-minute"));
+        let weekly = provider
+            .windows
+            .iter()
+            .find(|window| window.id == "usage")
+            .expect("weekly window");
+        assert_eq!(weekly.used_percent, Some(15.0));
+        assert_eq!(weekly.remaining_percent, Some(85.0));
+        assert_eq!(weekly.confidence, "exact");
     }
 
     #[test]
@@ -1177,6 +1406,141 @@ mod tests {
         assert_eq!(providers[0].status, "ok");
         assert_eq!(providers[0].windows[0].label, "from-config-map");
         assert!(std::env::var("QBWIN_REMOTE_CHILD_TOKEN").is_err());
+    }
+
+    #[test]
+    fn builtin_js_provider_runs_without_an_external_runtime() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let provider_dir = temp.path().join("provider");
+        std::fs::create_dir(&provider_dir).expect("create provider dir");
+        std::fs::write(
+            provider_dir.join("provider.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "id": "builtin-env",
+                "displayName": "Builtin Env",
+                "runtime": "builtin-js",
+                "entry": "provider.js",
+                "requiredEnvVars": ["BUILTIN_TOKEN"],
+                "output": "provider-snapshot-v1",
+                "permissions": ["env:BUILTIN_TOKEN"]
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+        std::fs::write(
+            provider_dir.join("provider.js"),
+            r#"
+                function main(qb) {
+                  return {
+                    metadata: { provider: qb.meta.providerId },
+                    windows: [{ id: "token", label: qb.env.get("BUILTIN_TOKEN"), remainingPercent: 50, confidence: "exact" }]
+                  };
+                }
+            "#,
+        )
+        .expect("write source");
+
+        let env_vars = HashMap::from([(
+            "BUILTIN_TOKEN".to_string(),
+            "from-builtin-config".to_string(),
+        )]);
+        let providers = run_remote_provider(
+            "builtin-env",
+            "Builtin Env",
+            Some(&provider_dir),
+            "builtin-js",
+            None,
+            None,
+            crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
+            temp.path(),
+            &env_vars,
+            &HashMap::new(),
+            &[],
+            None,
+        );
+
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].status, "ok", "{:?}", providers[0]);
+        assert_eq!(providers[0].windows[0].label, "from-builtin-config");
+        assert_eq!(
+            providers[0].metadata.as_ref().unwrap()["provider"],
+            "builtin-env"
+        );
+        assert_eq!(
+            providers[0]
+                .diagnostics
+                .as_ref()
+                .and_then(|diagnostics| diagnostics.command_path.as_deref()),
+            Some("builtin-js")
+        );
+    }
+
+    #[test]
+    fn official_time_flies_provider_runs_on_builtin_js() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let provider_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root")
+            .join("examples")
+            .join("remote-providers")
+            .join("time-flies");
+        let providers = run_remote_provider(
+            "time-flies",
+            "Time Flies",
+            Some(&provider_dir),
+            "builtin-js",
+            None,
+            None,
+            5,
+            temp.path(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+            None,
+        );
+
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].status, "ok");
+        assert_eq!(providers[0].windows.len(), 5);
+        assert!(providers[0]
+            .windows
+            .iter()
+            .all(|window| window.unit.as_deref() == Some("minutes")));
+    }
+
+    #[test]
+    fn official_builtin_js_providers_load_without_node_modules() {
+        let providers_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root")
+            .join("examples")
+            .join("remote-providers");
+        for provider_id in [
+            "kimi-coding",
+            "bigmodel-coding-plan",
+            "deepseek-balance",
+            "codex-usage",
+        ] {
+            let provider_dir = providers_root.join(provider_id);
+            let manifest = load_cached_manifest(&provider_dir).expect("manifest");
+            let source =
+                std::fs::read_to_string(provider_dir.join(&manifest.entry)).expect("source");
+            let result = run_builtin_js_provider(BuiltinJsRun {
+                provider_id,
+                provider_name: provider_id,
+                manifest: &manifest,
+                source: &format!("{source}\nfunction main(qb) {{ return {{ windows: [] }}; }}"),
+                env: &HashMap::new(),
+                timeout: Duration::from_secs(5),
+                proxy_url: None,
+                log: None,
+            });
+            assert!(
+                result.is_ok(),
+                "{provider_id} should parse in builtin-js: {result:?}"
+            );
+        }
     }
 
     #[test]

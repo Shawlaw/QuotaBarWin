@@ -3,9 +3,9 @@
   "id": "example-minimal",
   "displayName": "Example Minimal Provider",
   "version": "1.0.0",
-  "description": "A minimal remote provider manifest template. Copy this file, replace the fields, and compute the SHA-256 of your provider.cjs.",
-  "runtime": "node",
-  "entry": "provider.cjs",
+  "description": "A minimal embedded JavaScript provider manifest. Copy it, declare every capability, and compute the SHA-256 of provider.js.",
+  "runtime": "builtin-js",
+  "entry": "provider.js",
   "requiredEnvVars": [],
   "output": "provider-snapshot-v1",
   "permissions": [],
@@ -27,6 +27,6 @@
     }
   ],
   "checksums": {
-    "source": "sha256:<replace-with-sha256-of-provider.cjs>"
+    "source": "sha256:<replace-with-sha256-of-provider.js>"
   }
 }
