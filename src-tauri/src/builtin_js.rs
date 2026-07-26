@@ -209,6 +209,11 @@ impl BuiltinJsCapabilities {
 
 impl BuiltinJsHost {
     fn read_env(&self, name: &str) -> Result<String, String> {
+        if is_reserved_host_env(name) {
+            return Err(format!(
+                "builtin-js environment access is not available for reserved host variable '{name}'"
+            ));
+        }
         if !self.capabilities.allows_env(name) {
             return Err(format!(
                 "builtin-js environment access is not permitted for '{name}'"
@@ -221,6 +226,11 @@ impl BuiltinJsHost {
     }
 
     fn read_optional_env(&self, name: &str) -> Result<Option<String>, String> {
+        if is_reserved_host_env(name) {
+            return Err(format!(
+                "builtin-js environment access is not available for reserved host variable '{name}'"
+            ));
+        }
         if !self.capabilities.allows_env(name) {
             return Err(format!(
                 "builtin-js environment access is not permitted for '{name}'"
@@ -489,13 +499,21 @@ fn validate_environment_name(value: &str, capability: &str) -> Result<(), String
         && value
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || character == '_');
-    if valid {
-        Ok(())
-    } else {
+    if !valid {
         Err(format!(
             "builtin-js {capability} permission must name an environment variable using letters, numbers, or underscores"
         ))
+    } else if is_reserved_host_env(value) {
+        Err(format!(
+            "builtin-js {capability} permission cannot grant reserved QBWIN_ host variables; use qb.meta and qb.http instead"
+        ))
+    } else {
+        Ok(())
     }
+}
+
+fn is_reserved_host_env(name: &str) -> bool {
+    name.trim().to_ascii_uppercase().starts_with("QBWIN_")
 }
 
 fn parse_network_permission(value: &str) -> Result<NetworkPermission, String> {
@@ -594,6 +612,9 @@ mod tests {
         assert!(capabilities.allows_url(&Url::parse("https://api.example.test/v1").unwrap()));
         assert!(!capabilities.allows_url(&Url::parse("https://other.example.test/v1").unwrap()));
         assert!(BuiltinJsCapabilities::from_permissions(&["process".to_string()]).is_err());
+        assert!(
+            BuiltinJsCapabilities::from_permissions(&["env:QBWIN_PROXY_URL".to_string()]).is_err()
+        );
     }
 
     #[test]

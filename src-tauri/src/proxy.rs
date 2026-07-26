@@ -41,6 +41,11 @@ pub fn build_http_client(
             )
         })?;
         builder = builder.proxy(proxy);
+    } else {
+        // reqwest otherwise reads HTTP(S)_PROXY on its own. Keep the documented
+        // policy explicit: system environment proxies apply only when the
+        // project proxy is configured as System.
+        builder = builder.no_proxy();
     }
 
     builder.build().map_err(|error| error.to_string())

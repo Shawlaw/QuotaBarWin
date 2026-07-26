@@ -1107,6 +1107,56 @@ fn diagnostics_from_result(
 mod tests {
     use super::*;
     use crate::proxy::{ProxyConfig, ProxyKind};
+    use std::{io::Write, net::TcpListener};
+
+    fn run_official_kimi_source(raw: serde_json::Value) -> ProviderSnapshot {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("Kimi test listener");
+        let address = listener.local_addr().expect("Kimi test address");
+        let response_body = serde_json::to_string(&raw).expect("Kimi test response");
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("Kimi test connection");
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("Kimi response");
+        });
+        let provider_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root")
+            .join("examples")
+            .join("remote-providers")
+            .join("kimi-coding");
+        let mut manifest = load_cached_manifest(&provider_dir).expect("Kimi manifest");
+        manifest.permissions = vec![
+            "env:KIMI_API_KEY".to_string(),
+            format!("net:http://{address}"),
+        ];
+        let source = std::fs::read_to_string(provider_dir.join(&manifest.entry))
+            .expect("Kimi source")
+            .replace(
+                "https://api.kimi.com/coding/v1/usages",
+                &format!("http://{address}/coding/v1/usages"),
+            );
+        let env = HashMap::from([("KIMI_API_KEY".to_string(), "test-token".to_string())]);
+        let result = run_builtin_js_provider(BuiltinJsRun {
+            provider_id: "kimi-coding",
+            provider_name: "Kimi Coding",
+            manifest: &manifest,
+            source: &source,
+            env: &env,
+            timeout: Duration::from_secs(2),
+            proxy_url: None,
+            log: None,
+        })
+        .expect("Kimi builtin-js result");
+        server.join().expect("Kimi server");
+        parse_remote_provider_snapshot_v1("kimi-coding", "Kimi Coding", &result.json)
+            .expect("Kimi snapshot")
+    }
 
     fn node_command(script: &str) -> RemoteCommandSpec {
         RemoteCommandSpec {
@@ -1116,6 +1166,52 @@ mod tests {
             timeout_ms: 2000,
             env: HashMap::new(),
         }
+    }
+
+    #[test]
+    fn builtin_kimi_treats_unknown_five_hour_usage_as_full_remaining() {
+        let provider = run_official_kimi_source(serde_json::json!({
+            "user": { "region": "REGION_CN", "membership": { "level": "LEVEL_INTERMEDIATE" } },
+            "usage": { "limit": "100", "used": "15", "remaining": "85", "resetTime": "2026-06-12T02:35:14.207781Z" },
+            "limits": [{
+                "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+                "detail": { "used": "", "remaining": "", "limit": "", "resetTime": "2026-06-07T16:35:14.207781Z" }
+            }]
+        }));
+        let five_hour = provider
+            .windows
+            .iter()
+            .find(|window| window.id == "300-minute")
+            .expect("five-hour window");
+        assert_eq!(five_hour.used, None);
+        assert_eq!(five_hour.remaining, None);
+        assert_eq!(five_hour.limit, None);
+        assert_eq!(five_hour.used_percent, Some(0.0));
+        assert_eq!(five_hour.remaining_percent, Some(100.0));
+        assert_eq!(five_hour.confidence, "estimated");
+    }
+
+    #[test]
+    fn builtin_kimi_does_not_create_a_missing_five_hour_window() {
+        let provider = run_official_kimi_source(serde_json::json!({
+            "usage": { "limit": "100", "used": "15", "remaining": "85", "resetTime": "2026-06-12T02:35:14.207781Z" },
+            "limits": [{
+                "window": { "duration": 60, "timeUnit": "TIME_UNIT_MINUTE" },
+                "detail": { "used": "", "remaining": "", "limit": "" }
+            }]
+        }));
+        assert!(!provider
+            .windows
+            .iter()
+            .any(|window| window.id == "300-minute"));
+        let weekly = provider
+            .windows
+            .iter()
+            .find(|window| window.id == "usage")
+            .expect("weekly window");
+        assert_eq!(weekly.used_percent, Some(15.0));
+        assert_eq!(weekly.remaining_percent, Some(85.0));
+        assert_eq!(weekly.confidence, "exact");
     }
 
     #[test]
@@ -1325,9 +1421,9 @@ mod tests {
                 "displayName": "Builtin Env",
                 "runtime": "builtin-js",
                 "entry": "provider.js",
-                "requiredEnvVars": ["QBWIN_BUILTIN_TOKEN"],
+                "requiredEnvVars": ["BUILTIN_TOKEN"],
                 "output": "provider-snapshot-v1",
-                "permissions": ["env:QBWIN_BUILTIN_TOKEN"]
+                "permissions": ["env:BUILTIN_TOKEN"]
             })
             .to_string(),
         )
@@ -1338,7 +1434,7 @@ mod tests {
                 function main(qb) {
                   return {
                     metadata: { provider: qb.meta.providerId },
-                    windows: [{ id: "token", label: qb.env.get("QBWIN_BUILTIN_TOKEN"), remainingPercent: 50, confidence: "exact" }]
+                    windows: [{ id: "token", label: qb.env.get("BUILTIN_TOKEN"), remainingPercent: 50, confidence: "exact" }]
                   };
                 }
             "#,
@@ -1346,7 +1442,7 @@ mod tests {
         .expect("write source");
 
         let env_vars = HashMap::from([(
-            "QBWIN_BUILTIN_TOKEN".to_string(),
+            "BUILTIN_TOKEN".to_string(),
             "from-builtin-config".to_string(),
         )]);
         let providers = run_remote_provider(
@@ -1365,7 +1461,7 @@ mod tests {
         );
 
         assert_eq!(providers.len(), 1);
-        assert_eq!(providers[0].status, "ok");
+        assert_eq!(providers[0].status, "ok", "{:?}", providers[0]);
         assert_eq!(providers[0].windows[0].label, "from-builtin-config");
         assert_eq!(
             providers[0].metadata.as_ref().unwrap()["provider"],
