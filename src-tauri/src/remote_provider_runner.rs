@@ -1107,39 +1107,23 @@ fn diagnostics_from_result(
 mod tests {
     use super::*;
     use crate::proxy::{ProxyConfig, ProxyKind};
-    use std::{io::Write, net::TcpListener};
 
     fn run_official_kimi_source(raw: serde_json::Value) -> ProviderSnapshot {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("Kimi test listener");
-        let address = listener.local_addr().expect("Kimi test address");
-        let response_body = serde_json::to_string(&raw).expect("Kimi test response");
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("Kimi test connection");
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                response_body.len(),
-                response_body
-            );
-            stream
-                .write_all(response.as_bytes())
-                .expect("Kimi response");
-        });
         let provider_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("repo root")
             .join("examples")
             .join("remote-providers")
             .join("kimi-coding");
-        let mut manifest = load_cached_manifest(&provider_dir).expect("Kimi manifest");
-        manifest.permissions = vec![
-            "env:KIMI_API_KEY".to_string(),
-            format!("net:http://{address}"),
-        ];
+        let manifest = load_cached_manifest(&provider_dir).expect("Kimi manifest");
         let source = std::fs::read_to_string(provider_dir.join(&manifest.entry))
             .expect("Kimi source")
             .replace(
-                "https://api.kimi.com/coding/v1/usages",
-                &format!("http://{address}/coding/v1/usages"),
+                "const raw = fetchKimiUsage(qb);",
+                &format!(
+                    "const raw = {};",
+                    serde_json::to_string(&raw).expect("Kimi fixture JSON")
+                ),
             );
         let env = HashMap::from([("KIMI_API_KEY".to_string(), "test-token".to_string())]);
         let result = run_builtin_js_provider(BuiltinJsRun {
@@ -1153,7 +1137,6 @@ mod tests {
             log: None,
         })
         .expect("Kimi builtin-js result");
-        server.join().expect("Kimi server");
         parse_remote_provider_snapshot_v1("kimi-coding", "Kimi Coding", &result.json)
             .expect("Kimi snapshot")
     }

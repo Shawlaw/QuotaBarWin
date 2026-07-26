@@ -95,6 +95,9 @@ fn system_proxy_url() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static TEST_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn per_provider_proxy_wins_over_global() {
@@ -128,10 +131,8 @@ mod tests {
 
     #[test]
     fn system_global_reads_env_var() {
-        let _key = "QUOTABARWIN_TEST_HTTPS_PROXY";
-        // Note: we test the helper directly by setting the standard env var.
-        // To avoid flakiness we only assert when we can control the env.
-        let _guard = std::env::var("HTTPS_PROXY").ok();
+        let _lock = TEST_ENV_LOCK.lock().expect("test environment lock");
+        let previous = std::env::var_os("HTTPS_PROXY");
         std::env::set_var("HTTPS_PROXY", "http://system:3128");
         let global = ProxyConfig {
             kind: ProxyKind::System,
@@ -139,7 +140,11 @@ mod tests {
         };
         let url = select_proxy_url(None, Some(&global));
         assert_eq!(url, Some("http://system:3128".to_string()));
-        std::env::remove_var("HTTPS_PROXY");
+        if let Some(previous) = previous {
+            std::env::set_var("HTTPS_PROXY", previous);
+        } else {
+            std::env::remove_var("HTTPS_PROXY");
+        }
     }
 
     #[test]
