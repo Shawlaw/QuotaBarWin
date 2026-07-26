@@ -3,6 +3,7 @@
 mod app_identity;
 mod app_info;
 mod app_update;
+mod builtin_js;
 mod cli;
 mod config;
 mod diagnostics;

@@ -13,6 +13,12 @@ use sha2::{Digest, Sha256};
 use crate::proxy::{build_http_client, ProxyConfig};
 use crate::redact::redact_sensitive;
 
+pub const BUILTIN_JS_RUNTIME: &str = "builtin-js";
+
+pub fn is_builtin_js_runtime(runtime: &str) -> bool {
+    runtime.trim() == BUILTIN_JS_RUNTIME
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderManifest {
@@ -219,6 +225,10 @@ fn validate_manifest(manifest: &ProviderManifest) -> Result<(), RemoteProviderEr
         return Err(RemoteProviderError::InvalidManifest(
             "missing output".to_string(),
         ));
+    }
+    if is_builtin_js_runtime(&manifest.runtime) {
+        crate::builtin_js::validate_builtin_js_manifest(manifest)
+            .map_err(RemoteProviderError::InvalidManifest)?;
     }
     Ok(())
 }
@@ -804,6 +814,23 @@ mod tests {
             validate_manifest(&manifest),
             Err(RemoteProviderError::InvalidManifest(_))
         ));
+    }
+
+    #[test]
+    fn builtin_js_manifest_requires_declared_capabilities() {
+        let invalid = parse_manifest(
+            r#"{"schemaVersion":1,"id":"builtin","displayName":"Builtin","runtime":"builtin-js","entry":"provider.js","requiredEnvVars":["API_TOKEN"],"output":"provider-snapshot-v1"}"#,
+        );
+        assert!(matches!(
+            invalid,
+            Err(RemoteProviderError::InvalidManifest(message)) if message.contains("env:API_TOKEN")
+        ));
+
+        let valid = parse_manifest(
+            r#"{"schemaVersion":1,"id":"builtin","displayName":"Builtin","runtime":"builtin-js","entry":"provider.js","requiredEnvVars":["API_TOKEN"],"output":"provider-snapshot-v1","permissions":["env:API_TOKEN","net:https://api.example.test"]}"#,
+        )
+        .expect("valid builtin manifest");
+        assert!(is_builtin_js_runtime(&valid.runtime));
     }
 
     #[test]
