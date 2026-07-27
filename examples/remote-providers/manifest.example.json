@@ -1,8 +1,9 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "example-minimal",
   "displayName": "Example Minimal Provider",
   "version": "1.0.0",
+  "minAppVersion": "1.1.0",
   "description": "A minimal embedded JavaScript provider manifest. Copy it, declare every capability, and compute the SHA-256 of provider.js.",
   "runtime": "builtin-js",
   "entry": "provider.js",

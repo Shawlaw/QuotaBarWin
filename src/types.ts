@@ -116,6 +116,7 @@ export type RemoteProviderManifest = {
   displayName: string;
   version?: string | null;
   description?: string | null;
+  minAppVersion?: string | null;
   runtime: string;
   entry: string;
   requiredEnvVars?: string[];

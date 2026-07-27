@@ -13,7 +13,7 @@ English version: [`README.en.md`](README.en.md).
 - `api.md`：该 Provider 当前实现依据的请求、响应、字段映射和 fixture。
 - `api.en.md`：`api.md` 的英文版本。
 
-`manifest.example.json` 是独立的最小 manifest 模板，创建新 Provider 时可以复制后修改。
+`manifest.example.json` 是独立的最小 manifest 模板，创建新 Provider 时可以复制后修改。使用 `builtin-js` 时必须保留 schema 2 和 `minAppVersion`，否则新 Provider 会被拒绝；这能让旧版应用在下载新脚本前安全停止更新。
 
 `registry.json` 是列出所有示例 Provider 的注册表。在 QuotaBarWin 中打开 **设置 → 提供方 → 远程安装源**，把它的 URL 或本地路径填入 **注册表 URL**，点击 **安装注册表** 即可一次安装这些示例。
 

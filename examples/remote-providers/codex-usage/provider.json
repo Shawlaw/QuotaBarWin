@@ -1,8 +1,9 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "codex-usage",
   "displayName": "Codex Usage",
   "version": "1.1.0",
+  "minAppVersion": "1.1.0",
   "description": "ChatGPT/Codex 5h and weekly usage via remote provider script.",
   "runtime": "builtin-js",
   "entry": "provider.js",

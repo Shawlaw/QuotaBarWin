@@ -64,7 +64,7 @@ upstream response fluctuations.
 
 To validate the live output protocol too, use `validate --provider ID --run`. It executes the cached script using that Provider's configured runtime, secrets, and proxy, then verifies that the result is accepted by the current `provider-snapshot-v1` parser. External runtimes use stdout; `builtin-js` uses the value returned from `main(qb)`. This can access the network and account API, so it is opt-in. The report's `scriptRun` is `notRun`, `passed`, or `failed`.
 
-It requires the public `provider-snapshot-v1` output protocol, `builtin-js`, `node`, `python`, `pwsh`, `bash`, or an absolute runtime path, and a non-empty `displayName`. `checksums.source` remains optional in the public contract: its absence causes a warning but does not alone fail validation. The report never emits configured environment-variable values, secrets, or Provider stderr.
+It requires the public `provider-snapshot-v1` output protocol, `builtin-js`, `node`, `python`, `pwsh`, `bash`, or an absolute runtime path, and a non-empty `displayName`. A `builtin-js` manifest must use schema 2 and declare a satisfiable `minAppVersion`; this compatibility gate makes older hosts reject an incompatible update before writing its new source. `checksums.source` remains optional in the public contract: its absence causes a warning but does not alone fail validation. The report never emits configured environment-variable values, secrets, or Provider stderr.
 
 Both valid and invalid reports are JSON on stdout. `valid: false` exits `30`; command-level errors such as an unreadable manifest exit `20`. For example:
 

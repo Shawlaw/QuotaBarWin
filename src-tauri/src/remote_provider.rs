@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -14,6 +15,10 @@ use crate::proxy::{build_http_client, ProxyConfig};
 use crate::redact::redact_sensitive;
 
 pub const BUILTIN_JS_RUNTIME: &str = "builtin-js";
+pub const LEGACY_PROVIDER_MANIFEST_SCHEMA_VERSION: u8 = 1;
+pub const BUILTIN_JS_PROVIDER_MANIFEST_SCHEMA_VERSION: u8 = 2;
+
+const CURRENT_APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn is_builtin_js_runtime(runtime: &str) -> bool {
     runtime.trim() == BUILTIN_JS_RUNTIME
@@ -30,6 +35,12 @@ pub struct ProviderManifest {
     pub version: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(
+        default,
+        rename = "minAppVersion",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub min_app_version: Option<String>,
     pub runtime: String,
     pub entry: String,
     #[serde(default, rename = "requiredEnvVars")]
@@ -170,6 +181,7 @@ pub enum RemoteProviderError {
     InvalidManifest(String),
     ChecksumMismatch { expected: String, actual: String },
     UnsupportedSchemaVersion(u8),
+    RequiresAppVersion { required: String, current: String },
     RuntimeNotFound(String),
     Io(String),
 }
@@ -186,6 +198,10 @@ impl std::fmt::Display for RemoteProviderError {
             RemoteProviderError::UnsupportedSchemaVersion(version) => {
                 write!(f, "Unsupported schema version: {version}")
             }
+            RemoteProviderError::RequiresAppVersion { required, current } => write!(
+                f,
+                "Provider requires QuotaBarWin {required} or newer; current version is {current}. Update QuotaBarWin before updating this provider."
+            ),
             RemoteProviderError::RuntimeNotFound(runtime) => {
                 write!(f, "Runtime not found: {runtime}")
             }
@@ -201,11 +217,15 @@ impl From<std::io::Error> for RemoteProviderError {
 }
 
 fn validate_manifest(manifest: &ProviderManifest) -> Result<(), RemoteProviderError> {
-    if manifest.schema_version != 1 {
+    if !matches!(
+        manifest.schema_version,
+        LEGACY_PROVIDER_MANIFEST_SCHEMA_VERSION | BUILTIN_JS_PROVIDER_MANIFEST_SCHEMA_VERSION
+    ) {
         return Err(RemoteProviderError::UnsupportedSchemaVersion(
             manifest.schema_version,
         ));
     }
+    validate_minimum_app_version(manifest)?;
     if manifest.id.trim().is_empty() {
         return Err(RemoteProviderError::InvalidManifest(
             "missing id".to_string(),
@@ -229,6 +249,59 @@ fn validate_manifest(manifest: &ProviderManifest) -> Result<(), RemoteProviderEr
     if is_builtin_js_runtime(&manifest.runtime) {
         crate::builtin_js::validate_builtin_js_manifest(manifest)
             .map_err(RemoteProviderError::InvalidManifest)?;
+    }
+    Ok(())
+}
+
+fn validate_remote_manifest(manifest: &ProviderManifest) -> Result<(), RemoteProviderError> {
+    validate_manifest(manifest)?;
+    if is_builtin_js_runtime(&manifest.runtime)
+        && manifest.schema_version != BUILTIN_JS_PROVIDER_MANIFEST_SCHEMA_VERSION
+    {
+        return Err(RemoteProviderError::InvalidManifest(
+            "remote builtin-js manifests require schemaVersion 2 with minAppVersion so older apps reject the update before replacing their cached provider".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_minimum_app_version(manifest: &ProviderManifest) -> Result<(), RemoteProviderError> {
+    let minimum = manifest
+        .min_app_version
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    if manifest.schema_version == LEGACY_PROVIDER_MANIFEST_SCHEMA_VERSION {
+        if minimum.is_some() {
+            return Err(RemoteProviderError::InvalidManifest(
+                "minAppVersion requires schemaVersion 2".to_string(),
+            ));
+        }
+        return Ok(());
+    }
+
+    let required = minimum.ok_or_else(|| {
+        RemoteProviderError::InvalidManifest(
+            "schemaVersion 2 requires a non-empty minAppVersion".to_string(),
+        )
+    })?;
+    let required_version = Version::parse(required).map_err(|error| {
+        RemoteProviderError::InvalidManifest(format!(
+            "minAppVersion must be a SemVer version without a leading 'v': {error}"
+        ))
+    })?;
+    let current_version = Version::parse(CURRENT_APP_VERSION).map_err(|error| {
+        RemoteProviderError::InvalidManifest(format!(
+            "current app version is not valid SemVer: {error}"
+        ))
+    })?;
+
+    if current_version < required_version {
+        return Err(RemoteProviderError::RequiresAppVersion {
+            required: required.to_string(),
+            current: CURRENT_APP_VERSION.to_string(),
+        });
     }
     Ok(())
 }
@@ -291,7 +364,7 @@ pub fn fetch_manifest_text(
 pub fn parse_manifest(text: &str) -> Result<ProviderManifest, RemoteProviderError> {
     let manifest: ProviderManifest = serde_json::from_str(text)
         .map_err(|error| RemoteProviderError::InvalidManifest(error.to_string()))?;
-    validate_manifest(&manifest)?;
+    validate_remote_manifest(&manifest)?;
     Ok(manifest)
 }
 
@@ -662,7 +735,7 @@ pub fn check_update(
     };
     let manifest: ProviderManifest = serde_json::from_str(&text)
         .map_err(|error| RemoteProviderError::InvalidManifest(error.to_string()))?;
-    validate_manifest(&manifest)?;
+    validate_remote_manifest(&manifest)?;
 
     let new_checksum = manifest.checksums.source.clone();
     let available = match (&new_checksum, trusted_checksum) {
@@ -773,11 +846,12 @@ mod tests {
     #[test]
     fn validate_manifest_rejects_bad_schema_version() {
         let manifest = ProviderManifest {
-            schema_version: 2,
+            schema_version: 3,
             id: "x".to_string(),
             display_name: "X".to_string(),
             version: None,
             description: None,
+            min_app_version: None,
             runtime: "node".to_string(),
             entry: "x.cjs".to_string(),
             required_env_vars: vec![],
@@ -789,7 +863,40 @@ mod tests {
         };
         assert!(matches!(
             validate_manifest(&manifest),
-            Err(RemoteProviderError::UnsupportedSchemaVersion(2))
+            Err(RemoteProviderError::UnsupportedSchemaVersion(3))
+        ));
+    }
+
+    #[test]
+    fn schema_two_requires_a_compatible_minimum_app_version() {
+        let valid = parse_manifest(&format!(
+            r#"{{"schemaVersion":2,"id":"current","displayName":"Current","minAppVersion":"{CURRENT_APP_VERSION}","runtime":"node","entry":"provider.cjs","output":"provider-snapshot-v1"}}"#
+        ));
+        assert!(valid.is_ok());
+
+        let missing_minimum = parse_manifest(
+            r#"{"schemaVersion":2,"id":"missing","displayName":"Missing","runtime":"node","entry":"provider.cjs","output":"provider-snapshot-v1"}"#,
+        );
+        assert!(matches!(
+            missing_minimum,
+            Err(RemoteProviderError::InvalidManifest(message)) if message.contains("minAppVersion")
+        ));
+
+        let too_new = parse_manifest(
+            r#"{"schemaVersion":2,"id":"future","displayName":"Future","minAppVersion":"999.0.0","runtime":"node","entry":"provider.cjs","output":"provider-snapshot-v1"}"#,
+        );
+        assert!(matches!(
+            too_new,
+            Err(RemoteProviderError::RequiresAppVersion { required, current })
+                if required == "999.0.0" && current == CURRENT_APP_VERSION
+        ));
+
+        let legacy_with_minimum = parse_manifest(
+            r#"{"schemaVersion":1,"id":"legacy","displayName":"Legacy","minAppVersion":"1.1.0","runtime":"node","entry":"provider.cjs","output":"provider-snapshot-v1"}"#,
+        );
+        assert!(matches!(
+            legacy_with_minimum,
+            Err(RemoteProviderError::InvalidManifest(message)) if message.contains("schemaVersion 2")
         ));
     }
 
@@ -801,6 +908,7 @@ mod tests {
             display_name: "X".to_string(),
             version: None,
             description: None,
+            min_app_version: None,
             runtime: "node".to_string(),
             entry: "x.cjs".to_string(),
             required_env_vars: vec![],
@@ -818,8 +926,16 @@ mod tests {
 
     #[test]
     fn builtin_js_manifest_requires_declared_capabilities() {
+        let legacy_builtin = parse_manifest(
+            r#"{"schemaVersion":1,"id":"legacy-builtin","displayName":"Legacy builtin","runtime":"builtin-js","entry":"provider.js","output":"provider-snapshot-v1","permissions":["net:https"]}"#,
+        );
+        assert!(matches!(
+            legacy_builtin,
+            Err(RemoteProviderError::InvalidManifest(message)) if message.contains("schemaVersion 2")
+        ));
+
         let invalid = parse_manifest(
-            r#"{"schemaVersion":1,"id":"builtin","displayName":"Builtin","runtime":"builtin-js","entry":"provider.js","requiredEnvVars":["API_TOKEN"],"output":"provider-snapshot-v1"}"#,
+            r#"{"schemaVersion":2,"id":"builtin","displayName":"Builtin","minAppVersion":"1.1.0","runtime":"builtin-js","entry":"provider.js","requiredEnvVars":["API_TOKEN"],"output":"provider-snapshot-v1"}"#,
         );
         assert!(matches!(
             invalid,
@@ -827,10 +943,31 @@ mod tests {
         ));
 
         let valid = parse_manifest(
-            r#"{"schemaVersion":1,"id":"builtin","displayName":"Builtin","runtime":"builtin-js","entry":"provider.js","requiredEnvVars":["API_TOKEN"],"output":"provider-snapshot-v1","permissions":["env:API_TOKEN","net:https://api.example.test"]}"#,
+            r#"{"schemaVersion":2,"id":"builtin","displayName":"Builtin","minAppVersion":"1.1.0","runtime":"builtin-js","entry":"provider.js","requiredEnvVars":["API_TOKEN"],"output":"provider-snapshot-v1","permissions":["env:API_TOKEN","net:https://api.example.test"]}"#,
         )
         .expect("valid builtin manifest");
         assert!(is_builtin_js_runtime(&valid.runtime));
+    }
+
+    #[test]
+    fn cached_legacy_builtin_manifest_remains_loadable_during_upgrade() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let provider_dir = temp.path().join("legacy-builtin");
+        fs::create_dir_all(&provider_dir).expect("create provider dir");
+        fs::write(
+            provider_dir.join("provider.json"),
+            r#"{"schemaVersion":1,"id":"legacy-builtin","displayName":"Legacy builtin","runtime":"builtin-js","entry":"provider.js","output":"provider-snapshot-v1","permissions":["net:https"]}"#,
+        )
+        .expect("write legacy manifest");
+
+        let manifest = load_cached_manifest(&provider_dir).expect("load legacy cache");
+        assert!(is_builtin_js_runtime(&manifest.runtime));
+        assert!(matches!(
+            parse_manifest(
+                r#"{"schemaVersion":1,"id":"legacy-builtin","displayName":"Legacy builtin","runtime":"builtin-js","entry":"provider.js","output":"provider-snapshot-v1","permissions":["net:https"]}"#
+            ),
+            Err(RemoteProviderError::InvalidManifest(message)) if message.contains("schemaVersion 2")
+        ));
     }
 
     #[test]
@@ -842,6 +979,7 @@ mod tests {
             display_name: "Kimi Coding".to_string(),
             version: Some("1.0.0".to_string()),
             description: None,
+            min_app_version: None,
             runtime: "node".to_string(),
             entry: "provider.cjs".to_string(),
             required_env_vars: vec!["KIMI_API_KEY".to_string()],
@@ -886,6 +1024,7 @@ mod tests {
             display_name: "Local".to_string(),
             version: Some("1.0.0".to_string()),
             description: None,
+            min_app_version: None,
             runtime: "node".to_string(),
             entry: "provider.cjs".to_string(),
             required_env_vars: vec![],
@@ -941,6 +1080,71 @@ mod tests {
         let cached = load_cached_manifest(&provider_dir).expect("load refreshed manifest");
         assert_eq!(cached.parameters.len(), 1);
         assert_eq!(cached.parameters[0].name, "QBWIN_PROXY_URL");
+    }
+
+    #[test]
+    fn incompatible_schema_two_update_leaves_cached_provider_untouched() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let source = "// source";
+        let source_checksum = compute_checksum(source);
+        let manifest_path = temp.path().join("provider.json");
+        let installed_manifest = ProviderManifest {
+            schema_version: LEGACY_PROVIDER_MANIFEST_SCHEMA_VERSION,
+            id: "local".to_string(),
+            display_name: "Local".to_string(),
+            version: Some("1.0.0".to_string()),
+            description: None,
+            min_app_version: None,
+            runtime: "node".to_string(),
+            entry: "provider.cjs".to_string(),
+            required_env_vars: vec![],
+            output: "provider-snapshot-v1".to_string(),
+            permissions: vec![],
+            default_config: ManifestDefaultConfig::default(),
+            parameters: vec![],
+            checksums: Checksums {
+                source: Some(source_checksum.clone()),
+            },
+        };
+        let provider_dir = cache_remote_provider(
+            temp.path(),
+            "local",
+            &manifest_path.to_string_lossy(),
+            &installed_manifest,
+            source,
+            None,
+        )
+        .expect("cache installed provider");
+
+        let mut incompatible_manifest = installed_manifest.clone();
+        incompatible_manifest.schema_version = BUILTIN_JS_PROVIDER_MANIFEST_SCHEMA_VERSION;
+        incompatible_manifest.min_app_version = Some("999.0.0".to_string());
+        incompatible_manifest.version = Some("2.0.0".to_string());
+        fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&incompatible_manifest).expect("manifest json"),
+        )
+        .expect("write incompatible manifest");
+
+        let result = check_update(
+            &provider_dir,
+            &manifest_path.to_string_lossy(),
+            None,
+            None,
+            Some(&source_checksum),
+            Duration::from_secs(1),
+        );
+        assert!(matches!(
+            result,
+            Err(RemoteProviderError::RequiresAppVersion { required, .. }) if required == "999.0.0"
+        ));
+
+        let cached = load_cached_manifest(&provider_dir).expect("load cached manifest");
+        assert_eq!(
+            cached.schema_version,
+            LEGACY_PROVIDER_MANIFEST_SCHEMA_VERSION
+        );
+        assert_eq!(cached.version.as_deref(), Some("1.0.0"));
     }
 
     #[test]
@@ -1030,8 +1234,17 @@ fn example_remote_provider_manifests_are_valid() {
             .unwrap_or_else(|error| panic!("failed to read {} manifest: {error}", provider_id));
         let manifest: ProviderManifest = serde_json::from_str(&manifest_json)
             .unwrap_or_else(|error| panic!("failed to parse {} manifest: {error}", provider_id));
-        validate_manifest(&manifest)
+        validate_remote_manifest(&manifest)
             .unwrap_or_else(|error| panic!("{} manifest invalid: {error}", provider_id));
+        assert_eq!(
+            manifest.schema_version, BUILTIN_JS_PROVIDER_MANIFEST_SCHEMA_VERSION,
+            "{provider_id} must use the builtin-js compatibility manifest schema"
+        );
+        assert_eq!(
+            manifest.min_app_version.as_deref(),
+            Some(CURRENT_APP_VERSION),
+            "{provider_id} must require the current builtin-js host version"
+        );
         let source_path = dir.join(source_file_name(&manifest.entry));
 
         let source = fs::read_to_string(&source_path)
