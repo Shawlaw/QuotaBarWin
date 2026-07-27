@@ -3,7 +3,8 @@ import type {
   RemoteProviderCatalogEntry,
   RemoteProviderConfig,
   RemoteProviderRegistrySettings,
-  RemoteProviderRegistrySource
+  RemoteProviderRegistrySource,
+  RegistryMigrationResult
 } from "../types";
 import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "../lib/defaults";
 import { useI18n } from "../i18n";
@@ -32,6 +33,10 @@ type RemoteProviderSettingsProps = {
     proxyUrl: string | null,
     autoUpdate: boolean
   ) => Promise<RemoteProviderConfig>;
+  onMigrateSource: (
+    url: string,
+    proxyUrl: string | null
+  ) => Promise<RegistryMigrationResult>;
   onOpenGuide: () => Promise<void>;
   onBackToSettings: () => void;
   onBackToAddProvider: () => void;
@@ -91,6 +96,7 @@ export function RemoteProviderSettings({
   onRegistrySettingsChange,
   onPreviewRegistry,
   onInstallManifest,
+  onMigrateSource,
   onOpenGuide,
   onBackToSettings,
   onBackToAddProvider,
@@ -112,6 +118,7 @@ export function RemoteProviderSettings({
   const [manifestUrl, setManifestUrl] = useState("");
   const [manifestChecksum, setManifestChecksum] = useState("");
   const [directInstallLoading, setDirectInstallLoading] = useState(false);
+  const [migratingSourceId, setMigratingSourceId] = useState<string | null>(null);
   const [installMessage, setInstallMessage] = useState<string | null>(null);
   const catalogRequestId = useRef(0);
   const catalogSourceFingerprint = sourceFingerprint(sources);
@@ -337,6 +344,34 @@ export function RemoteProviderSettings({
     }
   }
 
+  async function migrateSource(source: RemoteProviderRegistrySource) {
+    if (!source.url.trim()) {
+      return;
+    }
+    if (!window.confirm(t.remoteProviders.migrateSourceConfirm(source.name || source.url))) {
+      return;
+    }
+
+    setInstallMessage(null);
+    setMigratingSourceId(source.id);
+    try {
+      const result = await onMigrateSource(source.url.trim(), sourceProxy(source));
+      setInstallMessage(
+        t.remoteProviders.migrateSourceResult(
+          result.migrated.length,
+          result.skipped.length,
+          result.failed.length
+        )
+      );
+    } catch (error) {
+      setInstallMessage(
+        error instanceof Error ? error.message : t.remoteProviders.failedToMigrateSource
+      );
+    } finally {
+      setMigratingSourceId(null);
+    }
+  }
+
   if (view === "sources") {
     return (
       <section
@@ -460,6 +495,17 @@ export function RemoteProviderSettings({
                 <div className="remote-provider-actions">
                   <button
                     type="button"
+                    className="button-secondary button-compact"
+                    disabled={!source.url.trim() || migratingSourceId === source.id}
+                    onClick={() => void migrateSource(source)}
+                    data-testid={`migrate-provider-source-${source.id}`}
+                  >
+                    {migratingSourceId === source.id
+                      ? t.remoteProviders.migratingSource
+                      : t.remoteProviders.migrateSource}
+                  </button>
+                  <button
+                    type="button"
                     className="button-danger button-compact"
                     onClick={() => removeSource(source.id)}
                     disabled={sources.length <= 1}
@@ -471,6 +517,7 @@ export function RemoteProviderSettings({
             ))}
           </div>
         </section>
+        {installMessage ? <div className="settings-message">{installMessage}</div> : null}
       </section>
     );
   }

@@ -101,6 +101,11 @@ const apiMocks = vi.hoisted(() => {
       }
       return provider;
     }),
+    migrateRemoteProvidersToRegistry: vi.fn(async () => ({
+      migrated: ["remote-kimi"],
+      skipped: [],
+      failed: [],
+    })),
     openAppUpdateNotes: vi.fn(async () => undefined),
     openRemoteProviderGuide: vi.fn(async () => undefined),
     previewRemoteProviderRegistry: vi.fn(async () => [
@@ -115,14 +120,6 @@ const apiMocks = vi.hoisted(() => {
         error: null,
       },
     ]),
-    refreshRemoteProvider: vi.fn(async () => ({
-      id: "remote-kimi",
-      available: true,
-      newChecksum: "sha256:new",
-      currentVersion: "1.0.0",
-      newVersion: "1.1.0",
-      checkedAt: "2026-06-18T09:00:00Z",
-    })),
     removeRemoteProvider: vi.fn(async (id: string) => {
       if (state.config) {
         state.config = {
@@ -474,13 +471,13 @@ test("settings_edits_remote_provider_timeout", async () => {
 test("settings_checks_and_applies_remote_provider_update", async () => {
   renderSettings();
 
-  fireEvent.click(screen.getByRole("button", { name: "More" }));
-  fireEvent.click(screen.getAllByRole("button", { name: "Check Updates" }).at(-1)!);
+  fireEvent.click(screen.getByRole("button", { name: "Check Updates" }));
 
-  await screen.findByText("Update available");
-  expect(apiMocks.refreshRemoteProvider).toHaveBeenCalledWith("remote-kimi");
+  await screen.findByText("1 update(s) available");
+  expect(apiMocks.checkRemoteUpdates).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId("apply-provider-update-remote-kimi")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: "Apply Update" }));
+  fireEvent.click(screen.getByTestId("apply-provider-update-remote-kimi"));
 
   await waitFor(() => expect(apiMocks.applyRemoteUpdate).toHaveBeenCalledWith("remote-kimi"));
   expect(await screen.findByText("1.1.0")).toBeInTheDocument();

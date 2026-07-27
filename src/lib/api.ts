@@ -9,6 +9,7 @@ import type {
   RemoteProviderCatalogEntry,
   RemoteProviderConfig,
   RemoteProviderManifest,
+  RegistryMigrationResult,
 } from "../types";
 import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "./defaults";
 
@@ -381,6 +382,24 @@ export async function installRemoteProviderRegistry(
     url,
     proxyUrl,
     autoUpdate,
+  });
+}
+
+export async function migrateRemoteProvidersToRegistry(
+  url: string,
+  proxyUrl: string | null,
+): Promise<RegistryMigrationResult> {
+  if (!hasTauriInternals()) {
+    void url;
+    void proxyUrl;
+    throw new Error(
+      "Migrating installed remote providers is not available in browser preview",
+    );
+  }
+
+  return invoke<RegistryMigrationResult>("migrate_remote_providers_to_registry", {
+    url,
+    proxyUrl,
   });
 }
 

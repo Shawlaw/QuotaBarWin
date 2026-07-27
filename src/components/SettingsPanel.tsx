@@ -16,13 +16,13 @@ import {
   getConfig,
   getInstalledRemoteProviderManifest,
   installRemoteProviderManifest,
+  migrateRemoteProvidersToRegistry,
   openAppUpdateNotes,
   openRemoteProviderGuide,
   previewRemoteProviderRegistry,
-  refreshRemoteProvider,
   removeRemoteProvider
 } from "../lib/api";
-import type { AppUpdateInfo } from "../lib/api";
+import type { AppUpdateInfo, UpdateInfo } from "../lib/api";
 import { DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS } from "../lib/defaults";
 import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
@@ -178,9 +178,11 @@ export function SettingsPanel({
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
   const [expandedProviderActions, setExpandedProviderActions] = useState<Record<string, boolean>>({});
   const [envVarDrafts, setEnvVarDrafts] = useState<Record<string, string>>({});
-  const [updateInfo, setUpdateInfo] = useState<Record<string, Awaited<ReturnType<typeof refreshRemoteProvider>>>>({});
+  const [updateInfo, setUpdateInfo] = useState<Record<string, UpdateInfo>>({});
   const [providerManifests, setProviderManifests] = useState<ProviderManifestState>({});
   const [remoteMessage, setRemoteMessage] = useState<string | null>(null);
+  const [isCheckingProviderUpdates, setIsCheckingProviderUpdates] = useState(false);
+  const [isApplyingProviderUpdates, setIsApplyingProviderUpdates] = useState(false);
   const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [appUpdateMessage, setAppUpdateMessage] = useState<string | null>(null);
   const [isAppUpdateBusy, setIsAppUpdateBusy] = useState(false);
@@ -210,6 +212,9 @@ export function SettingsPanel({
     !isSaving;
   const isPortableMode = configStorageInfo?.mode === "portable";
   const storageModeLabel = isPortableMode ? t.settings.portableMode : t.settings.appDataMode;
+  const availableUpdateCount = config.providers.filter(
+    (provider) => updateInfo[provider.id]?.available
+  ).length;
 
   useEffect(() => {
     const providerIds = config.providers
@@ -378,22 +383,9 @@ export function SettingsPanel({
     }
   }
 
-  async function handleProviderUpdateCheck(providerId: string) {
-    setRemoteMessage(null);
-    try {
-      const result = await refreshRemoteProvider(providerId);
-      setUpdateInfo((current) => ({ ...current, [providerId]: result }));
-      setRemoteMessage(
-        result.available ? t.remoteProviders.updateAvailable : t.remoteProviders.providerRefreshed
-      );
-      await reloadProviderManifest(providerId);
-    } catch (error) {
-      setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToRefreshProvider);
-    }
-  }
-
   async function handleCheckAllUpdates() {
     setRemoteMessage(null);
+    setIsCheckingProviderUpdates(true);
     try {
       const result = await checkRemoteUpdates();
       setUpdateInfo(Object.fromEntries(result.map((update) => [update.id, update])));
@@ -408,11 +400,14 @@ export function SettingsPanel({
       );
     } catch (error) {
       setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToCheckUpdates);
+    } finally {
+      setIsCheckingProviderUpdates(false);
     }
   }
 
   async function handleApplyUpdate(providerId: string) {
     setRemoteMessage(null);
+    setIsApplyingProviderUpdates(true);
     try {
       await applyRemoteUpdate(providerId);
       setUpdateInfo((current) => {
@@ -422,9 +417,53 @@ export function SettingsPanel({
       });
       const updated = await getConfig();
       acceptPersistedConfig(updated);
+      await reloadProviderManifest(providerId);
       setRemoteMessage(t.remoteProviders.updateApplied);
     } catch (error) {
       setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToApplyUpdate);
+    } finally {
+      setIsApplyingProviderUpdates(false);
+    }
+  }
+
+  async function handleApplyAllUpdates() {
+    const providerIds = config.providers
+      .map((provider) => provider.id)
+      .filter((id) => updateInfo[id]?.available);
+    if (providerIds.length === 0) {
+      return;
+    }
+
+    setRemoteMessage(null);
+    setIsApplyingProviderUpdates(true);
+    const failures: string[] = [];
+    try {
+      for (const providerId of providerIds) {
+        try {
+          await applyRemoteUpdate(providerId);
+        } catch (error) {
+          failures.push(error instanceof Error ? error.message : providerId);
+        }
+      }
+      const updated = await getConfig();
+      acceptPersistedConfig(updated);
+      setUpdateInfo((current) => {
+        const next = { ...current };
+        for (const providerId of providerIds) {
+          delete next[providerId];
+        }
+        return next;
+      });
+      await Promise.all(updated.providers.map((provider) => reloadProviderManifest(provider.id)));
+      setRemoteMessage(
+        failures.length > 0
+          ? t.remoteProviders.updateSomeFailed(providerIds.length - failures.length, failures.length)
+          : t.remoteProviders.updatesApplied(providerIds.length)
+      );
+    } catch (error) {
+      setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToApplyUpdate);
+    } finally {
+      setIsApplyingProviderUpdates(false);
     }
   }
 
@@ -506,6 +545,14 @@ export function SettingsPanel({
     return installed;
   }
 
+  async function handleMigrateProviderSource(url: string, proxyUrl: string | null) {
+    const result = await migrateRemoteProvidersToRegistry(url, proxyUrl);
+    const updated = await getConfig();
+    acceptPersistedConfig(updated);
+    await Promise.all(updated.providers.map((provider) => reloadProviderManifest(provider.id)));
+    return result;
+  }
+
   function renderSaveBar() {
     return (
       <div className="fixed-save-bar" data-testid="fixed-save-bar">
@@ -569,6 +616,7 @@ export function SettingsPanel({
           }
           onPreviewRegistry={previewRemoteProviderRegistry}
           onInstallManifest={handleInstallManifest}
+          onMigrateSource={handleMigrateProviderSource}
           onOpenGuide={openRemoteProviderGuide}
           onBackToSettings={() => setProviderSettingsView("main")}
           onBackToAddProvider={() => setProviderSettingsView("add")}
@@ -826,9 +874,27 @@ export function SettingsPanel({
             <button type="button" className="button-primary" onClick={() => setProviderSettingsView("add")}>
               {t.settings.addProvider}
             </button>
-            <button type="button" className="button-secondary" onClick={() => void handleCheckAllUpdates()}>
-              {t.remoteProviders.checkUpdates}
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={isCheckingProviderUpdates || isApplyingProviderUpdates}
+              onClick={() => void handleCheckAllUpdates()}
+            >
+              {isCheckingProviderUpdates ? t.remoteProviders.checkingUpdates : t.remoteProviders.checkUpdates}
             </button>
+            {availableUpdateCount > 0 ? (
+              <button
+                type="button"
+                className="button-primary"
+                disabled={isCheckingProviderUpdates || isApplyingProviderUpdates}
+                onClick={() => void handleApplyAllUpdates()}
+                data-testid="apply-all-provider-updates"
+              >
+                {isApplyingProviderUpdates
+                  ? t.remoteProviders.applyingUpdates
+                  : t.remoteProviders.applyAllUpdates(availableUpdateCount)}
+              </button>
+            ) : null}
           </div>
         </div>
         {remoteMessage ? <div className="settings-message">{remoteMessage}</div> : null}
@@ -855,6 +921,19 @@ export function SettingsPanel({
                 {provider.name}
               </label>
               <span>{provider.version ?? shortChecksum(provider.trustedChecksum) ?? t.remoteProviders.unknownVersion}</span>
+              {updateInfo[provider.id]?.available ? (
+                <button
+                  type="button"
+                  className="button-primary button-compact"
+                  disabled={isCheckingProviderUpdates || isApplyingProviderUpdates}
+                  onClick={() => void handleApplyUpdate(provider.id)}
+                  data-testid={`apply-provider-update-${provider.id}`}
+                >
+                  {isApplyingProviderUpdates
+                    ? t.remoteProviders.applyingUpdates
+                    : t.remoteProviders.applyUpdate}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="button-secondary"
@@ -908,22 +987,6 @@ export function SettingsPanel({
                 >
                   {t.settings.remove}
                 </button>
-                <button
-                  type="button"
-                  className="button-secondary button-compact"
-                  onClick={() => void handleProviderUpdateCheck(provider.id)}
-                >
-                  {t.remoteProviders.checkUpdates}
-                </button>
-                {updateInfo[provider.id]?.available ? (
-                  <button
-                    type="button"
-                    className="button-primary button-compact"
-                    onClick={() => void handleApplyUpdate(provider.id)}
-                  >
-                    {t.remoteProviders.applyUpdate}
-                  </button>
-                ) : null}
               </div>
             ) : null}
             {expandedProviders[provider.id] ? (

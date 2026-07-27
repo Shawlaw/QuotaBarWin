@@ -399,6 +399,14 @@ pub struct RegistryInstallResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RegistryMigrationResult {
+    pub migrated: Vec<String>,
+    pub skipped: Vec<String>,
+    pub failed: Vec<RegistryInstallFailure>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RemoteProviderCatalogEntry {
     pub id: String,
     pub display_name: String,
@@ -809,6 +817,197 @@ pub async fn install_remote_provider_registry(
 }
 
 #[tauri::command]
+pub async fn migrate_remote_providers_to_registry(
+    app: AppHandle,
+    url: String,
+    proxy_url: Option<String>,
+) -> Result<RegistryMigrationResult, String> {
+    let path = config_path_for_app(&app)?;
+    let proxy_url_ref = proxy_url.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut loaded = load_or_create_config(&path)?;
+        let log = LogSink::from_config_path(&path, &loaded.config);
+        let global_proxy = loaded.config.network_proxy.clone();
+        log_remote(
+            &log,
+            LogLevel::Info,
+            &format!(
+                "provider source migration started registryUrl={} proxyConfigured={}",
+                url,
+                proxy_url_ref
+                    .as_deref()
+                    .map(|value| !value.trim().is_empty())
+                    .unwrap_or(false)
+            ),
+        );
+        let registry = fetch_provider_registry(
+            &url,
+            proxy_url_ref.as_deref(),
+            global_proxy.as_ref(),
+            FETCH_TIMEOUT,
+        )
+        .map_err(|error| error.to_string())?;
+        let mut result = RegistryMigrationResult {
+            migrated: Vec::new(),
+            skipped: Vec::new(),
+            failed: Vec::new(),
+        };
+
+        for provider in &mut loaded.config.providers {
+            let instance_id = provider_id(provider).to_string();
+            let provider_dir = match cached_provider_dir(&path, provider) {
+                Ok(path) => path,
+                Err(error) => {
+                    result.failed.push(RegistryInstallFailure {
+                        id: instance_id,
+                        error,
+                    });
+                    continue;
+                }
+            };
+            let installed_manifest = match load_cached_manifest(&provider_dir) {
+                Ok(manifest) => manifest,
+                Err(error) => {
+                    result.failed.push(RegistryInstallFailure {
+                        id: instance_id,
+                        error: format!("could not load the installed Provider manifest: {error}"),
+                    });
+                    continue;
+                }
+            };
+            let Some(entry) = registry
+                .providers
+                .iter()
+                .find(|entry| entry.id == installed_manifest.id)
+            else {
+                result.skipped.push(instance_id);
+                continue;
+            };
+
+            let manifest_url = resolve_provider_url(&url, &entry.provider_url);
+            let migration = (|| -> Result<(), String> {
+                let manifest_text = fetch_manifest_text(
+                    &manifest_url,
+                    proxy_url_ref.as_deref(),
+                    global_proxy.as_ref(),
+                    FETCH_TIMEOUT,
+                )
+                .map_err(|error| error.to_string())?;
+                if let Some(expected) = entry.checksum.as_deref() {
+                    crate::remote_provider::verify_checksum(&manifest_text, expected)
+                        .map_err(|error| error.to_string())?;
+                }
+                let manifest = parse_manifest(&manifest_text).map_err(|error| error.to_string())?;
+                if manifest.id != installed_manifest.id {
+                    return Err(format!(
+                        "registry entry '{}' resolved to manifest id '{}' instead of '{}'",
+                        entry.id, manifest.id, installed_manifest.id
+                    ));
+                }
+                let source_url = resolve_source_url(&manifest_url, &manifest.entry);
+                let source = fetch_source(
+                    &source_url,
+                    proxy_url_ref.as_deref(),
+                    global_proxy.as_ref(),
+                    FETCH_TIMEOUT,
+                )
+                .map_err(|error| error.to_string())?;
+                let expected_checksum = manifest
+                    .checksums
+                    .source
+                    .as_deref()
+                    .ok_or_else(|| "manifest does not contain a source checksum".to_string())?;
+                crate::remote_provider::verify_checksum(&source, expected_checksum)
+                    .map_err(|error| error.to_string())?;
+                let resolved_runtime = resolve_manifest_runtime(&manifest)?;
+                let parent = provider_dir
+                    .parent()
+                    .ok_or_else(|| "provider cache directory has no parent".to_string())?;
+                cache_remote_provider(
+                    parent,
+                    &instance_id,
+                    &manifest_url,
+                    &manifest,
+                    &source,
+                    resolved_runtime.as_deref(),
+                )
+                .map_err(|error| error.to_string())?;
+
+                let ProviderConfig::Remote {
+                    manifest_url: current_manifest_url,
+                    source_url: current_source_url,
+                    trusted_checksum,
+                    version,
+                    runtime,
+                    resolved_runtime: current_resolved_runtime,
+                    updated_at,
+                    last_checked_at,
+                    ..
+                } = provider;
+                *current_manifest_url = manifest_url.clone();
+                *current_source_url = source_url;
+                *trusted_checksum = Some(compute_checksum(&source));
+                *version = manifest.version;
+                *runtime = manifest.runtime;
+                *current_resolved_runtime = resolved_runtime
+                    .as_ref()
+                    .map(|path| path.display().to_string());
+                let now = Utc::now().to_rfc3339();
+                *updated_at = Some(now.clone());
+                *last_checked_at = Some(now);
+                Ok(())
+            })();
+
+            match migration {
+                Ok(()) => {
+                    log_remote(
+                        &log,
+                        LogLevel::Info,
+                        &format!(
+                            "provider source migration finished providerId={} manifestId={}",
+                            instance_id, installed_manifest.id
+                        ),
+                    );
+                    result.migrated.push(instance_id);
+                }
+                Err(error) => {
+                    log_remote(
+                        &log,
+                        LogLevel::Warn,
+                        &format!(
+                            "provider source migration failed providerId={} error={}",
+                            instance_id, error
+                        ),
+                    );
+                    result.failed.push(RegistryInstallFailure {
+                        id: instance_id,
+                        error,
+                    });
+                }
+            }
+        }
+
+        if !result.migrated.is_empty() {
+            save_config_to_path(&path, &loaded.config)?;
+        }
+        log_remote(
+            &log,
+            LogLevel::Info,
+            &format!(
+                "provider source migration finished migrated={} skipped={} failed={}",
+                result.migrated.len(),
+                result.skipped.len(),
+                result.failed.len()
+            ),
+        );
+        Ok(result)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub async fn remove_remote_provider(app: AppHandle, id: String) -> Result<(), String> {
     let path = config_path_for_app(&app)?;
 
@@ -917,12 +1116,6 @@ async fn check_remote_updates_inner(
                 manifest_url,
                 provider_dir,
                 trusted_checksum,
-                auto_update,
-                version,
-                source_url,
-                runtime,
-                resolved_runtime,
-                updated_at,
                 last_checked_at,
                 ..
             } = provider;
@@ -974,104 +1167,6 @@ async fn check_remote_updates_inner(
             if update.checked_at != *last_checked_at {
                 *last_checked_at = update.checked_at.clone();
                 config_changed = true;
-            }
-
-            if update.available && *auto_update {
-                if let Some(new_checksum) = &update.new_checksum {
-                    log_remote(
-                        &log,
-                        LogLevel::Info,
-                        &format!("remote auto-update started id={id}"),
-                    );
-                    let manifest = fetch_manifest(
-                        manifest_url,
-                        None,
-                        global_proxy.as_ref(),
-                        FETCH_TIMEOUT,
-                    )
-                    .map_err(|e| {
-                        log_remote(
-                            &log,
-                            LogLevel::Warn,
-                            &format!("remote auto-update manifest fetch failed id={} error={}", id, e),
-                        );
-                        e.to_string()
-                    })?;
-                    let new_source_url = resolve_source_url(manifest_url, &manifest.entry);
-                    log_remote(
-                        &log,
-                        LogLevel::Info,
-                        &format!("remote auto-update source fetch started id={} sourceUrl={}", id, new_source_url),
-                    );
-                    let source = fetch_source(
-                        &new_source_url,
-                        None,
-                        global_proxy.as_ref(),
-                        FETCH_TIMEOUT,
-                    )
-                    .map_err(|e| {
-                        log_remote(
-                            &log,
-                            LogLevel::Warn,
-                            &format!("remote auto-update source fetch failed id={} error={}", id, e),
-                        );
-                        e.to_string()
-                    })?;
-                    crate::remote_provider::verify_checksum(&source, new_checksum)
-                        .map_err(|e| {
-                            log_remote(
-                                &log,
-                                LogLevel::Warn,
-                                &format!("remote auto-update checksum failed id={} error={}", id, e),
-                            );
-                            e.to_string()
-                        })?;
-                    log_remote(
-                        &log,
-                        LogLevel::Info,
-                        &format!("remote auto-update checksum verified id={id}"),
-                    );
-
-                    let parent = provider_dir
-                        .parent()
-                        .expect("provider dir has parent")
-                        .to_path_buf();
-                    let new_resolved_runtime = resolve_manifest_runtime(&manifest)?;
-                    cache_remote_provider(
-                        &parent,
-                        id,
-                        manifest_url,
-                        &manifest,
-                        &source,
-                        new_resolved_runtime.as_deref(),
-                    )
-                    .map_err(|e| {
-                        log_remote(
-                            &log,
-                            LogLevel::Warn,
-                            &format!("remote auto-update cache failed id={} error={}", id, e),
-                        );
-                        e.to_string()
-                    })?;
-                    *trusted_checksum = Some(compute_checksum(&source));
-                    *source_url = new_source_url;
-                    *version = manifest.version.clone();
-                    *runtime = manifest.runtime.clone();
-                    *resolved_runtime = new_resolved_runtime
-                        .as_ref()
-                        .map(|path| path.display().to_string());
-                    *updated_at = Some(Utc::now().to_rfc3339());
-                    config_changed = true;
-                    log_remote(
-                        &log,
-                        LogLevel::Info,
-                        &format!(
-                            "remote auto-update finished id={} version={}",
-                            id,
-                            version.as_ref().map(String::as_str).unwrap_or("none")
-                        ),
-                    );
-                }
             }
 
             updates.push(update);

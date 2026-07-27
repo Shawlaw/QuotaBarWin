@@ -7,6 +7,7 @@ import { I18nProvider } from "../i18n";
 import type {
   RemoteProviderCatalogEntry,
   RemoteProviderConfig,
+  RegistryMigrationResult,
   RemoteProviderRegistrySettings
 } from "../types";
 
@@ -43,6 +44,12 @@ const installedProvider: RemoteProviderConfig = {
   timeoutSeconds: 30
 };
 
+const migratedSource: RegistryMigrationResult = {
+  migrated: ["kimi-coding"],
+  skipped: [],
+  failed: []
+};
+
 function renderWithEnglish(ui: ReactElement) {
   return render(ui, {
     wrapper: ({ children }) => (
@@ -61,6 +68,7 @@ function renderRemoteProviderSettings(
     onRegistrySettingsChange: vi.fn(),
     onPreviewRegistry: vi.fn(async () => catalog),
     onInstallManifest: vi.fn(async () => installedProvider),
+    onMigrateSource: vi.fn(async () => migratedSource),
     onOpenGuide: vi.fn(async () => undefined),
     onBackToSettings: vi.fn(),
     onBackToAddProvider: vi.fn(),
@@ -225,6 +233,25 @@ describe("RemoteProviderSettings", () => {
     });
   });
 
+  test("source_page_migrates_installed_providers_only_after_confirmation", async () => {
+    const onMigrateSource = vi.fn(async () => migratedSource);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderRemoteProviderSettings({
+      view: "sources",
+      onMigrateSource,
+    });
+
+    fireEvent.click(screen.getByTestId("migrate-provider-source-official"));
+
+    await waitFor(() =>
+      expect(onMigrateSource).toHaveBeenCalledWith(
+        DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
+        null
+      )
+    );
+    expect(await screen.findByText("Migration complete: 1 migrated, 0 skipped, 0 failed.")).toBeInTheDocument();
+  });
+
   test("add_page_loads_all_enabled_sources", async () => {
     const onPreviewRegistry = vi.fn(async (url: string) => [
       {
@@ -310,6 +337,7 @@ describe("RemoteProviderSettings", () => {
           onRegistrySettingsChange={vi.fn()}
           onPreviewRegistry={onPreviewRegistry}
           onInstallManifest={vi.fn(async () => installedProvider)}
+          onMigrateSource={vi.fn(async () => migratedSource)}
           onOpenGuide={vi.fn(async () => undefined)}
           onBackToSettings={vi.fn()}
           onBackToAddProvider={vi.fn()}

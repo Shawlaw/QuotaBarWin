@@ -91,6 +91,17 @@ export type RemoteProviderCatalogEntry = {
   error?: string | null;
 };
 
+export type RegistryMigrationFailure = {
+  id: string;
+  error: string;
+};
+
+export type RegistryMigrationResult = {
+  migrated: string[];
+  skipped: string[];
+  failed: RegistryMigrationFailure[];
+};
+
 export type RemoteProviderManifestDefaultConfig = {
   name?: string | null;
   timeoutSeconds?: number | null;

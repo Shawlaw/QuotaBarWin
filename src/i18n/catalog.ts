@@ -199,6 +199,11 @@ export type I18nCatalog = {
     sourceEnabled: string;
     addSource: string;
     removeSource: string;
+    migrateSource: string;
+    migratingSource: string;
+    migrateSourceConfirm: (sourceName: string) => string;
+    migrateSourceResult: (migrated: number, skipped: number, failed: number) => string;
+    failedToMigrateSource: string;
     enabledSourcesCount: (count: number) => string;
     sourceLoadError: (sourceName: string, message: string) => string;
     sourceConflict: (providerId: string, sourceNames: string) => string;
@@ -251,7 +256,12 @@ export type I18nCatalog = {
     collapse: string;
     refresh: string;
     checkUpdates: string;
+    checkingUpdates: string;
     applyUpdate: string;
+    applyAllUpdates: (count: number) => string;
+    applyingUpdates: string;
+    updatesApplied: (count: number) => string;
+    updateSomeFailed: (updated: number, failed: number) => string;
     remove: string;
     version: string;
     unknownVersion: string;
@@ -481,6 +491,13 @@ export const en: I18nCatalog = {
     sourceEnabled: "Enabled",
     addSource: "Add Source",
     removeSource: "Remove Source",
+    migrateSource: "Migrate installed Providers",
+    migratingSource: "Migrating...",
+    migrateSourceConfirm: (sourceName) =>
+      `Move matching installed Providers to ${sourceName}? Their account settings stay unchanged, but their manifest and script will be replaced from this source.`,
+    migrateSourceResult: (migrated, skipped, failed) =>
+      `Migration complete: ${migrated} migrated, ${skipped} skipped, ${failed} failed.`,
+    failedToMigrateSource: "Failed to migrate installed Providers",
     enabledSourcesCount: (count) => `${count} source(s) enabled`,
     sourceLoadError: (sourceName, message) => `${sourceName}: ${message}`,
     sourceConflict: (providerId, sourceNames) =>
@@ -534,7 +551,12 @@ export const en: I18nCatalog = {
     collapse: "Collapse",
     refresh: "Refresh",
     checkUpdates: "Check Updates",
+    checkingUpdates: "Checking...",
     applyUpdate: "Apply Update",
+    applyAllUpdates: (count) => `Apply all updates (${count})`,
+    applyingUpdates: "Applying updates...",
+    updatesApplied: (count) => `${count} update(s) applied`,
+    updateSomeFailed: (updated, failed) => `${updated} updated, ${failed} failed`,
     remove: "Remove",
     version: "Version",
     unknownVersion: "unknown version",
@@ -764,6 +786,13 @@ export const zhCN: I18nCatalog = {
     sourceEnabled: "已启用",
     addSource: "添加来源",
     removeSource: "移除来源",
+    migrateSource: "迁移已安装 Provider",
+    migratingSource: "正在迁移...",
+    migrateSourceConfirm: (sourceName) =>
+      `将匹配的已安装 Provider 迁移到“${sourceName}”？会保留账号设置，但将从此来源替换 manifest 与脚本。`,
+    migrateSourceResult: (migrated, skipped, failed) =>
+      `迁移完成：已迁移 ${migrated} 个，跳过 ${skipped} 个，失败 ${failed} 个。`,
+    failedToMigrateSource: "迁移已安装 Provider 失败",
     enabledSourcesCount: (count) => `已启用 ${count} 个来源`,
     sourceLoadError: (sourceName, message) => `${sourceName}：${message}`,
     sourceConflict: (providerId, sourceNames) =>
@@ -817,7 +846,12 @@ export const zhCN: I18nCatalog = {
     collapse: "收起",
     refresh: "刷新",
     checkUpdates: "检查更新",
+    checkingUpdates: "正在检查...",
     applyUpdate: "应用更新",
+    applyAllUpdates: (count) => `全部应用更新（${count}）`,
+    applyingUpdates: "正在应用更新...",
+    updatesApplied: (count) => `已应用 ${count} 个更新`,
+    updateSomeFailed: (updated, failed) => `已更新 ${updated} 个，失败 ${failed} 个`,
     remove: "移除",
     version: "版本",
     unknownVersion: "未知版本",

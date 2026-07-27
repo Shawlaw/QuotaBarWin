@@ -9,6 +9,7 @@ import {
   getInstalledRemoteProviderManifest,
   installRemoteProviderManifest,
   installRemoteProviderRegistry,
+  migrateRemoteProvidersToRegistry,
   getConfig,
   getNetworkProxy,
   openAppUpdateNotes,
@@ -239,6 +240,11 @@ test("api_invokes_remote_provider_commands", async () => {
     },
   ];
   const manifestResult = registryResult.installed[0];
+  const migrationResult = {
+    migrated: ["remote-kimi"],
+    skipped: [],
+    failed: [],
+  };
   mockIPC((cmd, payload) => {
     payloads[cmd] = payload;
     if (cmd === "preview_remote_provider_registry") {
@@ -249,6 +255,9 @@ test("api_invokes_remote_provider_commands", async () => {
     }
     if (cmd === "install_remote_provider_registry") {
       return registryResult;
+    }
+    if (cmd === "migrate_remote_providers_to_registry") {
+      return migrationResult;
     }
     if (cmd === "get_installed_remote_provider_manifest") {
       return {
@@ -297,6 +306,12 @@ test("api_invokes_remote_provider_commands", async () => {
       true,
     ),
   ).resolves.toEqual(registryResult);
+  await expect(
+    migrateRemoteProvidersToRegistry(
+      "https://example.com/registry.json",
+      "http://proxy.example.com:8080",
+    ),
+  ).resolves.toEqual(migrationResult);
   await expect(getInstalledRemoteProviderManifest("remote-kimi")).resolves.toMatchObject({
     id: "remote-kimi",
     parameters: [{ name: "KIMI_API_KEY", kind: "secret", required: true }],
@@ -315,6 +330,10 @@ test("api_invokes_remote_provider_commands", async () => {
     url: "https://example.com/registry.json",
     proxyUrl: "http://proxy.example.com:8080",
     autoUpdate: true,
+  });
+  expect(payloads.migrate_remote_providers_to_registry).toEqual({
+    url: "https://example.com/registry.json",
+    proxyUrl: "http://proxy.example.com:8080",
   });
   expect(payloads.preview_remote_provider_registry).toEqual({
     url: "https://example.com/registry.json",
