@@ -2,7 +2,7 @@
 
 本文记录 QuotaBarWin 的用户可见变化。默认以简体中文维护；如果未来需要英文 release notes，可从本文件同步整理。
 
-## [1.1.0] - 2026-07-26
+## [1.1.0] - 2026-07-27
 
 ### Added
 
@@ -13,10 +13,13 @@
 
 - 所有维护中的官方 Provider（Kimi、智谱 Coding Plan、DeepSeek、Codex Usage、光阴似箭）均已迁移到 `builtin-js`。
 - Provider 运行期代理遵循应用的显式代理策略；未选择“系统代理”时不会隐式读取系统 HTTP(S) 代理环境变量。
+- Provider 更新检查现在以已启用的来源 registry 为准；检查结果会直接显示在对应 Provider 行，并支持逐个或全部应用更新。
 
 ### Fixed
 
 - 官方 `builtin-js` Provider 现在使用 manifest schema 2 和 `minAppVersion`。旧版应用会在下载新脚本前拒绝该更新，保留仍可运行的旧 Node Provider，避免自动更新导致 Provider 不可用。
+- 修复 Codex Provider 读取 `~/.codex/auth.json` 时权限检查与实际文件路径不一致的问题，并简化内置 JS 错误提示。
+- 修复“添加 Provider”页已显示新来源版本、但已安装 Provider 仍按旧 manifest 检查更新的不一致问题；应用更新会切换到同一经过校验的来源。
 
 ### Security
 
