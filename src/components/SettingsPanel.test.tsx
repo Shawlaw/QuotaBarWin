@@ -489,6 +489,20 @@ test("settings_checks_and_applies_remote_provider_update", async () => {
   expect(await screen.findByText("1.1.0")).toBeInTheDocument();
 });
 
+test("settings_clears_stale_provider_updates_when_a_later_check_fails", async () => {
+  renderSettings();
+
+  fireEvent.click(screen.getByRole("button", { name: "Check Updates" }));
+  expect(await screen.findByTestId("apply-provider-update-remote-kimi")).toBeInTheDocument();
+
+  apiMocks.checkRemoteUpdates.mockRejectedValueOnce(new Error("Provider source is unavailable"));
+  fireEvent.click(screen.getByRole("button", { name: "Check Updates" }));
+
+  expect(await screen.findByText("Provider source is unavailable")).toBeInTheDocument();
+  expect(screen.queryByTestId("apply-provider-update-remote-kimi")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("apply-all-provider-updates")).not.toBeInTheDocument();
+});
+
 test("settings_reorders_and_removes_remote_providers", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
   renderSettings(

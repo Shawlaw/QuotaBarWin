@@ -399,6 +399,7 @@ export function SettingsPanel({
           : t.remoteProviders.allProvidersUpToDate
       );
     } catch (error) {
+      setUpdateInfo({});
       setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToCheckUpdates);
     } finally {
       setIsCheckingProviderUpdates(false);

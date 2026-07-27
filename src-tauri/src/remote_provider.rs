@@ -1247,10 +1247,17 @@ fn example_remote_provider_manifests_are_valid() {
             manifest.schema_version, BUILTIN_JS_PROVIDER_MANIFEST_SCHEMA_VERSION,
             "{provider_id} must use the builtin-js compatibility manifest schema"
         );
-        assert_eq!(
-            manifest.min_app_version.as_deref(),
-            Some(CURRENT_APP_VERSION),
-            "{provider_id} must require the current builtin-js host version"
+        let required_version = manifest
+            .min_app_version
+            .as_deref()
+            .unwrap_or_else(|| panic!("{provider_id} must declare minAppVersion"));
+        let required_version = Version::parse(required_version)
+            .unwrap_or_else(|error| panic!("{provider_id} has invalid minAppVersion: {error}"));
+        let current_version =
+            Version::parse(CURRENT_APP_VERSION).expect("current app version must be valid SemVer");
+        assert!(
+            required_version <= current_version,
+            "{provider_id} must not require a newer builtin-js host than this release"
         );
         let source_path = dir.join(source_file_name(&manifest.entry));
 
