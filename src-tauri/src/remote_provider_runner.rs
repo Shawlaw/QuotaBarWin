@@ -337,6 +337,7 @@ fn run_builtin_js_remote_provider(
         Ok(result) => result,
         Err(error) => {
             let error = redact_sensitive(&error);
+            let user_error = summarize_builtin_js_error(&error);
             log_provider(
                 log,
                 LogLevel::Error,
@@ -346,7 +347,7 @@ fn run_builtin_js_remote_provider(
             return vec![error_provider(
                 id,
                 name,
-                &format!("Builtin-js provider failed: {error}"),
+                &user_error,
                 None,
                 Some(BUILTIN_JS_RUNTIME),
             )];
@@ -398,6 +399,23 @@ fn run_builtin_js_remote_provider(
         ),
     );
     vec![provider]
+}
+
+fn summarize_builtin_js_error(error: &str) -> String {
+    let first_line = error
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default();
+    let message = first_line
+        .strip_prefix("Error:")
+        .map(str::trim)
+        .unwrap_or(first_line);
+    if message.is_empty() {
+        "Builtin-js provider failed. Check the diagnostics log for details.".to_string()
+    } else {
+        message.to_string()
+    }
 }
 
 fn log_provider(log: Option<&LogSink>, level: LogLevel, id: &str, message: &str) {
@@ -1456,6 +1474,17 @@ mod tests {
                 .as_ref()
                 .and_then(|diagnostics| diagnostics.command_path.as_deref()),
             Some("builtin-js")
+        );
+    }
+
+    #[test]
+    fn builtin_js_errors_show_the_provider_message_without_a_quickjs_stack_trace() {
+        let error = summarize_builtin_js_error(
+            "Error: Codex sign-in is required. Sign in with Codex or configure CODEX_ACCESS_TOKEN.\n    at main (eval_script:17:15)\n    at <eval> (eval_script:1:25)",
+        );
+        assert_eq!(
+            error,
+            "Codex sign-in is required. Sign in with Codex or configure CODEX_ACCESS_TOKEN."
         );
     }
 

@@ -14,7 +14,7 @@ function main(qb) {
     accountIdPresent: Boolean(accountId)
   });
   if (!token) {
-    throw new Error("Codex access token is required; set CODEX_ACCESS_TOKEN or sign in with Codex so ~/.codex/auth.json exists");
+    throw new Error("Codex sign-in is required. Sign in with Codex or configure CODEX_ACCESS_TOKEN.");
   }
 
   const raw = fetchCodexUsage(qb, token.trim(), accountId.trim());

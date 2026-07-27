@@ -100,6 +100,7 @@ struct BuiltinJsHost {
     provider_id: String,
     environment: HashMap<String, String>,
     capabilities: BuiltinJsCapabilities,
+    home_dir: Option<PathBuf>,
     deadline: Instant,
     proxy_url: Option<String>,
     log: Option<LogSink>,
@@ -194,14 +195,18 @@ impl BuiltinJsCapabilities {
             })
     }
 
-    fn allowed_file_paths(&self, environment: &HashMap<String, String>) -> Vec<PathBuf> {
+    fn allowed_file_paths(
+        &self,
+        environment: &HashMap<String, String>,
+        home_dir: Option<&std::path::Path>,
+    ) -> Vec<PathBuf> {
         self.file_permissions
             .iter()
             .filter_map(|permission| match permission {
                 FilePermission::Path(path) => Some(path.as_str()),
                 FilePermission::EnvironmentPath(name) => environment.get(name).map(String::as_str),
             })
-            .map(expand_home_path)
+            .map(|path| expand_home_path_with(path, home_dir))
             .filter_map(|path| fs::canonicalize(path).ok())
             .collect()
     }
@@ -240,7 +245,11 @@ impl BuiltinJsHost {
     }
 
     fn read_text_file(&self, requested_path: &str) -> Result<String, String> {
-        let actual_path = fs::canonicalize(requested_path).map_err(|error| {
+        let actual_path = fs::canonicalize(expand_home_path_with(
+            requested_path,
+            self.home_dir.as_deref(),
+        ))
+        .map_err(|error| {
             format!(
                 "builtin-js cannot read requested file '{}': {}",
                 requested_path,
@@ -249,7 +258,7 @@ impl BuiltinJsHost {
         })?;
         if !self
             .capabilities
-            .allowed_file_paths(&self.environment)
+            .allowed_file_paths(&self.environment, self.home_dir.as_deref())
             .iter()
             .any(|allowed| allowed == &actual_path)
         {
@@ -406,6 +415,7 @@ pub fn run_builtin_js_provider(run: BuiltinJsRun<'_>) -> Result<BuiltinJsResult,
         provider_id: run.provider_id.to_string(),
         environment: run.env.clone(),
         capabilities: BuiltinJsCapabilities::from_permissions(&run.manifest.permissions)?,
+        home_dir: current_home_dir(),
         deadline,
         proxy_url: run.proxy_url.map(str::to_string),
         log: run.log.cloned(),
@@ -543,14 +553,20 @@ fn parse_network_permission(value: &str) -> Result<NetworkPermission, String> {
     })
 }
 
-fn expand_home_path(raw: &str) -> PathBuf {
+fn current_home_dir() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
+}
+
+fn expand_home_path_with(raw: &str, home: Option<&std::path::Path>) -> PathBuf {
     let trimmed = raw.trim();
     if let Some(suffix) = trimmed
         .strip_prefix("~/")
         .or_else(|| trimmed.strip_prefix("~\\"))
     {
-        if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
-            return PathBuf::from(home).join(suffix);
+        if let Some(home) = home {
+            return home.join(suffix);
         }
     }
     PathBuf::from(trimmed)
@@ -708,6 +724,39 @@ mod tests {
         .expect("optional environment result");
         let value: serde_json::Value = serde_json::from_str(&result.json).expect("JSON result");
         assert!(value["configured"].is_null());
+    }
+
+    #[test]
+    fn reads_a_tilde_path_when_the_matching_file_permission_is_granted() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let auth_file = temp.path().join(".codex").join("auth.json");
+        std::fs::create_dir(auth_file.parent().expect("auth parent")).expect("auth parent");
+        std::fs::write(&auth_file, "token-from-auth-file").expect("auth file");
+
+        let manifest = manifest(&["fs:~/.codex/auth.json"]);
+        let capabilities = BuiltinJsCapabilities::from_permissions(&manifest.permissions)
+            .expect("capabilities");
+        let host = BuiltinJsHost {
+            provider_id: "builtin-test".to_string(),
+            environment: HashMap::new(),
+            capabilities,
+            home_dir: Some(temp.path().to_path_buf()),
+            deadline: Instant::now() + Duration::from_secs(1),
+            proxy_url: None,
+            log: None,
+        };
+
+        assert_eq!(
+            host.read_text_file("~/.codex/auth.json").unwrap(),
+            "token-from-auth-file"
+        );
+    }
+
+    #[test]
+    fn expands_tilde_paths_with_the_same_home_directory_for_permission_and_reading() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let expanded = expand_home_path_with("~\\.codex\\auth.json", Some(temp.path()));
+        assert_eq!(expanded, temp.path().join(".codex").join("auth.json"));
     }
 
     #[test]
