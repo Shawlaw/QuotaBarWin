@@ -41,6 +41,7 @@ const apiMocks = vi.hoisted(() => {
         id: "remote-kimi",
         available: true,
         newChecksum: "sha256:new",
+        updateManifestUrl: "https://registry.example.com/kimi/provider.json",
         currentVersion: "1.0.0",
         newVersion: "1.1.0",
         checkedAt: "2026-06-18T09:00:00Z",
@@ -479,7 +480,12 @@ test("settings_checks_and_applies_remote_provider_update", async () => {
 
   fireEvent.click(screen.getByTestId("apply-provider-update-remote-kimi"));
 
-  await waitFor(() => expect(apiMocks.applyRemoteUpdate).toHaveBeenCalledWith("remote-kimi"));
+  await waitFor(() =>
+    expect(apiMocks.applyRemoteUpdate).toHaveBeenCalledWith(
+      "remote-kimi",
+      "https://registry.example.com/kimi/provider.json"
+    )
+  );
   expect(await screen.findByText("1.1.0")).toBeInTheDocument();
 });
 

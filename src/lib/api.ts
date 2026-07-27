@@ -238,6 +238,7 @@ export type UpdateInfo = {
   id: string;
   available: boolean;
   newChecksum: string | null;
+  updateManifestUrl?: string | null;
   currentVersion?: string | null;
   newVersion?: string | null;
   checkedAt?: string | null;
@@ -438,7 +439,15 @@ export async function removeRemoteProvider(id: string): Promise<void> {
 export async function refreshRemoteProvider(id: string): Promise<UpdateInfo> {
   if (!hasTauriInternals()) {
     void id;
-    return { id: "", available: false, newChecksum: null, currentVersion: null, newVersion: null, checkedAt: null };
+    return {
+      id: "",
+      available: false,
+      newChecksum: null,
+      updateManifestUrl: null,
+      currentVersion: null,
+      newVersion: null,
+      checkedAt: null
+    };
   }
 
   return invoke<UpdateInfo>("refresh_remote_provider", { id });
@@ -452,13 +461,20 @@ export async function checkRemoteUpdates(): Promise<UpdateInfo[]> {
   return invoke<UpdateInfo[]>("check_remote_updates");
 }
 
-export async function applyRemoteUpdate(id: string): Promise<void> {
+export async function applyRemoteUpdate(
+  id: string,
+  updateManifestUrl?: string | null
+): Promise<void> {
   if (!hasTauriInternals()) {
     void id;
+    void updateManifestUrl;
     return;
   }
 
-  return invoke<void>("apply_remote_update", { id });
+  return invoke<void>("apply_remote_update", {
+    id,
+    updateManifestUrl: updateManifestUrl ?? null
+  });
 }
 
 export async function exportDiagnostics(outputPath: string): Promise<void> {

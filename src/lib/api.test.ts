@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   applyAppUpdate,
+  applyRemoteUpdate,
   checkRemoteUpdates,
   checkAppUpdate,
   downloadAppUpdate,
@@ -274,6 +275,9 @@ test("api_invokes_remote_provider_commands", async () => {
     if (cmd === "remove_remote_provider") {
       return null;
     }
+    if (cmd === "apply_remote_update") {
+      return null;
+    }
     if (cmd === "refresh_remote_provider") {
       return { id: "remote-kimi", available: true, newChecksum: "sha256:abc" };
     }
@@ -317,6 +321,9 @@ test("api_invokes_remote_provider_commands", async () => {
     parameters: [{ name: "KIMI_API_KEY", kind: "secret", required: true }],
   });
   await expect(removeRemoteProvider("remote-kimi")).resolves.toBeNull();
+  await expect(
+    applyRemoteUpdate("remote-kimi", "https://example.com/kimi/provider.json"),
+  ).resolves.toBeNull();
   await expect(refreshRemoteProvider("remote-kimi")).resolves.toEqual({
     id: "remote-kimi",
     available: true,
@@ -347,5 +354,9 @@ test("api_invokes_remote_provider_commands", async () => {
   });
   expect(payloads.get_installed_remote_provider_manifest).toEqual({ id: "remote-kimi" });
   expect(payloads.remove_remote_provider).toEqual({ id: "remote-kimi" });
+  expect(payloads.apply_remote_update).toEqual({
+    id: "remote-kimi",
+    updateManifestUrl: "https://example.com/kimi/provider.json",
+  });
   expect(payloads.refresh_remote_provider).toEqual({ id: "remote-kimi" });
 });

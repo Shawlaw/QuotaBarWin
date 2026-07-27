@@ -409,7 +409,7 @@ export function SettingsPanel({
     setRemoteMessage(null);
     setIsApplyingProviderUpdates(true);
     try {
-      await applyRemoteUpdate(providerId);
+      await applyRemoteUpdate(providerId, updateInfo[providerId]?.updateManifestUrl);
       setUpdateInfo((current) => {
         const next = { ...current };
         delete next[providerId];
@@ -440,7 +440,10 @@ export function SettingsPanel({
     try {
       for (const providerId of providerIds) {
         try {
-          await applyRemoteUpdate(providerId);
+          await applyRemoteUpdate(
+            providerId,
+            updateInfo[providerId]?.updateManifestUrl
+          );
         } catch (error) {
           failures.push(error instanceof Error ? error.message : providerId);
         }

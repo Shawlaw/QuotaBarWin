@@ -150,6 +150,11 @@ pub struct UpdateInfo {
     pub id: String,
     pub available: bool,
     pub new_checksum: Option<String>,
+    /// The manifest selected by an enabled registry source for this specific
+    /// update check. It is intentionally absent for legacy direct-manifest
+    /// checks, where the installed manifest URL remains the update target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_manifest_url: Option<String>,
     #[serde(default)]
     pub current_version: Option<String>,
     #[serde(default)]
@@ -709,6 +714,7 @@ pub fn check_update(
                     .to_string(),
                 available: false,
                 new_checksum: None,
+                update_manifest_url: None,
                 current_version: existing_meta.as_ref().and_then(|meta| meta.version.clone()),
                 new_version: existing_meta.as_ref().and_then(|meta| meta.version.clone()),
                 checked_at: Some(checked_at),
@@ -776,6 +782,7 @@ pub fn check_update(
         id: manifest.id,
         available,
         new_checksum,
+        update_manifest_url: None,
         current_version,
         new_version: manifest.version,
         checked_at: Some(checked_at),

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
     time::Duration,
@@ -147,6 +148,152 @@ fn resolve_manifest_runtime(manifest: &ProviderManifest) -> Result<Option<PathBu
         })
         .map(Some)
         .map_err(|error| error.to_string())
+}
+
+#[derive(Debug, Clone)]
+struct RegistryUpdateSource {
+    url: String,
+    proxy_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct RegistryUpdateCandidate {
+    manifest_url: String,
+    proxy_url: Option<String>,
+    manifest_checksum: Option<String>,
+}
+
+fn configured_registry_update_sources(
+    settings: &RemoteProviderRegistrySettings,
+) -> Vec<RegistryUpdateSource> {
+    if !settings.sources.is_empty() {
+        return settings
+            .sources
+            .iter()
+            .filter(|source| source.enabled && !source.url.trim().is_empty())
+            .map(|source| RegistryUpdateSource {
+                url: source.url.trim().to_string(),
+                proxy_url: source
+                    .provider_proxy_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string),
+            })
+            .collect();
+    }
+
+    settings
+        .registry_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .map(|url| RegistryUpdateSource {
+            url: url.to_string(),
+            proxy_url: settings
+                .provider_proxy_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+        })
+        .into_iter()
+        .collect()
+}
+
+fn load_registry_update_candidates(
+    settings: &RemoteProviderRegistrySettings,
+    global_proxy: Option<&ProxyConfig>,
+    log: &LogSink,
+) -> Result<HashMap<String, RegistryUpdateCandidate>, String> {
+    let mut candidates = HashMap::new();
+    for source in configured_registry_update_sources(settings) {
+        log_remote(
+            log,
+            LogLevel::Info,
+            &format!(
+                "provider update source fetch started registryUrl={}",
+                source.url
+            ),
+        );
+        let registry = fetch_provider_registry(
+            &source.url,
+            source.proxy_url.as_deref(),
+            global_proxy,
+            FETCH_TIMEOUT,
+        )
+        .map_err(|error| {
+            format!(
+                "failed to load Provider update source '{}': {error}",
+                source.url
+            )
+        })?;
+        log_remote(
+            log,
+            LogLevel::Info,
+            &format!(
+                "provider update source fetched registryUrl={} providers={}",
+                source.url,
+                registry.providers.len()
+            ),
+        );
+        for entry in registry.providers {
+            candidates
+                .entry(entry.id)
+                .or_insert_with(|| RegistryUpdateCandidate {
+                    manifest_url: resolve_provider_url(&source.url, &entry.provider_url),
+                    proxy_url: source.proxy_url.clone(),
+                    manifest_checksum: entry.checksum,
+                });
+        }
+    }
+    Ok(candidates)
+}
+
+fn update_is_available(new_checksum: Option<&str>, trusted_checksum: Option<&str>) -> bool {
+    match (new_checksum, trusted_checksum) {
+        (Some(new), Some(trusted)) => new != trusted,
+        (Some(_), None) => true,
+        (None, _) => false,
+    }
+}
+
+fn check_registry_update(
+    candidate: &RegistryUpdateCandidate,
+    expected_manifest_id: &str,
+    current_version: Option<String>,
+    trusted_checksum: Option<&str>,
+    global_proxy: Option<&ProxyConfig>,
+) -> Result<UpdateInfo, String> {
+    let manifest_text = fetch_manifest_text(
+        &candidate.manifest_url,
+        candidate.proxy_url.as_deref(),
+        global_proxy,
+        FETCH_TIMEOUT,
+    )
+    .map_err(|error| error.to_string())?;
+    if let Some(expected_checksum) = candidate.manifest_checksum.as_deref() {
+        crate::remote_provider::verify_checksum(&manifest_text, expected_checksum)
+            .map_err(|error| error.to_string())?;
+    }
+    let manifest = parse_manifest(&manifest_text).map_err(|error| error.to_string())?;
+    if manifest.id != expected_manifest_id {
+        return Err(format!(
+            "update source manifest id '{}' does not match installed Provider id '{}'",
+            manifest.id, expected_manifest_id
+        ));
+    }
+
+    let new_checksum = manifest.checksums.source.clone();
+    Ok(UpdateInfo {
+        id: expected_manifest_id.to_string(),
+        available: update_is_available(new_checksum.as_deref(), trusted_checksum),
+        new_checksum,
+        update_manifest_url: Some(candidate.manifest_url.clone()),
+        current_version,
+        new_version: manifest.version,
+        checked_at: Some(Utc::now().to_rfc3339()),
+    })
 }
 
 fn find_provider_config_mut<'a>(
@@ -1098,6 +1245,11 @@ async fn check_remote_updates_inner(
         let mut loaded = load_or_create_config(&path)?;
         let log = LogSink::from_config_path(&path, &loaded.config);
         let global_proxy = loaded.config.network_proxy.clone();
+        let registry_update_candidates = load_registry_update_candidates(
+            &loaded.config.remote_provider_registry,
+            global_proxy.as_ref(),
+            &log,
+        )?;
         let mut config_changed = false;
         log_remote(
             &log,
@@ -1116,6 +1268,7 @@ async fn check_remote_updates_inner(
                 manifest_url,
                 provider_dir,
                 trusted_checksum,
+                version,
                 last_checked_at,
                 ..
             } = provider;
@@ -1134,14 +1287,40 @@ async fn check_remote_updates_inner(
             let provider_dir = provider_dir
                 .clone()
                 .unwrap_or(remote_provider_dir(&path, id)?);
-            let mut update = check_update(
-                &provider_dir,
-                manifest_url,
-                None,
-                global_proxy.as_ref(),
-                trusted_checksum.as_deref(),
-                FETCH_TIMEOUT,
-            )
+            let installed_manifest_id = load_cached_manifest(&provider_dir)
+                .map(|manifest| manifest.id)
+                .unwrap_or_else(|_| id.clone());
+            let mut update = if let Some(candidate) = registry_update_candidates.get(&installed_manifest_id) {
+                log_remote(
+                    &log,
+                    LogLevel::Info,
+                    &format!(
+                        "remote update check provider using registry source id={} manifestId={} manifestUrl={}",
+                        id, installed_manifest_id, candidate.manifest_url
+                    ),
+                );
+                check_registry_update(
+                    candidate,
+                    &installed_manifest_id,
+                    version.clone(),
+                    trusted_checksum.as_deref(),
+                    global_proxy.as_ref(),
+                )
+            } else {
+                check_update(
+                    &provider_dir,
+                    manifest_url,
+                    None,
+                    global_proxy.as_ref(),
+                    trusted_checksum.as_deref(),
+                    FETCH_TIMEOUT,
+                )
+                .map(|mut update| {
+                    update.current_version = version.clone().or(update.current_version);
+                    update
+                })
+                .map_err(|error| error.to_string())
+            }
             .map_err(|e| {
                 log_remote(
                     &log,
@@ -1187,48 +1366,107 @@ async fn check_remote_updates_inner(
 }
 
 #[tauri::command]
-pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn apply_remote_update(
+    app: AppHandle,
+    id: String,
+    update_manifest_url: Option<String>,
+) -> Result<(), String> {
     let path = config_path_for_app(&app)?;
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut loaded = load_or_create_config(&path)?;
         let log = LogSink::from_config_path(&path, &loaded.config);
         let global_proxy = loaded.config.network_proxy.clone();
+        let has_selected_registry_update = update_manifest_url
+            .as_deref()
+            .map(str::trim)
+            .map(|url| !url.is_empty())
+            .unwrap_or(false);
+        let registry_update_candidates = has_selected_registry_update
+            .then(|| {
+                load_registry_update_candidates(
+                    &loaded.config.remote_provider_registry,
+                    global_proxy.as_ref(),
+                    &log,
+                )
+            })
+            .transpose()?;
         log_remote(
             &log,
             LogLevel::Info,
             &format!("remote update apply started id={id}"),
         );
 
-        let provider =
-            find_provider_config_mut(&mut loaded.config, &id).ok_or("provider not found")?;
-        let ProviderConfig::Remote { manifest_url, .. } = provider;
-
-        let manifest_url = manifest_url.clone();
+        let provider = find_provider_config_mut(&mut loaded.config, &id)
+            .ok_or("provider not found")?;
         let provider_dir = cached_provider_dir(&path, provider)
             .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
+        let installed_manifest_url = match provider {
+            ProviderConfig::Remote { manifest_url, .. } => manifest_url.clone(),
+        };
+        let installed_manifest_id = load_cached_manifest(&provider_dir)
+            .map(|manifest| manifest.id)
+            .unwrap_or_else(|_| id.clone());
+        let requested_update_manifest_url = update_manifest_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty());
+        let (selected_manifest_url, update_proxy_url, manifest_checksum) =
+            if let Some(requested_url) = requested_update_manifest_url {
+                let candidate = registry_update_candidates
+                    .as_ref()
+                    .expect("a selected registry update loads registry candidates")
+                    .get(&installed_manifest_id)
+                    .filter(|candidate| candidate.manifest_url == requested_url)
+                    .ok_or_else(|| {
+                        "the selected Provider update is no longer offered by an enabled source; check for updates again"
+                            .to_string()
+                    })?;
+                (
+                    candidate.manifest_url.clone(),
+                    candidate.proxy_url.clone(),
+                    candidate.manifest_checksum.clone(),
+                )
+            } else {
+                (installed_manifest_url, None, None)
+            };
 
         log_remote(
             &log,
             LogLevel::Info,
             &format!(
                 "remote update apply manifest fetch started id={} manifestUrl={}",
-                id, manifest_url
+                id, selected_manifest_url
             ),
         );
-        let manifest = fetch_manifest(&manifest_url, None, global_proxy.as_ref(), FETCH_TIMEOUT)
-            .map_err(|e| {
-                log_remote(
-                    &log,
-                    LogLevel::Warn,
-                    &format!(
-                        "remote update apply manifest fetch failed id={} error={}",
-                        id, e
-                    ),
-                );
-                e.to_string()
-            })?;
-        let new_source_url = resolve_source_url(&manifest_url, &manifest.entry);
+        let manifest = if let Some(expected_manifest_checksum) = manifest_checksum.as_deref() {
+            let manifest_text = fetch_manifest_text(
+                &selected_manifest_url,
+                update_proxy_url.as_deref(),
+                global_proxy.as_ref(),
+                FETCH_TIMEOUT,
+            )
+            .map_err(|error| error.to_string())?;
+            crate::remote_provider::verify_checksum(&manifest_text, expected_manifest_checksum)
+                .map_err(|error| error.to_string())?;
+            let manifest = parse_manifest(&manifest_text).map_err(|error| error.to_string())?;
+            if manifest.id != installed_manifest_id {
+                return Err(format!(
+                    "update source manifest id '{}' does not match installed Provider id '{}'",
+                    manifest.id, installed_manifest_id
+                ));
+            }
+            manifest
+        } else {
+            fetch_manifest(
+                &selected_manifest_url,
+                None,
+                global_proxy.as_ref(),
+                FETCH_TIMEOUT,
+            )
+            .map_err(|error| error.to_string())?
+        };
+        let new_source_url = resolve_source_url(&selected_manifest_url, &manifest.entry);
         log_remote(
             &log,
             LogLevel::Info,
@@ -1237,7 +1475,12 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
                 id, new_source_url
             ),
         );
-        let source = fetch_source(&new_source_url, None, global_proxy.as_ref(), FETCH_TIMEOUT)
+        let source = fetch_source(
+            &new_source_url,
+            update_proxy_url.as_deref(),
+            global_proxy.as_ref(),
+            FETCH_TIMEOUT,
+        )
             .map_err(|e| {
                 log_remote(
                     &log,
@@ -1281,7 +1524,7 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
         cache_remote_provider(
             &parent,
             &id,
-            &manifest_url,
+            &selected_manifest_url,
             &manifest,
             &source,
             new_resolved_runtime.as_deref(),
@@ -1305,6 +1548,7 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
         );
 
         let ProviderConfig::Remote {
+            ref mut manifest_url,
             ref mut trusted_checksum,
             ref mut source_url,
             ref mut version,
@@ -1314,6 +1558,7 @@ pub async fn apply_remote_update(app: AppHandle, id: String) -> Result<(), Strin
             ref mut last_checked_at,
             ..
         } = find_provider_config_mut(&mut loaded.config, &id).ok_or("provider not found")?;
+        *manifest_url = selected_manifest_url;
         *trusted_checksum = Some(compute_checksum(&source));
         *source_url = new_source_url;
         *version = manifest.version;
@@ -1349,6 +1594,55 @@ mod tests {
         )
         .expect("builtin manifest");
         assert_eq!(resolve_manifest_runtime(&manifest).expect("runtime"), None);
+    }
+
+    #[test]
+    fn update_sources_use_enabled_sources_or_the_legacy_registry() {
+        let settings = RemoteProviderRegistrySettings {
+            registry_url: Some("https://legacy.example.com/registry.json".to_string()),
+            provider_proxy_url: Some("http://legacy-proxy.example.com".to_string()),
+            auto_update: true,
+            sources: vec![
+                crate::config::RemoteProviderRegistrySource {
+                    id: "disabled".to_string(),
+                    name: "Disabled".to_string(),
+                    url: "https://disabled.example.com/registry.json".to_string(),
+                    provider_proxy_url: None,
+                    auto_update: true,
+                    enabled: false,
+                },
+                crate::config::RemoteProviderRegistrySource {
+                    id: "selected".to_string(),
+                    name: "Selected".to_string(),
+                    url: " https://selected.example.com/registry.json ".to_string(),
+                    provider_proxy_url: Some(" http://source-proxy.example.com ".to_string()),
+                    auto_update: true,
+                    enabled: true,
+                },
+            ],
+        };
+
+        let sources = configured_registry_update_sources(&settings);
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].url, "https://selected.example.com/registry.json");
+        assert_eq!(
+            sources[0].proxy_url.as_deref(),
+            Some("http://source-proxy.example.com")
+        );
+
+        let legacy_sources = configured_registry_update_sources(&RemoteProviderRegistrySettings {
+            sources: Vec::new(),
+            ..settings
+        });
+        assert_eq!(legacy_sources.len(), 1);
+        assert_eq!(
+            legacy_sources[0].url,
+            "https://legacy.example.com/registry.json"
+        );
+        assert_eq!(
+            legacy_sources[0].proxy_url.as_deref(),
+            Some("http://legacy-proxy.example.com")
+        );
     }
 
     fn remote_provider(id: &str, name: &str, manifest_url: &str) -> ProviderConfig {
