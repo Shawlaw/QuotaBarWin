@@ -1,8 +1,9 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "deepseek-balance",
   "displayName": "DeepSeek Balance",
   "version": "1.1.0",
+  "minAppVersion": "1.1.0",
   "description": "DeepSeek pay-as-you-go account balance via remote provider script.",
   "runtime": "builtin-js",
   "entry": "provider.js",

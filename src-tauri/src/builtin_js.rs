@@ -586,6 +586,7 @@ mod tests {
             display_name: "Builtin Test".to_string(),
             version: Some("1.0.0".to_string()),
             description: None,
+            min_app_version: Some("1.1.0".to_string()),
             runtime: "builtin-js".to_string(),
             entry: "provider.js".to_string(),
             required_env_vars: vec![],

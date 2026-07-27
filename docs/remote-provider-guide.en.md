@@ -25,10 +25,11 @@ variables; the project-wide proxy is only a fallback when that value is absent.
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
   "version": "1.1.0",
+  "minAppVersion": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script",
   "runtime": "builtin-js",
   "entry": "provider.js",
@@ -66,11 +67,12 @@ Field descriptions:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `schemaVersion` | yes | Must be `1`. |
+| `schemaVersion` | yes | `1` is the legacy format. The current app still loads an already cached schema 1 `builtin-js` script for upgrade continuity, but a remotely installed or updated `builtin-js` Provider must use `2` so older apps safely reject it before downloading its script. |
 | `id` | yes | Stable manifest id. When the same manifest is installed more than once, QuotaBarWin generates a non-conflicting local provider id. |
 | `displayName` | yes | Human-readable name shown in the UI. |
 | `version` | no | Human-readable provider version shown in Settings. SemVer is recommended. If omitted, the UI falls back to a short checksum. |
 | `description` | no | Short description. |
+| `minAppVersion` | yes for schema 2 | Minimum QuotaBarWin SemVer version, without a `v` prefix, that can run this Provider; for example `1.1.0`. A lower host rejects the update without changing its cache. |
 | `runtime` | yes | Runtime used to execute `entry`. `builtin-js` uses embedded QuickJS; `node`, `python`, `pwsh`, `bash`, and absolute executable paths remain supported. |
 | `entry` | yes | Source file name. Can be a relative path (resolved against the manifest URL/directory), an absolute HTTPS URL, a `file://` URL, or a local file path. |
 | `requiredEnvVars` | no | Environment variables that the script needs. On refresh, QuotaBarWin resolves each name from provider `envVars`, then `${secret:NAME}`. |
@@ -83,7 +85,9 @@ Field descriptions:
 ## Embedded JavaScript runtime (`builtin-js`)
 
 `builtin-js` is for Providers that should not require end users to install
-Node.js. It runs inside the app's embedded QuickJS sandbox. The entry must be a
+Node.js. It runs inside the app's embedded QuickJS sandbox. A newly published or
+remotely updated manifest must use `schemaVersion: 2` and declare `minAppVersion`;
+the entry must be a
 `.js` file, `output` must be `provider-snapshot-v1`, and the script defines a
 synchronous global `main(qb)` function. That function returns the snapshot
 object directly; it does **not** use `console.log`, stdout, or `process.exit`.
@@ -110,6 +114,8 @@ The manifest must explicitly grant every host capability the script uses:
 
 ```json
 {
+  "schemaVersion": 2,
+  "minAppVersion": "1.1.0",
   "runtime": "builtin-js",
   "entry": "provider.js",
   "output": "provider-snapshot-v1",
@@ -733,3 +739,15 @@ If the manifest contains `checksums.source`, QuotaBarWin can detect when the sou
 - **Manual update**: use the "Check Updates" / "Apply Update" buttons in Settings.
 
 If `checksums.source` is missing, updates must be applied by removing and re-adding the provider.
+
+### App-version compatibility
+
+Publish or remotely update a `builtin-js` Provider with manifest schema 2 and the
+actual minimum `minAppVersion`. Before an update, the host validates both fields. If the app is
+too old, it keeps the current cache, config, and source untouched and tells the
+user to update QuotaBarWin first. Older apps understand only schema 1, so they
+also reject a schema 2 manifest **before** downloading the new source. This
+prevents automatic updates from replacing a working Node Provider with a
+`builtin-js` script that an older host cannot run. For a smooth migration, the
+current app still runs an already cached schema 1 `builtin-js` Provider, but
+will not install or update one from a remote manifest.

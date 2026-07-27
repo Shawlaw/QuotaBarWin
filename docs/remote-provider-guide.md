@@ -27,10 +27,11 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
   "version": "1.1.0",
+  "minAppVersion": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script",
   "runtime": "builtin-js",
   "entry": "provider.js",
@@ -66,11 +67,12 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `schemaVersion` | 是 | 必须为 `1`。 |
+| `schemaVersion` | 是 | `1` 是旧格式；当前应用仍可加载已缓存的 schema 1 `builtin-js` 脚本以完成升级，但远程安装或更新 `builtin-js` 必须使用 `2`，以便旧本体在下载脚本前安全拒绝不兼容更新。 |
 | `id` | 是 | 稳定 manifest id。重复安装同一 manifest 时，QuotaBarWin 会自动生成不冲突的本地 Provider id。 |
 | `displayName` | 是 | UI 中显示的人类可读名称。 |
 | `version` | 否 | 人类可读版本号，会显示在设置页，建议使用 SemVer。缺省时 UI 会回退显示短 checksum。 |
 | `description` | 否 | 简短说明。 |
+| `minAppVersion` | schema 2 是 | 运行此 Provider 所需的最低 QuotaBarWin 版本，使用不带 `v` 前缀的 SemVer，例如 `1.1.0`。当前本体低于此版本时会拒绝更新且不改写缓存。 |
 | `runtime` | 是 | 执行 `entry` 的 runtime。`builtin-js` 使用内置 QuickJS；也可用 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
 | `entry` | 是 | Source 文件名。相对路径按 manifest 所在位置解析；也支持 HTTPS / file / 本地路径。 |
 | `requiredEnvVars` | 否 | 脚本需要的环境变量。刷新时会先查 provider `envVars`，再解析 `${secret:NAME}`。 |
@@ -83,7 +85,7 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 ## 内置 JavaScript runtime（`builtin-js`）
 
 `builtin-js` 面向不想让普通用户额外安装 Node.js 的 Provider。它运行在应用内置的
-QuickJS 沙箱中，入口必须是 `.js` 文件，`output` 必须为 `provider-snapshot-v1`，并导出
+QuickJS 沙箱中。新发布或远程更新的 manifest 必须使用 `schemaVersion: 2` 并声明 `minAppVersion`；入口必须是 `.js` 文件，`output` 必须为 `provider-snapshot-v1`，并导出
 一个同步的全局函数 `main(qb)`：函数直接返回快照对象，**不使用** `console.log`、stdout
 或 `process.exit`。官方 Provider 都使用此 runtime。
 
@@ -108,6 +110,8 @@ function main(qb) {
 
 ```json
 {
+  "schemaVersion": 2,
+  "minAppVersion": "1.1.0",
   "runtime": "builtin-js",
   "entry": "provider.js",
   "output": "provider-snapshot-v1",
@@ -621,3 +625,12 @@ Bash 示例需要 `jq`。Windows 上 Git Bash 通常会随附它。
 - **手动更新**：在 Settings 中使用 “检查更新” / “应用更新”。
 
 如果缺少 `checksums.source`，需要移除并重新添加 Provider 才能更新。
+
+### 应用版本兼容性
+
+发布或远程更新 `builtin-js` Provider 时必须使用 manifest schema 2，并设置其实际所需的
+`minAppVersion`。更新前，宿主会先校验 schema 与最低版本；若本体版本不足，会保留当前
+缓存、配置和旧脚本不变，并提示用户先升级 QuotaBarWin。旧版应用只支持 schema 1，因此也会
+在下载新 source **之前**拒绝 schema 2 manifest；这避免了自动更新将还能工作的 Node Provider
+覆盖为旧本体无法执行的 `builtin-js` 脚本。为平滑升级，当前版本仍可运行已缓存的 schema 1
+`builtin-js` Provider，但不会从远程安装或更新这类旧 manifest。

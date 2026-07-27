@@ -58,7 +58,7 @@ English version: [`cli.en.md`](cli.en.md)。
 
 如需连同实际输出协议一起检查，使用 `validate --provider ID --run`。它会按照该 Provider 已配置的 runtime、secret 和代理执行一次缓存脚本，并确认结果能被当前 `provider-snapshot-v1` 解析器接受；外部 runtime 解析 stdout，`builtin-js` 解析 `main(qb)` 返回值。这可能访问网络和账户 API，因此默认不会执行。结果的 `scriptRun` 为 `notRun`、`passed` 或 `failed`。
 
-它要求当前公开的 `provider-snapshot-v1` 输出协议、`builtin-js`、`node` / `python` / `pwsh` / `bash` 或绝对 runtime 路径，以及非空的 `displayName`。`checksums.source` 目前在公共契约中是可选的：缺失会产生 warning，但不会单独使校验失败。校验结果不会输出配置的环境变量值、secret 或 Provider stderr。
+它要求当前公开的 `provider-snapshot-v1` 输出协议、`builtin-js`、`node` / `python` / `pwsh` / `bash` 或绝对 runtime 路径，以及非空的 `displayName`。`builtin-js` manifest 必须使用 schema 2 并声明可满足的 `minAppVersion`；这是让旧本体在写入新 source 前拒绝不兼容更新的兼容性门槛。`checksums.source` 目前在公共契约中是可选的：缺失会产生 warning，但不会单独使校验失败。校验结果不会输出配置的环境变量值、secret 或 Provider stderr。
 
 成功或失败时 stdout 都是 JSON。`valid: false` 时退出码为 `30`；无法读取配置或 manifest 等命令级错误为 `20`。例如：
 

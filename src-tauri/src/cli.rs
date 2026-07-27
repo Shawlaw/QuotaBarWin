@@ -1005,7 +1005,7 @@ mod tests {
     #[test]
     fn validation_contract_accepts_builtin_js_without_an_external_path() {
         let manifest = parse_manifest(
-            r#"{"schemaVersion":1,"id":"builtin","displayName":"Builtin","runtime":"builtin-js","entry":"provider.js","output":"provider-snapshot-v1"}"#,
+            r#"{"schemaVersion":2,"id":"builtin","displayName":"Builtin","minAppVersion":"1.1.0","runtime":"builtin-js","entry":"provider.js","output":"provider-snapshot-v1"}"#,
         )
         .expect("builtin manifest parses");
         let report = validate_manifest_and_source(

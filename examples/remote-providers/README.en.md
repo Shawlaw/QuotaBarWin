@@ -13,7 +13,7 @@ Each subdirectory contains:
 - `api.md` — request, response, field mapping, and fixture notes for the provider.
 - `api.en.md` — English version of `api.md`.
 
-`manifest.example.json` is a standalone, minimal manifest template you can copy when creating your own provider.
+`manifest.example.json` is a standalone, minimal manifest template you can copy when creating your own provider. Keep schema 2 and `minAppVersion` for `builtin-js`; otherwise the new Provider is rejected. This lets older apps stop safely before downloading an incompatible script.
 
 `registry.json` is a provider registry that lists all example providers. Paste its URL/path into **Settings → Providers → Remote Sources → Registry URL** and click **Install Registry** to install them all at once.
 

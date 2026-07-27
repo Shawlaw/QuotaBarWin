@@ -208,10 +208,11 @@
           <h2>Manifest 格式</h2>
           <p>将 manifest 保存为 <code>provider.json</code>，并放在 source script 旁。</p>
           <pre>{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "minAppVersion": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "builtin-js",
   "entry": "provider.js",
@@ -247,10 +248,11 @@
               <tr><th>字段</th><th>必填</th><th>说明</th></tr>
             </thead>
             <tbody>
-              <tr><td><code>schemaVersion</code></td><td>是</td><td>必须为 <code>1</code>。</td></tr>
+              <tr><td><code>schemaVersion</code></td><td>是</td><td><code>1</code> 是旧格式；当前版本仍可加载已缓存的 schema 1 <code>builtin-js</code> 脚本完成升级，但远程安装或更新必须使用 <code>2</code>，让旧本体在下载脚本前安全拒绝更新。</td></tr>
               <tr><td><code>id</code></td><td>是</td><td>稳定 manifest id。重复安装同一 manifest 时，QuotaBarWin 会生成不冲突的本地 Provider id。</td></tr>
               <tr><td><code>displayName</code></td><td>是</td><td>UI 中显示的人类可读名称。</td></tr>
               <tr><td><code>version</code></td><td>否</td><td>设置页显示的人类可读版本号；缺省时显示短 checksum。</td></tr>
+              <tr><td><code>minAppVersion</code></td><td>schema 2 是</td><td>最低 QuotaBarWin SemVer 版本，不带 <code>v</code> 前缀，例如 <code>1.1.0</code>。</td></tr>
               <tr><td><code>runtime</code></td><td>是</td><td><code>builtin-js</code> 使用内置 QuickJS；也可为外部命令名或绝对路径。</td></tr>
               <tr><td><code>entry</code></td><td>是</td><td>Source 文件。相对路径按 manifest 所在位置解析。</td></tr>
               <tr><td><code>requiredEnvVars</code></td><td>否</td><td>脚本需要的环境变量。</td></tr>
@@ -266,7 +268,7 @@
           <h2>Registry 格式</h2>
           <p>Registry 可以用一个 URL 安装多个 Provider。</p>
           <pre>{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "providers": [
     {
       "id": "kimi-coding",
@@ -282,7 +284,7 @@
 
         <section>
           <h2>内置 JavaScript runtime（<code>builtin-js</code>）</h2>
-          <p><code>builtin-js</code> 不需要安装 Node.js。入口是 <code>.js</code>，必须定义同步的 <code>main(qb)</code> 并直接返回 <code>provider-snapshot-v1</code> 对象；不要使用 <code>console.log</code>、stdout 或 <code>process.exit</code>。</p>
+          <p><code>builtin-js</code> 不需要安装 Node.js。新发布或远程更新的 manifest 必须使用 <code>schemaVersion: 2</code> 并声明 <code>minAppVersion</code>；入口是 <code>.js</code>，必须定义同步的 <code>main(qb)</code> 并直接返回 <code>provider-snapshot-v1</code> 对象；不要使用 <code>console.log</code>、stdout 或 <code>process.exit</code>。</p>
           <pre>function main(qb) {
   const token = qb.env.get("EXAMPLE_API_TOKEN");
   const response = qb.http.request("https://api.example.com/usage", {
@@ -302,6 +304,7 @@
             </tbody>
           </table>
           <p>可用同步 JavaScript、Date、JSON、RegExp、Map 和 Set。没有 Promise、import、require、Node/Bun/Deno API、process、console、子进程、任意 socket、任意文件访问或动态加载；内存 16 MiB、JS 栈 512 KiB，并受 Provider <code>timeoutSeconds</code> 限制。<code>QBWIN_</code> 是保留前缀，不能授予 env/file 访问；元信息用 <code>qb.meta</code>，代理由 <code>qb.http</code> 自动使用。URL、鉴权格式和响应解析仍属于 Provider 脚本，不属于平台。</p>
+          <p>更新前会校验 schema 与最低版本。本体版本不足时不会改写缓存、配置或旧脚本；只支持 schema 1 的旧版应用也会在下载新 source 前拒绝 schema 2 manifest，避免自动更新造成 Provider 不可运行。当前版本仍可运行已缓存的 schema 1 <code>builtin-js</code> Provider，但不会远程安装或更新这类旧 manifest。</p>
         </section>
 
         <section>
@@ -567,10 +570,11 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
           <h2>Manifest format</h2>
           <p>Save the manifest as <code>provider.json</code> next to your source script.</p>
           <pre>{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "minAppVersion": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "builtin-js",
   "entry": "provider.js",
@@ -606,10 +610,11 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
               <tr><th>Field</th><th>Required</th><th>Description</th></tr>
             </thead>
             <tbody>
-              <tr><td><code>schemaVersion</code></td><td>yes</td><td>Must be <code>1</code>.</td></tr>
+              <tr><td><code>schemaVersion</code></td><td>yes</td><td><code>1</code> is legacy. The current app still loads an already cached schema 1 <code>builtin-js</code> script for upgrade continuity, but a remote install or update must use <code>2</code> so older apps reject it before downloading the script.</td></tr>
               <tr><td><code>id</code></td><td>yes</td><td>Stable manifest id. When installed more than once, QuotaBarWin generates a non-conflicting local provider id.</td></tr>
               <tr><td><code>displayName</code></td><td>yes</td><td>Human-readable name shown in the UI.</td></tr>
               <tr><td><code>version</code></td><td>no</td><td>Human-readable version shown in Settings; if omitted, a short checksum is shown.</td></tr>
+              <tr><td><code>minAppVersion</code></td><td>yes for schema 2</td><td>Minimum QuotaBarWin SemVer version without a <code>v</code> prefix, such as <code>1.1.0</code>.</td></tr>
               <tr><td><code>runtime</code></td><td>yes</td><td><code>builtin-js</code> uses embedded QuickJS; an external command name or absolute path is also supported.</td></tr>
               <tr><td><code>entry</code></td><td>yes</td><td>Source file. Relative paths are resolved against the manifest URL/path.</td></tr>
               <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script.</td></tr>
@@ -641,7 +646,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
 
         <section>
           <h2>Embedded JavaScript runtime (<code>builtin-js</code>)</h2>
-          <p><code>builtin-js</code> needs no installed Node.js. Its <code>.js</code> entry defines synchronous <code>main(qb)</code> and returns a <code>provider-snapshot-v1</code> object directly; do not use <code>console.log</code>, stdout, or <code>process.exit</code>.</p>
+          <p><code>builtin-js</code> needs no installed Node.js. A newly published or remotely updated manifest must use <code>schemaVersion: 2</code> and declare <code>minAppVersion</code>; its <code>.js</code> entry defines synchronous <code>main(qb)</code> and returns a <code>provider-snapshot-v1</code> object directly; do not use <code>console.log</code>, stdout, or <code>process.exit</code>.</p>
           <pre>function main(qb) {
   const token = qb.env.get("EXAMPLE_API_TOKEN");
   const response = qb.http.request("https://api.example.com/usage", {
@@ -661,6 +666,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
             </tbody>
           </table>
           <p>Use synchronous JavaScript, Date, JSON, RegExp, Map, and Set. Promises, import, require, Node/Bun/Deno APIs, process, console, subprocesses, arbitrary sockets, arbitrary files, and dynamic loading are unavailable. Limits are 16 MiB memory, a 512 KiB JS stack, and Provider <code>timeoutSeconds</code>. <code>QBWIN_</code> is reserved and cannot be granted env/file access; use <code>qb.meta</code> for metadata and let <code>qb.http</code> use the proxy. URLs, auth formats, and response parsing remain Provider-owned.</p>
+          <p>The host validates the schema and minimum app version before an update. A host that is too old leaves its cached source and configuration untouched; apps that support only schema 1 reject schema 2 before downloading the new source, preventing an automatic update from making a Provider unrunnable. The current app still runs an already cached schema 1 <code>builtin-js</code> Provider, but will not install or update one remotely.</p>
         </section>
 
         <section>

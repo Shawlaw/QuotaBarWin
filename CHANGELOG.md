@@ -14,6 +14,10 @@
 - 所有维护中的官方 Provider（Kimi、智谱 Coding Plan、DeepSeek、Codex Usage、光阴似箭）均已迁移到 `builtin-js`。
 - Provider 运行期代理遵循应用的显式代理策略；未选择“系统代理”时不会隐式读取系统 HTTP(S) 代理环境变量。
 
+### Fixed
+
+- 官方 `builtin-js` Provider 现在使用 manifest schema 2 和 `minAppVersion`。旧版应用会在下载新脚本前拒绝该更新，保留仍可运行的旧 Node Provider，避免自动更新导致 Provider 不可用。
+
 ### Security
 
 - `builtin-js` 按 manifest 权限限制环境变量、文件与网络访问，保留 `QBWIN_*` 宿主变量给平台内部使用。

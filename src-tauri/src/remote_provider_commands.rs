@@ -1250,7 +1250,7 @@ mod tests {
     #[test]
     fn embedded_runtime_requires_no_external_executable() {
         let manifest = crate::remote_provider::parse_manifest(
-            r#"{"schemaVersion":1,"id":"builtin","displayName":"Builtin","runtime":"builtin-js","entry":"provider.js","output":"provider-snapshot-v1"}"#,
+            r#"{"schemaVersion":2,"id":"builtin","displayName":"Builtin","minAppVersion":"1.1.0","runtime":"builtin-js","entry":"provider.js","output":"provider-snapshot-v1"}"#,
         )
         .expect("builtin manifest");
         assert_eq!(resolve_manifest_runtime(&manifest).expect("runtime"), None);
