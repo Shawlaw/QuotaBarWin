@@ -30,7 +30,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 
 - Platform: **Windows**
 - Distribution: **portable zip + single exe**
-- Current version: **v1.1.0**
+- Current version: **v1.1.1**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
 - Current config schema version: **16**
 
