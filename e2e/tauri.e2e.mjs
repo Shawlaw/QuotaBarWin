@@ -336,7 +336,8 @@ async function openSettings() {
   if (await settingsPage.isExisting()) {
     return;
   }
-  const settingsButton = await app.$('//button[normalize-space(.)="Settings"]');
+  const settingsButton = await byTestId("open-settings");
+  await settingsButton.waitForDisplayed({ timeout: 10000 });
   await app.execute((target) => target.click(), settingsButton);
   await settingsPage.waitForDisplayed({ timeout: 10000 });
 }
@@ -346,7 +347,8 @@ async function openOverview() {
   if (await overviewPage.isExisting()) {
     return;
   }
-  const overviewButton = await app.$('//button[normalize-space(.)="Overview"]');
+  const overviewButton = await byTestId("open-overview");
+  await overviewButton.waitForDisplayed({ timeout: 10000 });
   await app.execute((target) => target.click(), overviewButton);
   await overviewPage.waitForDisplayed({ timeout: 20000 });
 }

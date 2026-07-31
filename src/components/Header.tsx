@@ -36,6 +36,7 @@ export function Header({
       <div className="header-actions">
         <button
           type="button"
+          data-testid="open-overview"
           className={activeView === "overview" ? "button-secondary" : undefined}
           onClick={onOpenOverview}
         >
@@ -43,6 +44,7 @@ export function Header({
         </button>
         <button
           type="button"
+          data-testid="open-settings"
           className={activeView === "settings" ? "button-secondary" : undefined}
           onClick={onOpenSettings}
         >
