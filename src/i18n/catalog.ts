@@ -96,6 +96,8 @@ export type I18nCatalog = {
     down: string;
     remove: string;
     removeProviderConfirm: (providerName: string) => string;
+    removeManagedSecrets: string;
+    removeManagedSecretsHint: string;
     setEnvVar: (name: string) => string;
     name: string;
     authToken: string;
@@ -155,6 +157,10 @@ export type I18nCatalog = {
     saved: string;
     saveFailed: string;
     unsavedChanges: string;
+    unsavedChangesTitle: string;
+    unsavedChangesPrompt: string;
+    saveAndContinue: string;
+    discardChanges: string;
     resetChanges: string;
     save: string;
   };
@@ -181,6 +187,19 @@ export type I18nCatalog = {
     socks5Proxy: string;
     proxyUrl: string;
     proxyUrlPlaceholder: string;
+    testProxy: string;
+    testingProxy: string;
+    testProxyHint: string;
+    customTestUrl: string;
+    testUrl: string;
+    testUrlPlaceholder: string;
+    testProxySuccess: (statusCode: number | null, elapsedMs: number) => string;
+    testProxyNoProxy: string;
+    testProxyInvalidTarget: string;
+    testProxyInvalidProxy: string;
+    testProxyRequestFailed: string;
+    testProxyHttpStatus: (statusCode: number | null) => string;
+    testProxyUnavailable: string;
   };
   remoteProviders: {
     title: string;
@@ -270,6 +289,49 @@ export type I18nCatalog = {
     lastCheckedAt: string;
     runtime: string;
     manifestUrl: string;
+  };
+  providerSetup: {
+    title: (name: string) => string;
+    accountName: string;
+    required: string;
+    configured: string;
+    notConfigured: string;
+    changeSecret: string;
+    clearSecret: string;
+    managedSecretHint: (providerId: string, parameterName: string) => string;
+    existingCredentialHint: string;
+    enterSecret: string;
+    replaceSecret: string;
+    advancedSettings: string;
+    saveAndTest: string;
+    autoDetectAndFinish: string;
+    autoDetectHint: string;
+    saveWithoutTesting: string;
+    testing: string;
+    testSucceeded: string;
+    testFailed: string;
+    complete: string;
+    back: string;
+    statePending: string;
+    stateUnverified: string;
+    stateReady: string;
+    stateNeedsAttention: string;
+    setup: string;
+    completeSetup: string;
+    testConfiguration: string;
+    repairConfiguration: string;
+    providerPreview: (count: number) => string;
+    missingRequired: (name: string) => string;
+    invalidNumber: (name: string) => string;
+    credentialSource: (source: string) => string;
+    credentialSourceType: (source: string) => string;
+    errorCategory: (category: string) => string;
+    saveFailed: string;
+    testFailedKeepSaved: string;
+    noUsableProvidersTitle: string;
+    noUsableProvidersBody: string;
+    addProvider: string;
+    openGuide: string;
   };
   format: {
     unknown: string;
@@ -383,6 +445,8 @@ export const en: I18nCatalog = {
     down: "Down",
     remove: "Remove",
     removeProviderConfirm: (providerName) => `Remove provider ${providerName}?`,
+    removeManagedSecrets: "Also delete this account's QuotaBarWin-managed local secret files",
+    removeManagedSecretsHint: "External files, environment variables, and manually named secret files are never removed.",
     setEnvVar: (name) => `Set ${name}`,
     name: "Name",
     authToken: "Auth token",
@@ -446,6 +510,11 @@ export const en: I18nCatalog = {
     saved: "Saved",
     saveFailed: "Save failed",
     unsavedChanges: "Unsaved changes",
+    unsavedChangesTitle: "Unsaved changes",
+    unsavedChangesPrompt:
+      "Save your changes before continuing? You can also discard them or stay on this page.",
+    saveAndContinue: "Save and continue",
+    discardChanges: "Discard changes",
     resetChanges: "Reset changes",
     save: "Save"
   },
@@ -471,7 +540,23 @@ export const en: I18nCatalog = {
     httpProxy: "HTTP proxy",
     socks5Proxy: "SOCKS5 proxy",
     proxyUrl: "Proxy URL",
-    proxyUrlPlaceholder: "http://host:port or socks5://host:port"
+    proxyUrlPlaceholder: "http://host:port or socks5://host:port",
+    testProxy: "Test proxy",
+    testingProxy: "Testing proxy...",
+    testProxyHint:
+      "Uses the current proxy settings to request the GitHub homepage. Response content is not stored.",
+    customTestUrl: "Use a custom test URL",
+    testUrl: "Test URL",
+    testUrlPlaceholder: "https://example.com/",
+    testProxySuccess: (statusCode, elapsedMs) =>
+      `Proxy is available (${statusCode ?? "no status"}, ${elapsedMs} ms).`,
+    testProxyNoProxy: "Configure a system, HTTP, or SOCKS5 proxy first.",
+    testProxyInvalidTarget: "The test URL must be a valid HTTPS address.",
+    testProxyInvalidProxy: "The proxy address is invalid.",
+    testProxyRequestFailed: "The proxy could not reach the test address.",
+    testProxyHttpStatus: (statusCode) =>
+      `The test address returned HTTP ${statusCode ?? "an unexpected status"}.`,
+    testProxyUnavailable: "Proxy testing is available only in the desktop app."
   },
   remoteProviders: {
     title: "Remote Sources",
@@ -565,6 +650,75 @@ export const en: I18nCatalog = {
     lastCheckedAt: "Last checked",
     runtime: "Runtime",
     manifestUrl: "Manifest"
+  },
+  providerSetup: {
+    title: (name) => `Set up ${name}`,
+    accountName: "Account name",
+    required: "Required",
+    configured: "Configured",
+    notConfigured: "Not configured",
+    changeSecret: "Change",
+    clearSecret: "Clear",
+    managedSecretHint: (providerId, parameterName) =>
+      `After you save, QuotaBarWin creates an isolated local file for this Provider instance at <config folder>\\secrets\\providers\\${providerId}\\${parameterName}.txt. The main configuration keeps only a reference, and the value is never shown here.`,
+    existingCredentialHint: "Leave the field empty to keep the current credential. Enter a new value only when you want to replace it.",
+    enterSecret: "Enter API key",
+    replaceSecret: "Enter a new credential to replace the current one",
+    advancedSettings: "Advanced settings",
+    saveAndTest: "Save and test",
+    autoDetectAndFinish: "Auto-detect and finish",
+    autoDetectHint: "This Provider first tries to use its local sign-in information. You can test it without filling the optional fields.",
+    saveWithoutTesting: "Save without testing",
+    testing: "Testing configuration...",
+    testSucceeded: "Configuration works. This Provider is now enabled.",
+    testFailed: "Configuration test failed",
+    complete: "Done",
+    back: "Back",
+    statePending: "Pending setup",
+    stateUnverified: "Unverified",
+    stateReady: "Ready",
+    stateNeedsAttention: "Needs attention",
+    setup: "Set up",
+    completeSetup: "Complete setup",
+    testConfiguration: "Test configuration",
+    repairConfiguration: "Repair configuration",
+    providerPreview: (count) => `Connected successfully${count ? ` · ${count} quota window(s)` : ""}`,
+    missingRequired: (name) => `${name} is required.`,
+    invalidNumber: (name) => `${name} must be a number.`,
+    credentialSource: (source) => `Credential source: ${source}`,
+    credentialSourceType: (source) => {
+      const labels: Record<string, string> = {
+        managedLocalFile: "application-managed local file",
+        secretFile: "local secret file",
+        environment: "environment variable",
+        externalFile: "external file",
+        literal: "config value",
+        default: "Provider default",
+        advancedExpression: "advanced configuration",
+        missing: "not configured",
+      };
+      return labels[source] ?? labels.missing;
+    },
+    errorCategory: (category) => {
+      const labels: Record<string, string> = {
+        missingCredential: "Missing account credential",
+        authentication: "Credential is invalid or expired",
+        network: "Unable to connect to the service",
+        proxy: "Proxy connection failed",
+        timeout: "Request timed out",
+        runtime: "Provider runtime error",
+        permission: "Provider permission is insufficient",
+        providerOutput: "Provider returned an invalid response",
+        unknown: "Unable to determine the cause",
+      };
+      return labels[category] ?? labels.unknown;
+    },
+    saveFailed: "Unable to save Provider setup",
+    testFailedKeepSaved: "Your configuration was saved safely but is still disabled. Update it and try again.",
+    noUsableProvidersTitle: "No quota source is ready yet",
+    noUsableProvidersBody: "Add a Provider and set up an account to see quota information here.",
+    addProvider: "Add Provider",
+    openGuide: "View guide"
   },
   format: {
     unknown: "Unknown",
@@ -678,6 +832,8 @@ export const zhCN: I18nCatalog = {
     down: "下移",
     remove: "移除",
     removeProviderConfirm: (providerName) => `移除提供方 ${providerName}？`,
+    removeManagedSecrets: "同时删除此账号由 QuotaBarWin 管理的本地密钥文件",
+    removeManagedSecretsHint: "不会删除外部文件、环境变量或手工命名的 secret 文件。",
     setEnvVar: (name) => `设置 ${name}`,
     name: "名称",
     authToken: "认证令牌",
@@ -741,6 +897,11 @@ export const zhCN: I18nCatalog = {
     saved: "已保存",
     saveFailed: "保存失败",
     unsavedChanges: "未保存的更改",
+    unsavedChangesTitle: "未保存的更改",
+    unsavedChangesPrompt:
+      "继续前要保存更改吗？你也可以放弃更改，或留在当前页面。",
+    saveAndContinue: "保存并继续",
+    discardChanges: "放弃更改",
     resetChanges: "重置更改",
     save: "保存"
   },
@@ -766,7 +927,22 @@ export const zhCN: I18nCatalog = {
     httpProxy: "HTTP 代理",
     socks5Proxy: "SOCKS5 代理",
     proxyUrl: "代理 URL",
-    proxyUrlPlaceholder: "http://host:port 或 socks5://host:port"
+    proxyUrlPlaceholder: "http://host:port 或 socks5://host:port",
+    testProxy: "检测代理",
+    testingProxy: "正在检测代理...",
+    testProxyHint: "使用当前代理设置请求 GitHub 首页，不保存响应内容。",
+    customTestUrl: "使用自定义检测地址",
+    testUrl: "检测地址",
+    testUrlPlaceholder: "https://example.com/",
+    testProxySuccess: (statusCode, elapsedMs) =>
+      `代理可用（${statusCode ?? "无状态码"}，${elapsedMs} ms）。`,
+    testProxyNoProxy: "请先配置系统代理、HTTP 代理或 SOCKS5 代理。",
+    testProxyInvalidTarget: "检测地址必须是有效的 HTTPS 地址。",
+    testProxyInvalidProxy: "代理地址无效。",
+    testProxyRequestFailed: "代理无法访问检测地址。",
+    testProxyHttpStatus: (statusCode) =>
+      `检测地址返回 HTTP ${statusCode ?? "异常状态"}。`,
+    testProxyUnavailable: "代理检测仅可在桌面应用中使用。"
   },
   remoteProviders: {
     title: "远程安装源",
@@ -860,6 +1036,75 @@ export const zhCN: I18nCatalog = {
     lastCheckedAt: "上次检查",
     runtime: "运行时",
     manifestUrl: "Manifest"
+  },
+  providerSetup: {
+    title: (name) => `配置 ${name}`,
+    accountName: "账号名称",
+    required: "必填",
+    configured: "已配置",
+    notConfigured: "未配置",
+    changeSecret: "更换",
+    clearSecret: "清除",
+    managedSecretHint: (providerId, parameterName) =>
+      `填写并保存后，QuotaBarWin 会为当前 Provider 实例自动创建独立文件：<配置目录>\\secrets\\providers\\${providerId}\\${parameterName}.txt。主配置只保存引用，原始值不会在这里显示。`,
+    existingCredentialHint: "不更换时请留空；只有要替换当前凭据时，才在下面输入新值。",
+    enterSecret: "输入 API Key",
+    replaceSecret: "输入新凭据以替换当前值（留空保持不变）",
+    advancedSettings: "高级设置",
+    saveAndTest: "保存并测试",
+    autoDetectAndFinish: "自动检测并完成",
+    autoDetectHint: "此 Provider 会优先使用本机已有的登录信息；无需填写可选字段，也可以直接测试。",
+    saveWithoutTesting: "保存但暂不测试",
+    testing: "正在测试配置...",
+    testSucceeded: "配置可用，Provider 已自动启用。",
+    testFailed: "配置测试失败",
+    complete: "完成",
+    back: "返回",
+    statePending: "待配置",
+    stateUnverified: "未验证",
+    stateReady: "可用",
+    stateNeedsAttention: "需要处理",
+    setup: "配置",
+    completeSetup: "完成配置",
+    testConfiguration: "测试配置",
+    repairConfiguration: "修复配置",
+    providerPreview: (count) => `连接成功${count ? ` · ${count} 个额度窗口` : ""}`,
+    missingRequired: (name) => `请填写 ${name}。`,
+    invalidNumber: (name) => `${name} 必须是数字。`,
+    credentialSource: (source) => `凭据来源：${source}`,
+    credentialSourceType: (source) => {
+      const labels: Record<string, string> = {
+        managedLocalFile: "应用托管本地文件",
+        secretFile: "本地 secret 文件",
+        environment: "环境变量",
+        externalFile: "外部文件",
+        literal: "配置内明文",
+        default: "Provider 默认值",
+        advancedExpression: "高级配置",
+        missing: "未配置",
+      };
+      return labels[source] ?? labels.missing;
+    },
+    errorCategory: (category) => {
+      const labels: Record<string, string> = {
+        missingCredential: "缺少账号凭据",
+        authentication: "凭据无效或已过期",
+        network: "无法连接服务",
+        proxy: "代理连接失败",
+        timeout: "请求超时",
+        runtime: "Provider 运行异常",
+        permission: "Provider 权限不足",
+        providerOutput: "Provider 返回格式异常",
+        unknown: "暂时无法确定原因",
+      };
+      return labels[category] ?? labels.unknown;
+    },
+    saveFailed: "无法保存 Provider 配置",
+    testFailedKeepSaved: "配置已安全保存，但 Provider 仍处于停用状态。修改后请重新测试。",
+    noUsableProvidersTitle: "还没有可用的额度来源",
+    noUsableProvidersBody: "添加一个 Provider 并配置账号后，即可在这里查看额度。",
+    addProvider: "添加 Provider",
+    openGuide: "查看使用说明"
   },
   format: {
     unknown: "未知",

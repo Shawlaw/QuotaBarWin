@@ -3,9 +3,11 @@ import type {
   AppConfig,
   ConfigStorageInfo,
   ProviderSnapshot,
+  ProviderSetupTestResult,
   RemoteProviderConfig,
   RemoteProviderManifest,
-  RemoteProviderParameter
+  RemoteProviderParameter,
+  RegistryMigrationResult
 } from "../types";
 import {
   applyAppUpdate,
@@ -31,6 +33,7 @@ import {
   type WindowDisplayPatch
 } from "./ProviderWindowSettings";
 import { RemoteProviderSettings } from "./RemoteProviderSettings";
+import { ProviderSetupPage } from "./provider-setup/ProviderSetupPage";
 
 const LOG_BYTES_PER_MB = 1024 * 1024;
 const DEFAULT_LOG_MAX_BYTES = 10 * LOG_BYTES_PER_MB;
@@ -47,9 +50,22 @@ type SettingsPanelProps = {
   onResetConfig: () => Promise<void>;
   onSave: () => void | Promise<void>;
   onSetPortableMode: (enabled: boolean) => void;
+  onProviderSetupConfigChanged: (
+    config: AppConfig,
+    testResult?: ProviderSetupTestResult
+  ) => void;
+  onRequestClose: () => void;
+  closeRequest: number;
+  settingsHomeRequest: number;
+  initialProviderSettingsView: "main" | "add";
 };
 
 type ProviderManifestState = Record<string, RemoteProviderManifest | null>;
+
+type PendingUnsavedAction = {
+  action: () => Promise<void>;
+  cancel: () => void;
+};
 
 function updateProvider(
   config: AppConfig,
@@ -172,7 +188,12 @@ export function SettingsPanel({
   onOpenConfigFolder,
   onResetConfig,
   onSave,
-  onSetPortableMode
+  onSetPortableMode,
+  onProviderSetupConfigChanged,
+  onRequestClose,
+  closeRequest,
+  settingsHomeRequest,
+  initialProviderSettingsView
 }: SettingsPanelProps) {
   const { t } = useI18n();
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
@@ -187,8 +208,19 @@ export function SettingsPanel({
   const [appUpdateMessage, setAppUpdateMessage] = useState<string | null>(null);
   const [isAppUpdateBusy, setIsAppUpdateBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
-  const [providerSettingsView, setProviderSettingsView] = useState<"main" | "add" | "sources">("main");
+  const [providerSettingsView, setProviderSettingsView] = useState<"main" | "add" | "sources" | "setup">(
+    initialProviderSettingsView
+  );
+  const [setupProviderId, setSetupProviderId] = useState<string | null>(null);
   const [quotaDataConfirmOpen, setQuotaDataConfirmOpen] = useState(false);
+  const [pendingUnsavedAction, setPendingUnsavedAction] = useState<PendingUnsavedAction | null>(null);
+  const [providerPendingRemoval, setProviderPendingRemoval] = useState<RemoteProviderConfig | null>(null);
+  const [deleteManagedSecrets, setDeleteManagedSecrets] = useState(true);
+  // Navigation requests are events. Capture the value observed at mount so a
+  // close from a prior settings session cannot be replayed into a newly opened
+  // Provider catalog.
+  const handledCloseRequestRef = useRef(closeRequest);
+  const handledSettingsHomeRequestRef = useRef(0);
   const initialConfigRef = useRef(JSON.stringify(config));
   const configDraft = JSON.stringify(config);
   const hasChanges = configDraft !== initialConfigRef.current;
@@ -258,7 +290,7 @@ export function SettingsPanel({
     return () => window.removeEventListener("keydown", handleSaveShortcut);
   });
 
-  async function saveSettings() {
+  async function saveSettings(): Promise<boolean> {
     setSaveMessage(t.settings.saving);
     try {
       const returnToAddProvider = providerSettingsView === "sources";
@@ -268,8 +300,10 @@ export function SettingsPanel({
       if (returnToAddProvider) {
         setProviderSettingsView("add");
       }
+      return true;
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : t.settings.saveFailed);
+      return false;
     }
   }
 
@@ -283,6 +317,49 @@ export function SettingsPanel({
     initialConfigRef.current = JSON.stringify(updated);
     onChange(updated);
     setSaveMessage(t.settings.saved);
+  }
+
+  function runWithUnsavedChangesProtection<T>(action: () => Promise<T>): Promise<T | null> {
+    if (!hasChanges) {
+      return action();
+    }
+
+    return new Promise((resolve) => {
+      setPendingUnsavedAction({
+        action: async () => {
+          resolve(await action());
+        },
+        cancel: () => resolve(null)
+      });
+    });
+  }
+
+  async function saveAndRunPendingAction() {
+    const pending = pendingUnsavedAction;
+    if (!pending || !canSave) {
+      return;
+    }
+    const saved = await saveSettings();
+    if (!saved) {
+      return;
+    }
+    setPendingUnsavedAction(null);
+    await pending.action();
+  }
+
+  function discardAndRunPendingAction() {
+    const pending = pendingUnsavedAction;
+    if (!pending) {
+      return;
+    }
+    resetChanges();
+    setPendingUnsavedAction(null);
+    void pending.action();
+  }
+
+  function cancelPendingAction() {
+    pendingUnsavedAction?.cancel();
+    setPendingUnsavedAction(null);
   }
 
   function updateWindowConfigProvider(
@@ -310,6 +387,11 @@ export function SettingsPanel({
     onChange(
       updateProvider(config, provider.id, (current) => ({ ...current, ...patch }))
     );
+  }
+
+  function openProviderSetup(providerId: string) {
+    setSetupProviderId(providerId);
+    setProviderSettingsView("setup");
   }
 
   function updateLogQuotaData(enabled: boolean) {
@@ -472,15 +554,22 @@ export function SettingsPanel({
   }
 
   async function handleRemoveProvider(provider: RemoteProviderConfig) {
-    if (!window.confirm(t.settings.removeProviderConfirm(provider.name))) {
+    setProviderPendingRemoval(provider);
+    setDeleteManagedSecrets(true);
+  }
+
+  async function confirmRemoveProvider() {
+    const provider = providerPendingRemoval;
+    if (!provider) {
       return;
     }
     setRemoteMessage(null);
     try {
-      await removeRemoteProvider(provider.id);
+      await removeRemoteProvider(provider.id, deleteManagedSecrets);
       const updated = await getConfig();
       acceptPersistedConfig(updated);
       setRemoteMessage(t.remoteProviders.providerRemoved);
+      setProviderPendingRemoval(null);
     } catch (error) {
       setRemoteMessage(error instanceof Error ? error.message : t.remoteProviders.failedToRemoveProvider);
     }
@@ -537,25 +626,70 @@ export function SettingsPanel({
     checksum: string | null,
     proxyUrl: string | null,
     autoUpdate: boolean
-  ) {
-    const installed = await installRemoteProviderManifest(
-      url,
-      checksum,
-      proxyUrl,
-      autoUpdate
-    );
-    const updated = await getConfig();
-    acceptPersistedConfig(updated);
-    return installed;
+  ): Promise<RemoteProviderConfig | null> {
+    return runWithUnsavedChangesProtection(async () => {
+      const installed = await installRemoteProviderManifest(
+        url,
+        checksum,
+        proxyUrl,
+        autoUpdate
+      );
+      const updated = await getConfig();
+      acceptPersistedConfig(updated);
+      openProviderSetup(installed.id);
+      return installed;
+    });
   }
 
-  async function handleMigrateProviderSource(url: string, proxyUrl: string | null) {
-    const result = await migrateRemoteProvidersToRegistry(url, proxyUrl);
-    const updated = await getConfig();
-    acceptPersistedConfig(updated);
-    await Promise.all(updated.providers.map((provider) => reloadProviderManifest(provider.id)));
-    return result;
+  async function handleMigrateProviderSource(
+    url: string,
+    proxyUrl: string | null
+  ): Promise<RegistryMigrationResult | null> {
+    return runWithUnsavedChangesProtection(async () => {
+      const result = await migrateRemoteProvidersToRegistry(url, proxyUrl);
+      const updated = await getConfig();
+      acceptPersistedConfig(updated);
+      await Promise.all(updated.providers.map((provider) => reloadProviderManifest(provider.id)));
+      return result;
+    });
   }
+
+  useEffect(() => {
+    if (closeRequest === 0 || closeRequest <= handledCloseRequestRef.current) {
+      return;
+    }
+    handledCloseRequestRef.current = closeRequest;
+    if (providerSettingsView === "setup") {
+      return;
+    }
+    void runWithUnsavedChangesProtection(async () => {
+      onRequestClose();
+    });
+    // A close request is an event, rather than state that should be replayed when the draft changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closeRequest, providerSettingsView]);
+
+  useEffect(() => {
+    if (
+      settingsHomeRequest === 0 ||
+      settingsHomeRequest <= handledSettingsHomeRequestRef.current
+    ) {
+      return;
+    }
+    handledSettingsHomeRequestRef.current = settingsHomeRequest;
+    // The setup page owns its secret-draft leave confirmation. For the
+    // catalog/source views, the header's Settings button returns to the main
+    // settings page with the same persisted-draft protection as Back.
+    if (providerSettingsView === "setup") {
+      return;
+    }
+    void runWithUnsavedChangesProtection(async () => {
+      setSetupProviderId(null);
+      setProviderSettingsView("main");
+    });
+    // This numeric prop represents a one-time header navigation event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsHomeRequest, providerSettingsView]);
 
   function renderSaveBar() {
     return (
@@ -605,6 +739,89 @@ export function SettingsPanel({
     );
   }
 
+  function renderUnsavedChangesDialog() {
+    if (!pendingUnsavedAction) {
+      return null;
+    }
+
+    return (
+      <div className="dialog-overlay" role="presentation">
+        <section
+          className="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="unsaved-changes-title"
+        >
+          <h3 id="unsaved-changes-title">{t.settings.unsavedChangesTitle}</h3>
+          <p>{t.settings.unsavedChangesPrompt}</p>
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={cancelPendingAction}
+              data-testid="cancel-unsaved-changes"
+            >
+              {t.settings.cancel}
+            </button>
+            <button
+              type="button"
+              className="button-danger"
+              onClick={discardAndRunPendingAction}
+              data-testid="discard-unsaved-changes"
+            >
+              {t.settings.discardChanges}
+            </button>
+            <button
+              type="button"
+              disabled={!canSave}
+              onClick={() => void saveAndRunPendingAction()}
+              data-testid="save-and-continue-unsaved-changes"
+            >
+              {t.settings.saveAndContinue}
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  function renderRemoveProviderDialog() {
+    const provider = providerPendingRemoval;
+    if (!provider) {
+      return null;
+    }
+    return (
+      <div className="dialog-overlay" role="presentation">
+        <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="remove-provider-title">
+          <h3 id="remove-provider-title">{t.settings.removeProviderConfirm(provider.name)}</h3>
+          <label className="checkbox-row settings-toggle-row">
+            <input
+              type="checkbox"
+              data-testid="remove-managed-secrets"
+              checked={deleteManagedSecrets}
+              onChange={(event) => setDeleteManagedSecrets(event.currentTarget.checked)}
+            />
+            {t.settings.removeManagedSecrets}
+          </label>
+          <p className="settings-hint">{t.settings.removeManagedSecretsHint}</p>
+          <div className="dialog-actions">
+            <button type="button" className="button-secondary" onClick={() => setProviderPendingRemoval(null)}>
+              {t.settings.cancel}
+            </button>
+            <button
+              type="button"
+              className="button-danger"
+              data-testid="confirm-remove-provider"
+              onClick={() => void confirmRemoveProvider()}
+            >
+              {t.settings.remove}
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   if (providerSettingsView === "add" || providerSettingsView === "sources") {
     return (
       <section className="settings-panel" aria-label={t.settings.title} data-testid="settings-page">
@@ -622,11 +839,43 @@ export function SettingsPanel({
           onInstallManifest={handleInstallManifest}
           onMigrateSource={handleMigrateProviderSource}
           onOpenGuide={openRemoteProviderGuide}
-          onBackToSettings={() => setProviderSettingsView("main")}
-          onBackToAddProvider={() => setProviderSettingsView("add")}
-          onManageSources={() => setProviderSettingsView("sources")}
+          onBackToSettings={() => {
+            void runWithUnsavedChangesProtection(async () => {
+              setProviderSettingsView("main");
+            });
+          }}
+          onBackToAddProvider={() => {
+            void runWithUnsavedChangesProtection(async () => {
+              setProviderSettingsView("add");
+            });
+          }}
+          onManageSources={() => {
+            void runWithUnsavedChangesProtection(async () => {
+              setProviderSettingsView("sources");
+            });
+          }}
         />
         {renderSaveBar()}
+        {renderUnsavedChangesDialog()}
+      </section>
+    );
+  }
+
+  if (providerSettingsView === "setup" && setupProviderId) {
+    return (
+      <section className="settings-panel" aria-label={t.settings.title} data-testid="settings-page">
+        <ProviderSetupPage
+          providerId={setupProviderId}
+          onBack={() => setProviderSettingsView("main")}
+          onComplete={() => setProviderSettingsView("main")}
+          closeRequest={closeRequest}
+          onRequestClose={onRequestClose}
+          onConfigChanged={async (testResult) => {
+            const updated = await getConfig();
+            acceptPersistedConfig(updated);
+            onProviderSetupConfigChanged(updated, testResult);
+          }}
+        />
       </section>
     );
   }
@@ -875,14 +1124,24 @@ export function SettingsPanel({
           <h3>{t.settings.providers}</h3>
           <div className="settings-section-actions">
             <span>{t.settings.configuredCount(config.providers.length)}</span>
-            <button type="button" className="button-primary" onClick={() => setProviderSettingsView("add")}>
+            <button
+              type="button"
+              className="button-primary"
+              onClick={() => {
+                void runWithUnsavedChangesProtection(async () => {
+                  setProviderSettingsView("add");
+                });
+              }}
+            >
               {t.settings.addProvider}
             </button>
             <button
               type="button"
               className="button-secondary"
               disabled={isCheckingProviderUpdates || isApplyingProviderUpdates}
-              onClick={() => void handleCheckAllUpdates()}
+              onClick={() => {
+                void runWithUnsavedChangesProtection(handleCheckAllUpdates);
+              }}
             >
               {isCheckingProviderUpdates ? t.remoteProviders.checkingUpdates : t.remoteProviders.checkUpdates}
             </button>
@@ -891,7 +1150,9 @@ export function SettingsPanel({
                 type="button"
                 className="button-primary"
                 disabled={isCheckingProviderUpdates || isApplyingProviderUpdates}
-                onClick={() => void handleApplyAllUpdates()}
+                  onClick={() => {
+                    void runWithUnsavedChangesProtection(handleApplyAllUpdates);
+                  }}
                 data-testid="apply-all-provider-updates"
               >
                 {isApplyingProviderUpdates
@@ -906,7 +1167,14 @@ export function SettingsPanel({
         {config.providers.length === 0 ? (
           <p className="settings-empty">{t.settings.noProviders}</p>
         ) : null}
-        {config.providers.map((provider, providerIndex) => (
+        {config.providers.map((provider, providerIndex) => {
+          const setupState = provider.setupState ?? "ready";
+          const needsAttention =
+            setupState === "ready" &&
+            snapshotProviders.find((snapshotProvider) => snapshotProvider.id === provider.id)?.status === "error";
+          const displayedSetupState = needsAttention ? "needs-attention" : setupState;
+
+          return (
           <article className="settings-provider" key={provider.id} data-testid={`settings-provider-${provider.id}`}>
             <div className="settings-provider__header">
               <label>
@@ -924,46 +1192,75 @@ export function SettingsPanel({
                 />
                 {provider.name}
               </label>
-              <span>{provider.version ?? shortChecksum(provider.trustedChecksum) ?? t.remoteProviders.unknownVersion}</span>
-              {updateInfo[provider.id]?.available ? (
+              <div className="settings-provider__meta">
+                <span>{provider.version ?? shortChecksum(provider.trustedChecksum) ?? t.remoteProviders.unknownVersion}</span>
+                <span className={`provider-setup__state provider-setup__state--${displayedSetupState}`}>
+                  {needsAttention
+                    ? t.providerSetup.stateNeedsAttention
+                    : setupState === "pending"
+                      ? t.providerSetup.statePending
+                      : setupState === "unverified"
+                        ? t.providerSetup.stateUnverified
+                        : t.providerSetup.stateReady}
+                </span>
+              </div>
+              <div className="settings-provider__controls">
+                {(setupState === "pending" || setupState === "unverified" || needsAttention) ? (
+                  <button
+                    type="button"
+                    className="button-primary button-compact"
+                    onClick={() => openProviderSetup(provider.id)}
+                    data-testid={`setup-provider-${provider.id}`}
+                  >
+                    {needsAttention
+                      ? t.providerSetup.repairConfiguration
+                      : setupState === "pending"
+                        ? t.providerSetup.completeSetup
+                        : t.providerSetup.testConfiguration}
+                  </button>
+                ) : null}
+                {updateInfo[provider.id]?.available ? (
+                  <button
+                    type="button"
+                    className="button-primary button-compact"
+                    disabled={isCheckingProviderUpdates || isApplyingProviderUpdates}
+                    onClick={() => {
+                      void runWithUnsavedChangesProtection(() => handleApplyUpdate(provider.id));
+                    }}
+                    data-testid={`apply-provider-update-${provider.id}`}
+                  >
+                    {isApplyingProviderUpdates
+                      ? t.remoteProviders.applyingUpdates
+                      : t.remoteProviders.applyUpdate}
+                  </button>
+                ) : null}
                 <button
                   type="button"
-                  className="button-primary button-compact"
-                  disabled={isCheckingProviderUpdates || isApplyingProviderUpdates}
-                  onClick={() => void handleApplyUpdate(provider.id)}
-                  data-testid={`apply-provider-update-${provider.id}`}
+                  className="button-secondary"
+                  data-testid={`edit-provider-${provider.id}`}
+                  onClick={() =>
+                    setExpandedProviders((current) => ({
+                      ...current,
+                      [provider.id]: !(current[provider.id] ?? false)
+                    }))
+                  }
                 >
-                  {isApplyingProviderUpdates
-                    ? t.remoteProviders.applyingUpdates
-                    : t.remoteProviders.applyUpdate}
+                  {expandedProviders[provider.id] ? t.settings.collapse : t.settings.edit}
                 </button>
-              ) : null}
-              <button
-                type="button"
-                className="button-secondary"
-                data-testid={`edit-provider-${provider.id}`}
-                onClick={() =>
-                  setExpandedProviders((current) => ({
-                    ...current,
-                    [provider.id]: !(current[provider.id] ?? false)
-                  }))
-                }
-              >
-                {expandedProviders[provider.id] ? t.settings.collapse : t.settings.edit}
-              </button>
-              <button
-                type="button"
-                className="button-ghost"
-                data-testid={`more-provider-${provider.id}`}
-                onClick={() =>
-                  setExpandedProviderActions((current) => ({
-                    ...current,
-                    [provider.id]: !(current[provider.id] ?? false)
-                  }))
-                }
-              >
-                {t.settings.more}
-              </button>
+                <button
+                  type="button"
+                  className="button-ghost"
+                  data-testid={`more-provider-${provider.id}`}
+                  onClick={() =>
+                    setExpandedProviderActions((current) => ({
+                      ...current,
+                      [provider.id]: !(current[provider.id] ?? false)
+                    }))
+                  }
+                >
+                  {t.settings.more}
+                </button>
+              </div>
             </div>
             {expandedProviderActions[provider.id] ? (
               <div className="settings-provider__actions">
@@ -987,7 +1284,9 @@ export function SettingsPanel({
                   type="button"
                   className="button-danger button-compact"
                   data-testid={`remove-provider-${provider.id}`}
-                  onClick={() => void handleRemoveProvider(provider)}
+                  onClick={() => {
+                    void runWithUnsavedChangesProtection(() => handleRemoveProvider(provider));
+                  }}
                 >
                   {t.settings.remove}
                 </button>
@@ -1081,12 +1380,15 @@ export function SettingsPanel({
               </>
             ) : null}
           </article>
-        ))}
+          );
+        })}
         </div>
       </section>
 
       {renderSaveBar()}
       {renderQuotaDataConfirmDialog()}
+      {renderUnsavedChangesDialog()}
+      {renderRemoveProviderDialog()}
     </section>
   );
 }

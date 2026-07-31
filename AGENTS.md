@@ -37,6 +37,9 @@ Start with these files:
   instance behavior, hidden startup, tray setup, and background scheduler setup.
 - `src-tauri/src/config.rs` for config schema, migration, portable mode, storage
   paths, startup sync, guide export, and secret placeholders.
+- `src-tauri/src/managed_secret_store.rs`, `src-tauri/src/provider_setup.rs`,
+  and `src-tauri/src/provider_error.rs` for instance-isolated managed secrets,
+  structured setup/save/test behavior, rollback, and actionable error categories.
 - `src-tauri/src/quota.rs` for snapshot building, retry, stale fallback,
   on-disk snapshot cache, and provider dispatch.
 - `src-tauri/src/remote_provider.rs`,
@@ -59,7 +62,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `15`.
+Current config schema version: `17`.
 
 Supported persisted provider config kind:
 
@@ -74,14 +77,20 @@ deserialization rejects those legacy kinds. Codex usage is provided as the
 Remote provider public contract:
 
 - Registry schema: `schemaVersion: 1`.
-- Manifest schema: `schemaVersion: 1`.
+- Manifest schema `1` remains supported for legacy external-runtime Providers.
+  Current `builtin-js` installs and updates use schema `2` with
+  `minAppVersion`; cached legacy schema `1` builtin Providers remain runnable
+  for upgrade compatibility.
 - Public output protocol: `provider-snapshot-v1`.
-- Runtime can be `node`, `python`, `pwsh`, `bash`, or an absolute executable
-  path. Installation resolves and validates the runtime, then stores
-  `resolvedRuntime`.
+- Runtime can be `builtin-js`, `node`, `python`, `pwsh`, `bash`, or an absolute
+  executable path. External-runtime installation resolves and validates the
+  runtime, then stores `resolvedRuntime`.
 - `timeoutSeconds` is part of remote provider config and defaults to `30`.
   Schema `13 -> 14` migration adds it to existing remote providers.
 - `showInTray` defaults to `true`; Schema `14 -> 15` adds it to existing remote providers.
+- Schema `15 -> 16` removes the legacy Provider runtime proxy field.
+- Schema `16 -> 17` adds Provider setup state. Existing Providers migrate as
+  `ready`; newly installed Providers start disabled and `pending`.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.
@@ -124,6 +133,9 @@ Important storage details:
 Secret placeholders:
 
 - `${secret:NAME}` reads `<config-dir>\secrets\NAME.txt`, then env var `NAME`.
+- `${secret:providers/INSTANCE/PARAMETER}` reads the application-managed,
+  instance-isolated file under
+  `<config-dir>\secrets\providers\INSTANCE\PARAMETER.txt`.
 - `${env:NAME}` reads env var `NAME`.
 - `${file:C:\path\secret.txt}` reads a local file and trims whitespace. Quoted
   paths with spaces are accepted.
@@ -185,8 +197,9 @@ npm run e2e
 ```
 
 The E2E runner requires `tauri-driver`, WebDriverIO, and a release build path.
-Check `e2e/tauri.e2e.mjs` before relying on it; it has historically lagged
-behind provider schema changes and currently seeds legacy provider kinds.
+It seeds schema `17` remote Provider fixtures, including current setup state,
+and exercises settings save, guided Provider save/test/enable, secret
+non-disclosure, refresh/timeout, tray behavior, and managed-secret removal.
 
 ## Testing Expectations
 

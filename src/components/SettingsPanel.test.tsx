@@ -75,6 +75,15 @@ const apiMocks = vi.hoisted(() => {
         }
       ]
     })),
+    getProviderSetup: vi.fn(async (providerId: string) => ({
+      providerId,
+      providerType: "catalog-kimi",
+      displayName: "Catalog Kimi",
+      setupState: "pending",
+      fields: [],
+      hasUnknownEnvVars: false,
+      canAutoDetect: true,
+    })),
     installRemoteProviderRegistry: vi.fn(async () => ({
       installed: [],
       skipped: [],
@@ -129,6 +138,8 @@ const apiMocks = vi.hoisted(() => {
         };
       }
     }),
+    saveProviderSetup: vi.fn(async () => undefined),
+    testProviderSetup: vi.fn(async () => ({ success: true, provider: null })),
   };
 });
 
@@ -180,7 +191,7 @@ const configStorageInfo: ConfigStorageInfo = {
 
 function configWithProviders(providers: AppConfig["providers"]): AppConfig {
   return {
-    schemaVersion: 14,
+    schemaVersion: 17,
     logMaxBytes: 10 * 1024 * 1024,
     logQuotaData: false,
     refreshIntervalSeconds: 300,
@@ -229,6 +240,11 @@ function renderSettings(
   snapshotProviders: ProviderSnapshot[] = [],
   storageInfo: ConfigStorageInfo | null = configStorageInfo,
   onSave: () => void | Promise<void> = () => undefined,
+  navigation: {
+    closeRequest?: number;
+    initialProviderSettingsView?: "main" | "add";
+    onRequestClose?: () => void;
+  } = {},
 ) {
   apiMocks.state.config = initialConfig;
 
@@ -251,6 +267,11 @@ function renderSettings(
           onResetConfig={async () => undefined}
           onSave={onSave}
           onSetPortableMode={() => undefined}
+          onProviderSetupConfigChanged={() => undefined}
+          onRequestClose={navigation.onRequestClose ?? (() => undefined)}
+          closeRequest={navigation.closeRequest ?? 0}
+          settingsHomeRequest={0}
+          initialProviderSettingsView={navigation.initialProviderSettingsView ?? "main"}
           snapshotProviders={snapshotProviders}
         />
       </I18nProvider>
@@ -277,6 +298,39 @@ test("settings_renders_registry_and_remote_provider_metadata", async () => {
   ).toBeInTheDocument();
   expect(await screen.findByText("Kimi API Key")).toBeInTheDocument();
   expect(screen.getByText(/Default: \$\{secret:KIMI_API_KEY\}/)).toBeInTheDocument();
+});
+
+test("settings_keeps_provider_metadata_and_actions_in_their_header_groups", () => {
+  renderSettings(configWithProviders([{ ...remoteProvider, setupState: "unverified" }]));
+
+  const provider = screen.getByTestId("settings-provider-remote-kimi");
+  const metadata = provider.querySelector(".settings-provider__meta");
+  const controls = provider.querySelector(".settings-provider__controls");
+
+  expect(metadata).toHaveTextContent("1.0.0");
+  expect(metadata).toHaveTextContent("Unverified");
+  expect(controls).toContainElement(screen.getByTestId("setup-provider-remote-kimi"));
+  expect(controls).toContainElement(screen.getByTestId("edit-provider-remote-kimi"));
+  expect(controls).toContainElement(screen.getByTestId("more-provider-remote-kimi"));
+});
+
+test("settings_does_not_replay_a_close_request_when_the_provider_catalog_mounts", async () => {
+  const onRequestClose = vi.fn();
+  renderSettings(
+    configWithProviders([]),
+    [],
+    configStorageInfo,
+    () => undefined,
+    {
+      closeRequest: 1,
+      initialProviderSettingsView: "add",
+      onRequestClose,
+    },
+  );
+
+  expect(await screen.findByTestId("add-provider-page")).toBeInTheDocument();
+  await waitFor(() => expect(apiMocks.previewRemoteProviderRegistry).toHaveBeenCalled());
+  expect(onRequestClose).not.toHaveBeenCalled();
 });
 
 test("settings_checks_and_applies_signed application updates", async () => {
@@ -367,7 +421,8 @@ test("settings_add_provider_page_installs_catalog_provider", async () => {
     ),
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "Back to Settings" }));
+  expect(await screen.findByTestId("provider-setup-page")).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Back" }));
   expect(await screen.findByText("Catalog Kimi")).toBeInTheDocument();
 });
 
@@ -456,6 +511,19 @@ test("settings_edits_remote_env_vars_and_window_display", async () => {
   expect(screen.getByLabelText("Custom label for daily")).toHaveValue("Team daily");
 });
 
+test("settings_marks a ready provider with a refresh error as needing attention", () => {
+  renderSettings(configWithProviders([{ ...remoteProvider, setupState: "ready" }]), [
+    {
+      ...providerSnapshot("remote-kimi", []),
+      status: "error",
+      error: "Request timed out",
+    },
+  ]);
+
+  expect(screen.getByText("Needs attention")).toBeInTheDocument();
+  expect(screen.getByTestId("setup-provider-remote-kimi")).toHaveTextContent("Repair configuration");
+});
+
 test("settings_edits_remote_provider_timeout", async () => {
   renderSettings();
 
@@ -504,7 +572,6 @@ test("settings_clears_stale_provider_updates_when_a_later_check_fails", async ()
 });
 
 test("settings_reorders_and_removes_remote_providers", async () => {
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   renderSettings(
     configWithProviders([
       remoteProvider,
@@ -517,8 +584,15 @@ test("settings_reorders_and_removes_remote_providers", async () => {
   expect(screen.getByText("Remote DeepSeek")).toBeInTheDocument();
 
   fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+  expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("discard-unsaved-changes"));
+
+  expect(await screen.findByRole("dialog", { name: "Remove provider Remote DeepSeek?" })).toBeInTheDocument();
+  expect(screen.getByTestId("remove-managed-secrets")).toBeChecked();
+  fireEvent.click(screen.getByTestId("confirm-remove-provider"));
 
   await waitFor(() => expect(apiMocks.removeRemoteProvider).toHaveBeenCalled());
+  expect(apiMocks.removeRemoteProvider).toHaveBeenCalledWith("remote-deepseek", true);
   expect(screen.queryByText("Remote DeepSeek")).not.toBeInTheDocument();
 });
 
@@ -539,6 +613,41 @@ test("settings_save_bar_tracks_dirty_state_and_validation", () => {
     screen.getByText("Refresh interval must be greater than 0."),
   ).toBeInTheDocument();
   expect(screen.getByTestId("save-settings-button")).toBeDisabled();
+});
+
+test("settings_protects_unsaved_changes_before_opening_provider_catalog", async () => {
+  const onSave = vi.fn(async () => undefined);
+  renderSettings(configWithProviders([]), [], configStorageInfo, onSave);
+
+  fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
+
+  expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeInTheDocument();
+  expect(screen.queryByTestId("add-provider-page")).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByTestId("cancel-unsaved-changes"));
+  expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).not.toBeInTheDocument();
+  expect(screen.getByTestId("providers-settings-section")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
+  fireEvent.click(screen.getByTestId("save-and-continue-unsaved-changes"));
+
+  await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+  expect(await screen.findByTestId("add-provider-page")).toBeInTheDocument();
+});
+
+test("settings_protects_unsaved_changes_before_provider_update_check", async () => {
+  renderSettings();
+
+  fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+  fireEvent.click(screen.getByRole("button", { name: "Check Updates" }));
+
+  expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeInTheDocument();
+  expect(apiMocks.checkRemoteUpdates).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByTestId("discard-unsaved-changes"));
+
+  await waitFor(() => expect(apiMocks.checkRemoteUpdates).toHaveBeenCalledTimes(1));
 });
 
 test("settings_blocks_invalid_remote_provider_timeout", async () => {

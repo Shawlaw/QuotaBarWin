@@ -6,10 +6,14 @@ import type {
   AppSnapshot,
   ConfigStorageInfo,
   ProxyConfig,
+  ProxyTestResult,
   RemoteProviderCatalogEntry,
   RemoteProviderConfig,
   RemoteProviderManifest,
+  ProviderSetupDescriptor,
+  ProviderSetupTestResult,
   RegistryMigrationResult,
+  SaveProviderSetupRequest,
 } from "../types";
 import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "./defaults";
 
@@ -18,7 +22,7 @@ function hasTauriInternals(): boolean {
 }
 
 const fallbackConfig: AppConfig = {
-  schemaVersion: 15,
+  schemaVersion: 17,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -314,6 +318,17 @@ export async function setNetworkProxy(
   return invoke<void>("set_network_proxy", { proxy });
 }
 
+export async function testNetworkProxy(
+  proxy: ProxyConfig,
+  targetUrl: string,
+): Promise<ProxyTestResult> {
+  if (!hasTauriInternals()) {
+    throw new Error("Proxy testing is not available in browser preview");
+  }
+
+  return invoke<ProxyTestResult>("test_network_proxy", { proxy, targetUrl });
+}
+
 export type RegistryInstallFailure = {
   id: string;
   error: string;
@@ -427,13 +442,59 @@ export async function getInstalledRemoteProviderManifest(
   return invoke<RemoteProviderManifest>("get_installed_remote_provider_manifest", { id });
 }
 
-export async function removeRemoteProvider(id: string): Promise<void> {
+export async function getProviderSetup(
+  providerId: string,
+): Promise<ProviderSetupDescriptor> {
+  if (!hasTauriInternals()) {
+    return {
+      providerId,
+      providerType: "browser-preview",
+      displayName: "Browser Preview",
+      setupState: "ready",
+      fields: [],
+      hasUnknownEnvVars: false,
+      canAutoDetect: true,
+    };
+  }
+
+  return invoke<ProviderSetupDescriptor>("get_provider_setup", { providerId });
+}
+
+export async function saveProviderSetup(
+  request: SaveProviderSetupRequest,
+): Promise<ProviderSetupDescriptor> {
+  if (!hasTauriInternals()) {
+    void request;
+    throw new Error("Saving Provider setup is not available in browser preview");
+  }
+
+  return invoke<ProviderSetupDescriptor>("save_provider_setup", { request });
+}
+
+export async function testProviderSetup(
+  providerId: string,
+): Promise<ProviderSetupTestResult> {
+  if (!hasTauriInternals()) {
+    return {
+      success: true,
+      provider: null,
+    };
+  }
+
+  return invoke<ProviderSetupTestResult>("test_provider_setup", { providerId });
+}
+
+export async function removeRemoteProvider(
+  id: string,
+  deleteManagedSecrets = true,
+): Promise<void> {
   if (!hasTauriInternals()) {
     void id;
+    void deleteManagedSecrets;
     return;
   }
 
-  return invoke<void>("remove_remote_provider", { id });
+  return invoke<void>("remove_remote_provider", { id, deleteManagedSecrets });
 }
 
 export async function refreshRemoteProvider(id: string): Promise<UpdateInfo> {

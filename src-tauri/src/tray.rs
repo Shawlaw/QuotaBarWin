@@ -585,6 +585,15 @@ pub fn e2e_is_tray_popup_visible(app: AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub fn e2e_is_tray_popup_focused(app: AppHandle) -> Result<bool, String> {
+    ensure_e2e_tray_commands_enabled()?;
+    Ok(app
+        .get_webview_window(TRAY_POPUP_LABEL)
+        .and_then(|window| window.is_focused().ok())
+        .unwrap_or(false))
+}
+
+#[tauri::command]
 pub fn e2e_focus_main_window(app: AppHandle) -> Result<(), String> {
     ensure_e2e_tray_commands_enabled()?;
     if let Some(window) = app.get_webview_window("main") {

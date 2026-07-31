@@ -27,6 +27,7 @@ The top-level README is only an index. Each provider directory's `api.md` record
 | `bigmodel-coding-plan` | `GET https://open.bigmodel.cn/api/monitor/usage/quota/limit` | `BIGMODEL_API_KEY` | [`api.md`](bigmodel-coding-plan/api.md) / [`EN`](bigmodel-coding-plan/api.en.md) | Zhipu/BigModel coding plan quota. |
 | `codex-usage` | `GET https://chatgpt.com/backend-api/wham/usage` | none by default | [`api.md`](codex-usage/api.md) / [`EN`](codex-usage/api.en.md) | ChatGPT/Codex 5h and weekly usage. Reads `~/.codex/auth.json` by default. Optional `CODEX_ACCESS_TOKEN`, `CODEX_ACCOUNT_ID`, or `CODEX_AUTH_FILE` env vars can override the local Codex auth file. Supports runtime proxy injection via `QBWIN_PROXY_URL`. |
 | `deepseek-balance` | `GET https://api.deepseek.com/user/balance` | `DEEPSEEK_API_KEY` | [`api.md`](deepseek-balance/api.md) / [`EN`](deepseek-balance/api.en.md) | DeepSeek pay-as-you-go balance. Optional `DEEPSEEK_BALANCE_REFERENCE_TOTAL`, `DEEPSEEK_BALANCE_WARNING`, and `DEEPSEEK_BALANCE_CURRENCY`; append `_CNY` or another currency code for per-currency overrides. |
+| `time-flies` | Local timezone and current time | none | [`api.md`](time-flies/api.md) / [`EN`](time-flies/api.en.md) | Shows the remaining minutes in the current day, week, month, and year without network access or account credentials. |
 
 ## Usage
 
@@ -53,12 +54,13 @@ Use this pattern when adapting the examples:
 2. Add a short comment showing the raw response shape that the parser expects.
 3. Convert raw quota records into `windows[]` entries with stable `id`, readable `label`, numeric `used`/`limit` values where available, percentages, and ISO reset times.
 4. Move provider-specific details such as plan level, model usage, account metadata, or raw status codes into `metadata`.
-5. Keep credentials local. These examples call `qb.env.get("NAME")` for manifest-declared variables; QuotaBarWin can resolve values from installed provider `envVars`, `${secret:NAME}` files under `<config-dir>/secrets/NAME.txt`, or environment fallback instead of embedding secrets in remote source.
+5. Keep credentials local. These examples call `qb.env.get("NAME")` for manifest-declared variables. In the normal flow, users enter credentials in the structured post-install form; QuotaBarWin writes instance-isolated managed secret files and injects them through the existing resolver instead of embedding secrets in remote source.
 
-For multiple accounts on the same provider, each local account instance still
-injects the env var name expected by the script, but can map it to a different
-secret file, such as `KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}`. See the full
-example in [`docs/remote-provider-guide.en.md`](../../docs/remote-provider-guide.en.md#local-config-and-secrets).
+For multiple accounts on the same Provider, every instance gets its own
+`<config-dir>/secrets/providers/<provider-instance-id>/` directory. Advanced
+users can still edit raw `envVars` and map legacy `${secret:NAME}`,
+`${env:NAME}`, or `${file:...}` expressions. See
+[`docs/remote-provider-guide.en.md`](../../docs/remote-provider-guide.en.md#local-config-and-secrets).
 
 ## Stable window IDs
 

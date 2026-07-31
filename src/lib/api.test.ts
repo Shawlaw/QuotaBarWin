@@ -7,6 +7,7 @@ import {
   checkAppUpdate,
   downloadAppUpdate,
   getCachedSnapshot,
+  getProviderSetup,
   getInstalledRemoteProviderManifest,
   installRemoteProviderManifest,
   installRemoteProviderRegistry,
@@ -23,9 +24,12 @@ import {
   removeRemoteProvider,
   resetTrayPopupSize,
   saveConfig,
+  saveProviderSetup,
   setNetworkProxy,
   setTrayPopupAutoHeight,
   showMainWindow,
+  testNetworkProxy,
+  testProviderSetup,
   startResizingCurrentWindow,
 } from "./api";
 import type { AppConfig, AppSnapshot } from "../types";
@@ -35,7 +39,7 @@ afterEach(() => {
 });
 
 const config: AppConfig = {
-  schemaVersion: 14,
+  schemaVersion: 17,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -111,6 +115,9 @@ test("api_invokes_network_proxy_commands", async () => {
     if (cmd === "set_network_proxy") {
       return null;
     }
+    if (cmd === "test_network_proxy") {
+      return { success: true, statusCode: 200, elapsedMs: 120 };
+    }
     throw new Error(`unexpected command ${cmd}`);
   });
 
@@ -119,10 +126,19 @@ test("api_invokes_network_proxy_commands", async () => {
     kind: "socks5",
     url: "socks5://proxy.example.com:1080",
   });
+  const result = await testNetworkProxy(
+    { kind: "http", url: "http://proxy.example.com:8080" },
+    "https://github.com/",
+  );
 
   expect(proxy).toEqual({ kind: "http", url: "http://proxy.example.com:8080" });
+  expect(result).toEqual({ success: true, statusCode: 200, elapsedMs: 120 });
   expect(payloads.set_network_proxy).toEqual({
     proxy: { kind: "socks5", url: "socks5://proxy.example.com:1080" },
+  });
+  expect(payloads.test_network_proxy).toEqual({
+    proxy: { kind: "http", url: "http://proxy.example.com:8080" },
+    targetUrl: "https://github.com/",
   });
 });
 
@@ -272,6 +288,31 @@ test("api_invokes_remote_provider_commands", async () => {
         parameters: [{ name: "KIMI_API_KEY", kind: "secret", required: true }],
       };
     }
+    if (cmd === "get_provider_setup") {
+      return {
+        providerId: "remote-kimi",
+        providerType: "kimi-coding",
+        displayName: "Remote Kimi",
+        setupState: "pending",
+        fields: [],
+        hasUnknownEnvVars: false,
+        canAutoDetect: false,
+      };
+    }
+    if (cmd === "save_provider_setup") {
+      return {
+        providerId: "remote-kimi",
+        providerType: "kimi-coding",
+        displayName: "Work Kimi",
+        setupState: "unverified",
+        fields: [],
+        hasUnknownEnvVars: false,
+        canAutoDetect: false,
+      };
+    }
+    if (cmd === "test_provider_setup") {
+      return { success: true, provider: null };
+    }
     if (cmd === "remove_remote_provider") {
       return null;
     }
@@ -320,6 +361,20 @@ test("api_invokes_remote_provider_commands", async () => {
     id: "remote-kimi",
     parameters: [{ name: "KIMI_API_KEY", kind: "secret", required: true }],
   });
+  await expect(getProviderSetup("remote-kimi")).resolves.toMatchObject({
+    providerId: "remote-kimi",
+    setupState: "pending",
+  });
+  await expect(saveProviderSetup({
+    providerId: "remote-kimi",
+    displayName: "Work Kimi",
+    values: { REGION: "US" },
+    secretUpdates: { KIMI_API_KEY: "test-only-secret" },
+  })).resolves.toMatchObject({ setupState: "unverified" });
+  await expect(testProviderSetup("remote-kimi")).resolves.toEqual({
+    success: true,
+    provider: null,
+  });
   await expect(removeRemoteProvider("remote-kimi")).resolves.toBeNull();
   await expect(
     applyRemoteUpdate("remote-kimi", "https://example.com/kimi/provider.json"),
@@ -353,7 +408,17 @@ test("api_invokes_remote_provider_commands", async () => {
     autoUpdate: true,
   });
   expect(payloads.get_installed_remote_provider_manifest).toEqual({ id: "remote-kimi" });
-  expect(payloads.remove_remote_provider).toEqual({ id: "remote-kimi" });
+  expect(payloads.get_provider_setup).toEqual({ providerId: "remote-kimi" });
+  expect(payloads.save_provider_setup).toEqual({
+    request: {
+      providerId: "remote-kimi",
+      displayName: "Work Kimi",
+      values: { REGION: "US" },
+      secretUpdates: { KIMI_API_KEY: "test-only-secret" },
+    },
+  });
+  expect(payloads.test_provider_setup).toEqual({ providerId: "remote-kimi" });
+  expect(payloads.remove_remote_provider).toEqual({ id: "remote-kimi", deleteManagedSecrets: true });
   expect(payloads.apply_remote_update).toEqual({
     id: "remote-kimi",
     updateManifestUrl: "https://example.com/kimi/provider.json",

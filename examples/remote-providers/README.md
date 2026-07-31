@@ -54,9 +54,9 @@ Manifest 格式和输出协议见 [`docs/remote-provider-guide.md`](../../docs/r
 2. 用简短注释说明解析器期望的原始响应形状。
 3. 将原始额度记录转换为 `windows[]`，使用稳定的 `id`、可读的 `label`、可用时提供数值型 `used` / `limit`、百分比和 ISO 重置时间。
 4. 将套餐等级、模型用量、账户元数据、原始状态码等 Provider 专属细节放进 `metadata`。
-5. 凭据只保留在本地。这些示例通过 `qb.env.get("NAME")` 读取 manifest 声明的变量；QuotaBarWin 可从已安装 Provider 的 `envVars`、`<config-dir>/secrets/NAME.txt` 下的 `${secret:NAME}` 文件，或环境变量 fallback 解析它们，而不需要把密钥写进远程源码。
+5. 凭据只保留在本地。这些示例通过 `qb.env.get("NAME")` 读取 manifest 声明的变量；普通用户在安装后的结构化表单中填写凭据，QuotaBarWin 会写入实例隔离的托管 secret 文件，并通过原有 resolver 注入脚本，而不把密钥写进远程源码。
 
-同一 Provider 配多个账号时，每个本地账号实例仍向脚本注入同一个变量名，但可以映射到不同 secret 文件，例如 `KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}`。完整示例见 [`docs/remote-provider-guide.md`](../../docs/remote-provider-guide.md#本地配置与-secret)。
+同一 Provider 配多个账号时，每个账号实例都有独立的 `<config-dir>/secrets/providers/<provider-instance-id>/` 目录。高级用户仍可使用原始 `envVars`，并映射旧 `${secret:NAME}`、`${env:NAME}` 或 `${file:...}`。完整说明见 [`docs/remote-provider-guide.md`](../../docs/remote-provider-guide.md#本地配置与-secret)。
 
 ## 稳定窗口 ID
 

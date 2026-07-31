@@ -9,8 +9,11 @@ mod config;
 mod diagnostics;
 mod external_links;
 pub mod logger;
+mod managed_secret_store;
 #[cfg(test)]
 mod productization;
+mod provider_error;
+mod provider_setup;
 mod proxy;
 mod quota;
 mod redact;
@@ -32,7 +35,8 @@ pub use config::{
     open_remote_provider_guide, reset_config, save_config, set_portable_mode, AppConfig,
 };
 pub use diagnostics::export_diagnostics;
-pub use proxy::{ProxyConfig, ProxyKind};
+pub use provider_setup::{get_provider_setup, save_provider_setup, test_provider_setup};
+pub use proxy::{test_network_proxy, ProxyConfig, ProxyKind};
 pub use quota::{
     get_cached_snapshot, refresh_provider, refresh_snapshot, AppSnapshot, ProviderSnapshot,
     QuotaWindow,
@@ -40,14 +44,14 @@ pub use quota::{
 pub use remote_provider_commands::{
     apply_remote_update, check_remote_updates, get_installed_remote_provider_manifest,
     get_network_proxy, install_remote_provider_manifest, install_remote_provider_registry,
-    migrate_remote_providers_to_registry, preview_remote_provider_registry, refresh_remote_provider,
-    remove_remote_provider, set_network_proxy, RegistryInstallFailure, RegistryInstallResult,
-    RegistryMigrationResult, RemoteProviderCatalogEntry,
+    migrate_remote_providers_to_registry, preview_remote_provider_registry,
+    refresh_remote_provider, remove_remote_provider, set_network_proxy, RegistryInstallFailure,
+    RegistryInstallResult, RegistryMigrationResult, RemoteProviderCatalogEntry,
 };
 pub use tray::{
-    e2e_focus_main_window, e2e_is_tray_popup_visible, e2e_set_tray_popup_size, e2e_show_tray_popup,
-    get_tray_popup_presentation_id, hide_tray_popup, reset_tray_popup_size,
-    set_tray_popup_auto_height, show_main_window, start_tray_popup_dragging,
+    e2e_focus_main_window, e2e_is_tray_popup_focused, e2e_is_tray_popup_visible,
+    e2e_set_tray_popup_size, e2e_show_tray_popup, get_tray_popup_presentation_id, hide_tray_popup,
+    reset_tray_popup_size, set_tray_popup_auto_height, show_main_window, start_tray_popup_dragging,
     start_tray_popup_resizing,
 };
 
@@ -149,6 +153,10 @@ pub fn run() {
             get_cached_snapshot,
             get_network_proxy,
             set_network_proxy,
+            test_network_proxy,
+            get_provider_setup,
+            save_provider_setup,
+            test_provider_setup,
             get_installed_remote_provider_manifest,
             preview_remote_provider_registry,
             install_remote_provider_manifest,
@@ -168,6 +176,7 @@ pub fn run() {
             e2e_show_tray_popup,
             e2e_set_tray_popup_size,
             e2e_is_tray_popup_visible,
+            e2e_is_tray_popup_focused,
             e2e_focus_main_window
         ])
         .on_window_event(|window, event| match event {

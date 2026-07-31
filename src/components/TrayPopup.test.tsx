@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => {
   } = {};
   const state = { presentationId: 0 };
   const config: AppConfig = {
-    schemaVersion: 14,
+    schemaVersion: 17,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -225,7 +225,7 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
 
 test("tray_popup_hides_providers_disabled_for_tray_display", async () => {
   const hiddenConfig: AppConfig = {
-    schemaVersion: 15,
+    schemaVersion: 17,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -268,7 +268,7 @@ test("tray_popup_hides_providers_disabled_for_tray_display", async () => {
 
 test("tray_popup_reloads_tray_visibility_when_presented", async () => {
   const enabledConfig: AppConfig = {
-    schemaVersion: 15,
+    schemaVersion: 17,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -816,7 +816,7 @@ test("tray_popup_uses_natural_content_height instead of the stretched scroll are
 
 test("tray_popup_skips_auto_height_with_manual_size", async () => {
   mocks.getConfig.mockResolvedValueOnce({
-    schemaVersion: 14,
+    schemaVersion: 17,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,

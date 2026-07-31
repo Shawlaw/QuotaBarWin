@@ -115,6 +115,10 @@ pub struct ProviderParameter {
     pub description: Option<String>,
     #[serde(default)]
     pub options: Vec<String>,
+    #[serde(default, rename = "helpUrl")]
+    pub help_url: Option<String>,
+    #[serde(default)]
+    pub advanced: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -1064,6 +1068,8 @@ mod tests {
             placeholder: Some("http://127.0.0.1:7890".to_string()),
             description: Some("Optional proxy".to_string()),
             options: vec![],
+            help_url: None,
+            advanced: false,
         }];
         fs::write(
             &manifest_path,

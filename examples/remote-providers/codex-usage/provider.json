@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "codex-usage",
   "displayName": "Codex Usage",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "minAppVersion": "1.1.0",
   "description": "ChatGPT/Codex 5h and weekly usage via remote provider script.",
   "runtime": "builtin-js",
@@ -31,7 +31,9 @@
       "kind": "secret",
       "required": false,
       "defaultValue": "${secret:CODEX_ACCESS_TOKEN}",
-      "description": "Optional override. By default the provider reads the local Codex auth file."
+      "description": "Optional override. By default the provider reads the local Codex auth file.",
+      "helpUrl": "https://help.openai.com/",
+      "advanced": true
     },
     {
       "name": "CODEX_ACCOUNT_ID",
@@ -39,7 +41,8 @@
       "kind": "string",
       "required": false,
       "defaultValue": "${secret:CODEX_ACCOUNT_ID}",
-      "description": "Optional account id override when the local Codex auth file is not enough."
+      "description": "Optional account id override when the local Codex auth file is not enough.",
+      "advanced": true
     },
     {
       "name": "CODEX_AUTH_FILE",
@@ -47,7 +50,8 @@
       "kind": "string",
       "required": false,
       "placeholder": "C:\\Users\\you\\.codex\\auth.json",
-      "description": "Optional path to a Codex auth.json file."
+      "description": "Optional path to a Codex auth.json file.",
+      "advanced": true
     },
     {
       "name": "QBWIN_PROXY_URL",
@@ -55,7 +59,8 @@
       "kind": "string",
       "required": false,
       "placeholder": "http://127.0.0.1:7890 or socks5h://127.0.0.1:7890",
-      "description": "Optional runtime proxy for the Codex usage request. Prefer the provider Proxy URL setting; QuotaBarWin injects it as QBWIN_PROXY_URL."
+      "description": "Optional runtime proxy for the Codex usage request. Prefer the provider Proxy URL setting; QuotaBarWin injects it as QBWIN_PROXY_URL.",
+      "advanced": true
     }
   ],
   "checksums": {

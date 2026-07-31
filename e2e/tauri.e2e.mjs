@@ -27,6 +27,12 @@ const configPath = path.join(portableDir, "config.quotaBarWin.json");
 const logPath = path.join(portableDir, "quotabarwin.log");
 const portableMarkerPath = path.join(portableDir, "quotabarwin.portable");
 const e2eProviderRoot = path.join(portableDir, "providers", "remote");
+const e2eManagedSecretRoot = path.join(
+  portableDir,
+  "secrets",
+  "providers",
+  "e2e-remote-setup"
+);
 const trayPopupLabel = "tray-popup";
 
 let driverProcess;
@@ -60,9 +66,10 @@ try {
 
   await assertAppStartedAndShowsQuota();
   await assertConfigCanBeSaved();
+  await assertProviderSetupCanSaveTestAndEnable();
   await assertRemoteProviderCanRefreshAndTimeout();
   await assertTrayPopupInteractions();
-  await assertPermissionPromptNamesProvider();
+  await assertProviderRemovalCleansManagedSecrets();
 
   console.log("Tauri WebdriverIO E2E passed");
 } finally {
@@ -81,6 +88,7 @@ async function assertAppStartedAndShowsQuota() {
   const title = await app.$("h1");
   await title.waitForDisplayed({ timeout: 20000 });
   assert.equal(await title.getText(), "QuotaBarWin");
+  await openOverview();
 
   const status = await byTestId("global-status-strip");
   await status.waitForDisplayed({ timeout: 20000 });
@@ -137,12 +145,16 @@ async function logConfigStorageDiagnostics() {
 
 function assertE2eConfigWritten() {
   const written = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  if (written.schemaVersion !== 14 || written.providers?.length !== 2) {
+  if (written.schemaVersion !== 17 || written.providers?.length !== 3) {
     throw new Error(`E2E config was not written correctly at ${configPath}`);
   }
   assert.deepEqual(
     written.providers.map((provider) => provider.kind),
-    ["remote", "remote"]
+    ["remote", "remote", "remote"]
+  );
+  assert.deepEqual(
+    written.providers.map((provider) => provider.setupState),
+    ["ready", "ready", "pending"]
   );
   console.log(`E2E config seeded at ${configPath}`);
 }
@@ -166,15 +178,56 @@ async function assertConfigCanBeSaved() {
     timeoutMsg: "Config file was not saved with the updated refresh interval"
   });
 
-  const overviewButton = await app.$('//button[normalize-space(.)="Overview"]');
-  await app.execute((target) => target.click(), overviewButton);
-  await byTestId("overview-page").then((overview) => overview.waitForDisplayed({ timeout: 20000 }));
+  await openOverview();
 
   const saved = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.equal(saved.refreshIntervalSeconds, 120);
 }
 
+async function assertProviderSetupCanSaveTestAndEnable() {
+  const fixtureValue = "fixture-value";
+  await openSettings();
+  await clickByTestId("setup-provider-e2e-remote-setup");
+
+  const setupPage = await byTestId("provider-setup-page");
+  await setupPage.waitForDisplayed({ timeout: 10000 });
+  const secretInput = await app.$('input[aria-label="E2E API Key"]');
+  await secretInput.setValue(fixtureValue);
+
+  const saveAndTest = await app.$('//button[normalize-space(.)="Save and test"]');
+  await app.execute((target) => target.click(), saveAndTest);
+  await app.waitUntil(async () => {
+    const status = await setupPage.$('[role="status"]');
+    return (await status.isExisting())
+      && (await status.getText()).includes("Configuration works");
+  }, {
+    timeout: 20000,
+    timeoutMsg: "Provider setup did not save, test, and enable the Provider"
+  });
+
+  const saved = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const provider = saved.providers.find(({ id }) => id === "e2e-remote-setup");
+  assert.equal(provider?.enabled, true);
+  assert.equal(provider?.setupState, "ready");
+  assert.equal(
+    provider?.envVars?.E2E_API_KEY,
+    "${secret:providers/e2e-remote-setup/E2E_API_KEY}"
+  );
+  assert.equal(JSON.stringify(saved).includes(fixtureValue), false);
+
+  const secretPath = path.join(e2eManagedSecretRoot, "E2E_API_KEY.txt");
+  assert.equal(fs.readFileSync(secretPath, "utf8"), fixtureValue);
+  assert.equal(fs.readFileSync(logPath, "utf8").includes(fixtureValue), false);
+
+  const done = await app.$('//button[normalize-space(.)="Done"]');
+  await app.execute((target) => target.click(), done);
+  await byTestId("providers-settings-section").then(
+    (section) => section.waitForDisplayed({ timeout: 10000 })
+  );
+}
+
 async function assertRemoteProviderCanRefreshAndTimeout() {
+  await openOverview();
   await clickByTestId("provider-refresh-e2e-remote-fixture");
   await app.waitUntil(async () => {
     const quotaRow = await byTestId("quota-row-e2e-remote-fixture-daily");
@@ -201,20 +254,21 @@ async function assertTrayPopupInteractions() {
   await showTrayPopupForE2e();
   const trayHandle = await switchToWindowWithTestId("tray-popup");
   await byTestId("tray-popup").then((popup) => popup.waitForDisplayed({ timeout: 10000 }));
-  await app.waitUntil(async () => (await currentBodyText()).includes("E2E Remote Fixture"), {
-    timeout: 20000,
-    timeoutMsg: "Tray popup did not render the fixture provider"
+  const refresh = await byTestId("tray-popup-refresh");
+  await refresh.click();
+  await app.waitUntil(
+    async () => (await currentBodyText()).includes("E2E Remote Fixture"),
+    {
+      timeout: 20000,
+      timeoutMsg: "Tray popup refresh did not render the fixture provider"
+    }
+  ).catch(async (error) => {
+    console.error(`Tray popup body after refresh: ${await currentBodyText()}`);
+    throw error;
   });
   const trayText = await currentBodyText();
   assert.match(trayText, /Daily/);
   assert.match(trayText, /Weekly limit/);
-
-  const refresh = await byTestId("tray-popup-refresh");
-  await refresh.click();
-  await app.waitUntil(async () => (await currentBodyText()).includes("Daily"), {
-    timeout: 20000,
-    timeoutMsg: "Tray popup refresh did not keep quota output visible"
-  });
 
   await app.switchToWindow(mainHandle);
   await invokeInApp("e2e_set_tray_popup_size", { width: 460, height: 610 });
@@ -241,6 +295,14 @@ async function assertTrayPopupInteractions() {
 
   await showTrayPopupForE2e();
   await switchToWindowWithTestId("tray-popup");
+  await app.waitUntil(
+    async () => await invokeInApp("e2e_is_tray_popup_focused"),
+    {
+      timeout: 5000,
+      timeoutMsg: "Tray popup did not receive native focus"
+    }
+  );
+  await sleep(2200);
   await app.switchToWindow(mainHandle);
   await invokeInApp("e2e_focus_main_window");
   await waitForTauriWindowVisible(trayPopupLabel, false, "Tray popup focus loss did not hide the window");
@@ -248,14 +310,25 @@ async function assertTrayPopupInteractions() {
   assertTrayPopupLogs();
 }
 
-async function assertPermissionPromptNamesProvider() {
+async function assertProviderRemovalCleansManagedSecrets() {
   await openSettings();
-  await clickByTestId("more-provider-e2e-remote-fixture");
-  await clickByTestId("remove-provider-e2e-remote-fixture");
+  await clickByTestId("more-provider-e2e-remote-setup");
+  await clickByTestId("remove-provider-e2e-remote-setup");
 
-  const alertText = await app.getAlertText();
-  assert.match(alertText, /E2E Remote Fixture/);
-  await app.dismissAlert();
+  const dialog = await app.$('[role="dialog"]');
+  await dialog.waitForDisplayed({ timeout: 10000 });
+  assert.match(await dialog.getText(), /E2E Remote Setup/);
+  const removeManagedSecrets = await byTestId("remove-managed-secrets");
+  assert.equal(await removeManagedSecrets.isSelected(), true);
+  await clickByTestId("confirm-remove-provider");
+  await app.waitUntil(() => {
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    return !config.providers.some(({ id }) => id === "e2e-remote-setup")
+      && !fs.existsSync(e2eManagedSecretRoot);
+  }, {
+    timeout: 10000,
+    timeoutMsg: "Provider removal did not clean its managed secret directory"
+  });
 }
 
 async function openSettings() {
@@ -266,6 +339,16 @@ async function openSettings() {
   const settingsButton = await app.$('//button[normalize-space(.)="Settings"]');
   await app.execute((target) => target.click(), settingsButton);
   await settingsPage.waitForDisplayed({ timeout: 10000 });
+}
+
+async function openOverview() {
+  const overviewPage = await byTestId("overview-page");
+  if (await overviewPage.isExisting()) {
+    return;
+  }
+  const overviewButton = await app.$('//button[normalize-space(.)="Overview"]');
+  await app.execute((target) => target.click(), overviewButton);
+  await overviewPage.waitForDisplayed({ timeout: 20000 });
 }
 
 async function byTestId(id) {
@@ -347,6 +430,7 @@ function writeE2eConfig() {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(portableMarkerPath, "QuotaBarWin E2E portable mode\n");
   removePathWithRetry(e2eProviderRoot);
+  removePathWithRetry(e2eManagedSecretRoot);
 
   const fixtureProvider = createRemoteProviderCache({
     id: "e2e-remote-fixture",
@@ -362,12 +446,29 @@ function writeE2eConfig() {
     source: slowRemoteProviderSource(),
     timeoutSeconds: 1
   });
+  const setupProvider = createRemoteProviderCache({
+    id: "e2e-remote-setup",
+    displayName: "E2E Remote Setup",
+    version: "1.0.0",
+    source: setupRemoteProviderSource(),
+    timeoutSeconds: 5,
+    enabled: false,
+    setupState: "pending",
+    requiredEnvVars: ["E2E_API_KEY"],
+    parameters: [{
+      name: "E2E_API_KEY",
+      label: "E2E API Key",
+      kind: "secret",
+      required: true,
+      description: "Synthetic E2E credential."
+    }]
+  });
 
   fs.writeFileSync(
     configPath,
     JSON.stringify(
       {
-        schemaVersion: 14,
+        schemaVersion: 17,
         refreshIntervalSeconds: 300,
         displayMode: "remaining",
         lowQuotaWarningThreshold: 20,
@@ -384,7 +485,7 @@ function writeE2eConfig() {
           autoUpdate: false,
           sources: []
         },
-        providers: [fixtureProvider, slowProvider]
+        providers: [fixtureProvider, slowProvider, setupProvider]
       },
       null,
       2
@@ -412,6 +513,7 @@ function cleanupE2eConfig() {
     }
   }
   removePathBestEffort(e2eProviderRoot);
+  removePathBestEffort(e2eManagedSecretRoot);
 }
 
 function removePathWithRetry(targetPath) {
@@ -431,7 +533,17 @@ function removePathBestEffort(targetPath) {
   }
 }
 
-function createRemoteProviderCache({ id, displayName, version, source, timeoutSeconds }) {
+function createRemoteProviderCache({
+  id,
+  displayName,
+  version,
+  source,
+  timeoutSeconds,
+  enabled = true,
+  setupState = "ready",
+  requiredEnvVars = [],
+  parameters = []
+}) {
   const providerDir = path.join(e2eProviderRoot, id);
   const manifestPath = path.join(providerDir, "provider.json");
   const sourcePath = path.join(providerDir, "provider.cjs");
@@ -446,9 +558,10 @@ function createRemoteProviderCache({ id, displayName, version, source, timeoutSe
     description: `${displayName} generated by the E2E runner.`,
     runtime: "node",
     entry: "provider.cjs",
-    requiredEnvVars: [],
+    requiredEnvVars,
     output: "provider-snapshot-v1",
-    permissions: [],
+    permissions: requiredEnvVars.map((name) => `env:${name}`),
+    parameters,
     checksums: {
       source: checksum
     }
@@ -479,7 +592,7 @@ function createRemoteProviderCache({ id, displayName, version, source, timeoutSe
     kind: "remote",
     id,
     name: displayName,
-    enabled: true,
+    enabled,
     version,
     manifestUrl: manifestPath,
     sourceUrl,
@@ -496,6 +609,9 @@ function createRemoteProviderCache({ id, displayName, version, source, timeoutSe
     lastCheckedAt: now,
     windowLabelOverrides: {},
     visibleWindowIds: [],
+    showInTray: true,
+    setupState,
+    setupLastTestedAt: setupState === "ready" ? now : null,
     envVars: {}
   };
 }
@@ -549,6 +665,29 @@ setTimeout(() => {
     windows: []
   }));
 }, 5000);
+`;
+}
+
+function setupRemoteProviderSource() {
+  return `if (!process.env.E2E_API_KEY) {
+  process.stderr.write(JSON.stringify({level:"error",stage:"e2e.setup",message:"fixture credential is required"}) + "\\n");
+  process.exit(1);
+}
+console.log(JSON.stringify({
+  status: "ok",
+  updatedAt: new Date().toISOString(),
+  windows: [{
+    id: "setup",
+    label: "Setup",
+    used: 1,
+    limit: 1,
+    unit: "check",
+    usedPercent: 100,
+    resetAt: null,
+    resetText: null,
+    confidence: "exact"
+  }]
+}));
 `;
 }
 

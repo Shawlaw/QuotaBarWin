@@ -490,7 +490,7 @@ fn install_remote_provider_from_manifest(
     let config = ProviderConfig::Remote {
         id: instance_id.clone(),
         name: instance_name,
-        enabled: true,
+        enabled: false,
         version: manifest.version.clone(),
         manifest_url: url.to_string(),
         source_url,
@@ -514,6 +514,8 @@ fn install_remote_provider_from_manifest(
         visible_window_ids: manifest.default_config.visible_window_ids.clone(),
         show_in_tray: true,
         env_vars: manifest.default_config.env_vars.clone(),
+        setup_state: crate::config::ProviderSetupState::Pending,
+        setup_last_tested_at: None,
     };
 
     loaded.config.providers.push(config.clone());
@@ -1155,7 +1157,11 @@ pub async fn migrate_remote_providers_to_registry(
 }
 
 #[tauri::command]
-pub async fn remove_remote_provider(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn remove_remote_provider(
+    app: AppHandle,
+    id: String,
+    delete_managed_secrets: Option<bool>,
+) -> Result<(), String> {
     let path = config_path_for_app(&app)?;
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -1205,6 +1211,25 @@ pub async fn remove_remote_provider(app: AppHandle, id: String) -> Result<(), St
                     id,
                     provider_dir.display()
                 ),
+            );
+        }
+        if delete_managed_secrets.unwrap_or(true) {
+            let config_dir = path
+                .parent()
+                .ok_or_else(|| "Unable to resolve config directory".to_string())?;
+            let secret_dir = crate::managed_secret_store::managed_provider_secret_dir(config_dir, &id)?;
+            crate::managed_secret_store::ManagedSecretStore::new(config_dir)
+                .delete_provider_secrets(&id)
+                .map_err(|error| {
+                    format!(
+                        "{error}; Provider configuration was removed, but managed secret files may remain at {}",
+                        secret_dir.display()
+                    )
+                })?;
+            log_remote(
+                &log,
+                LogLevel::Info,
+                &format!("managed provider secrets removed id={id}"),
             );
         }
         log_remote(
@@ -1668,6 +1693,8 @@ mod tests {
             visible_window_ids: Vec::new(),
             show_in_tray: true,
             env_vars: HashMap::new(),
+            setup_state: crate::config::ProviderSetupState::Ready,
+            setup_last_tested_at: None,
         }
     }
 

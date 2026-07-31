@@ -28,7 +28,7 @@ variables; the project-wide proxy is only a fallback when that value is absent.
   "schemaVersion": 2,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "minAppVersion": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script",
   "runtime": "builtin-js",
@@ -54,7 +54,8 @@ variables; the project-wide proxy is only a fallback when that value is absent.
       "kind": "secret",
       "required": true,
       "defaultValue": "${secret:KIMI_API_KEY}",
-      "description": "Kimi coding quota API token."
+      "description": "Kimi coding quota API token.",
+      "helpUrl": "https://provider.example.com/api-keys"
     }
   ],
   "checksums": {
@@ -79,8 +80,18 @@ Field descriptions:
 | `output` | yes | Output contract. Only `provider-snapshot-v1` is supported for remote providers at the moment. |
 | `permissions` | no | Informational for external runtimes; an enforced capability boundary for `builtin-js`. See the next section for its syntax. |
 | `defaultConfig` | no | Default local provider config written during first install, such as `name`, `timeoutSeconds`, `visibleWindowIds`, `windowLabelOverrides`, and `envVars`. Provider updates do not overwrite user edits. |
-| `parameters` | no | Parameter hints shown in Settings. Each item may include `name`, `label`, `kind`, `required`, `defaultValue`, `placeholder`, `description`, and `options`. Do not include real credentials. |
+| `parameters` | no | Structured parameters shown in Settings. Each item may include `name`, `label`, `kind`, `required`, `defaultValue`, `placeholder`, `description`, `options`, `helpUrl`, and `advanced`. Do not include real credentials. |
 | `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. `version` is display metadata and does not replace checksum verification. |
+
+### Guided setup fields
+
+The current app generates the post-install setup form from `parameters`: `secret` uses a password input, `string` a text input, `number` a numeric input, and `select` a select control. Required fields are validated first, and saved secret values are never returned to or shown by the frontend.
+
+`helpUrl` links to API-key or parameter help. Set `"advanced": true` to keep optional, proxy, or diagnostic fields under **Advanced settings** by default; do not mark a normal first-time requirement as advanced.
+
+New instances install as disabled and “Pending setup”. When the user chooses **Save and test**, the host writes secret input to an instance-isolated local file and stores `${secret:providers/<provider-instance-id>/<parameter-name>}` in main config. Resolution still uses the existing `${secret:...}` resolver and the formal Provider runner. Provider authors must not require users to create files or type placeholders manually.
+
+Third-party manifests without `parameters` still install and use the retained raw `envVars` editor, preserving old-manifest compatibility.
 
 ## Embedded JavaScript runtime (`builtin-js`)
 
@@ -492,6 +503,14 @@ read `process.env.NAME`; `builtin-js` scripts use permission-gated
 `envVars` map; if a key is absent, it resolves `${secret:NAME}`. Extra configured
 `envVars` are also available to the Provider, which is useful for optional
 reference totals, currency filters, or warning thresholds.
+
+For an installation form backed by `parameters`, a secret entered by a normal user is automatically written to:
+
+```text
+<config-dir>/secrets/providers/<provider-instance-id>/<parameter-name>.txt
+```
+
+The matching `envVars` entry stores only `${secret:providers/<provider-instance-id>/<parameter-name>}`. This is a local plaintext file, not system credential storage; it moves with a portable directory, and the app does not place its contents in config, logs, diagnostics, or form read-back. This application-managed form is read through the existing `${secret:...}` resolver described below.
 
 `${secret:NAME}` reads `<config-dir>/secrets/NAME.txt` first and falls back to environment variable `NAME`. Existing `${file:C:\path\secret.txt}` and `${env:NAME}` placeholders are still supported.
 

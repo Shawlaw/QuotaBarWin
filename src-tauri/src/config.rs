@@ -12,7 +12,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 16;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 17;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_REMOTE_PROVIDER_REGISTRY_URL: &str =
@@ -113,6 +113,14 @@ pub enum AppLanguage {
     En,
     #[serde(rename = "zh-CN")]
     ZhCn,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ProviderSetupState {
+    Pending,
+    Unverified,
+    Ready,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -218,6 +226,21 @@ pub enum ProviderConfig {
         show_in_tray: bool,
         #[serde(default, rename = "envVars", alias = "env_vars", alias = "env-vars")]
         env_vars: HashMap<String, String>,
+        #[serde(
+            default = "default_provider_setup_state",
+            rename = "setupState",
+            alias = "setup_state",
+            alias = "setup-state"
+        )]
+        setup_state: ProviderSetupState,
+        #[serde(
+            default,
+            rename = "setupLastTestedAt",
+            alias = "setup_last_tested_at",
+            alias = "setup-last-tested-at",
+            skip_serializing_if = "Option::is_none"
+        )]
+        setup_last_tested_at: Option<String>,
     },
 }
 
@@ -268,6 +291,12 @@ fn default_remote_provider_source_enabled() -> bool {
 
 fn default_show_in_tray() -> bool {
     true
+}
+
+fn default_provider_setup_state() -> ProviderSetupState {
+    // Configs created before the setup flow existed have already been in use;
+    // keep them running without an unexpected migration prompt.
+    ProviderSetupState::Ready
 }
 
 fn default_remote_provider_registry_url() -> Option<String> {
@@ -703,6 +732,26 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(16);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(16);
+    if version < 17 {
+        if let Some(providers) = value
+            .get_mut("providers")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for provider in providers {
+                if provider.get("kind").and_then(serde_json::Value::as_str) == Some("remote")
+                    && provider.get("setupState").is_none()
+                {
+                    provider["setupState"] = serde_json::json!("ready");
+                }
+            }
+        }
+        value["schemaVersion"] = serde_json::json!(17);
+    }
+
     Ok(value)
 }
 
@@ -966,6 +1015,27 @@ pub fn resolve_secret_value(value: &str, config_dir: &Path) -> Result<String, St
 
 pub fn resolve_named_secret(name: &str, config_dir: &Path) -> Result<String, String> {
     let name = name.trim();
+    if let Some(managed_path) =
+        crate::managed_secret_store::managed_secret_path_from_reference(config_dir, name)
+    {
+        let secret_path = managed_path?;
+        return match fs::read_to_string(&secret_path) {
+            Ok(secret) => {
+                let secret = secret.trim().to_string();
+                if secret.is_empty() {
+                    Err(format!("Missing managed Provider secret {name}"))
+                } else {
+                    Ok(secret)
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Err(format!("Missing managed Provider secret {name}"))
+            }
+            Err(error) => Err(format!(
+                "Unable to read managed Provider secret {name}: {error}"
+            )),
+        };
+    }
     if !is_valid_secret_name(name) {
         return Err(format!("Invalid secret name {name}"));
     }
@@ -1253,6 +1323,8 @@ mod tests {
             visible_window_ids: Vec::new(),
             show_in_tray: true,
             env_vars: HashMap::new(),
+            setup_state: ProviderSetupState::Ready,
+            setup_last_tested_at: None,
         }
     }
 
@@ -1825,6 +1897,31 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v16_marks_existing_remote_providers_ready() {
+        let value = serde_json::json!({
+            "schemaVersion": 16,
+            "providers": [{
+                "kind": "remote",
+                "id": "remote-codex",
+                "name": "Codex",
+                "enabled": true,
+                "manifestUrl": "https://example.com/provider.json",
+                "sourceUrl": "https://example.com/provider.js",
+                "runtime": "builtin-js"
+            }]
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(migrated["schemaVersion"], serde_json::json!(17));
+        assert_eq!(
+            migrated["providers"][0]["setupState"],
+            serde_json::json!("ready")
+        );
+        assert_eq!(migrated["providers"][0]["enabled"], serde_json::json!(true));
+    }
+
+    #[test]
     fn non_remote_provider_configs_are_rejected() {
         let mock = serde_json::json!({
             "kind": "mock",
@@ -1909,6 +2006,8 @@ mod tests {
                     "KIMI_API_KEY".to_string(),
                     "${secret:KIMI_API_KEY}".to_string(),
                 )]),
+                setup_state: ProviderSetupState::Ready,
+                setup_last_tested_at: Some("2026-06-18T00:00:00Z".to_string()),
             }],
         };
 
@@ -2117,6 +2216,12 @@ mod tests {
         assert!(contents.contains("Remote Provider Guide"));
         assert!(contents.contains("Manifest 格式"));
         assert!(contents.contains("Manifest format"));
+        assert!(contents.contains("向导式配置字段"));
+        assert!(contents.contains("Guided setup fields"));
+        assert!(contents.contains("secrets/providers"));
+        assert!(contents.contains("helpUrl"));
+        assert!(contents.contains("保存并测试"));
+        assert!(contents.contains("Save and test"));
         assert!(contents.contains("Implementation examples (Zhipu/BigModel)"));
         assert!(contents.contains("实现示例：Zhipu / BigModel"));
         assert!(contents.contains("Node.js"));
@@ -2152,6 +2257,29 @@ mod tests {
 
         assert_eq!(actual, "from-env");
         std::env::remove_var("QBWIN_TEST_ENV_FALLBACK");
+    }
+
+    #[test]
+    fn managed_provider_secret_placeholder_reads_instance_scoped_file() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let store = crate::managed_secret_store::ManagedSecretStore::new(temp.path());
+        let reference = store
+            .write("provider-a", "API_TOKEN", "scoped-secret")
+            .expect("write managed secret");
+
+        let actual = resolve_secret_value(&reference.placeholder(), temp.path())
+            .expect("resolve managed secret");
+
+        assert_eq!(actual, "scoped-secret");
+    }
+
+    #[test]
+    fn invalid_managed_secret_reference_cannot_escape_config_directory() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let error = resolve_secret_value("${secret:providers/../API_TOKEN}", temp.path())
+            .expect_err("invalid managed reference");
+
+        assert!(error.contains("Invalid Provider instance id"));
     }
 
     #[test]

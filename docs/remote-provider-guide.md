@@ -30,7 +30,7 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
   "schemaVersion": 2,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "minAppVersion": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script",
   "runtime": "builtin-js",
@@ -56,7 +56,8 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
       "kind": "secret",
       "required": true,
       "defaultValue": "${secret:KIMI_API_KEY}",
-      "description": "Kimi coding quota API token."
+      "description": "Kimi coding quota API token.",
+      "helpUrl": "https://provider.example.com/api-keys"
     }
   ],
   "checksums": {
@@ -79,8 +80,18 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 | `output` | 是 | 当前仅支持 `provider-snapshot-v1`。 |
 | `permissions` | 否 | 对外部 runtime 是说明字段；对 `builtin-js` 是强制能力边界，格式和用法见下一节。 |
 | `defaultConfig` | 否 | 首次安装时写入本地 provider 配置的默认值，例如 `name`、`timeoutSeconds`、`visibleWindowIds`、`windowLabelOverrides`、`envVars`。后续 provider 更新不会覆盖用户本地修改。 |
-| `parameters` | 否 | 设置页展示的参数提示。每项可包含 `name`、`label`、`kind`、`required`、`defaultValue`、`placeholder`、`description`、`options`。不要放真实凭据。 |
+| `parameters` | 否 | 设置页展示的结构化参数。每项可包含 `name`、`label`、`kind`、`required`、`defaultValue`、`placeholder`、`description`、`options`、`helpUrl`、`advanced`。不要放真实凭据。 |
 | `checksums.source` | 否 | Source 文件 SHA-256。启用安全 auto-update 时需要，格式为 `sha256:<hex>`。`version` 只用于展示，不替代 checksum 校验。 |
+
+### 向导式配置字段
+
+当前版本会基于 `parameters` 生成安装后的配置表单：`secret` 为密码框，`string` 为文本框，`number` 为数字框，`select` 为下拉框。必填字段会先校验，已保存的 secret 永不回传或回显给前端。
+
+`helpUrl` 是获取 API Key 或参数说明的外部帮助链接。设置 `"advanced": true` 会将可选、代理或诊断类字段默认收进“高级设置”；不要将正常首次配置所需的字段标为高级。
+
+新实例会以“待配置”、停用状态安装。用户点击“保存并测试”时，宿主会把 secret 写入该实例独立的本地文件，并把 `${secret:providers/<provider-instance-id>/<parameter-name>}` 写入主配置；解析仍由同一套 `${secret:...}` resolver 和正式 Provider runner 完成。Provider 作者不应要求用户手工创建文件或输入占位符。
+
+第三方 manifest 未提供 `parameters` 时仍可安装，用户可使用保留的原始 `envVars` 编辑器；这保持对旧 manifest 的兼容。
 
 ## 内置 JavaScript runtime（`builtin-js`）
 
@@ -380,6 +391,14 @@ console.log(JSON.stringify({
 远程脚本不应该包含凭据。外部 runtime 脚本读取 `process.env.NAME`；`builtin-js` 脚本
 通过受 permission 约束的 `qb.env.get("NAME")` 或 `qb.env.getOptional("NAME")` 读取。
 QuotaBarWin 只会解析和提供实例配置中的环境变量。
+
+对于带 `parameters` 的安装后表单，普通用户输入的 secret 会自动保存到：
+
+```text
+<config-dir>/secrets/providers/<provider-instance-id>/<parameter-name>.txt
+```
+
+对应 `envVars` 只保存 `${secret:providers/<provider-instance-id>/<parameter-name>}`。这是本地明文文件而非系统凭据存储；它会随便携目录复制，应用不会把其内容写入 config、日志、诊断或表单回显。这个应用托管形式也通过下述既有 `${secret:...}` resolver 读取。
 
 `${secret:NAME}` 会优先读取 `<config-dir>/secrets/NAME.txt`，找不到时回退到环境变量
 `NAME`。`${env:NAME}` 和 `${file:C:\path\secret.txt}` 也仍然支持。

@@ -211,7 +211,7 @@
   "schemaVersion": 2,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "minAppVersion": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "builtin-js",
@@ -236,7 +236,9 @@
       "label": "Kimi API Key",
       "kind": "secret",
       "required": true,
-      "defaultValue": "${secret:KIMI_API_KEY}"
+      "defaultValue": "${secret:KIMI_API_KEY}",
+      "description": "Kimi coding quota API token.",
+      "helpUrl": "https://provider.example.com/api-keys"
     }
   ],
   "checksums": {
@@ -258,17 +260,20 @@
               <tr><td><code>requiredEnvVars</code></td><td>否</td><td>脚本需要的环境变量。</td></tr>
               <tr><td><code>output</code></td><td>是</td><td>当前使用 <code>provider-snapshot-v1</code>。</td></tr>
               <tr><td><code>defaultConfig</code></td><td>否</td><td>首次安装时写入本地 provider 配置的默认值。后续更新不会覆盖用户修改。</td></tr>
-              <tr><td><code>parameters</code></td><td>否</td><td>设置页显示的参数提示；不要包含真实凭据。</td></tr>
+              <tr><td><code>parameters</code></td><td>否</td><td>用于生成安装后结构化配置表单。字段可包含 <code>name</code>、<code>label</code>、<code>kind</code>、<code>required</code>、<code>defaultValue</code>、<code>placeholder</code>、<code>description</code>、<code>options</code>、<code>helpUrl</code> 和 <code>advanced</code>；不要包含真实凭据。</td></tr>
               <tr><td><code>checksums.source</code></td><td>否</td><td>Source SHA-256。启用安全 auto-update 时需要；<code>version</code> 只用于展示，不替代 checksum。</td></tr>
             </tbody>
           </table>
+          <h3>向导式配置字段</h3>
+          <p><code>secret</code> 字段显示为密码框，<code>string</code>、<code>number</code> 和 <code>select</code> 分别显示对应输入控件。<code>helpUrl</code> 用于提供获取 API Key 或参数说明的外部链接；<code>advanced: true</code> 会把可选、代理或诊断字段默认收进高级设置。</p>
+          <p>新实例以“待配置”、停用状态安装。用户点击“保存并测试”后，宿主把 secret 写入实例隔离的本地文件，主配置只保存引用；测试复用正式 Provider runner，成功后自动启用。第三方旧 manifest 没有 <code>parameters</code> 时仍可使用原始 <code>envVars</code> 编辑器。</p>
         </section>
 
         <section>
           <h2>Registry 格式</h2>
           <p>Registry 可以用一个 URL 安装多个 Provider。</p>
           <pre>{
-  "schemaVersion": 2,
+  "schemaVersion": 1,
   "providers": [
     {
       "id": "kimi-coding",
@@ -343,27 +348,13 @@
             远程脚本不应该包含凭据。外部 runtime 读取 <code>process.env.NAME</code>；<code>builtin-js</code> 使用受 permission 约束的 <code>qb.env.get("NAME")</code>。
           </p>
           <p>
-            单账号可直接使用 <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY.txt</code> 这类同名 secret。多账号时，在每个账号实例的“环境变量”里显式映射：等号左侧保持脚本需要的变量名，右侧换成该账号的 secret 名。
+            普通用户在安装后的结构化表单中填写凭据并点击“保存并测试”即可。应用会把 secret 自动写入：
           </p>
-          <pre>{
-  "kind": "remote",
-  "id": "kimi-coding",
-  "name": "Kimi Personal",
-  "envVars": {
-    "KIMI_API_KEY": "${secret:KIMI_API_KEY_PERSONAL}"
-  }
-}</pre>
-          <pre>{
-  "kind": "remote",
-  "id": "kimi-coding-2",
-  "name": "Kimi Work",
-  "envVars": {
-    "KIMI_API_KEY": "${secret:KIMI_API_KEY_WORK}"
-  }
-}</pre>
+          <pre>&lt;config-dir&gt;/secrets/providers/&lt;provider-instance-id&gt;/&lt;parameter-name&gt;.txt</pre>
           <p>
-            上面会分别读取 <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY_PERSONAL.txt</code> 和 <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY_WORK.txt</code>；配置中只保存占位符，不保存明文 token。
+            对应 <code>envVars</code> 只保存 <code>${secret:providers/&lt;provider-instance-id&gt;/&lt;parameter-name&gt;}</code>。已保存的 secret 不会回传或回显。该文件是本地明文而非系统凭据存储，会随便携目录复制，请保护配置目录。
           </p>
+          <p>高级兼容模式仍支持旧 <code>${secret:NAME}</code>、<code>${env:NAME}</code>、<code>${file:C:\path\secret.txt}</code>、明文值和原始 <code>envVars</code>。升级不会强制迁移这些配置。</p>
         </section>
 
         <section>
@@ -573,7 +564,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
   "schemaVersion": 2,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "minAppVersion": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "builtin-js",
@@ -598,7 +589,9 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
       "label": "Kimi API Key",
       "kind": "secret",
       "required": true,
-      "defaultValue": "${secret:KIMI_API_KEY}"
+      "defaultValue": "${secret:KIMI_API_KEY}",
+      "description": "Kimi coding quota API token.",
+      "helpUrl": "https://provider.example.com/api-keys"
     }
   ],
   "checksums": {
@@ -620,10 +613,13 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
               <tr><td><code>requiredEnvVars</code></td><td>no</td><td>Environment variables required by the script.</td></tr>
               <tr><td><code>output</code></td><td>yes</td><td>Use <code>provider-snapshot-v1</code>.</td></tr>
               <tr><td><code>defaultConfig</code></td><td>no</td><td>Default local provider config written during first install. Updates do not overwrite user edits.</td></tr>
-              <tr><td><code>parameters</code></td><td>no</td><td>Parameter hints shown in Settings; do not include real credentials.</td></tr>
+              <tr><td><code>parameters</code></td><td>no</td><td>Generates the structured post-install setup form. Fields can include <code>name</code>, <code>label</code>, <code>kind</code>, <code>required</code>, <code>defaultValue</code>, <code>placeholder</code>, <code>description</code>, <code>options</code>, <code>helpUrl</code>, and <code>advanced</code>. Never include real credentials.</td></tr>
               <tr><td><code>checksums.source</code></td><td>no</td><td>Source SHA-256. Required for safe auto-update; <code>version</code> is display metadata and does not replace checksum verification.</td></tr>
             </tbody>
           </table>
+          <h3>Guided setup fields</h3>
+          <p>A <code>secret</code> field renders as a password input; <code>string</code>, <code>number</code>, and <code>select</code> render their corresponding controls. Use <code>helpUrl</code> for an external API-key or parameter guide. Set <code>advanced: true</code> to place optional proxy or diagnostic fields under Advanced settings.</p>
+          <p>New instances install disabled and “Pending setup.” After the user clicks <strong>Save and test</strong>, the host writes secrets to instance-isolated local files and stores references in main config. The test reuses the formal Provider runner and enables the Provider on success. A legacy third-party manifest without <code>parameters</code> can still use the raw <code>envVars</code> editor.</p>
         </section>
 
         <section>
@@ -705,27 +701,13 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
             Remote provider source should not contain credentials. External runtimes read <code>process.env.NAME</code>; <code>builtin-js</code> uses permission-gated <code>qb.env.get("NAME")</code>.
           </p>
           <p>
-            A single account can use a same-name secret such as <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY.txt</code>. For multiple accounts, set each account instance's Environment variables explicitly: keep the left side as the script env var and change the secret name on the right.
+            In the normal flow, enter credentials in the structured post-install form and click <strong>Save and test</strong>. The app writes each secret automatically to:
           </p>
-          <pre>{
-  "kind": "remote",
-  "id": "kimi-coding",
-  "name": "Kimi Personal",
-  "envVars": {
-    "KIMI_API_KEY": "${secret:KIMI_API_KEY_PERSONAL}"
-  }
-}</pre>
-          <pre>{
-  "kind": "remote",
-  "id": "kimi-coding-2",
-  "name": "Kimi Work",
-  "envVars": {
-    "KIMI_API_KEY": "${secret:KIMI_API_KEY_WORK}"
-  }
-}</pre>
+          <pre>&lt;config-dir&gt;/secrets/providers/&lt;provider-instance-id&gt;/&lt;parameter-name&gt;.txt</pre>
           <p>
-            These examples read <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY_PERSONAL.txt</code> and <code>&lt;config-dir&gt;/secrets/KIMI_API_KEY_WORK.txt</code>; the config stores placeholders, not plain tokens.
+            The matching <code>envVars</code> value stores only <code>${secret:providers/&lt;provider-instance-id&gt;/&lt;parameter-name&gt;}</code>. Saved secrets are never returned to or shown by the UI. The file is local plaintext rather than a system credential store and moves with a portable directory, so protect the config directory.
           </p>
+          <p>Advanced compatibility remains available for existing <code>${secret:NAME}</code>, <code>${env:NAME}</code>, <code>${file:C:\path\secret.txt}</code>, literal values, and the raw <code>envVars</code> editor. Upgrading does not force a migration.</p>
         </section>
 
         <section>

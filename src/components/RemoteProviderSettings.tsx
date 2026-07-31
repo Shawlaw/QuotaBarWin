@@ -32,11 +32,11 @@ type RemoteProviderSettingsProps = {
     checksum: string | null,
     proxyUrl: string | null,
     autoUpdate: boolean
-  ) => Promise<RemoteProviderConfig>;
+  ) => Promise<RemoteProviderConfig | null>;
   onMigrateSource: (
     url: string,
     proxyUrl: string | null
-  ) => Promise<RegistryMigrationResult>;
+  ) => Promise<RegistryMigrationResult | null>;
   onOpenGuide: () => Promise<void>;
   onBackToSettings: () => void;
   onBackToAddProvider: () => void;
@@ -284,12 +284,15 @@ export function RemoteProviderSettings({
       (entry.installedCount ?? (entry.installed ? 1 : 0)) > 0 ||
       installedProviderIds.includes(entry.id);
     try {
-      await onInstallManifest(
+      const installed = await onInstallManifest(
         entry.providerUrl,
         entry.checksum ?? null,
         entry.sourceProxyUrl,
         entry.sourceAutoUpdate
       );
+      if (!installed) {
+        return;
+      }
       setCatalog((current) =>
         current.map((item) =>
           item.sourceId === entry.sourceId && item.providerUrl === entry.providerUrl
@@ -325,12 +328,15 @@ export function RemoteProviderSettings({
     setInstallMessage(null);
     setDirectInstallLoading(true);
     try {
-      await onInstallManifest(
+      const installed = await onInstallManifest(
         trimmedUrl,
         manifestChecksum.trim() || null,
         defaultInstallSource ? sourceProxy(defaultInstallSource) : null,
         defaultInstallSource ? sourceAutoUpdate(defaultInstallSource) : true
       );
+      if (!installed) {
+        return;
+      }
       setManifestUrl("");
       setManifestChecksum("");
       setInstallMessage(t.remoteProviders.providerInstalled);
@@ -356,6 +362,9 @@ export function RemoteProviderSettings({
     setMigratingSourceId(source.id);
     try {
       const result = await onMigrateSource(source.url.trim(), sourceProxy(source));
+      if (!result) {
+        return;
+      }
       setInstallMessage(
         t.remoteProviders.migrateSourceResult(
           result.migrated.length,
@@ -589,6 +598,7 @@ export function RemoteProviderSettings({
         {catalogMessage ? (
           <div className="settings-message">{catalogMessage}</div>
         ) : null}
+        {catalogLoading ? <div className="settings-message" role="status">{t.remoteProviders.loading}</div> : null}
         {installMessage ? (
           <div className="settings-message">{installMessage}</div>
         ) : null}

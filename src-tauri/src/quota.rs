@@ -1162,6 +1162,8 @@ mod tests {
             visible_window_ids: Vec::new(),
             show_in_tray: true,
             env_vars: std::collections::HashMap::new(),
+            setup_state: crate::config::ProviderSetupState::Ready,
+            setup_last_tested_at: None,
         }
     }
 
@@ -1188,6 +1190,8 @@ mod tests {
             visible_window_ids: Vec::new(),
             show_in_tray: true,
             env_vars: std::collections::HashMap::new(),
+            setup_state: crate::config::ProviderSetupState::Ready,
+            setup_last_tested_at: None,
         }
     }
 

@@ -14,6 +14,7 @@ import {
   listenForSingleInstance,
   openConfigFolder,
   openProjectGithub,
+  openRemoteProviderGuide,
   refreshProvider,
   refreshSnapshot,
   resetConfig,
@@ -26,6 +27,7 @@ import type {
   AppSnapshot,
   ConfigStorageInfo,
   ProviderSnapshot,
+  ProviderSetupTestResult,
   RemoteProviderConfig
 } from "./types";
 
@@ -93,6 +95,33 @@ function projectSnapshotForConfig(
       return provider ? [projectProviderSnapshot(provider, providerConfig)] : [];
     })
   };
+}
+
+export function mergeProviderSetupSnapshot(
+  snapshot: AppSnapshot | null,
+  config: AppConfig,
+  testedProvider: ProviderSnapshot | null | undefined
+): AppSnapshot | null {
+  if (!testedProvider) {
+    return projectSnapshotForConfig(snapshot, config);
+  }
+
+  const refreshedAt =
+    testedProvider.updatedAt ?? snapshot?.refreshedAt ?? new Date().toISOString();
+  const base: AppSnapshot = snapshot ?? {
+    schemaVersion: 1,
+    refreshedAt,
+    providers: []
+  };
+  const withTestedProvider: AppSnapshot = {
+    ...base,
+    refreshedAt,
+    providers: [
+      ...base.providers.filter((provider) => provider.id !== testedProvider.id),
+      testedProvider
+    ]
+  };
+  return projectSnapshotForConfig(withTestedProvider, config);
 }
 
 function stableRecordEntries(record: Record<string, string> | undefined): [string, string][] {
@@ -206,6 +235,9 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isConfigStorageBusy, setIsConfigStorageBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [initialProviderSettingsView, setInitialProviderSettingsView] = useState<"main" | "add">("main");
+  const [settingsCloseRequest, setSettingsCloseRequest] = useState(0);
+  const [settingsHomeRequest, setSettingsHomeRequest] = useState(0);
 
   const syncCachedSnapshot = useCallback(async () => {
     try {
@@ -380,6 +412,17 @@ function MainApp({ onLanguageChange }: MainAppProps) {
     void runDataRefresh(target === "all" ? "all" : new Set(target));
   }
 
+  function synchronizeProviderSetupConfig(
+    updatedConfig: AppConfig,
+    testResult?: ProviderSetupTestResult
+  ) {
+    persistedConfigRef.current = updatedConfig;
+    setConfig(updatedConfig);
+    setSnapshot((current) =>
+      mergeProviderSetupSnapshot(current, updatedConfig, testResult?.provider)
+    );
+  }
+
   async function persistConfig() {
     if (!config) {
       return;
@@ -461,8 +504,19 @@ function MainApp({ onLanguageChange }: MainAppProps) {
         activeView={settingsOpen ? "settings" : "overview"}
         appVersion={appVersion}
         isLoading={isLoading}
-        onOpenOverview={() => setSettingsOpen(false)}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenOverview={() => {
+          if (settingsOpen) {
+            setSettingsCloseRequest((current) => current + 1);
+          }
+        }}
+        onOpenSettings={() => {
+          if (settingsOpen) {
+            setSettingsHomeRequest((current) => current + 1);
+          } else {
+            setInitialProviderSettingsView("main");
+            setSettingsOpen(true);
+          }
+        }}
         onRefresh={loadSnapshot}
         onOpenGithub={() => void openProjectGithub()}
       />
@@ -479,6 +533,11 @@ function MainApp({ onLanguageChange }: MainAppProps) {
           onResetConfig={restoreDefaultConfig}
           onSave={persistConfig}
           onSetPortableMode={(enabled) => void togglePortableMode(enabled)}
+          onProviderSetupConfigChanged={synchronizeProviderSetupConfig}
+          onRequestClose={() => setSettingsOpen(false)}
+          closeRequest={settingsCloseRequest}
+          settingsHomeRequest={settingsHomeRequest}
+          initialProviderSettingsView={initialProviderSettingsView}
         />
       ) : (
         <section className="overview-page" aria-label={t.app.overviewLabel} data-testid="overview-page">
@@ -495,6 +554,33 @@ function MainApp({ onLanguageChange }: MainAppProps) {
             </section>
           )}
           <section className="provider-list" aria-label={t.app.providersLabel}>
+            {config && !config.providers.some((provider) =>
+              provider.enabled && provider.setupState !== "pending" && provider.setupState !== "unverified"
+            ) ? (
+              <section className="settings-empty provider-setup-empty" data-testid="provider-setup-empty-state">
+                <h2>{t.providerSetup.noUsableProvidersTitle}</h2>
+                <p>{t.providerSetup.noUsableProvidersBody}</p>
+                <div className="settings-actions">
+                  <button
+                    type="button"
+                    className="button-primary"
+                    onClick={() => {
+                      setInitialProviderSettingsView("add");
+                      setSettingsOpen(true);
+                    }}
+                  >
+                    {t.providerSetup.addProvider}
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void openRemoteProviderGuide()}
+                  >
+                    {t.providerSetup.openGuide}
+                  </button>
+                </div>
+              </section>
+            ) : null}
             {providers.map((provider) => (
               <ProviderCard
                 key={provider.id}

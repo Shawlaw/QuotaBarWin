@@ -6,6 +6,33 @@ pub fn redact_sensitive(input: &str) -> String {
         .join(" ")
 }
 
+/// Redacts exact credential values known only for the lifetime of a Provider
+/// run, then applies the normal shape- and key-based redaction.
+///
+/// Sorting longest-first prevents a shorter value from exposing the suffix of
+/// a longer value. Callers must not persist the value list.
+pub fn redact_sensitive_values(input: &str, sensitive_values: &[String]) -> String {
+    redact_sensitive(&redact_exact_sensitive_values(input, sensitive_values))
+}
+
+/// Replaces exact runtime credential values without changing unrelated
+/// whitespace or formatting in Provider-supplied display data.
+pub fn redact_exact_sensitive_values(input: &str, sensitive_values: &[String]) -> String {
+    let mut values = sensitive_values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    values.sort_unstable_by_key(|value| std::cmp::Reverse(value.len()));
+    values.dedup();
+
+    let mut redacted = input.to_string();
+    for value in values {
+        redacted = redacted.replace(value, "[REDACTED]");
+    }
+    redacted
+}
+
 fn redact_word(word: &str) -> String {
     let upper = word.to_ascii_uppercase();
     if let Some((key, _value)) = word.split_once('=') {
@@ -94,5 +121,16 @@ mod tests {
         let output = redact_sensitive("DEEPSEEK_API_KEY=super-secret-value");
 
         assert_eq!(output, "DEEPSEEK_API_KEY=[REDACTED]");
+    }
+
+    #[test]
+    fn redaction_hides_short_exact_runtime_credentials() {
+        let values = vec!["tiny".to_string(), "tiny-secret".to_string()];
+        let output =
+            redact_sensitive_values("message=tiny-secret raw tiny and tiny-secret", &values);
+
+        assert!(!output.contains("tiny"));
+        assert!(!output.contains("tiny-secret"));
+        assert_eq!(output, "message=[REDACTED] raw [REDACTED] and [REDACTED]");
     }
 }

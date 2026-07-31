@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "minAppVersion": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "builtin-js",
@@ -28,7 +28,8 @@
       "kind": "secret",
       "required": true,
       "defaultValue": "${secret:KIMI_API_KEY}",
-      "description": "Kimi coding quota API token. Store it in secrets/KIMI_API_KEY.txt or change the placeholder for multiple accounts."
+      "description": "Kimi coding quota API token.",
+      "helpUrl": "https://platform.moonshot.cn/console/api-keys"
     }
   ],
   "checksums": {

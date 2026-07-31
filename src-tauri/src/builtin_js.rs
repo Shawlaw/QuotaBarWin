@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     logger::{LogLevel, LogSink},
     proxy::build_http_client,
-    redact::redact_sensitive,
+    redact::{redact_sensitive, redact_sensitive_values},
     remote_provider::ProviderManifest,
 };
 
@@ -30,6 +30,7 @@ pub struct BuiltinJsRun<'a> {
     pub manifest: &'a ProviderManifest,
     pub source: &'a str,
     pub env: &'a HashMap<String, String>,
+    pub sensitive_values: &'a [String],
     pub timeout: Duration,
     pub proxy_url: Option<&'a str>,
     pub log: Option<&'a LogSink>,
@@ -99,6 +100,7 @@ struct BuiltinJsMeta<'a> {
 struct BuiltinJsHost {
     provider_id: String,
     environment: HashMap<String, String>,
+    sensitive_values: Vec<String>,
     capabilities: BuiltinJsCapabilities,
     home_dir: Option<PathBuf>,
     deadline: Instant,
@@ -375,8 +377,8 @@ impl BuiltinJsHost {
                 &format!(
                     "providerId={} providerLog stage={} message={}",
                     self.provider_id,
-                    redact_sensitive(stage),
-                    redact_sensitive(message)
+                    redact_sensitive_values(stage, &self.sensitive_values),
+                    redact_sensitive_values(message, &self.sensitive_values)
                 ),
             );
         }
@@ -414,6 +416,7 @@ pub fn run_builtin_js_provider(run: BuiltinJsRun<'_>) -> Result<BuiltinJsResult,
     let host = BuiltinJsHost {
         provider_id: run.provider_id.to_string(),
         environment: run.env.clone(),
+        sensitive_values: run.sensitive_values.to_vec(),
         capabilities: BuiltinJsCapabilities::from_permissions(&run.manifest.permissions)?,
         home_dir: current_home_dir(),
         deadline,
@@ -660,6 +663,7 @@ mod tests {
                 }
             "#,
             env: &env,
+            sensitive_values: &[],
             timeout: Duration::from_secs(1),
             proxy_url: None,
             log: None,
@@ -668,6 +672,40 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&result.json).expect("JSON result");
         assert_eq!(value["id"], "instance-id");
         assert_eq!(value["token"], "configured");
+    }
+
+    #[test]
+    fn runtime_credentials_are_redacted_from_builtin_provider_logs() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config_path = temp.path().join("config.json");
+        let config = crate::config::default_config();
+        let log = LogSink::from_config_path(&config_path, &config);
+        let manifest = manifest(&["env:API_TOKEN"]);
+        let secret = "tiny-secret".to_string();
+        let env = HashMap::from([("API_TOKEN".to_string(), secret.clone())]);
+
+        run_builtin_js_provider(BuiltinJsRun {
+            provider_id: "instance-id",
+            provider_name: "Instance Name",
+            manifest: &manifest,
+            source: r#"
+                function main(qb) {
+                  qb.log({ level: 'info', stage: 'test.run', message: qb.env.get('API_TOKEN') });
+                  return { windows: [] };
+                }
+            "#,
+            env: &env,
+            sensitive_values: std::slice::from_ref(&secret),
+            timeout: Duration::from_secs(1),
+            proxy_url: None,
+            log: Some(&log),
+        })
+        .expect("builtin result");
+
+        let log_contents = std::fs::read_to_string(config_path.with_file_name("quotabarwin.log"))
+            .expect("read log");
+        assert!(!log_contents.contains(&secret));
+        assert!(log_contents.contains("[REDACTED]"));
     }
 
     #[test]
@@ -680,6 +718,7 @@ mod tests {
             manifest: &manifest,
             source: "function main(qb) { return { value: qb.env.get('SECRET') }; }",
             env: &env,
+            sensitive_values: &[],
             timeout: Duration::from_secs(1),
             proxy_url: None,
             log: None,
@@ -698,6 +737,7 @@ mod tests {
                 temp.path().join("not-allowed.txt").display().to_string()
             ),
             env: &env,
+            sensitive_values: &[],
             timeout: Duration::from_secs(1),
             proxy_url: None,
             log: None,
@@ -717,6 +757,7 @@ mod tests {
             manifest: &manifest,
             source: "function main(qb) { return { configured: qb.env.getOptional('OPTIONAL_VALUE') }; }",
             env: &env,
+            sensitive_values: &[],
             timeout: Duration::from_secs(1),
             proxy_url: None,
             log: None,
@@ -734,11 +775,12 @@ mod tests {
         std::fs::write(&auth_file, "token-from-auth-file").expect("auth file");
 
         let manifest = manifest(&["fs:~/.codex/auth.json"]);
-        let capabilities = BuiltinJsCapabilities::from_permissions(&manifest.permissions)
-            .expect("capabilities");
+        let capabilities =
+            BuiltinJsCapabilities::from_permissions(&manifest.permissions).expect("capabilities");
         let host = BuiltinJsHost {
             provider_id: "builtin-test".to_string(),
             environment: HashMap::new(),
+            sensitive_values: Vec::new(),
             capabilities,
             home_dir: Some(temp.path().to_path_buf()),
             deadline: Instant::now() + Duration::from_secs(1),
@@ -784,6 +826,7 @@ mod tests {
                 "function main(qb) {{ const response = qb.http.request('{origin}/usage'); return {{ status: response.status, body: JSON.parse(response.body) }}; }}"
             ),
             env: &env,
+            sensitive_values: &[],
             timeout: Duration::from_secs(2),
             proxy_url: None,
             log: None,
@@ -805,6 +848,7 @@ mod tests {
             manifest: &manifest,
             source: "function main(qb) { while (true) {} }",
             env: &env,
+            sensitive_values: &[],
             timeout: Duration::from_millis(20),
             proxy_url: None,
             log: None,

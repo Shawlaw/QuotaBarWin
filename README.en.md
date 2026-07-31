@@ -30,9 +30,9 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 
 - Platform: **Windows**
 - Distribution: **portable zip + single exe**
-- Current version: **v1.1.1**
+- Current version: **v1.2.0**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
-- Current config schema version: **16**
+- Current config schema version: **17**
 
 ---
 
@@ -83,25 +83,26 @@ The QuotaBarWin-maintained registry currently contains these manifests; the actu
 
 1. Open **Settings → Providers → Add Provider**.
 2. The QuotaBarWin-maintained Provider source should load automatically. If the list is empty, open **Manage Source** and paste the registry URL above.
-3. Click **Install** on the Provider you want. Installed Providers are enabled by default, and can be disabled with the checkbox in the Provider list.
+3. Click **Install** on the Provider you want. The app immediately opens that account's setup form; the new instance stays disabled and is excluded from scheduled refreshes until it is verified.
 4. For multiple accounts on the same Provider, click **Add account** on the already-installed item.
 
 ### 4. Configure Credentials
 
-Return to **Settings → Providers**, expand the installed Provider, and fill **Environment variables**. Prefer `${secret:...}`, `${env:...}`, or `${file:...}` placeholders instead of pasting plain tokens into config.
+After installation, enter the account name and required API Key in the form, then click **Save and test**. On success the Provider is enabled automatically and shows a short quota preview. On failure, the safely saved configuration is retained and the form offers a retry path.
 
-| Provider | Environment variables example | Secret file |
-|---|---|---|
-| Kimi | `KIMI_API_KEY=${secret:KIMI_API_KEY}` | `<config-dir>\secrets\KIMI_API_KEY.txt` |
-| BigModel | `BIGMODEL_API_KEY=${secret:BIGMODEL_API_KEY}` | `<config-dir>\secrets\BIGMODEL_API_KEY.txt` |
-| DeepSeek | `DEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}` | `<config-dir>\secrets\DEEPSEEK_API_KEY.txt` |
-| Codex usage | Reads local Codex auth by default | Optional `CODEX_ACCESS_TOKEN`, `CODEX_ACCOUNT_ID`, `CODEX_AUTH_FILE`, or proxy env vars |
+The normal path does not require creating a `secrets` directory or txt file, entering `${secret:...}`, or editing raw environment variables. The app writes every account's secret automatically to:
 
-You can find `<config-dir>` in **Settings → General → Configuration storage**, or click **Open config storage folder**. Create the `secrets` folder manually if it does not exist yet; each secret file only needs to contain the matching token or API key.
+```text
+<config-dir>\secrets\providers\<provider-instance-id>\<parameter-name>.txt
+```
 
-### 5. Codex Proxy
+The main config stores only the `${secret:providers/<provider-instance-id>/<parameter-name>}` reference, and existing secret values are never shown in the UI. This file is still local plaintext; it travels with the configuration directory in portable mode or backups, so protect that directory.
 
-When Codex usage needs a proxy, you can set it in that Provider's **Environment variables**, for example:
+**Advanced compatibility:** existing `${secret:NAME}`, `${env:NAME}`, `${file:C:\path\secret.txt}`, literal values, and the raw **Environment variables** editor remain available for third-party Providers and automation. Upgrading never forces a migration.
+
+### 5. Proxies
+
+When Codex usage needs a proxy, set it in the Provider form's **Advanced settings**. Existing raw environment-variable configuration also remains valid, for example:
 
 ```text
 HTTPS_PROXY=http://127.0.0.1:7890
@@ -109,30 +110,15 @@ HTTPS_PROXY=http://127.0.0.1:7890
 
 The embedded runtime host handles Codex usage proxies: Provider `QBWIN_PROXY_URL` takes priority and the project-wide proxy is the fallback. When the project proxy is set to System, it reads the Windows process `HTTPS_PROXY` / `HTTP_PROXY` environment. Supported protocols are `socks5:`, `socks5h:`, `http:`, and `https:`. An installation-source proxy is used only to download registries, manifests, and scripts. For complete request, auth, and proxy notes, see [`examples/remote-providers/codex-usage/api.en.md`](examples/remote-providers/codex-usage/api.en.md).
 
+Use **Settings → General → Network proxy → Test proxy** to test the current, even unsaved, proxy settings. The default target is the GitHub homepage. If an enterprise network or GitHub restriction makes that unsuitable, expand the advanced option and enter another HTTPS URL for this test only. The target is not saved, response content is discarded, and raw transport errors are not shown.
+
 ### 6. Multiple Accounts
 
-For multiple accounts, keep the left side as the env var expected by the script and change the secret name on the right. For example, two Kimi account instances can use:
-
-```text
-# Kimi Personal account instance
-KIMI_API_KEY=${secret:KIMI_PERSONAL_API_KEY}
-```
-
-```text
-# Kimi Work account instance
-KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}
-```
-
-Create the matching files:
-
-```text
-<config-dir>\secrets\KIMI_PERSONAL_API_KEY.txt
-<config-dir>\secrets\KIMI_WORK_API_KEY.txt
-```
+For multiple accounts, click **Add account** on the installed Provider. Each new account gets its own Provider instance and managed secret directory, so its API Key cannot overwrite or be shared with another account. Advanced users can keep their own `${secret:...}` / `${env:...}` / `${file:...}` mappings.
 
 ### 7. Save And View
 
-Click **Save** (or press Ctrl+S). The settings page stays open after saving, so you can keep adjusting other Providers; changes that affect data fetching (such as environment variables or proxy settings) refresh the affected Providers in the background. When you are done, click **Overview** in the header to return, or open the tray popup to view quota status. You can refresh all Providers globally or refresh one Provider from its card.
+Click **Save and test** in the setup form. On success, click **Done** to return to Overview. A Provider left for later stays in the “Pending setup” state and does not participate in background refreshes. General settings and advanced raw configuration can still be saved with **Save** (or Ctrl+S).
 
 ---
 
@@ -164,7 +150,7 @@ The CLI can also validate Provider configuration, manifest, source checksum, and
 - Supports AppData storage and portable mode. Portable mode keeps config, logs, secrets, and cached remote providers beside the exe.
 - Supports Provider enablement, ordering, visible quota windows, and custom window labels.
 - Installs Providers from remote registries/manifests with caching, SHA-256 verification, and update checks.
-- Supports global and per-Provider proxies with HTTP and SOCKS5.
+- Supports global and per-Provider proxies with HTTP and SOCKS5, including a pre-save global proxy connectivity test.
 - Supports secret placeholders so real credentials do not need to be stored directly in config or logs.
 
 ---

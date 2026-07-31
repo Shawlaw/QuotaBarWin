@@ -21,7 +21,7 @@ use crate::{
     quota::{
         clamp_snapshot_percentages, AppSnapshot, ProviderDiagnostics, ProviderSnapshot, QuotaWindow,
     },
-    redact::redact_sensitive,
+    redact::{redact_exact_sensitive_values, redact_sensitive, redact_sensitive_values},
     remote_provider::{
         ensure_runtime_resolved, is_builtin_js_runtime, load_cached_manifest, ProviderManifest,
         BUILTIN_JS_RUNTIME,
@@ -37,6 +37,7 @@ struct RemoteCommandSpec {
     cwd: Option<String>,
     timeout_ms: u64,
     env: HashMap<String, String>,
+    sensitive_values: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -255,6 +256,7 @@ pub fn run_remote_provider(
             }
         }
     }
+    let sensitive_values = runtime_sensitive_values(&manifest, env_vars, &env);
     inject_provider_metadata_env(&mut env, id, name, &manifest, timeout_seconds);
 
     if is_builtin_js_runtime(runtime) {
@@ -264,6 +266,7 @@ pub fn run_remote_provider(
             &manifest,
             &source_path,
             &env,
+            &sensitive_values,
             timeout_seconds,
             window_label_overrides,
             visible_window_ids,
@@ -280,6 +283,7 @@ pub fn run_remote_provider(
         cwd: Some(provider_dir.display().to_string()),
         timeout_ms: timeout_seconds.max(1).saturating_mul(1000),
         env,
+        sensitive_values,
     };
 
     run_remote_command(
@@ -299,6 +303,7 @@ fn run_builtin_js_remote_provider(
     manifest: &ProviderManifest,
     source_path: &Path,
     env: &HashMap<String, String>,
+    sensitive_values: &[String],
     timeout_seconds: u64,
     window_label_overrides: &HashMap<String, String>,
     visible_window_ids: &[String],
@@ -329,6 +334,7 @@ fn run_builtin_js_remote_provider(
         manifest,
         source: &source,
         env,
+        sensitive_values,
         timeout: Duration::from_secs(timeout_seconds.max(1)),
         proxy_url,
         log,
@@ -336,7 +342,7 @@ fn run_builtin_js_remote_provider(
     let result = match result {
         Ok(result) => result,
         Err(error) => {
-            let error = redact_sensitive(&error);
+            let error = redact_sensitive_values(&error, sensitive_values);
             let user_error = summarize_builtin_js_error(&error);
             log_provider(
                 log,
@@ -371,6 +377,7 @@ fn run_builtin_js_remote_provider(
             )];
         }
     };
+    redact_provider_snapshot(&mut provider, sensitive_values);
     let window_count = provider.windows.len();
     apply_visible_windows(&mut provider, visible_window_ids);
     apply_window_label_overrides(&mut provider, window_label_overrides);
@@ -538,6 +545,7 @@ fn run_remote_command(
             window_label_overrides,
             visible_window_ids,
             log,
+            &command.sensitive_values,
         ),
         Err(error) => {
             log_provider(
@@ -603,8 +611,15 @@ fn execute_command(
     let stdout_handle = thread::spawn(move || read_child_stdout(stdout));
     let provider_id_for_stderr = provider_id.to_string();
     let log_for_stderr = log.cloned();
-    let stderr_handle =
-        thread::spawn(move || read_child_stderr(stderr, &provider_id_for_stderr, log_for_stderr));
+    let sensitive_values_for_stderr = command.sensitive_values.clone();
+    let stderr_handle = thread::spawn(move || {
+        read_child_stderr(
+            stderr,
+            &provider_id_for_stderr,
+            log_for_stderr,
+            sensitive_values_for_stderr,
+        )
+    });
 
     let (status, timed_out) = loop {
         if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
@@ -647,6 +662,7 @@ fn read_child_stderr(
     stderr: ChildStderr,
     provider_id: &str,
     log: Option<LogSink>,
+    sensitive_values: Vec<String>,
 ) -> Result<String, String> {
     let mut captured = String::new();
     let mut reader = BufReader::new(stderr);
@@ -661,8 +677,8 @@ fn read_child_stderr(
         }
         let raw_line = line.trim_end_matches(['\r', '\n']);
         if !raw_line.trim().is_empty() {
-            log_provider_stderr_line(log.as_ref(), provider_id, raw_line);
-            let redacted = captured_stderr_line(raw_line);
+            log_provider_stderr_line(log.as_ref(), provider_id, raw_line, &sensitive_values);
+            let redacted = captured_stderr_line(raw_line, &sensitive_values);
             append_bounded_stderr(&mut captured, &redacted);
         }
     }
@@ -687,8 +703,14 @@ fn append_bounded_stderr(captured: &mut String, line: &str) {
     captured.push_str(&tail);
 }
 
-fn log_provider_stderr_line(log: Option<&LogSink>, provider_id: &str, line: &str) {
+fn log_provider_stderr_line(
+    log: Option<&LogSink>,
+    provider_id: &str,
+    line: &str,
+    sensitive_values: &[String],
+) {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        let line = redact_sensitive_values(line, sensitive_values);
         log_provider(
             log,
             LogLevel::Info,
@@ -706,20 +728,26 @@ fn log_provider_stderr_line(log: Option<&LogSink>, provider_id: &str, line: &str
         log,
         level,
         provider_id,
-        &format!(
-            "providerLog structured=true {}",
-            provider_log_summary(&value)
+        &redact_sensitive_values(
+            &format!(
+                "providerLog structured=true {}",
+                provider_log_summary(&value)
+            ),
+            sensitive_values,
         ),
     );
 }
 
-fn captured_stderr_line(line: &str) -> String {
+fn captured_stderr_line(line: &str, sensitive_values: &[String]) -> String {
     match serde_json::from_str::<serde_json::Value>(line) {
-        Ok(value) => redact_sensitive(&format!(
-            "providerLog structured=true {}",
-            provider_log_summary(&value)
-        )),
-        Err(_) => redact_sensitive(line),
+        Ok(value) => redact_sensitive_values(
+            &format!(
+                "providerLog structured=true {}",
+                provider_log_summary(&value)
+            ),
+            sensitive_values,
+        ),
+        Err(_) => redact_sensitive_values(line, sensitive_values),
     }
 }
 
@@ -848,6 +876,59 @@ fn resolve_required_env_vars(
     Ok(env)
 }
 
+fn runtime_sensitive_values(
+    manifest: &ProviderManifest,
+    configured_env_vars: &HashMap<String, String>,
+    resolved_env: &HashMap<String, String>,
+) -> Vec<String> {
+    let mut sensitive_names = manifest
+        .required_env_vars
+        .iter()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect::<HashSet<_>>();
+    sensitive_names.extend(
+        manifest
+            .parameters
+            .iter()
+            .filter(|parameter| parameter.kind.as_deref() == Some("secret"))
+            .map(|parameter| parameter.name.clone()),
+    );
+    for (name, source) in configured_env_vars {
+        let upper_name = name.to_ascii_uppercase();
+        let source = source.trim();
+        if source.starts_with("${secret:")
+            || source.starts_with("${env:")
+            || source.starts_with("${file:")
+            || [
+                "API_KEY",
+                "TOKEN",
+                "SECRET",
+                "PASSWORD",
+                "COOKIE",
+                "AUTH",
+                "CREDENTIAL",
+                "ACCOUNT_ID",
+            ]
+            .iter()
+            .any(|pattern| upper_name.contains(pattern))
+        {
+            sensitive_names.insert(name.clone());
+        }
+    }
+    sensitive_names.insert("QBWIN_PROXY_URL".to_string());
+
+    let mut values = sensitive_names
+        .iter()
+        .filter_map(|name| resolved_env.get(name))
+        .filter(|value| !value.trim().is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    values.sort();
+    values.dedup();
+    values
+}
+
 #[cfg(windows)]
 fn suppress_command_window(command: &mut Command) {
     const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -913,6 +994,7 @@ fn parse_remote_output(
     window_label_overrides: &HashMap<String, String>,
     visible_window_ids: &[String],
     log: Option<&LogSink>,
+    sensitive_values: &[String],
 ) -> Vec<ProviderSnapshot> {
     let diagnostics = diagnostics_from_result(&result, Some(command_path));
     let parsed = match output {
@@ -945,6 +1027,7 @@ fn parse_remote_output(
                 ),
             );
             for provider in &mut providers {
+                redact_provider_snapshot(provider, sensitive_values);
                 apply_visible_windows(provider, visible_window_ids);
                 apply_window_label_overrides(provider, window_label_overrides);
                 provider.source = "remote".to_string();
@@ -974,6 +1057,67 @@ fn parse_remote_output(
                 Some(command_path),
             )]
         }
+    }
+}
+
+fn redact_provider_snapshot(provider: &mut ProviderSnapshot, sensitive_values: &[String]) {
+    provider.id = redact_exact_sensitive_values(&provider.id, sensitive_values);
+    provider.name = redact_exact_sensitive_values(&provider.name, sensitive_values);
+    provider.status = redact_exact_sensitive_values(&provider.status, sensitive_values);
+    if let Some(updated_at) = &mut provider.updated_at {
+        *updated_at = redact_exact_sensitive_values(updated_at, sensitive_values);
+    }
+    for window in &mut provider.windows {
+        window.id = redact_exact_sensitive_values(&window.id, sensitive_values);
+        window.label = redact_exact_sensitive_values(&window.label, sensitive_values);
+        if let Some(unit) = &mut window.unit {
+            *unit = redact_exact_sensitive_values(unit, sensitive_values);
+        }
+        if let Some(reset_at) = &mut window.reset_at {
+            *reset_at = redact_exact_sensitive_values(reset_at, sensitive_values);
+        }
+        if let Some(reset_text) = &mut window.reset_text {
+            *reset_text = redact_exact_sensitive_values(reset_text, sensitive_values);
+        }
+        window.confidence = redact_exact_sensitive_values(&window.confidence, sensitive_values);
+    }
+    if let Some(error) = &mut provider.error {
+        *error = redact_sensitive_values(error, sensitive_values);
+    }
+    if let Some(diagnostics) = &mut provider.diagnostics {
+        for message in &mut diagnostics.messages {
+            *message = redact_sensitive_values(message, sensitive_values);
+        }
+        if let Some(stderr) = &mut diagnostics.stderr {
+            *stderr = redact_sensitive_values(stderr, sensitive_values);
+        }
+        if let Some(command_path) = &mut diagnostics.command_path {
+            *command_path = redact_exact_sensitive_values(command_path, sensitive_values);
+        }
+    }
+    if let Some(metadata) = &mut provider.metadata {
+        redact_json_value(metadata, sensitive_values);
+    }
+}
+
+fn redact_json_value(value: &mut serde_json::Value, sensitive_values: &[String]) {
+    match value {
+        serde_json::Value::String(value) => {
+            *value = redact_exact_sensitive_values(value, sensitive_values);
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                redact_json_value(value, sensitive_values);
+            }
+        }
+        serde_json::Value::Object(values) => {
+            let original = std::mem::take(values);
+            for (key, mut value) in original {
+                redact_json_value(&mut value, sensitive_values);
+                values.insert(redact_exact_sensitive_values(&key, sensitive_values), value);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1150,6 +1294,7 @@ mod tests {
             manifest: &manifest,
             source: &source,
             env: &env,
+            sensitive_values: &[],
             timeout: Duration::from_secs(2),
             proxy_url: None,
             log: None,
@@ -1166,6 +1311,7 @@ mod tests {
             cwd: None,
             timeout_ms: 2000,
             env: HashMap::new(),
+            sensitive_values: Vec::new(),
         }
     }
 
@@ -1316,6 +1462,46 @@ mod tests {
     }
 
     #[test]
+    fn runtime_credentials_are_redacted_from_external_output_and_logs() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config_path = temp.path().join("config.json");
+        let config = crate::config::default_config();
+        let log = LogSink::from_config_path(&config_path, &config);
+        let secret = "tiny-secret".to_string();
+        let script = r#"
+            const secret = process.env.API_TOKEN;
+            process.stderr.write(JSON.stringify({level:"error",stage:"fixture.secret",message:secret}) + "\n");
+            console.log(JSON.stringify({
+              status:"error",
+              error:secret,
+              metadata:{credential:secret,[secret]:"value"},
+              windows:[{id:"quota",label:secret,confidence:"exact"}]
+            }));
+        "#;
+        let mut command = node_command(script);
+        command.env.insert("API_TOKEN".to_string(), secret.clone());
+        command.sensitive_values = vec![secret.clone()];
+
+        let providers = run_remote_command(
+            "remote-secret",
+            "Remote Secret",
+            &command,
+            &RemoteOutputSpec::ProviderSnapshotV1,
+            &HashMap::new(),
+            &[],
+            Some(&log),
+        );
+
+        let snapshot = serde_json::to_string(&providers[0]).expect("snapshot");
+        let log_contents = std::fs::read_to_string(config_path.with_file_name("quotabarwin.log"))
+            .expect("read log");
+        assert!(!snapshot.contains(&secret), "{snapshot}");
+        assert!(snapshot.contains("[REDACTED]"), "{snapshot}");
+        assert!(!log_contents.contains(&secret), "{log_contents}");
+        assert!(log_contents.contains("[REDACTED]"), "{log_contents}");
+    }
+
+    #[test]
     fn window_label_overrides_apply_after_remote_parsing() {
         let script = r#"console.log(JSON.stringify({windows:[{id:'weekly',label:'Weekly',remainingPercent:88,confidence:'exact'}]}));"#;
         let mut overrides = HashMap::new();
@@ -1405,7 +1591,7 @@ mod tests {
         );
 
         assert_eq!(providers[0].status, "ok");
-        assert_eq!(providers[0].windows[0].label, "from-config-map");
+        assert_eq!(providers[0].windows[0].label, "[REDACTED]");
         assert!(std::env::var("QBWIN_REMOTE_CHILD_TOKEN").is_err());
     }
 
@@ -1463,7 +1649,7 @@ mod tests {
 
         assert_eq!(providers.len(), 1);
         assert_eq!(providers[0].status, "ok", "{:?}", providers[0]);
-        assert_eq!(providers[0].windows[0].label, "from-builtin-config");
+        assert_eq!(providers[0].windows[0].label, "[REDACTED]");
         assert_eq!(
             providers[0].metadata.as_ref().unwrap()["provider"],
             "builtin-env"
@@ -1544,6 +1730,7 @@ mod tests {
                 manifest: &manifest,
                 source: &format!("{source}\nfunction main(qb) {{ return {{ windows: [] }}; }}"),
                 env: &HashMap::new(),
+                sensitive_values: &[],
                 timeout: Duration::from_secs(5),
                 proxy_url: None,
                 log: None,
@@ -1701,7 +1888,7 @@ mod tests {
         );
 
         assert_eq!(providers[0].status, "ok");
-        assert_eq!(providers[0].windows[0].label, "socks5h://localhost:10818");
+        assert_eq!(providers[0].windows[0].label, "[REDACTED]");
     }
 
     #[test]
@@ -1753,6 +1940,6 @@ mod tests {
         );
 
         assert_eq!(providers[0].status, "ok");
-        assert_eq!(providers[0].windows[0].label, "socks5h://provider:1080");
+        assert_eq!(providers[0].windows[0].label, "[REDACTED]");
     }
 }

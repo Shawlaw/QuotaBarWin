@@ -1,10 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { App } from "./App";
+import { App, mergeProviderSetupSnapshot } from "./App";
 import type { AppConfig, AppSnapshot, RemoteProviderConfig } from "./types";
 
 const mocks = vi.hoisted(() => {
   const config: AppConfig = {
-    schemaVersion: 14,
+    schemaVersion: 17,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -375,9 +375,92 @@ test("settings_replaces_provider_overview", async () => {
   expect(screen.queryByTestId("overview-page")).not.toBeInTheDocument();
 });
 
+test("empty overview opens the provider catalog", async () => {
+  render(<App />);
+
+  expect(await screen.findByTestId("provider-setup-empty-state")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
+
+  expect(await screen.findByTestId("add-provider-page")).toBeInTheDocument();
+});
+
+test("settings button returns from the provider catalog to the main settings page", async () => {
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Add Provider" }));
+  expect(await screen.findByTestId("add-provider-page")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+  await waitFor(() => expect(screen.queryByTestId("add-provider-page")).not.toBeInTheDocument());
+  expect(screen.getByTestId("general-settings-section")).toBeInTheDocument();
+});
+
+test("provider setup test result fills an otherwise empty overview snapshot", () => {
+  const config: AppConfig = {
+    schemaVersion: 17,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "en",
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
+    providers: [buildRemoteProvider("setup-provider", "Set up provider")],
+  };
+
+  const merged = mergeProviderSetupSnapshot(
+    {
+      schemaVersion: 1,
+      refreshedAt: "2026-06-08T10:00:00+08:00",
+      providers: [],
+    },
+    config,
+    {
+      id: "setup-provider",
+      name: "Set up provider",
+      status: "ok",
+      source: "remote",
+      updatedAt: "2026-06-08T10:01:00+08:00",
+      error: null,
+      diagnostics: null,
+      metadata: null,
+      windows: [],
+    },
+  );
+
+  expect(merged?.providers).toHaveLength(1);
+  expect(merged?.providers[0]).toMatchObject({
+    id: "setup-provider",
+    name: "Set up provider",
+    status: "ok",
+  });
+});
+
+test("leaving_settings_requires_resolving_unsaved_changes", async () => {
+  render(<App />);
+
+  await screen.findByRole("button", { name: "Settings" });
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+
+  expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeInTheDocument();
+  expect(screen.getByTestId("settings-page")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByTestId("cancel-unsaved-changes"));
+  expect(screen.getByTestId("settings-page")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  fireEvent.click(screen.getByTestId("discard-unsaved-changes"));
+  await waitFor(() => expect(screen.getByTestId("overview-page")).toBeInTheDocument());
+});
+
 test("saving_provider_reorder_projects_cached_snapshot_without_refreshing_data", async () => {
   const configWithTwoProviders: AppConfig = {
-    schemaVersion: 14,
+    schemaVersion: 17,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -487,7 +570,7 @@ function buildRemoteProvider(id: string, name: string): RemoteProviderConfig {
 
 function buildTwoProviderConfig(): AppConfig {
   return {
-    schemaVersion: 14,
+    schemaVersion: 17,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,

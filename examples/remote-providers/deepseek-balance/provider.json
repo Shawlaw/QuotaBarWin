@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "deepseek-balance",
   "displayName": "DeepSeek Balance",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "minAppVersion": "1.1.0",
   "description": "DeepSeek pay-as-you-go account balance via remote provider script.",
   "runtime": "builtin-js",
@@ -37,7 +37,8 @@
       "kind": "secret",
       "required": true,
       "defaultValue": "${secret:DEEPSEEK_API_KEY}",
-      "description": "DeepSeek API token for reading account balance."
+      "description": "DeepSeek API token for reading account balance.",
+      "helpUrl": "https://platform.deepseek.com/api_keys"
     },
     {
       "name": "DEEPSEEK_BALANCE_CURRENCY",
@@ -46,7 +47,8 @@
       "required": false,
       "defaultValue": "CNY",
       "placeholder": "CNY",
-      "description": "Optional currency filter. Leave empty to show every currency returned by the API."
+      "description": "Optional currency filter. Leave empty to show every currency returned by the API.",
+      "advanced": true
     },
     {
       "name": "DEEPSEEK_BALANCE_WARNING_CNY",
@@ -54,7 +56,8 @@
       "kind": "number",
       "required": false,
       "defaultValue": "20",
-      "description": "Shows a warning when the CNY balance is at or below this amount."
+      "description": "Shows a warning when the CNY balance is at or below this amount.",
+      "advanced": true
     },
     {
       "name": "DEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY",
@@ -62,7 +65,8 @@
       "kind": "number",
       "required": false,
       "defaultValue": "200",
-      "description": "Reference total used to render the balance progress bar."
+      "description": "Reference total used to render the balance progress bar.",
+      "advanced": true
     }
   ],
   "checksums": {

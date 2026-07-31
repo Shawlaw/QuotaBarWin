@@ -30,9 +30,9 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 
 - 平台：**Windows**
 - 分发方式：**绿色版 portable zip + 单 exe**
-- 当前版本：**v1.1.1**
+- 当前版本：**v1.2.0**
 - 技术栈：Tauri 2、Rust 2021、React 19、TypeScript、Vite
-- 当前配置 schema version：**16**
+- 当前配置 schema version：**17**
 
 ---
 
@@ -83,25 +83,26 @@ QuotaBarWin 项目维护的 registry 当前包含以下 manifest；实际可安�
 
 1. 打开 **设置 → 提供方 → 添加提供方**。
 2. 默认会加载 QuotaBarWin 项目维护的 Provider 来源；如果列表为空，可以在 **管理来源** 中填入上面的 registry URL。
-3. 点击需要的 Provider 的 **安装**。安装后的 Provider 默认启用，也可以在 Provider 列表里用复选框停用。
+3. 点击需要的 Provider 的 **安装**。应用会立即打开该账号的配置表单；新实例在验证成功前默认停用，不参与周期刷新。
 4. 同一 Provider 需要多个账号时，再次点击已安装项的 **添加账号**。
 
 ### 4. 配置凭据
 
-回到 **设置 → 提供方**，展开刚安装的 Provider，填写 **环境变量**。建议只写 `${secret:...}`、`${env:...}` 或 `${file:...}` 占位符，不要把 token 明文粘进配置。
+安装后按表单填写账号名称和必要的 API Key，点击 **保存并测试** 即可。成功后 Provider 会自动启用，并显示简短的额度预览；失败时会保留已安全保存的配置，显示可重试的原因。
 
-| Provider | 环境变量示例 | 对应 Secret 文件 |
-|---|---|---|
-| Kimi | `KIMI_API_KEY=${secret:KIMI_API_KEY}` | `<config-dir>\secrets\KIMI_API_KEY.txt` |
-| BigModel / 智谱 | `BIGMODEL_API_KEY=${secret:BIGMODEL_API_KEY}` | `<config-dir>\secrets\BIGMODEL_API_KEY.txt` |
-| DeepSeek | `DEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}` | `<config-dir>\secrets\DEEPSEEK_API_KEY.txt` |
-| Codex usage | 默认读取本机 Codex auth | 可选配置 `CODEX_ACCESS_TOKEN`、`CODEX_ACCOUNT_ID`、`CODEX_AUTH_FILE` 或代理变量 |
+普通流程不需要创建 `secrets` 目录、创建 txt 文件、输入 `${secret:...}` 或编辑原始环境变量。应用把每个账号的密钥自动写到：
 
-`<config-dir>` 可以在 **设置 → 通用 → 配置存储** 中查看，也可以点击 **打开配置存储文件夹**。如果 `secrets` 文件夹不存在，可以手动创建；secret 文件内容只需要写入对应 token 或 API key。
+```text
+<config-dir>\secrets\providers\<provider-instance-id>\<parameter-name>.txt
+```
 
-### 5. Codex 代理
+主配置只保存 `${secret:providers/<provider-instance-id>/<parameter-name>}` 引用，已有密钥不会回显到界面。该文件仍是本地明文；便携模式或备份时会与配置目录一起复制，请妥善保护目录。
 
-Codex usage 需要代理时，可以在该 Provider 的 **环境变量** 中配置，例如：
+**高级兼容模式：** 旧 `${secret:NAME}`、`${env:NAME}`、`${file:C:\path\secret.txt}`、明文值和原始 **环境变量** 编辑器仍然可用，适合已有自动化或第三方 Provider；这些不会在升级时被强制迁移。
+
+### 5. 代理
+
+Codex usage 需要代理时，可以在该 Provider 配置表单的 **高级设置** 中填写运行期代理；已有原始环境变量配置也继续有效，例如：
 
 ```text
 HTTPS_PROXY=http://127.0.0.1:7890
@@ -109,30 +110,15 @@ HTTPS_PROXY=http://127.0.0.1:7890
 
 Codex usage 的代理由内置 runtime 宿主处理：Provider 环境变量 `QBWIN_PROXY_URL` 优先，项目全局代理为兜底；全局代理选择“系统”时会读取 Windows 进程环境中的 `HTTPS_PROXY` / `HTTP_PROXY`。支持 `socks5:`、`socks5h:`、`http:` 和 `https:`。安装源的代理仅用于下载 registry、manifest 和脚本。更完整的请求、鉴权和代理说明见 [`examples/remote-providers/codex-usage/api.md`](examples/remote-providers/codex-usage/api.md)。
 
+全局代理可在 **设置 → 通用 → 网络代理** 中点击 **检测代理**。检测使用当前尚未保存的代理设置，默认请求 GitHub 首页；企业网络或 GitHub 不可达时，可在高级选项临时填写其他 HTTPS 地址。检测地址不会写入配置，应用不保存响应内容，也不显示原始网络错误。
+
 ### 6. 多账号
 
-多账号时，左边保持脚本需要的变量名，右边换成不同 secret 名。例如两个 Kimi 账号可以分别写：
-
-```text
-# Kimi Personal 账号实例
-KIMI_API_KEY=${secret:KIMI_PERSONAL_API_KEY}
-```
-
-```text
-# Kimi Work 账号实例
-KIMI_API_KEY=${secret:KIMI_WORK_API_KEY}
-```
-
-对应创建：
-
-```text
-<config-dir>\secrets\KIMI_PERSONAL_API_KEY.txt
-<config-dir>\secrets\KIMI_WORK_API_KEY.txt
-```
+多账号时，对已安装的 Provider 点击 **添加账号**。每个新账号都有独立的 Provider 实例和托管 secret 目录，不会共享或覆盖另一个账号的 API Key。高级用户仍可保留自己的 `${secret:...}` / `${env:...}` / `${file:...}` 映射。
 
 ### 7. 保存并查看
 
-点击 **保存**（或按 Ctrl+S）。保存后会停留在设置页，可以继续调整其他 Provider；如果修改会影响取数（如环境变量、代理），相关 Provider 会在后台自动刷新。改完后点击顶栏 **概览** 返回，或打开托盘弹窗查看额度状态。之后可以使用全局刷新或单个 Provider 卡片上的刷新按钮更新数据。
+在配置表单中点击 **保存并测试**。成功后可点击 **完成** 返回概览；选择稍后配置的 Provider 会保持“待配置”且不参与后台刷新。常规设置和高级原始配置仍可点击 **保存**（或按 Ctrl+S）。
 
 ---
 
@@ -164,7 +150,7 @@ CLI 也可在安装前或排障时校验 Provider 配置、manifest、source che
 - 支持 AppData 配置和便携模式；便携模式会把配置、日志、secrets 和远程 Provider 缓存放在 exe 旁。
 - 支持 Provider 启用状态、排序、自定义窗口显示和窗口名称覆盖。
 - 支持从 remote registry / manifest 安装 Provider，并进行缓存、SHA-256 校验和更新检查。
-- 支持用于远程安装/更新和 Provider 运行兜底的全局代理，代理类型包含 HTTP 与 SOCKS5；Provider 可通过环境变量配置自己的运行期代理。
+- 支持用于远程安装/更新和 Provider 运行兜底的全局代理，代理类型包含 HTTP 与 SOCKS5，并可在保存前检测代理可用性；Provider 可通过环境变量配置自己的运行期代理。
 - 支持 secret 占位符，避免在配置和日志中直接保存真实密钥。
 
 ---
