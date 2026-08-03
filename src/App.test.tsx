@@ -220,6 +220,72 @@ test("main_app_syncs_cached_snapshot_before_refreshing_when_shown", async () => 
   });
 });
 
+test("main_app_syncs_the_native_cache_when_the_window_regains_focus", async () => {
+  render(<App />);
+
+  expect(await screen.findByText("Codex Mock")).toBeInTheDocument();
+  mocks.getCachedSnapshot.mockClear();
+  mocks.refreshSnapshot.mockClear();
+  mocks.getCachedSnapshot.mockResolvedValueOnce({
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:05:00+08:00",
+    providers: [
+      {
+        id: "focused-cache",
+        name: "Focused Cache",
+        status: "ok",
+        source: "mock",
+        updatedAt: "2026-06-08T10:05:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [],
+      },
+    ],
+  });
+
+  fireEvent.focus(window);
+
+  expect(await screen.findByText("Focused Cache")).toBeInTheDocument();
+  expect(mocks.getCachedSnapshot).toHaveBeenCalledTimes(1);
+  expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
+});
+
+test("main_app_syncs_the_native_cache_when_returning_to_the_overview", async () => {
+  render(<App />);
+
+  expect(await screen.findByText("Codex Mock")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(screen.getByTestId("settings-page")).toBeInTheDocument();
+
+  mocks.getCachedSnapshot.mockClear();
+  mocks.refreshSnapshot.mockClear();
+  mocks.getCachedSnapshot.mockResolvedValueOnce({
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:05:00+08:00",
+    providers: [
+      {
+        id: "overview-cache",
+        name: "Overview Cache",
+        status: "ok",
+        source: "mock",
+        updatedAt: "2026-06-08T10:05:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [],
+      },
+    ],
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+
+  expect(await screen.findByTestId("overview-page")).toBeInTheDocument();
+  expect(await screen.findByText("Overview Cache")).toBeInTheDocument();
+  expect(mocks.getCachedSnapshot).toHaveBeenCalledTimes(1);
+  expect(mocks.refreshSnapshot).not.toHaveBeenCalled();
+});
+
 test("main_app_refreshes_after_config_load_when_no_first_snapshot", async () => {
   let resolveRefresh: ((snapshot: AppSnapshot) => void) | undefined;
   mocks.refreshSnapshot.mockImplementationOnce(

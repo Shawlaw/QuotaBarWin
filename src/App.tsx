@@ -329,6 +329,15 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   }, [config, loadSnapshot, snapshot]);
 
   useEffect(() => {
+    // The background scheduler owns network refreshes even while the main
+    // window is hidden. When this window becomes active again, read the
+    // native cache so the overview immediately reflects its latest result.
+    const syncOnFocus = () => void syncCachedSnapshot();
+    window.addEventListener("focus", syncOnFocus);
+    return () => window.removeEventListener("focus", syncOnFocus);
+  }, [syncCachedSnapshot]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listenForRefreshRequests(() => void loadSnapshot()).then((cleanup) => {
       unlisten = cleanup;
@@ -505,6 +514,10 @@ function MainApp({ onLanguageChange }: MainAppProps) {
         appVersion={appVersion}
         isLoading={isLoading}
         onOpenOverview={() => {
+          // Returning to the overview should be instant and must not depend on
+          // a new network refresh. The native command returns its in-memory
+          // snapshot cache before falling back to the on-disk cache.
+          void syncCachedSnapshot();
           if (settingsOpen) {
             setSettingsCloseRequest((current) => current + 1);
           }
