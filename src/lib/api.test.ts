@@ -5,7 +5,10 @@ import {
   applyRemoteUpdate,
   checkRemoteUpdates,
   checkAppUpdate,
+  dismissAppUpdateNotice,
   downloadAppUpdate,
+  getApplicationUpdateNavigationRequest,
+  getAppUpdateStatus,
   getCachedSnapshot,
   getProviderSetup,
   getInstalledRemoteProviderManifest,
@@ -28,6 +31,7 @@ import {
   setNetworkProxy,
   setTrayPopupAutoHeight,
   showMainWindow,
+  showApplicationUpdate,
   testNetworkProxy,
   testProviderSetup,
   startResizingCurrentWindow,
@@ -157,6 +161,12 @@ test("api_invokes_application_update_commands", async () => {
     if (cmd === "check_app_update") {
       return update;
     }
+    if (cmd === "get_app_update_status") {
+      return update;
+    }
+    if (cmd === "dismiss_app_update_notice") {
+      return { ...update, dismissed: true };
+    }
     if (cmd === "download_app_update") {
       return { ...update, downloaded: true };
     }
@@ -169,22 +179,33 @@ test("api_invokes_application_update_commands", async () => {
     if (cmd === "open_app_update_notes") {
       return null;
     }
+    if (cmd === "get_app_update_navigation_request") {
+      return 7;
+    }
     throw new Error(`unexpected command ${cmd}`);
   });
 
+  await expect(getAppUpdateStatus()).resolves.toEqual(update);
   await expect(checkAppUpdate()).resolves.toEqual(update);
+  await expect(dismissAppUpdateNotice()).resolves.toEqual({ ...update, dismissed: true });
   await expect(downloadAppUpdate()).resolves.toEqual({ ...update, downloaded: true });
   await expect(applyAppUpdate()).resolves.toBeNull();
   await expect(openProjectGithub()).resolves.toBeNull();
   await expect(openAppUpdateNotes(update.notesUrl)).resolves.toBeNull();
+  await expect(getApplicationUpdateNavigationRequest()).resolves.toBe(7);
   expect(calls.map((call) => call.cmd)).toEqual([
+    "get_app_update_status",
     "check_app_update",
+    "dismiss_app_update_notice",
     "download_app_update",
     "apply_app_update",
     "open_project_github",
     "open_app_update_notes",
+    "get_app_update_navigation_request",
   ]);
-  expect(calls.at(-1)?.payload).toEqual({ notesUrl: update.notesUrl });
+  expect(calls.find((call) => call.cmd === "open_app_update_notes")?.payload).toEqual({
+    notesUrl: update.notesUrl,
+  });
 });
 
 test("api_invokes_tray_popup_commands", async () => {
@@ -200,6 +221,9 @@ test("api_invokes_tray_popup_commands", async () => {
     if (cmd === "show_main_window") {
       return null;
     }
+    if (cmd === "show_application_update") {
+      return null;
+    }
     if (cmd === "start_tray_popup_resizing") {
       return null;
     }
@@ -212,12 +236,14 @@ test("api_invokes_tray_popup_commands", async () => {
   await expect(getTrayPopupPresentationId()).resolves.toBe(42);
   await expect(resetTrayPopupSize()).resolves.toBeNull();
   await expect(showMainWindow()).resolves.toBeNull();
+  await expect(showApplicationUpdate()).resolves.toBeNull();
   await expect(startResizingCurrentWindow()).resolves.toBeNull();
   await expect(setTrayPopupAutoHeight(420)).resolves.toBeNull();
   expect(calls.map((call) => call.cmd)).toEqual([
     "get_tray_popup_presentation_id",
     "reset_tray_popup_size",
     "show_main_window",
+    "show_application_update",
     "start_tray_popup_resizing",
     "set_tray_popup_auto_height",
   ]);

@@ -55,7 +55,16 @@ const apiMocks = vi.hoisted(() => {
       notesUrl: "https://example.com/releases/v1.0.4",
       downloaded: true,
     })),
+    getAppUpdateStatus: vi.fn(async () => ({
+      configured: true,
+      currentVersion: "1.0.3",
+      available: false,
+      version: null,
+      notesUrl: null,
+      downloaded: false,
+    })),
     getConfig: vi.fn(async () => state.config),
+    listenForAppUpdateStatus: vi.fn(async () => () => undefined),
     getInstalledRemoteProviderManifest: vi.fn(async (id: string) => ({
       schemaVersion: 1,
       id,
@@ -242,6 +251,8 @@ function renderSettings(
   onSave: () => void | Promise<void> = () => undefined,
   navigation: {
     closeRequest?: number;
+    appUpdateFocusRequest?: number;
+    onAppUpdateFocusHandled?: () => void;
     initialProviderSettingsView?: "main" | "add";
     onRequestClose?: () => void;
   } = {},
@@ -271,6 +282,8 @@ function renderSettings(
           onRequestClose={navigation.onRequestClose ?? (() => undefined)}
           closeRequest={navigation.closeRequest ?? 0}
           settingsHomeRequest={0}
+          appUpdateFocusRequest={navigation.appUpdateFocusRequest ?? 0}
+          onAppUpdateFocusHandled={navigation.onAppUpdateFocusHandled ?? (() => undefined)}
           initialProviderSettingsView={navigation.initialProviderSettingsView ?? "main"}
           snapshotProviders={snapshotProviders}
         />
@@ -339,7 +352,7 @@ test("settings_checks_and_applies_signed application updates", async () => {
   expect(screen.getByText("Current version: 1.0.5-test")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
-  expect(await screen.findByText("QuotaBarWin 1.0.4 is available.")).toBeInTheDocument();
+  expect((await screen.findAllByText("QuotaBarWin 1.0.4 is available.")).length).toBeGreaterThan(0);
 
   fireEvent.click(screen.getByRole("button", { name: "Release notes" }));
   await waitFor(() =>
@@ -351,6 +364,17 @@ test("settings_checks_and_applies_signed application updates", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Download and restart to update" }));
   await waitFor(() => expect(apiMocks.downloadAppUpdate).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(apiMocks.applyAppUpdate).toHaveBeenCalledTimes(1));
+  expect(apiMocks.checkAppUpdate).toHaveBeenCalledTimes(1);
+});
+
+test("settings_saves_the_application_update_auto_check_toggle", async () => {
+  renderSettings();
+
+  const toggle = screen.getByTestId("app-update-auto-check") as HTMLInputElement;
+  expect(toggle.checked).toBe(false);
+  fireEvent.click(toggle);
+
+  await waitFor(() => expect(apiMocks.state.config?.appUpdate?.autoCheck).toBe(true));
 });
 
 test("settings_toggles_provider_tray_visibility", async () => {

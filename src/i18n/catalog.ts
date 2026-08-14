@@ -178,6 +178,12 @@ export type I18nCatalog = {
     failedToCheck: string;
     failedToDownload: string;
     failedToOpenNotes: string;
+    autoCheck: string;
+    autoCheckHint: string;
+    lastChecked: (time: string) => string;
+    checkFailed: string;
+    openUpdate: string;
+    later: string;
   };
   networkProxy: {
     label: string;
@@ -531,7 +537,13 @@ export const en: I18nCatalog = {
     unavailable: "Application updates are not configured in this build.",
     failedToCheck: "Failed to check application updates",
     failedToDownload: "Failed to download application update",
-    failedToOpenNotes: "Failed to open release notes"
+    failedToOpenNotes: "Failed to open release notes",
+    autoCheck: "Automatically check for application updates",
+    autoCheckHint: "Checks once when you first open the main window or tray popup after 08:00. It never downloads or restarts automatically.",
+    lastChecked: (time) => `Last automatic check: ${time}`,
+    checkFailed: "The last automatic check failed. You can try again manually.",
+    openUpdate: "Update",
+    later: "Later"
   },
   networkProxy: {
     label: "Network proxy",
@@ -918,7 +930,13 @@ export const zhCN: I18nCatalog = {
     unavailable: "此构建尚未配置应用更新。",
     failedToCheck: "检查应用更新失败",
     failedToDownload: "下载应用更新失败",
-    failedToOpenNotes: "无法打开发行说明"
+    failedToOpenNotes: "无法打开发行说明",
+    autoCheck: "自动检查应用更新",
+    autoCheckHint: "每天 08:00 后首次打开主窗口或托盘小窗时检查；不会自动下载或重启。",
+    lastChecked: (time) => `上次自动检查：${time}`,
+    checkFailed: "最近一次自动检查失败，可手动重试。",
+    openUpdate: "前往更新",
+    later: "稍后"
   },
   networkProxy: {
     label: "网络代理",

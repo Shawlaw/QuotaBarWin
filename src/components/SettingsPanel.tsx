@@ -16,13 +16,15 @@ import {
   checkRemoteUpdates,
   downloadAppUpdate,
   getConfig,
+  getAppUpdateStatus,
   getInstalledRemoteProviderManifest,
   installRemoteProviderManifest,
   migrateRemoteProvidersToRegistry,
   openAppUpdateNotes,
   openRemoteProviderGuide,
   previewRemoteProviderRegistry,
-  removeRemoteProvider
+  removeRemoteProvider,
+  listenForAppUpdateStatus
 } from "../lib/api";
 import type { AppUpdateInfo, UpdateInfo } from "../lib/api";
 import { DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS } from "../lib/defaults";
@@ -57,6 +59,8 @@ type SettingsPanelProps = {
   onRequestClose: () => void;
   closeRequest: number;
   settingsHomeRequest: number;
+  appUpdateFocusRequest: number;
+  onAppUpdateFocusHandled: () => void;
   initialProviderSettingsView: "main" | "add";
 };
 
@@ -193,6 +197,8 @@ export function SettingsPanel({
   onRequestClose,
   closeRequest,
   settingsHomeRequest,
+  appUpdateFocusRequest,
+  onAppUpdateFocusHandled,
   initialProviderSettingsView
 }: SettingsPanelProps) {
   const { t } = useI18n();
@@ -221,6 +227,8 @@ export function SettingsPanel({
   // Provider catalog.
   const handledCloseRequestRef = useRef(closeRequest);
   const handledSettingsHomeRequestRef = useRef(0);
+  const handledAppUpdateFocusRequestRef = useRef(0);
+  const appUpdateSectionRef = useRef<HTMLElement>(null);
   const initialConfigRef = useRef(JSON.stringify(config));
   const configDraft = JSON.stringify(config);
   const hasChanges = configDraft !== initialConfigRef.current;
@@ -247,6 +255,30 @@ export function SettingsPanel({
   const availableUpdateCount = config.providers.filter(
     (provider) => updateInfo[provider.id]?.available
   ).length;
+
+  useEffect(() => {
+    let isMounted = true;
+    let unlisten: (() => void) | undefined;
+    void getAppUpdateStatus()
+      .then((info) => {
+        if (isMounted && (info.available || info.checkedAt || info.error || !info.configured)) {
+          setAppUpdateInfo(info);
+        }
+      })
+      .catch(() => undefined);
+    void listenForAppUpdateStatus((status) => {
+      if (isMounted) {
+        setAppUpdateInfo(status.info);
+      }
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      isMounted = false;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     const providerIds = config.providers
@@ -599,6 +631,14 @@ export function SettingsPanel({
     setIsAppUpdateBusy(true);
     setAppUpdateMessage(t.appUpdate.downloading);
     try {
+      if (!appUpdateInfo?.available) {
+        setAppUpdateMessage(t.appUpdate.upToDate);
+        setIsAppUpdateBusy(false);
+        return;
+      }
+      // download_app_update uses the exact candidate retained by the last signed check. Do not
+      // recheck here: a newer manifest published after the notice must not swap the selected
+      // version beneath the user.
       const downloaded = await downloadAppUpdate();
       setAppUpdateInfo(downloaded);
       await applyAppUpdate();
@@ -690,6 +730,36 @@ export function SettingsPanel({
     // This numeric prop represents a one-time header navigation event.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsHomeRequest, providerSettingsView]);
+
+  useEffect(() => {
+    if (
+      appUpdateFocusRequest === 0 ||
+      appUpdateFocusRequest <= handledAppUpdateFocusRequestRef.current
+    ) {
+      return;
+    }
+    handledAppUpdateFocusRequestRef.current = appUpdateFocusRequest;
+    setSetupProviderId(null);
+    setProviderSettingsView("main");
+  }, [appUpdateFocusRequest]);
+
+  useEffect(() => {
+    if (
+      appUpdateFocusRequest === 0 ||
+      handledAppUpdateFocusRequestRef.current !== appUpdateFocusRequest ||
+      providerSettingsView !== "main"
+    ) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      appUpdateSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      // The parent owns this cross-view request. A settings panel is unmounted when the user
+      // returns to Overview, so acknowledge it only after the requested scroll has run; a later
+      // ordinary visit to Settings must not replay this navigation.
+      onAppUpdateFocusHandled();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [appUpdateFocusRequest, onAppUpdateFocusHandled, providerSettingsView]);
 
   function renderSaveBar() {
     return (
@@ -1080,11 +1150,38 @@ export function SettingsPanel({
             </button>
           </div>
         </section>
-        <section className="settings-section" aria-label={t.appUpdate.title} data-testid="app-update-section">
+        <section
+          className={`settings-section${appUpdateInfo?.available ? " settings-section--app-update-available" : ""}`}
+          aria-label={t.appUpdate.title}
+          data-testid="app-update-section"
+          ref={appUpdateSectionRef}
+        >
           <div className="settings-section-title">
             <h3>{t.appUpdate.title}</h3>
             <span>{t.appUpdate.currentVersion(appUpdateInfo?.currentVersion ?? appVersion)}</span>
           </div>
+          <div className="settings-field">
+            <label className="checkbox-row settings-toggle-row">
+              <input
+                type="checkbox"
+                checked={config.appUpdate?.autoCheck ?? false}
+                data-testid="app-update-auto-check"
+                onChange={(event) =>
+                  onChange({
+                    ...config,
+                    appUpdate: { autoCheck: event.currentTarget.checked }
+                  })
+                }
+              />
+              {t.appUpdate.autoCheck}
+            </label>
+            <span className="settings-hint">{t.appUpdate.autoCheckHint}</span>
+          </div>
+          {appUpdateInfo?.available && appUpdateInfo.version ? (
+            <div className="app-update-available-state" role="status">
+              {t.appUpdate.available(appUpdateInfo.version)}
+            </div>
+          ) : null}
           <div className="settings-actions settings-actions--inline">
             <button
               type="button"
@@ -1094,7 +1191,7 @@ export function SettingsPanel({
             >
               {isAppUpdateBusy ? t.appUpdate.checking : t.appUpdate.check}
             </button>
-            {appUpdateInfo?.available ? (
+            {appUpdateInfo?.available && appUpdateInfo.version ? (
               <button
                 type="button"
                 className="button-primary"
@@ -1115,6 +1212,12 @@ export function SettingsPanel({
               </button>
             ) : null}
           </div>
+          {appUpdateInfo?.checkedAt ? (
+            <div className="settings-hint">
+              {t.appUpdate.lastChecked(formatProviderDate(appUpdateInfo.checkedAt, appUpdateInfo.checkedAt))}
+            </div>
+          ) : null}
+          {appUpdateInfo?.error ? <div className="settings-message">{t.appUpdate.checkFailed}</div> : null}
           {appUpdateMessage ? <div className="settings-message">{appUpdateMessage}</div> : null}
         </section>
       </section>

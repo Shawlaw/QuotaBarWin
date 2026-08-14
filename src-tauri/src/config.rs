@@ -12,7 +12,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 17;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 18;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_REMOTE_PROVIDER_REGISTRY_URL: &str =
@@ -48,9 +48,24 @@ pub struct AppConfig {
     pub tray_popup_position: Option<TrayPopupPosition>,
     #[serde(default)]
     pub tray_popup_size: Option<TrayPopupSize>,
+    #[serde(default = "default_app_update_settings")]
+    pub app_update: AppUpdateSettings,
     #[serde(default)]
     pub remote_provider_registry: RemoteProviderRegistrySettings,
     pub providers: Vec<ProviderConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppUpdateSettings {
+    #[serde(default = "default_app_update_auto_check")]
+    pub auto_check: bool,
+}
+
+impl Default for AppUpdateSettings {
+    fn default() -> Self {
+        default_app_update_settings()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -273,6 +288,16 @@ fn default_language() -> AppLanguage {
     AppLanguage::ZhCn
 }
 
+fn default_app_update_auto_check() -> bool {
+    true
+}
+
+fn default_app_update_settings() -> AppUpdateSettings {
+    AppUpdateSettings {
+        auto_check: default_app_update_auto_check(),
+    }
+}
+
 fn default_update_interval_seconds() -> u64 {
     3600
 }
@@ -317,6 +342,7 @@ pub fn default_config() -> AppConfig {
         network_proxy: None,
         tray_popup_position: None,
         tray_popup_size: None,
+        app_update: AppUpdateSettings::default(),
         remote_provider_registry: RemoteProviderRegistrySettings::default(),
         providers: Vec::new(),
     }
@@ -750,6 +776,17 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
             }
         }
         value["schemaVersion"] = serde_json::json!(17);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(17);
+    if version < 18 {
+        // Existing installations previously checked for application updates only when the user
+        // selected the manual action. Keep that behaviour until the user opts in explicitly.
+        value["appUpdate"] = serde_json::json!({ "autoCheck": false });
+        value["schemaVersion"] = serde_json::json!(18);
     }
 
     Ok(value)
@@ -1359,6 +1396,7 @@ mod tests {
                 width: 420.0,
                 height: 640.0,
             }),
+            app_update: AppUpdateSettings { auto_check: true },
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![remote_provider_config("remote")],
         };
@@ -1913,12 +1951,29 @@ mod tests {
 
         let migrated = migrate_config_value(value).expect("migrates");
 
-        assert_eq!(migrated["schemaVersion"], serde_json::json!(17));
+        assert_eq!(migrated["schemaVersion"], serde_json::json!(18));
         assert_eq!(
             migrated["providers"][0]["setupState"],
             serde_json::json!("ready")
         );
         assert_eq!(migrated["providers"][0]["enabled"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn config_migration_v17_keeps_application_update_checks_opt_in() {
+        let value = serde_json::json!({
+            "schemaVersion": 17,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(migrated["schemaVersion"], serde_json::json!(18));
+        assert_eq!(migrated["appUpdate"]["autoCheck"], serde_json::json!(false));
+        assert!(default_config().app_update.auto_check);
     }
 
     #[test]
@@ -1972,6 +2027,7 @@ mod tests {
                 width: 420.0,
                 height: 640.0,
             }),
+            app_update: AppUpdateSettings { auto_check: true },
             remote_provider_registry: RemoteProviderRegistrySettings {
                 registry_url: Some("https://example.com/registry.json".to_string()),
                 provider_proxy_url: Some("http://proxy:8080".to_string()),
@@ -2033,6 +2089,7 @@ mod tests {
             serde_json::json!(DEFAULT_LOG_MAX_BYTES)
         );
         assert_eq!(value["logQuotaData"], serde_json::json!(true));
+        assert_eq!(value["appUpdate"], serde_json::json!({ "autoCheck": true }));
         assert_eq!(
             value["providers"][0]["windowLabelOverrides"],
             serde_json::json!({ "300-minute": "5h" })

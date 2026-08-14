@@ -22,7 +22,7 @@ function hasTauriInternals(): boolean {
 }
 
 const fallbackConfig: AppConfig = {
-  schemaVersion: 17,
+  schemaVersion: 18,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -32,6 +32,9 @@ const fallbackConfig: AppConfig = {
   logQuotaData: false,
   language: "zh-CN",
   networkProxy: null,
+  appUpdate: {
+    autoCheck: true,
+  },
   remoteProviderRegistry: {
     registryUrl: DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
     providerProxyUrl: null,
@@ -255,6 +258,14 @@ export type AppUpdateInfo = {
   version: string | null;
   notesUrl: string | null;
   downloaded: boolean;
+  checkedAt?: string | null;
+  error?: string | null;
+  dismissed?: boolean;
+};
+
+export type AppUpdateStatusEvent = {
+  info: AppUpdateInfo;
+  animate: boolean;
 };
 
 const unavailableAppUpdate: AppUpdateInfo = {
@@ -264,7 +275,18 @@ const unavailableAppUpdate: AppUpdateInfo = {
   version: null,
   notesUrl: null,
   downloaded: false,
+  checkedAt: null,
+  error: null,
+  dismissed: false,
 };
+
+export async function getAppUpdateStatus(): Promise<AppUpdateInfo> {
+  if (!hasTauriInternals()) {
+    return unavailableAppUpdate;
+  }
+
+  return invoke<AppUpdateInfo>("get_app_update_status");
+}
 
 export async function checkAppUpdate(): Promise<AppUpdateInfo> {
   if (!hasTauriInternals()) {
@@ -272,6 +294,14 @@ export async function checkAppUpdate(): Promise<AppUpdateInfo> {
   }
 
   return invoke<AppUpdateInfo>("check_app_update");
+}
+
+export async function dismissAppUpdateNotice(): Promise<AppUpdateInfo> {
+  if (!hasTauriInternals()) {
+    return { ...unavailableAppUpdate, dismissed: true };
+  }
+
+  return invoke<AppUpdateInfo>("dismiss_app_update_notice");
 }
 
 export async function downloadAppUpdate(): Promise<AppUpdateInfo> {
@@ -571,6 +601,19 @@ export async function listenForSnapshotUpdates(
   );
 }
 
+export async function listenForAppUpdateStatus(
+  onStatus: (status: AppUpdateStatusEvent) => void,
+): Promise<() => void> {
+  if (!hasTauriInternals()) {
+    void onStatus;
+    return () => undefined;
+  }
+
+  return listen<AppUpdateStatusEvent>("app-update-status-changed", (event) =>
+    onStatus(event.payload),
+  );
+}
+
 export async function listenForTrayPopupShown(
   onShown: (presentationId: number) => void,
 ): Promise<() => void> {
@@ -627,6 +670,33 @@ export async function showMainWindow(): Promise<void> {
   }
 
   return invoke<void>("show_main_window");
+}
+
+export async function showApplicationUpdate(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  return invoke<void>("show_application_update");
+}
+
+export async function getApplicationUpdateNavigationRequest(): Promise<number> {
+  if (!hasTauriInternals()) {
+    return 0;
+  }
+
+  return invoke<number>("get_app_update_navigation_request");
+}
+
+export async function listenForApplicationUpdateRequests(
+  onOpen: (requestId: number) => void,
+): Promise<() => void> {
+  if (!hasTauriInternals()) {
+    void onOpen;
+    return () => undefined;
+  }
+
+  return listen<number>("open-app-update", (event) => onOpen(event.payload));
 }
 
 export async function resetTrayPopupSize(): Promise<void> {

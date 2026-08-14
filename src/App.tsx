@@ -1,15 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Header } from "./components/Header";
 import { GlobalStatusStrip } from "./components/GlobalStatusStrip";
 import { ProviderCard } from "./components/ProviderCard";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TrayPopup } from "./components/TrayPopup";
+import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import {
+  dismissAppUpdateNotice,
+  getApplicationUpdateNavigationRequest,
   getCachedSnapshot,
+  getAppUpdateStatus,
   getAppVersion,
   getConfig,
   getConfigStorageInfo,
   listenForRefreshRequests,
+  listenForAppUpdateStatus,
+  listenForApplicationUpdateRequests,
   listenForSnapshotUpdates,
   listenForSingleInstance,
   openConfigFolder,
@@ -30,6 +36,7 @@ import type {
   ProviderSetupTestResult,
   RemoteProviderConfig
 } from "./types";
+import type { AppUpdateInfo } from "./lib/api";
 
 function fallbackSnapshot(error: unknown): AppSnapshot {
   return {
@@ -238,6 +245,28 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   const [initialProviderSettingsView, setInitialProviderSettingsView] = useState<"main" | "add">("main");
   const [settingsCloseRequest, setSettingsCloseRequest] = useState(0);
   const [settingsHomeRequest, setSettingsHomeRequest] = useState(0);
+  const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [appUpdateNoticeSequence, setAppUpdateNoticeSequence] = useState(0);
+  const [appUpdateFocusRequest, setAppUpdateFocusRequest] = useState(0);
+  const handledAppUpdateNavigationRequestRef = useRef(0);
+  const settingsOpenRef = useRef(false);
+  const overviewScrollRegionRef = useRef<HTMLDivElement>(null);
+  const settingsScrollRegionRef = useRef<HTMLDivElement>(null);
+  const overviewScrollTopRef = useRef(0);
+  const settingsScrollTopRef = useRef(0);
+  const isShowingSettings = settingsOpen && config !== null;
+
+  useLayoutEffect(() => {
+    const scrollRegion = isShowingSettings
+      ? settingsScrollRegionRef.current
+      : overviewScrollRegionRef.current;
+    const scrollTop = isShowingSettings
+      ? settingsScrollTopRef.current
+      : overviewScrollTopRef.current;
+    if (scrollRegion) {
+      scrollRegion.scrollTop = scrollTop;
+    }
+  }, [isShowingSettings]);
 
   const syncCachedSnapshot = useCallback(async () => {
     try {
@@ -349,12 +378,74 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   }, [loadSnapshot]);
 
   useEffect(() => {
+    let isMounted = true;
+    let unlisten: (() => void) | undefined;
+    const handleRequest = (requestId: number) => {
+      if (!isMounted || requestId <= handledAppUpdateNavigationRequestRef.current) {
+        return;
+      }
+      handledAppUpdateNavigationRequestRef.current = requestId;
+      openApplicationUpdate();
+    };
+    void getApplicationUpdateNavigationRequest().then(handleRequest).catch(() => undefined);
+    void listenForApplicationUpdateRequests(handleRequest).then((cleanup) => {
+      unlisten = cleanup;
+    });
+    // The tray command records its request before it focuses this window. Reading that durable
+    // request on focus makes the tray route work even if Tauri delivers the transient event
+    // while this renderer is resuming from a hidden state.
+    const recoverRequestOnFocus = () => {
+      void getApplicationUpdateNavigationRequest().then(handleRequest).catch(() => undefined);
+    };
+    window.addEventListener("focus", recoverRequestOnFocus);
+
+    return () => {
+      isMounted = false;
+      unlisten?.();
+      window.removeEventListener("focus", recoverRequestOnFocus);
+    };
+  }, []);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listenForSnapshotUpdates((updatedSnapshot) => setSnapshot(updatedSnapshot)).then((cleanup) => {
       unlisten = cleanup;
     });
 
     return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    let unlisten: (() => void) | undefined;
+    void getAppUpdateStatus()
+      .then((info) => {
+        if (isMounted) {
+          setAppUpdateInfo(info);
+        }
+      })
+      .catch(() => undefined);
+    void listenForAppUpdateStatus((status) => {
+      if (!isMounted) {
+        return;
+      }
+      setAppUpdateInfo(status.info);
+      if (
+        status.animate &&
+        status.info.available &&
+        !status.info.dismissed &&
+        document.hasFocus()
+      ) {
+        setAppUpdateNoticeSequence((current) => current + 1);
+      }
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      isMounted = false;
       unlisten?.();
     };
   }, []);
@@ -507,6 +598,39 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   const hasSnapshot = snapshot !== null;
   const providers = snapshot?.providers ?? [];
 
+  function rememberActiveScrollPosition() {
+    if (settingsOpenRef.current) {
+      if (settingsScrollRegionRef.current) {
+        settingsScrollTopRef.current = settingsScrollRegionRef.current.scrollTop;
+      }
+    } else if (overviewScrollRegionRef.current) {
+      overviewScrollTopRef.current = overviewScrollRegionRef.current.scrollTop;
+    }
+  }
+
+  function openSettings(initialView: "main" | "add") {
+    rememberActiveScrollPosition();
+    settingsOpenRef.current = true;
+    setInitialProviderSettingsView(initialView);
+    setSettingsOpen(true);
+  }
+
+  function closeSettings() {
+    rememberActiveScrollPosition();
+    settingsOpenRef.current = false;
+    setSettingsOpen(false);
+  }
+
+  function openApplicationUpdate() {
+    openSettings("main");
+    setSettingsHomeRequest((current) => current + 1);
+    setAppUpdateFocusRequest((current) => current + 1);
+  }
+
+  function dismissApplicationUpdate() {
+    void dismissAppUpdateNotice().then(setAppUpdateInfo).catch(() => undefined);
+  }
+
   return (
     <main className="app-shell">
       <Header
@@ -526,86 +650,109 @@ function MainApp({ onLanguageChange }: MainAppProps) {
           if (settingsOpen) {
             setSettingsHomeRequest((current) => current + 1);
           } else {
-            setInitialProviderSettingsView("main");
-            setSettingsOpen(true);
+            openSettings("main");
           }
         }}
         onRefresh={loadSnapshot}
         onOpenGithub={() => void openProjectGithub()}
       />
-      {settingsOpen && config ? (
-        <SettingsPanel
-          appVersion={appVersion}
-          config={config}
-          configStorageInfo={configStorageInfo}
-          isConfigStorageBusy={isConfigStorageBusy}
-          isSaving={isSaving}
-          snapshotProviders={providers}
-          onChange={setConfig}
-          onOpenConfigFolder={openConfigFolder}
-          onResetConfig={restoreDefaultConfig}
-          onSave={persistConfig}
-          onSetPortableMode={(enabled) => void togglePortableMode(enabled)}
-          onProviderSetupConfigChanged={synchronizeProviderSetupConfig}
-          onRequestClose={() => setSettingsOpen(false)}
-          closeRequest={settingsCloseRequest}
-          settingsHomeRequest={settingsHomeRequest}
-          initialProviderSettingsView={initialProviderSettingsView}
-        />
+      <AppUpdateNotice
+        key={appUpdateNoticeSequence}
+        animate={appUpdateNoticeSequence > 0}
+        info={appUpdateInfo}
+        onDismiss={dismissApplicationUpdate}
+        onOpenUpdate={openApplicationUpdate}
+      />
+      {isShowingSettings ? (
+        <div
+          className="app-view-scroll-region"
+          data-testid="settings-scroll-region"
+          ref={settingsScrollRegionRef}
+          onScroll={(event) => {
+            settingsScrollTopRef.current = event.currentTarget.scrollTop;
+          }}
+        >
+          <SettingsPanel
+            appVersion={appVersion}
+            config={config}
+            configStorageInfo={configStorageInfo}
+            isConfigStorageBusy={isConfigStorageBusy}
+            isSaving={isSaving}
+            snapshotProviders={providers}
+            onChange={setConfig}
+            onOpenConfigFolder={openConfigFolder}
+            onResetConfig={restoreDefaultConfig}
+            onSave={persistConfig}
+            onSetPortableMode={(enabled) => void togglePortableMode(enabled)}
+            onProviderSetupConfigChanged={synchronizeProviderSetupConfig}
+            onRequestClose={closeSettings}
+            closeRequest={settingsCloseRequest}
+            settingsHomeRequest={settingsHomeRequest}
+            appUpdateFocusRequest={appUpdateFocusRequest}
+            onAppUpdateFocusHandled={() => setAppUpdateFocusRequest(0)}
+            initialProviderSettingsView={initialProviderSettingsView}
+          />
+        </div>
       ) : (
-        <section className="overview-page" aria-label={t.app.overviewLabel} data-testid="overview-page">
-          {hasSnapshot ? (
-            <GlobalStatusStrip
-              providers={providers}
-              refreshedAt={snapshot.refreshedAt}
-              refreshIntervalSeconds={config?.refreshIntervalSeconds}
-              lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
-            />
-          ) : (
-            <section className="global-status" data-testid="global-status-strip">
-              {t.settings.loading}
-            </section>
-          )}
-          <section className="provider-list" aria-label={t.app.providersLabel}>
-            {config && !config.providers.some((provider) =>
-              provider.enabled && provider.setupState !== "pending" && provider.setupState !== "unverified"
-            ) ? (
-              <section className="settings-empty provider-setup-empty" data-testid="provider-setup-empty-state">
-                <h2>{t.providerSetup.noUsableProvidersTitle}</h2>
-                <p>{t.providerSetup.noUsableProvidersBody}</p>
-                <div className="settings-actions">
-                  <button
-                    type="button"
-                    className="button-primary"
-                    onClick={() => {
-                      setInitialProviderSettingsView("add");
-                      setSettingsOpen(true);
-                    }}
-                  >
-                    {t.providerSetup.addProvider}
-                  </button>
-                  <button
-                    type="button"
-                    className="button-secondary"
-                    onClick={() => void openRemoteProviderGuide()}
-                  >
-                    {t.providerSetup.openGuide}
-                  </button>
-                </div>
-              </section>
-            ) : null}
-            {providers.map((provider) => (
-              <ProviderCard
-                key={provider.id}
-                provider={provider}
-                displayMode={config?.displayMode ?? "remaining"}
+        <div
+          className="app-view-scroll-region"
+          data-testid="overview-scroll-region"
+          ref={overviewScrollRegionRef}
+          onScroll={(event) => {
+            overviewScrollTopRef.current = event.currentTarget.scrollTop;
+          }}
+        >
+          <section className="overview-page" aria-label={t.app.overviewLabel} data-testid="overview-page">
+            {hasSnapshot ? (
+              <GlobalStatusStrip
+                providers={providers}
+                refreshedAt={snapshot.refreshedAt}
+                refreshIntervalSeconds={config?.refreshIntervalSeconds}
                 lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
-                isRefreshing={refreshingProviderIds[provider.id] ?? false}
-                onRefresh={() => void refreshSingleProvider(provider.id)}
               />
-            ))}
+            ) : (
+              <section className="global-status" data-testid="global-status-strip">
+                {t.settings.loading}
+              </section>
+            )}
+            <section className="provider-list" aria-label={t.app.providersLabel}>
+              {config && !config.providers.some((provider) =>
+                provider.enabled && provider.setupState !== "pending" && provider.setupState !== "unverified"
+              ) ? (
+                <section className="settings-empty provider-setup-empty" data-testid="provider-setup-empty-state">
+                  <h2>{t.providerSetup.noUsableProvidersTitle}</h2>
+                  <p>{t.providerSetup.noUsableProvidersBody}</p>
+                  <div className="settings-actions">
+                    <button
+                      type="button"
+                      className="button-primary"
+                      onClick={() => openSettings("add")}
+                    >
+                      {t.providerSetup.addProvider}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() => void openRemoteProviderGuide()}
+                    >
+                      {t.providerSetup.openGuide}
+                    </button>
+                  </div>
+                </section>
+              ) : null}
+              {providers.map((provider) => (
+                <ProviderCard
+                  key={provider.id}
+                  provider={provider}
+                  displayMode={config?.displayMode ?? "remaining"}
+                  lowQuotaWarningThreshold={config?.lowQuotaWarningThreshold}
+                  isRefreshing={refreshingProviderIds[provider.id] ?? false}
+                  onRefresh={() => void refreshSingleProvider(provider.id)}
+                />
+              ))}
+            </section>
           </section>
-        </section>
+        </div>
       )}
     </main>
   );

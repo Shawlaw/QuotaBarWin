@@ -30,9 +30,9 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 
 - 平台：**Windows**
 - 分发方式：**绿色版 portable zip + 单 exe**
-- 当前版本：**v1.2.1**
+- 当前版本：**v1.2.2**
 - 技术栈：Tauri 2、Rust 2021、React 19、TypeScript、Vite
-- 当前配置 schema version：**17**
+- 当前配置 schema version：**18**
 
 ---
 
@@ -242,6 +242,16 @@ npm run dev
 npm run tauri dev
 ```
 
+预览应用更新提示 UI（不会联网、下载或修改更新缓存）：
+
+```powershell
+$env:QBWIN_DEMO_APP_UPDATE="1"
+npm run tauri -- build --features update-preview --no-bundle
+& .\src-tauri\target\release\quotabarwin.exe
+```
+
+启动后打开主窗口或托盘小窗，约 700ms 后会显示一次模拟更新提示，可体验入场动画、“前往更新”和“稍后”。普通 Release 构建不包含该预览功能，只有显式使用 `update-preview` 特性构建的内部预览版本会读取该环境变量。
+
 构建前端资源：
 
 ```powershell
@@ -306,6 +316,8 @@ zip 内包含 `quotabarwin.portable`，解压后默认使用可执行文件旁�
 安装：从 GitHub Release 下载 portable zip，解压到任意目录后直接启动 `QuotaBarWin.exe`。
 
 首次包含更新器的版本仍需手动下载安装。之后可在“设置 → 应用更新”检查新版并选择“下载并重启更新”。
+
+“设置 → 应用更新”可开启自动检查：每天本地时间 08:00 后，首次打开主窗口或托盘小窗时会在后台检查一次。发现新版本时主窗口和托盘小窗都会显示升级提示；“稍后”会关闭提示并静默当前版本。点击“前往更新”会打开设置页并定位到“应用更新”区，用户可直接继续“下载并重启更新”。下载始终使用提示所对应、已签名校验的版本，不会在点击下载时改为官网随后发布的较新版本；手动再次检查才会刷新候选版本。自动检查不会自动下载、安装或重启。新安装默认开启；从 schema 17 迁移的既有配置默认关闭，以保留原有的手动检查行为。
 
 卸载：先从托盘菜单退出 QuotaBarWin，然后删除解压目录。
 

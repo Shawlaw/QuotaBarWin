@@ -59,8 +59,13 @@ export type AppConfig = {
   networkProxy?: ProxyConfig | null;
   trayPopupPosition?: TrayPopupPosition | null;
   trayPopupSize?: TrayPopupSize | null;
+  appUpdate?: AppUpdateSettings;
   remoteProviderRegistry?: RemoteProviderRegistrySettings;
   providers: RemoteProviderConfig[];
+};
+
+export type AppUpdateSettings = {
+  autoCheck: boolean;
 };
 
 export type RemoteProviderRegistrySettings = {

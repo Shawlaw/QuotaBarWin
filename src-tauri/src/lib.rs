@@ -28,7 +28,11 @@ use tauri::{Emitter, Manager};
 const HIDDEN_STARTUP_ARG: &str = "--hidden";
 
 pub use app_info::get_app_version;
-pub use app_update::{apply_app_update, check_app_update, download_app_update, AppUpdateState};
+pub use app_update::{
+    apply_app_update, check_app_update, dismiss_app_update_notice, download_app_update,
+    get_app_update_navigation_request, get_app_update_status, AppUpdateNavigationState,
+    AppUpdateState,
+};
 pub use cli::run_cli;
 pub use config::{
     get_config, get_config_storage_info, migrate_config_file, open_config_folder,
@@ -51,8 +55,8 @@ pub use remote_provider_commands::{
 pub use tray::{
     e2e_focus_main_window, e2e_is_tray_popup_focused, e2e_is_tray_popup_visible,
     e2e_set_tray_popup_size, e2e_show_tray_popup, get_tray_popup_presentation_id, hide_tray_popup,
-    reset_tray_popup_size, set_tray_popup_auto_height, show_main_window, start_tray_popup_dragging,
-    start_tray_popup_resizing,
+    reset_tray_popup_size, set_tray_popup_auto_height, show_application_update, show_main_window,
+    start_tray_popup_dragging, start_tray_popup_resizing,
 };
 
 fn window_title(version: &str) -> String {
@@ -74,6 +78,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(AppUpdateState::default())
+        .manage(AppUpdateNavigationState::default())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -137,9 +142,12 @@ pub fn run() {
             get_config,
             get_config_storage_info,
             get_app_version,
+            get_app_update_navigation_request,
+            get_app_update_status,
             check_app_update,
             download_app_update,
             apply_app_update,
+            dismiss_app_update_notice,
             external_links::open_project_github,
             external_links::open_app_update_notes,
             export_diagnostics,
@@ -169,6 +177,7 @@ pub fn run() {
             get_tray_popup_presentation_id,
             hide_tray_popup,
             show_main_window,
+            show_application_update,
             reset_tray_popup_size,
             set_tray_popup_auto_height,
             start_tray_popup_dragging,
@@ -180,6 +189,11 @@ pub fn run() {
             e2e_focus_main_window
         ])
         .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Focused(true)
+                if window.label() == "main" || window.label() == tray::TRAY_POPUP_LABEL =>
+            {
+                app_update::request_automatic_update_check(window.app_handle().clone());
+            }
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();

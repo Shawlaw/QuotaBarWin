@@ -1103,6 +1103,7 @@ mod tests {
             network_proxy: None,
             tray_popup_position: None,
             tray_popup_size: None,
+            app_update: crate::config::AppUpdateSettings { auto_check: true },
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers,
         }

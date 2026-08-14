@@ -30,9 +30,9 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 
 - Platform: **Windows**
 - Distribution: **portable zip + single exe**
-- Current version: **v1.2.1**
+- Current version: **v1.2.2**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
-- Current config schema version: **17**
+- Current config schema version: **18**
 
 ---
 
@@ -243,6 +243,16 @@ Run the Tauri desktop app:
 npm run tauri dev
 ```
 
+Preview the application-update UI (it does not make a network request, download anything, or modify the update cache):
+
+```powershell
+$env:QBWIN_DEMO_APP_UPDATE="1"
+npm run tauri -- build --features update-preview --no-bundle
+& .\src-tauri\target\release\quotabarwin.exe
+```
+
+Open the main window or tray popup after startup. About 700ms later, one simulated update notice lets you try the entrance animation, **Go to update**, and **Later**. Normal Release builds do not include this preview capability; only an internal build made explicitly with the `update-preview` feature reads this environment variable.
+
 Build frontend assets:
 
 ```powershell
@@ -307,6 +317,8 @@ Before enabling the first production update, maintainers must create a distinct 
 Install: download the portable zip from GitHub Releases, extract it to any folder, and run `QuotaBarWin.exe`.
 
 The first release containing the updater must still be installed manually. Later releases can be checked from **Settings → Application update** and installed with **Download and restart to update**.
+
+**Settings → Application update** can enable automatic checks. Once after 08:00 local time each day, the first opening of either the main window or tray popup checks in the background. When a new version is found, both windows show an update notice; **Later** closes it and silences that version. **Go to update** opens Settings and focuses the **Application update** section so the user can continue with **Download and restart to update**. Download always uses the signed candidate represented by the notice, rather than a version that may be published later; manually checking again refreshes that candidate. Automatic checks never download, install, or restart the app. New installations enable this by default; configurations migrated from schema 17 keep it disabled to preserve the prior manual-only behaviour.
 
 Uninstall: quit QuotaBarWin from the tray menu, then delete the extracted folder.
 

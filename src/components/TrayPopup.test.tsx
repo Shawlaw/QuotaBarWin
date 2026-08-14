@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
   const listeners: {
     snapshotUpdated?: (snapshot: AppSnapshot) => void;
     trayShown?: (presentationId: number) => void;
+    appUpdateStatus?: (status: { info: unknown; animate: boolean }) => void;
   } = {};
   const state = { presentationId: 0 };
   const config: AppConfig = {
@@ -147,6 +148,12 @@ const mocks = vi.hoisted(() => {
   };
 
   return {
+    dismissAppUpdateNotice: vi.fn(async () => ({
+      configured: true, currentVersion: "1.0.0", available: false, version: null, notesUrl: null, downloaded: false,
+    })),
+    getAppUpdateStatus: vi.fn(async () => ({
+      configured: true, currentVersion: "1.0.0", available: false, version: null, notesUrl: null, downloaded: false,
+    })),
     getCachedSnapshot: vi.fn(async (): Promise<AppSnapshot | null> => null),
     getAppVersion: vi.fn(async () => "1.0.0(abc1234)"),
     getConfig: vi.fn(async () => config),
@@ -157,6 +164,14 @@ const mocks = vi.hoisted(() => {
       listeners.snapshotUpdated = callback;
       return () => undefined;
     }),
+    listenForAppUpdateStatus: vi.fn(async (callback) => {
+      listeners.appUpdateStatus = callback;
+      return () => {
+        if (listeners.appUpdateStatus === callback) {
+          listeners.appUpdateStatus = undefined;
+        }
+      };
+    }),
     listenForTrayPopupShown: vi.fn(async (callback: (presentationId: number) => void) => {
       listeners.trayShown = callback;
       return () => undefined;
@@ -166,6 +181,7 @@ const mocks = vi.hoisted(() => {
     refreshSnapshot: vi.fn(async () => snapshot),
     setTrayPopupAutoHeight: vi.fn(async () => undefined),
     showMainWindow: vi.fn(async () => undefined),
+    showApplicationUpdate: vi.fn(async () => undefined),
     state,
     startDraggingCurrentWindow: vi.fn(async () => undefined),
     startResizingCurrentWindow: vi.fn(async () => undefined),
@@ -178,6 +194,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.listeners.snapshotUpdated = undefined;
   mocks.listeners.trayShown = undefined;
+  mocks.listeners.appUpdateStatus = undefined;
   mocks.state.presentationId = 0;
 });
 
@@ -583,6 +600,35 @@ test("tray_popup_opens_main_window_and_hides_popup", async () => {
   await waitFor(() => expect(mocks.showMainWindow).toHaveBeenCalledTimes(1));
   expect(mocks.hideTrayPopup).toHaveBeenCalledTimes(1);
   expect(mocks.hideCurrentWindow).not.toHaveBeenCalled();
+});
+
+test("tray_popup_offers_a_closable_application_update_notice", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.appUpdateStatus).toBeDefined());
+  await act(async () => {
+    mocks.listeners.appUpdateStatus?.({
+      animate: true,
+      info: {
+        configured: true,
+        currentVersion: "1.0.0",
+        available: true,
+        version: "1.1.0",
+        notesUrl: null,
+        downloaded: false,
+        dismissed: false,
+      },
+    });
+  });
+
+  expect(await screen.findByTestId("tray-app-update-notice")).toHaveClass(
+    "app-update-notice--enter",
+  );
+  expect(screen.queryByRole("button", { name: "Dismiss update notice" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Later" }));
+  await waitFor(() => expect(mocks.dismissAppUpdateNotice).toHaveBeenCalledTimes(1));
+  expect(mocks.hideTrayPopup).not.toHaveBeenCalled();
 });
 
 test("tray_popup_follows_main_snapshot_provider_order_for_quota_windows", async () => {

@@ -14,9 +14,14 @@
 
 body {
   font-size: 14px;
+  height: 100vh;
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
 }
 
 button {
@@ -81,9 +86,13 @@ button:disabled {
 }
 
 .app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   margin: 0 auto;
   max-width: 1120px;
-  padding: 24px 28px 32px;
+  overflow: hidden;
+  padding: 24px 28px 0;
 }
 
 .app-header {
@@ -94,9 +103,16 @@ button:disabled {
   justify-content: space-between;
   margin-bottom: 16px;
   padding: 4px 0 12px;
-  position: sticky;
-  top: 0;
+  flex: 0 0 auto;
   z-index: 20;
+}
+
+.app-view-scroll-region {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 0 32px;
 }
 
 .header-actions,
@@ -171,6 +187,72 @@ button:disabled {
   color: #64748b;
   font-size: 12px;
   margin: 4px 0 0;
+}
+
+.app-update-notice {
+  align-items: center;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e3a8a;
+  display: flex;
+  font-size: 13px;
+  gap: 12px;
+  justify-content: space-between;
+  margin: -4px 0 14px;
+  padding: 9px 11px 9px 12px;
+}
+
+.app-update-notice--enter {
+  animation: app-update-notice-enter 200ms ease-out both;
+}
+
+.app-update-notice__message {
+  min-width: 0;
+}
+
+.app-update-notice__actions {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.button-link {
+  background: transparent;
+  border: 0;
+  color: #1d4ed8;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.button-link {
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.button-link:hover {
+  color: #1e40af;
+}
+
+@keyframes app-update-notice-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-update-notice--enter {
+    animation: none;
+  }
 }
 
 .provider-error {
@@ -459,6 +541,19 @@ button:disabled {
 .settings-section {
   display: grid;
   gap: 12px;
+}
+
+.settings-section--app-update-available {
+  scroll-margin-top: 20px;
+}
+
+.app-update-available-state {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e3a8a;
+  font-size: 13px;
+  padding: 9px 12px;
 }
 
 .settings-guide,
@@ -1016,7 +1111,7 @@ button:disabled {
 
 @media (max-width: 520px) {
   .app-shell {
-    padding: 20px;
+    padding: 20px 20px 0;
   }
 
   .app-header {
@@ -1404,6 +1499,25 @@ button:disabled {
   align-items: center;
   display: flex;
   min-width: 0;
+}
+
+.tray-popup__header .app-update-notice {
+  margin: 8px 0 0;
+}
+
+.app-update-notice--compact {
+  align-items: center;
+  font-size: 12px;
+  gap: 6px;
+  padding: 7px 8px;
+}
+
+.app-update-notice--compact .app-update-notice__actions {
+  gap: 6px;
+}
+
+.app-update-notice--compact button {
+  -webkit-app-region: no-drag;
 }
 
 .tray-popup__top-row {

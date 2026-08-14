@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import {
+  dismissAppUpdateNotice,
+  getAppUpdateStatus,
   getCachedSnapshot,
   getConfig,
   getTrayPopupPresentationId,
   hideCurrentWindow,
   hideTrayPopup,
   listenForSnapshotUpdates,
+  listenForAppUpdateStatus,
   listenForTrayPopupShown,
   resetTrayPopupSize,
   refreshSnapshot,
   setTrayPopupAutoHeight,
+  showApplicationUpdate,
   showMainWindow,
   startDraggingCurrentWindow,
   startResizingCurrentWindow
 } from "../lib/api";
+import type { AppUpdateInfo } from "../lib/api";
 import {
   calculateProviderStatus,
   displayPercentForWindow,
@@ -26,6 +31,7 @@ import {
 import type { AppConfig, AppSnapshot, ProviderSnapshot } from "../types";
 import { useI18n } from "../i18n";
 import { ProgressBar } from "./ProgressBar";
+import { AppUpdateNotice } from "./AppUpdateNotice";
 
 const TRAY_POPUP_AUTO_MIN_HEIGHT = 220;
 const TRAY_POPUP_AUTO_MAX_HEIGHT = 640;
@@ -99,6 +105,8 @@ export function TrayPopup() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSessionManualSize, setHasSessionManualSize] = useState(false);
+  const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [appUpdateNoticeSequence, setAppUpdateNoticeSequence] = useState(0);
 
   const syncCachedSnapshot = useCallback(async () => {
     try {
@@ -175,6 +183,39 @@ export function TrayPopup() {
 
     return () => {
       isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    let unlisten: (() => void) | undefined;
+    void getAppUpdateStatus()
+      .then((info) => {
+        if (isMounted) {
+          setAppUpdateInfo(info);
+        }
+      })
+      .catch(() => undefined);
+    void listenForAppUpdateStatus((status) => {
+      if (!isMounted) {
+        return;
+      }
+      setAppUpdateInfo(status.info);
+      if (
+        status.animate &&
+        status.info.available &&
+        !status.info.dismissed &&
+        document.hasFocus()
+      ) {
+        setAppUpdateNoticeSequence((current) => current + 1);
+      }
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      isMounted = false;
+      unlisten?.();
     };
   }, []);
 
@@ -377,6 +418,19 @@ export function TrayPopup() {
     }
   }
 
+  async function openApplicationUpdate() {
+    try {
+      await showApplicationUpdate();
+      await hideTrayPopup().catch(() => hideCurrentWindow());
+    } catch {
+      // Keep the popup open if the main window could not be shown.
+    }
+  }
+
+  function dismissApplicationUpdate() {
+    void dismissAppUpdateNotice().then(setAppUpdateInfo).catch(() => undefined);
+  }
+
   return (
     <main className="tray-popup" data-testid="tray-popup" ref={popupRef}>
       <header className="tray-popup__header" ref={headerRef}>
@@ -451,6 +505,14 @@ export function TrayPopup() {
             ) : null}
           </div>
         </div>
+        <AppUpdateNotice
+          key={appUpdateNoticeSequence}
+          animate={appUpdateNoticeSequence > 0}
+          compact
+          info={appUpdateInfo}
+          onDismiss={dismissApplicationUpdate}
+          onOpenUpdate={() => void openApplicationUpdate()}
+        />
       </header>
 
       <div className="tray-popup__content" ref={contentRef}>

@@ -864,17 +864,32 @@ pub fn get_tray_popup_presentation_id() -> u64 {
 
 #[tauri::command]
 pub fn show_main_window(app: AppHandle) -> Result<(), String> {
-    focus_main_window(&app, "refresh-requested")
+    focus_main_window(&app, Some("refresh-requested"))
 }
 
-fn focus_main_window(app: &AppHandle, refresh_event: &str) -> Result<(), String> {
+#[tauri::command]
+pub fn show_application_update(app: AppHandle) -> Result<(), String> {
+    // Record first: bringing an existing main window to the foreground can fire its frontend
+    // `focus` handler before the one-shot event below is delivered.
+    let request_id = crate::app_update::begin_app_update_navigation(&app);
+    focus_main_window(&app, None)?;
+    crate::app_update::emit_app_update_navigation(&app, request_id);
+    log_tray_popup_event(
+        &app,
+        LogLevel::Info,
+        &format!("application update navigation requested requestId={request_id}"),
+    );
+    Ok(())
+}
+
+fn focus_main_window(app: &AppHandle, event: Option<&str>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         window.show().map_err(|error| error.to_string())?;
         window.unminimize().map_err(|error| error.to_string())?;
         window.set_focus().map_err(|error| error.to_string())?;
-        window
-            .emit(refresh_event, ())
-            .map_err(|error| error.to_string())?;
+        if let Some(event) = event {
+            window.emit(event, ()).map_err(|error| error.to_string())?;
+        }
     }
     Ok(())
 }
@@ -882,7 +897,7 @@ fn focus_main_window(app: &AppHandle, refresh_event: &str) -> Result<(), String>
 fn handle_menu_event(app: &AppHandle, id: &MenuId) {
     match id.as_ref() {
         SHOW_ID => {
-            if let Err(error) = focus_main_window(app, "refresh-requested") {
+            if let Err(error) = focus_main_window(app, Some("refresh-requested")) {
                 eprintln!("Failed to show main window from tray menu: {error}");
             }
         }

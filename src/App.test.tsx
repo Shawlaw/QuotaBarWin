@@ -48,11 +48,20 @@ const mocks = vi.hoisted(() => {
   const listeners: {
     refreshRequested?: () => void;
     snapshotUpdated?: (snapshot: AppSnapshot) => void;
+    appUpdateStatus?: (status: { info: unknown; animate: boolean }) => void;
+    appUpdateNavigation?: (requestId: number) => void;
   } = {};
 
   return {
     listeners,
+    dismissAppUpdateNotice: vi.fn(async () => ({
+      configured: true, currentVersion: "1.0.0", available: false, version: null, notesUrl: null, downloaded: false,
+    })),
     getCachedSnapshot: vi.fn(async (): Promise<AppSnapshot | null> => null),
+    getApplicationUpdateNavigationRequest: vi.fn(async () => 0),
+    getAppUpdateStatus: vi.fn(async () => ({
+      configured: true, currentVersion: "1.0.0", available: false, version: null, notesUrl: null, downloaded: false,
+    })),
     getAppVersion: vi.fn(async () => "1.0.0(abc1234)"),
     getConfig: vi.fn(async () => config),
     getConfigStorageInfo: vi.fn(async () => configStorageInfo),
@@ -64,6 +73,22 @@ const mocks = vi.hoisted(() => {
       return () => {
         if (listeners.refreshRequested === callback) {
           listeners.refreshRequested = undefined;
+        }
+      };
+    }),
+    listenForAppUpdateStatus: vi.fn(async (callback) => {
+      listeners.appUpdateStatus = callback;
+      return () => {
+        if (listeners.appUpdateStatus === callback) {
+          listeners.appUpdateStatus = undefined;
+        }
+      };
+    }),
+    listenForApplicationUpdateRequests: vi.fn(async (callback) => {
+      listeners.appUpdateNavigation = callback;
+      return () => {
+        if (listeners.appUpdateNavigation === callback) {
+          listeners.appUpdateNavigation = undefined;
         }
       };
     }),
@@ -125,6 +150,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.listeners.refreshRequested = undefined;
   mocks.listeners.snapshotUpdated = undefined;
+  mocks.listeners.appUpdateStatus = undefined;
+  mocks.listeners.appUpdateNavigation = undefined;
 });
 
 test("refresh_button_calls_refresh_snapshot", async () => {
@@ -144,6 +171,106 @@ test("main_app_opens_the_project_in_the_default_browser", async () => {
   fireEvent.click(screen.getByRole("button", { name: "GitHub" }));
 
   expect(mocks.openProjectGithub).toHaveBeenCalledTimes(1);
+});
+
+test("main_app_animates_and_dismisses_an_automatic_update_notice", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  render(<App />);
+
+  await waitFor(() => expect(mocks.listeners.appUpdateStatus).toBeDefined());
+  await act(async () => {
+    mocks.listeners.appUpdateStatus?.({
+      animate: true,
+      info: {
+        configured: true,
+        currentVersion: "1.0.0",
+        available: true,
+        version: "1.1.0",
+        notesUrl: "https://example.com/releases/v1.1.0",
+        downloaded: false,
+        dismissed: false,
+      },
+    });
+  });
+
+  const notice = await screen.findByTestId("app-update-notice");
+  expect(notice).toHaveClass("app-update-notice--enter");
+  expect(screen.queryByRole("button", { name: "Dismiss update notice" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Later" }));
+  await waitFor(() => expect(mocks.dismissAppUpdateNotice).toHaveBeenCalledTimes(1));
+});
+
+test("main_app_update_navigation opens and focuses the application update settings", async () => {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  render(<App />);
+
+  await waitFor(() => expect(mocks.listeners.appUpdateNavigation).toBeDefined());
+  await act(async () => {
+    mocks.listeners.appUpdateNavigation?.(1);
+  });
+
+  expect(await screen.findByTestId("settings-page")).toBeInTheDocument();
+  expect(screen.getByTestId("app-update-section")).toBeInTheDocument();
+  await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" }));
+  delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+});
+
+test("main_app_recovers_a_tray_update_navigation_request_when_the_main_window_regains_focus", async () => {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  render(<App />);
+
+  await waitFor(() => expect(mocks.listeners.appUpdateNavigation).toBeDefined());
+  mocks.getApplicationUpdateNavigationRequest.mockClear();
+  mocks.getApplicationUpdateNavigationRequest.mockResolvedValueOnce(1);
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+  });
+
+  expect(await screen.findByTestId("settings-page")).toBeInTheDocument();
+  await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" }));
+  delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+});
+
+test("overview_and_settings_keep_independent_scroll_positions after application update navigation", async () => {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  render(<App />);
+
+  await waitFor(() => expect(mocks.listeners.appUpdateNavigation).toBeDefined());
+  const overviewScrollRegion = screen.getByTestId("overview-scroll-region");
+  overviewScrollRegion.scrollTop = 286;
+  fireEvent.scroll(overviewScrollRegion);
+  await act(async () => {
+    mocks.listeners.appUpdateNavigation?.(1);
+  });
+  expect(await screen.findByTestId("settings-page")).toBeInTheDocument();
+  await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+  const settingsScrollRegion = screen.getByTestId("settings-scroll-region");
+  expect(settingsScrollRegion.scrollTop).toBe(0);
+  settingsScrollRegion.scrollTop = 413;
+  fireEvent.scroll(settingsScrollRegion);
+
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  expect(await screen.findByTestId("overview-page")).toBeInTheDocument();
+  expect(screen.getByTestId("overview-scroll-region").scrollTop).toBe(286);
+
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(await screen.findByTestId("settings-page")).toBeInTheDocument();
+  expect(screen.getByTestId("settings-scroll-region").scrollTop).toBe(413);
+  expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+  delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
 });
 
 test("main_app_refreshes_when_native_refresh_requested", async () => {

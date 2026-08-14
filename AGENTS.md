@@ -62,7 +62,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `17`.
+Current config schema version: `18`.
 
 Supported persisted provider config kind:
 
@@ -91,6 +91,9 @@ Remote provider public contract:
 - Schema `15 -> 16` removes the legacy Provider runtime proxy field.
 - Schema `16 -> 17` adds Provider setup state. Existing Providers migrate as
   `ready`; newly installed Providers start disabled and `pending`.
+- Schema `17 -> 18` adds the application-update automatic-check setting.
+  New configurations enable it; migrated configurations preserve the prior
+  manual-only behaviour by disabling it.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.
