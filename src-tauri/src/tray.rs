@@ -594,6 +594,16 @@ pub fn e2e_is_tray_popup_focused(app: AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub fn e2e_simulate_tray_popup_focus_lost(window: Window) -> Result<(), String> {
+    ensure_e2e_tray_commands_enabled()?;
+    if window.label() != TRAY_POPUP_LABEL {
+        return Err("E2E focus-loss simulation must run from the tray popup".to_string());
+    }
+    handle_tray_popup_focus_lost(window);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn e2e_focus_main_window(app: AppHandle) -> Result<(), String> {
     ensure_e2e_tray_commands_enabled()?;
     if let Some(window) = app.get_webview_window("main") {
@@ -682,6 +692,23 @@ pub(crate) fn tray_popup_focus_hide_decision() -> FocusHideDecision {
         },
         Err(_) => FocusHideDecision::LockPoisoned,
     }
+}
+
+pub fn handle_tray_popup_focus_lost(window: Window) {
+    let decision = tray_popup_focus_hide_decision();
+    log_tray_popup_event(
+        window.app_handle(),
+        LogLevel::Info,
+        &format!(
+            "focus lost event decision={} reason={} remainingMs={} visible={:?} focused={:?} scheduledRecheck=true",
+            decision.status(),
+            decision.reason(),
+            decision.remaining_ms(),
+            window.is_visible(),
+            window.is_focused()
+        ),
+    );
+    hide_tray_popup_after_focus_lost(window, decision);
 }
 
 fn focus_lost_hide_delay(decision: FocusHideDecision) -> Duration {

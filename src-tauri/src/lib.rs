@@ -54,8 +54,9 @@ pub use remote_provider_commands::{
 };
 pub use tray::{
     e2e_focus_main_window, e2e_is_tray_popup_focused, e2e_is_tray_popup_visible,
-    e2e_set_tray_popup_size, e2e_show_tray_popup, get_tray_popup_presentation_id, hide_tray_popup,
-    reset_tray_popup_size, set_tray_popup_auto_height, show_application_update, show_main_window,
+    e2e_set_tray_popup_size, e2e_show_tray_popup, e2e_simulate_tray_popup_focus_lost,
+    get_tray_popup_presentation_id, hide_tray_popup, reset_tray_popup_size,
+    set_tray_popup_auto_height, show_application_update, show_main_window,
     start_tray_popup_dragging, start_tray_popup_resizing,
 };
 
@@ -105,14 +106,15 @@ pub fn run() {
             }
             tray::create_tray_popup_window(app.handle())?;
             tray::create_tray(app.handle())?;
-            if let Err(error) = app_update::acknowledge_applied_update() {
+            if let Err(error) = app_update::acknowledge_applied_update(app.handle()) {
                 eprintln!("Failed to acknowledge applied application update: {error}");
             }
             let app_handle = app.handle().clone();
             match config::config_path_for_app(&app_handle).and_then(|path| {
                 let mut loaded = config::load_or_create_config(&path)?;
                 let log = logger::LogSink::from_config_path(&path, &loaded.config);
-                if let Err(error) = config::repair_remote_provider_cache_paths(&path, &mut loaded.config)
+                if let Err(error) =
+                    config::repair_remote_provider_cache_paths(&path, &mut loaded.config)
                 {
                     let _ = log.write_unfiltered(
                         logger::LogLevel::Warn,
@@ -186,6 +188,7 @@ pub fn run() {
             e2e_set_tray_popup_size,
             e2e_is_tray_popup_visible,
             e2e_is_tray_popup_focused,
+            e2e_simulate_tray_popup_focus_lost,
             e2e_focus_main_window
         ])
         .on_window_event(|window, event| match event {
@@ -199,20 +202,7 @@ pub fn run() {
                 let _ = window.hide();
             }
             tauri::WindowEvent::Focused(false) if window.label() == tray::TRAY_POPUP_LABEL => {
-                let decision = tray::tray_popup_focus_hide_decision();
-                tray::log_tray_popup_event(
-                    window.app_handle(),
-                    logger::LogLevel::Info,
-                    &format!(
-                        "focus lost event decision={} reason={} remainingMs={} visible={:?} focused={:?} scheduledRecheck=true",
-                        decision.status(),
-                        decision.reason(),
-                        decision.remaining_ms(),
-                        window.is_visible(),
-                        window.is_focused()
-                    ),
-                );
-                tray::hide_tray_popup_after_focus_lost(window.clone(), decision);
+                tray::handle_tray_popup_focus_lost(window.clone());
             }
             tauri::WindowEvent::Resized(size) if window.label() == tray::TRAY_POPUP_LABEL => {
                 let scale_factor = window.scale_factor().unwrap_or(1.0);

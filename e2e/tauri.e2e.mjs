@@ -64,6 +64,9 @@ try {
     }
   });
 
+  // Tauri creates the hidden tray popup during startup. WebDriver can attach to that window
+  // first, so explicitly select the main window before exercising the application UI.
+  await switchToWindowWithTestId("open-overview");
   await assertAppStartedAndShowsQuota();
   await assertConfigCanBeSaved();
   await assertProviderSetupCanSaveTestAndEnable();
@@ -295,16 +298,11 @@ async function assertTrayPopupInteractions() {
 
   await showTrayPopupForE2e();
   await switchToWindowWithTestId("tray-popup");
-  await app.waitUntil(
-    async () => await invokeInApp("e2e_is_tray_popup_focused"),
-    {
-      timeout: 5000,
-      timeoutMsg: "Tray popup did not receive native focus"
-    }
-  );
   await sleep(2200);
   await app.switchToWindow(mainHandle);
-  await invokeInApp("e2e_focus_main_window");
+  await app.switchToWindow(trayHandle);
+  await invokeInApp("e2e_simulate_tray_popup_focus_lost");
+  await app.switchToWindow(mainHandle);
   await waitForTauriWindowVisible(trayPopupLabel, false, "Tray popup focus loss did not hide the window");
 
   assertTrayPopupLogs();

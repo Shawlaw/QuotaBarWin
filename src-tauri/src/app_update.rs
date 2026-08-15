@@ -5,10 +5,9 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
+    thread,
+    time::Duration,
 };
-
-#[cfg(any(debug_assertions, feature = "update-preview"))]
-use std::time::Duration;
 
 use chrono::{Local, Timelike};
 use serde::{Deserialize, Serialize};
@@ -29,6 +28,10 @@ const APP_UPDATE_MAIN_EXE_NAME: &str = "QuotaBarWin.exe";
 const APP_UPDATE_STATUS_CACHE_FILE: &str = "app_update_status.quotaBarWin.json";
 const APP_UPDATE_STATUS_CACHE_SCHEMA_VERSION: u8 = 1;
 const AUTOMATIC_CHECK_START_HOUR: u32 = 8;
+const APP_UPDATE_HELPER_COPY_PREFIX: &str = "helper-";
+const APP_UPDATE_HELPER_COPY_SUFFIX: &str = ".exe";
+const APP_UPDATE_HELPER_CLEANUP_RETRY_DELAY: Duration = Duration::from_millis(250);
+const APP_UPDATE_HELPER_CLEANUP_MAX_RETRIES: usize = 40;
 #[cfg(any(debug_assertions, feature = "update-preview"))]
 const APP_UPDATE_DEMO_ENV: &str = "QBWIN_DEMO_APP_UPDATE";
 #[cfg(any(debug_assertions, feature = "update-preview"))]
@@ -460,7 +463,7 @@ fn request_demo_update_preview(app: AppHandle, state: Arc<Mutex<AppUpdateStateIn
         }
         log_demo_preview(
             &app,
-            "demo notice emitted available=true version=1.2.2-demo",
+            "demo notice emitted available=true version=1.2.3-demo",
         );
         emit_update_status(&app, &info, true);
     });
@@ -499,7 +502,7 @@ fn demo_update_info() -> AppUpdateInfo {
         configured: true,
         current_version: current_version(),
         available: true,
-        version: Some("1.2.2-demo".to_string()),
+        version: Some("1.2.3-demo".to_string()),
         notes_url: Some("https://github.com/Shawlaw/QuotaBarWin/releases".to_string()),
         downloaded: false,
         checked_at: Some(Local::now().to_rfc3339()),
@@ -508,8 +511,16 @@ fn demo_update_info() -> AppUpdateInfo {
     }
 }
 
-pub fn acknowledge_applied_update() -> Result<bool, String> {
-    desktop_updater::acknowledge_if_requested().map_err(redacted_error)
+pub fn acknowledge_applied_update(app: &AppHandle) -> Result<bool, String> {
+    let acknowledged = desktop_updater::acknowledge_if_requested().map_err(redacted_error)?;
+    if acknowledged {
+        // The helper is still running when the new app acknowledges its startup, so it cannot
+        // delete its own copied executable on Windows. Retry in the new process until it exits.
+        if let Ok(updates_dir) = updates_dir_for_app(app) {
+            thread::spawn(move || cleanup_update_helper_copies(&updates_dir));
+        }
+    }
+    Ok(acknowledged)
 }
 
 fn app_updates_are_configured() -> bool {
@@ -778,11 +789,61 @@ fn update_context(app: &AppHandle) -> Result<(UpdateConfig, PathBuf), String> {
         public_key,
     );
     update_config.proxy_url = crate::proxy::select_proxy_url(None, config.network_proxy.as_ref());
-    let updates_dir = config_path
+    let updates_dir = updates_dir_for_config_path(&config_path)?;
+    Ok((update_config, updates_dir))
+}
+
+fn updates_dir_for_app(app: &AppHandle) -> Result<PathBuf, String> {
+    let config_path = crate::config::config_path_for_app(app)?;
+    updates_dir_for_config_path(&config_path)
+}
+
+fn updates_dir_for_config_path(config_path: &Path) -> Result<PathBuf, String> {
+    Ok(config_path
         .parent()
         .ok_or_else(|| "Unable to resolve application update directory".to_string())?
-        .join("updates");
-    Ok((update_config, updates_dir))
+        .join("updates"))
+}
+
+fn cleanup_update_helper_copies(updates_dir: &Path) {
+    for attempt in 0..=APP_UPDATE_HELPER_CLEANUP_MAX_RETRIES {
+        match cleanup_update_helper_copies_once(updates_dir) {
+            Ok(false) | Err(_) => return,
+            Ok(true) if attempt == APP_UPDATE_HELPER_CLEANUP_MAX_RETRIES => return,
+            Ok(true) => thread::sleep(APP_UPDATE_HELPER_CLEANUP_RETRY_DELAY),
+        }
+    }
+}
+
+/// Removes only helper executables copied by `desktop-updater` into the active update directory.
+/// Returns whether a currently locked helper should be retried after it exits.
+fn cleanup_update_helper_copies_once(updates_dir: &Path) -> std::io::Result<bool> {
+    let entries = match fs::read_dir(updates_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let mut retry = false;
+    for entry in entries {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        if !file_name.starts_with(APP_UPDATE_HELPER_COPY_PREFIX)
+            || !file_name.ends_with(APP_UPDATE_HELPER_COPY_SUFFIX)
+        {
+            continue;
+        }
+        match fs::remove_file(entry.path()) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => retry = true,
+            Err(_) => {}
+        }
+    }
+    Ok(retry)
 }
 
 fn update_apply_request() -> Result<ApplyRequest, String> {
@@ -853,7 +914,7 @@ mod tests {
     fn debug_update_preview_has_an_available_demo_version() {
         let info = demo_update_info();
         assert!(info.available);
-        assert_eq!(info.version.as_deref(), Some("1.2.2-demo"));
+        assert_eq!(info.version.as_deref(), Some("1.2.3-demo"));
     }
 
     #[test]
@@ -867,5 +928,29 @@ mod tests {
                 .replace_files
                 .contains(&"QuotaBarWin.exe".to_string()));
         }
+    }
+
+    #[test]
+    fn cleanup_only_removes_copied_update_helpers() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let updates = temp.path().join("updates");
+        fs::create_dir_all(&updates).expect("create updates dir");
+        let copied_helper = updates.join("helper-123.exe");
+        let another_copied_helper = updates.join("helper-456.exe");
+        let official_helper = updates.join(APP_UPDATE_HELPER_NAME);
+        let package = updates.join("QuotaBarWin_1.2.3.zip");
+        let helper_named_directory = updates.join("helper-directory.exe");
+        fs::write(&copied_helper, b"helper").expect("write copied helper");
+        fs::write(&another_copied_helper, b"helper").expect("write second copied helper");
+        fs::write(&official_helper, b"official helper").expect("write official helper");
+        fs::write(&package, b"package").expect("write package");
+        fs::create_dir(&helper_named_directory).expect("create helper-named directory");
+
+        assert!(!cleanup_update_helper_copies_once(&updates).expect("clean helpers"));
+        assert!(!copied_helper.exists());
+        assert!(!another_copied_helper.exists());
+        assert!(official_helper.exists());
+        assert!(package.exists());
+        assert!(helper_named_directory.is_dir());
     }
 }
