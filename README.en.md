@@ -32,7 +32,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 - Distribution: **portable zip + single exe**
 - Current version: **v1.2.2**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
-- Current config schema version: **18**
+- Current config schema version: **19**
 
 ---
 
@@ -318,7 +318,7 @@ Install: download the portable zip from GitHub Releases, extract it to any folde
 
 The first release containing the updater must still be installed manually. Later releases can be checked from **Settings → Application update** and installed with **Download and restart to update**.
 
-**Settings → Application update** can enable automatic checks. Once after 08:00 local time each day, the first opening of either the main window or tray popup checks in the background. When a new version is found, both windows show an update notice; **Later** closes it and silences that version. **Go to update** opens Settings and focuses the **Application update** section so the user can continue with **Download and restart to update**. Download always uses the signed candidate represented by the notice, rather than a version that may be published later; manually checking again refreshes that candidate. Automatic checks never download, install, or restart the app. New installations enable this by default; configurations migrated from schema 17 keep it disabled to preserve the prior manual-only behaviour.
+**Settings → Application update** enables automatic checks by default. Once after 08:00 local time each day, the first opening of either the main window or tray popup checks in the background. When a new version is found, both windows show an update notice; **Later** closes it and silences that version. **Go to update** opens Settings and focuses the **Application update** section so the user can continue with **Download and restart to update**. Download always uses the signed candidate represented by the notice, rather than a version that may be published later; manually checking again refreshes that candidate. Automatic checks never download, install, or restart the app. Users can turn this feature off at any time in Settings.
 
 Uninstall: quit QuotaBarWin from the tray menu, then delete the extracted folder.
 

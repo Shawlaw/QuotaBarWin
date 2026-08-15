@@ -1164,7 +1164,7 @@ export function SettingsPanel({
             <label className="checkbox-row settings-toggle-row">
               <input
                 type="checkbox"
-                checked={config.appUpdate?.autoCheck ?? false}
+                checked={config.appUpdate?.autoCheck ?? true}
                 data-testid="app-update-auto-check"
                 onChange={(event) =>
                   onChange({

@@ -54,8 +54,7 @@ pub fn get_app_update_navigation_request(state: State<'_, AppUpdateNavigationSta
 /// renderer also reads this value on focus, which covers the short interval before its event
 /// listener is ready (or a previously hidden window is resuming).
 pub fn begin_app_update_navigation(app: &AppHandle) -> u64 {
-    app
-        .state::<AppUpdateNavigationState>()
+    app.state::<AppUpdateNavigationState>()
         .request_id
         .fetch_add(1, Ordering::SeqCst)
         + 1

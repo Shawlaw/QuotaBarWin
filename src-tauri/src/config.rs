@@ -12,7 +12,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::proxy::ProxyConfig;
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 18;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 19;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_REMOTE_PROVIDER_REGISTRY_URL: &str =
@@ -783,10 +783,19 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(17);
     if version < 18 {
-        // Existing installations previously checked for application updates only when the user
-        // selected the manual action. Keep that behaviour until the user opts in explicitly.
-        value["appUpdate"] = serde_json::json!({ "autoCheck": false });
+        // Schema 18 introduced this preference. Schema 19 below applies its current default.
         value["schemaVersion"] = serde_json::json!(18);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(18);
+    if version < 19 {
+        // The automatic app-update check is enabled by default. Schema 18 had written false for
+        // all migrated configurations, so promote those installations to the current default.
+        value["appUpdate"] = serde_json::json!({ "autoCheck": true });
+        value["schemaVersion"] = serde_json::json!(19);
     }
 
     Ok(value)
@@ -1951,7 +1960,7 @@ mod tests {
 
         let migrated = migrate_config_value(value).expect("migrates");
 
-        assert_eq!(migrated["schemaVersion"], serde_json::json!(18));
+        assert_eq!(migrated["schemaVersion"], serde_json::json!(19));
         assert_eq!(
             migrated["providers"][0]["setupState"],
             serde_json::json!("ready")
@@ -1960,7 +1969,7 @@ mod tests {
     }
 
     #[test]
-    fn config_migration_v17_keeps_application_update_checks_opt_in() {
+    fn config_migration_v17_enables_application_update_checks_by_default() {
         let value = serde_json::json!({
             "schemaVersion": 17,
             "refreshIntervalSeconds": 300,
@@ -1971,9 +1980,23 @@ mod tests {
 
         let migrated = migrate_config_value(value).expect("migrates");
 
-        assert_eq!(migrated["schemaVersion"], serde_json::json!(18));
-        assert_eq!(migrated["appUpdate"]["autoCheck"], serde_json::json!(false));
+        assert_eq!(migrated["schemaVersion"], serde_json::json!(19));
+        assert_eq!(migrated["appUpdate"]["autoCheck"], serde_json::json!(true));
         assert!(default_config().app_update.auto_check);
+    }
+
+    #[test]
+    fn config_migration_v18_enables_application_update_checks_by_default() {
+        let value = serde_json::json!({
+            "schemaVersion": 18,
+            "appUpdate": { "autoCheck": false },
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(migrated["schemaVersion"], serde_json::json!(19));
+        assert_eq!(migrated["appUpdate"]["autoCheck"], serde_json::json!(true));
     }
 
     #[test]

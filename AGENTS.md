@@ -73,7 +73,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `18`.
+Current config schema version: `19`.
 
 Supported persisted provider config kind:
 

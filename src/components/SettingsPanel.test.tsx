@@ -371,10 +371,10 @@ test("settings_saves_the_application_update_auto_check_toggle", async () => {
   renderSettings();
 
   const toggle = screen.getByTestId("app-update-auto-check") as HTMLInputElement;
-  expect(toggle.checked).toBe(false);
+  expect(toggle.checked).toBe(true);
   fireEvent.click(toggle);
 
-  await waitFor(() => expect(apiMocks.state.config?.appUpdate?.autoCheck).toBe(true));
+  await waitFor(() => expect(apiMocks.state.config?.appUpdate?.autoCheck).toBe(false));
 });
 
 test("settings_toggles_provider_tray_visibility", async () => {
