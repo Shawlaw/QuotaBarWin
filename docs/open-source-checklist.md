@@ -14,6 +14,8 @@
 - Release workflow 构建 portable zip，同时包含 GUI、CLI、Updater 和
   `quotabarwin.portable` 标记。
 - Release notes 从当前版本对应的 `CHANGELOG.md` 条目生成。
+- Release notes 只说明相对上一已发布版本的用户可见差异，不记录内部迭代、
+  预览开关、测试构建过程或无需用户处理的实现细节。
 - portable update 使用独立 Ed25519 密钥；私钥只存放在 GitHub Actions
   secret，公钥通过仓库变量编译进客户端。
 - 基础 CSP 已启用，日志、诊断和 Provider stderr 经过脱敏。
@@ -61,6 +63,7 @@ cargo audit --file src-tauri/Cargo.lock
 - [ ] HTTP、SOCKS5、系统环境代理和代理检测符合文档。
 - [ ] GUI、CLI 和 Updater 均包含在最终 portable zip。
 - [ ] GitHub Release 资产名、版本、CHANGELOG 和 tag 一致。
+- [ ] Release notes 仅包含相对上一版本的用户可见变化，无内部迭代信息。
 - [ ] 旧版客户端可通过正式更新通道升级到新版本。
 
 ## GitHub 仓设置

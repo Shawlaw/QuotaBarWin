@@ -23,6 +23,17 @@ the UI consumes only normalized `AppSnapshot`, `ProviderSnapshot`, and
 Default project docs are Simplified Chinese. Link to English counterparts when
 they exist.
 
+## Release Notes
+
+- `CHANGELOG.md` is the source of GitHub Release notes.
+- Release notes describe only user-visible differences from the immediately
+  preceding released version. They are not an internal iteration log.
+- Exclude implementation details, preview/demo switches, test or build steps,
+  schema or migration mechanics, and other internal history unless users need
+  to take action because of it.
+- Keep the Chinese notes concise and group them as Added, Changed, Fixed, or
+  Security only when that improves clarity.
+
 ## Source Of Truth
 
 Start with these files:
