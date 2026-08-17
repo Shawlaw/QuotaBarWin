@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::proxy::ProxyConfig;
+use crate::{
+    logger::{LogLevel, LogSink},
+    proxy::ProxyConfig,
+};
 
 pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 19;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
@@ -505,23 +508,70 @@ pub fn load_or_create_config(path: &Path) -> Result<LoadedConfig, String> {
     }
 
     let contents = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    match load_config_contents_with_migration(path, &contents) {
-        Ok(loaded) => Ok(loaded),
+    let loaded = match load_config_contents_with_migration(path, &contents) {
+        Ok(loaded) => loaded,
         Err(error) => {
             let timestamp = Utc::now().format("%Y%m%d%H%M%S");
             let backup_path = path.with_file_name(format!("config.corrupt.{timestamp}.json"));
             fs::rename(path, &backup_path).map_err(|rename_error| rename_error.to_string())?;
             let config = default_config();
             save_config_to_path(path, &config)?;
-            Ok(LoadedConfig {
+            LoadedConfig {
                 config,
                 recovery_messages: vec![format!(
-                    "Recovered corrupt config: {}; backup: {}",
-                    error,
-                    backup_path.display()
+                    "config recovery kind={} action=reset-to-default sourceSchemaVersion={} targetSchemaVersion={} configFile={} backupKind=corrupt backupTimestamp={} error={}",
+                    config_recovery_kind(&error),
+                    schema_version_from_config_contents(&contents)
+                        .map(|version| version.to_string())
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    CURRENT_CONFIG_SCHEMA_VERSION,
+                    config_file_name(path),
+                    timestamp,
+                    error
                 )],
-            })
+            }
         }
+    };
+
+    log_config_recovery_messages(path, &loaded);
+    Ok(loaded)
+}
+
+fn config_file_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn schema_version_from_config_contents(contents: &str) -> Option<u64> {
+    serde_json::from_str::<serde_json::Value>(contents)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("schemaVersion")
+                .and_then(serde_json::Value::as_u64)
+        })
+}
+
+fn config_recovery_kind(error: &str) -> &'static str {
+    if error.starts_with("Unsupported config schemaVersion") {
+        "unsupported-schema"
+    } else if error.contains(" at line ") && error.contains(" column ") {
+        "invalid-json"
+    } else {
+        "invalid-config"
+    }
+}
+
+fn log_config_recovery_messages(path: &Path, loaded: &LoadedConfig) {
+    if loaded.recovery_messages.is_empty() {
+        return;
+    }
+
+    let log = LogSink::from_config_path(path, &loaded.config);
+    for message in &loaded.recovery_messages {
+        let _ = log.write_unfiltered(LogLevel::Warn, "config", message);
     }
 }
 
@@ -548,8 +598,8 @@ fn load_config_contents_with_migration(
         return Ok(LoadedConfig {
             config,
             recovery_messages: vec![format!(
-                "Migrated config from schemaVersion {original_version} to {CURRENT_CONFIG_SCHEMA_VERSION}; backup: {}",
-                backup_path.display()
+                "config migration sourceSchemaVersion={original_version} targetSchemaVersion={CURRENT_CONFIG_SCHEMA_VERSION} configFile={} backupKind=pre-migration backupCreated=true",
+                config_file_name(path)
             )],
         });
     }
@@ -2216,6 +2266,15 @@ mod tests {
 
         assert_eq!(loaded.config.schema_version, CURRENT_CONFIG_SCHEMA_VERSION);
         assert_eq!(backups, 1);
+
+        let log_contents = fs::read_to_string(crate::logger::log_path_for_config_path(&path))
+            .expect("read migration log");
+        assert!(log_contents.contains("\"level\":\"warn\""));
+        assert!(log_contents.contains("\"target\":\"config\""));
+        assert!(log_contents.contains("config migration sourceSchemaVersion=1"));
+        assert!(log_contents.contains(&format!(
+            "targetSchemaVersion={CURRENT_CONFIG_SCHEMA_VERSION}"
+        )));
     }
 
     #[test]
@@ -2247,6 +2306,37 @@ mod tests {
         assert_eq!(loaded.config, default_config());
         assert_eq!(backups, 1);
         assert_eq!(loaded.recovery_messages.len(), 1);
+    }
+
+    #[test]
+    fn logs_unsupported_schema_recovery_with_schema_and_backup_context() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let unsupported_version = CURRENT_CONFIG_SCHEMA_VERSION + 1;
+        fs::write(
+            &path,
+            format!(r#"{{"schemaVersion":{unsupported_version},"providers":[]}}"#),
+        )
+        .expect("write newer config");
+
+        let loaded = load_or_create_config(&path).expect("config recovers");
+
+        assert_eq!(loaded.config, default_config());
+        assert_eq!(loaded.recovery_messages.len(), 1);
+        assert!(loaded.recovery_messages[0].contains("kind=unsupported-schema"));
+        assert!(loaded.recovery_messages[0]
+            .contains(&format!("sourceSchemaVersion={unsupported_version}")));
+
+        let log_contents = fs::read_to_string(crate::logger::log_path_for_config_path(&path))
+            .expect("read recovery log");
+        assert!(log_contents.contains("\"level\":\"warn\""));
+        assert!(log_contents.contains("\"target\":\"config\""));
+        assert!(log_contents.contains("kind=unsupported-schema"));
+        assert!(log_contents.contains(&format!("sourceSchemaVersion={unsupported_version}")));
+        assert!(log_contents.contains(&format!(
+            "targetSchemaVersion={CURRENT_CONFIG_SCHEMA_VERSION}"
+        )));
+        assert!(log_contents.contains("backupKind=corrupt"));
     }
 
     #[test]
