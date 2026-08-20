@@ -5,6 +5,9 @@ import type {
   AppConfig,
   AppSnapshot,
   ConfigStorageInfo,
+  LocalApiAccessToken,
+  LocalApiNetworkInterface,
+  LocalApiStatus,
   ProxyConfig,
   ProxyTestResult,
   RemoteProviderCatalogEntry,
@@ -22,7 +25,7 @@ function hasTauriInternals(): boolean {
 }
 
 const fallbackConfig: AppConfig = {
-  schemaVersion: 19,
+  schemaVersion: 20,
   refreshIntervalSeconds: 300,
   displayMode: "remaining",
   lowQuotaWarningThreshold: 20,
@@ -34,6 +37,11 @@ const fallbackConfig: AppConfig = {
   networkProxy: null,
   appUpdate: {
     autoCheck: true,
+  },
+  localApi: {
+    enabled: false,
+    bindTarget: { kind: "loopback" },
+    port: 41833,
   },
   remoteProviderRegistry: {
     registryUrl: DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
@@ -177,6 +185,47 @@ export async function getConfigStorageInfo(): Promise<ConfigStorageInfo> {
   }
 
   return invoke<ConfigStorageInfo>("get_config_storage_info");
+}
+
+export async function getLocalApiStatus(): Promise<LocalApiStatus> {
+  if (!hasTauriInternals()) {
+    return {
+      enabled: false,
+      running: false,
+      endpoints: [],
+      requiresAuth: false,
+      tokenConfigured: false,
+      error: null,
+    };
+  }
+
+  return invoke<LocalApiStatus>("get_local_api_status");
+}
+
+export async function listLocalApiNetworkInterfaces(): Promise<LocalApiNetworkInterface[]> {
+  if (!hasTauriInternals()) {
+    return [];
+  }
+
+  return invoke<LocalApiNetworkInterface[]>("list_local_api_network_interfaces");
+}
+
+export async function getLocalApiAccessToken(): Promise<LocalApiAccessToken> {
+  if (!hasTauriInternals()) {
+    throw new Error("Local integration API tokens are available only in the desktop app");
+  }
+
+  return invoke<LocalApiAccessToken>("get_local_api_access_token");
+}
+
+export async function setLocalApiAccessToken(
+  token?: string,
+): Promise<LocalApiAccessToken> {
+  if (!hasTauriInternals()) {
+    throw new Error("Local integration API tokens are available only in the desktop app");
+  }
+
+  return invoke<LocalApiAccessToken>("set_local_api_access_token", { token });
 }
 
 export async function getAppVersion(): Promise<string> {

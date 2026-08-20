@@ -207,6 +207,45 @@ export type I18nCatalog = {
     testProxyHttpStatus: (statusCode: number | null) => string;
     testProxyUnavailable: string;
   };
+  localApi: {
+    title: string;
+    enabled: string;
+    enabledHint: string;
+    listenTarget: string;
+    loopback: string;
+    selectedNetworkInterfaces: string;
+    allNetworkInterfaces: string;
+    selectedInterfacesHint: string;
+    includeLoopback: string;
+    includeLoopbackHint: string;
+    networkInterface: (name: string, address: string) => string;
+    noNetworkInterfaces: string;
+    noInterfacesSelected: string;
+    port: string;
+    portError: string;
+    endpoint: string;
+    running: string;
+    stopped: string;
+    unavailable: string;
+    authentication: string;
+    authenticationRequired: string;
+    localAuthenticationNotRequired: string;
+    token: string;
+    tokenPlaceholder: string;
+    copyToken: string;
+    replaceToken: string;
+    saveToken: string;
+    generateToken: string;
+    tokenHint: string;
+    tokenConfigured: string;
+    tokenRequiredBeforeSave: string;
+    networkWarning: string;
+    tokenSaved: string;
+    tokenSaveFailed: string;
+    tokenCopied: string;
+    tokenCopyFailed: string;
+    interfaceLoadFailed: string;
+  };
   remoteProviders: {
     title: string;
     addTitle: string;
@@ -569,6 +608,45 @@ export const en: I18nCatalog = {
     testProxyHttpStatus: (statusCode) =>
       `The test address returned HTTP ${statusCode ?? "an unexpected status"}.`,
     testProxyUnavailable: "Proxy testing is available only in the desktop app."
+  },
+  localApi: {
+    title: "Local integration API",
+    enabled: "Enable local integration API",
+    enabledHint: "The desktop app serves the current normalized quota snapshot while it is running.",
+    listenTarget: "Listen on",
+    loopback: "This computer only (127.0.0.1)",
+    selectedNetworkInterfaces: "Selected network interfaces",
+    allNetworkInterfaces: "All active network interfaces",
+    selectedInterfacesHint: "Select one or more active network interfaces with IPv4 or IPv6 addresses.",
+    includeLoopback: "Also listen on this computer",
+    includeLoopbackHint: "127.0.0.1 remains available without a token.",
+    networkInterface: (name, address) => `${name} (${address})`,
+    noNetworkInterfaces: "No active IPv4 or IPv6 network interfaces are available.",
+    noInterfacesSelected: "Select at least one network interface.",
+    port: "Port",
+    portError: "Port must be between 1 and 65535.",
+    endpoint: "Endpoint",
+    running: "Running",
+    stopped: "Stopped",
+    unavailable: "Unavailable",
+    authentication: "Authentication",
+    authenticationRequired: "A bearer token is required for network access.",
+    localAuthenticationNotRequired: "Loopback access does not require a token.",
+    token: "Access token",
+    tokenPlaceholder: "Enter at least 32 non-whitespace characters",
+    copyToken: "Copy token",
+    replaceToken: "Replace token",
+    saveToken: "Save token",
+    generateToken: "Generate new token",
+    tokenHint: "Use Authorization: Bearer <token>. Tokens are stored separately from the main configuration and are never written to logs.",
+    tokenConfigured: "An access token is saved and shown in masked form.",
+    tokenRequiredBeforeSave: "Save an access token before saving network listener settings.",
+    networkWarning: "Network access is exposed over plain HTTP. Keep this on a trusted network, use a strong token, and do not expose the port to the public Internet.",
+    tokenSaved: "Access token saved.",
+    tokenSaveFailed: "Failed to save the access token.",
+    tokenCopied: "Access token copied.",
+    tokenCopyFailed: "Unable to copy the access token.",
+    interfaceLoadFailed: "Unable to load active network interfaces.",
   },
   remoteProviders: {
     title: "Remote Sources",
@@ -961,6 +1039,45 @@ export const zhCN: I18nCatalog = {
     testProxyHttpStatus: (statusCode) =>
       `检测地址返回 HTTP ${statusCode ?? "异常状态"}。`,
     testProxyUnavailable: "代理检测仅可在桌面应用中使用。"
+  },
+  localApi: {
+    title: "本地集成 API",
+    enabled: "启用本地集成 API",
+    enabledHint: "桌面应用运行期间，会对外提供当前已标准化的额度快照。",
+    listenTarget: "监听位置",
+    loopback: "仅此电脑 (127.0.0.1)",
+    selectedNetworkInterfaces: "指定网卡",
+    allNetworkInterfaces: "所有活动网卡",
+    selectedInterfacesHint: "请选择一个或多个具有 IPv4 或 IPv6 地址的活动网卡。",
+    includeLoopback: "同时监听本机",
+    includeLoopbackHint: "127.0.0.1 无需 Token 即可访问。",
+    networkInterface: (name, address) => `${name}（${address}）`,
+    noNetworkInterfaces: "没有可用的活动 IPv4 或 IPv6 网卡。",
+    noInterfacesSelected: "请至少选择一个网卡。",
+    port: "端口",
+    portError: "端口必须介于 1 和 65535 之间。",
+    endpoint: "接口地址",
+    running: "运行中",
+    stopped: "已停止",
+    unavailable: "不可用",
+    authentication: "鉴权",
+    authenticationRequired: "通过网络访问时必须提供 Bearer Token。",
+    localAuthenticationNotRequired: "仅本机回环访问无需 Token。",
+    token: "访问 Token",
+    tokenPlaceholder: "至少输入 32 个非空白字符",
+    copyToken: "复制 Token",
+    replaceToken: "替换 Token",
+    saveToken: "保存 Token",
+    generateToken: "生成新 Token",
+    tokenHint: "请求头使用 Authorization: Bearer <token>。Token 与主配置分开保存，且不会写入日志。",
+    tokenConfigured: "已保存访问 Token（已掩码显示）。",
+    tokenRequiredBeforeSave: "请先保存访问 Token，再保存网络监听设置。",
+    networkWarning: "网络访问使用明文 HTTP。请只在受信任网络使用强 Token，且不要将端口暴露到公网。",
+    tokenSaved: "访问 Token 已保存。",
+    tokenSaveFailed: "保存访问 Token 失败。",
+    tokenCopied: "访问 Token 已复制。",
+    tokenCopyFailed: "无法复制访问 Token。",
+    interfaceLoadFailed: "无法读取活动网卡。",
   },
   remoteProviders: {
     title: "远程安装源",

@@ -30,6 +30,7 @@ import type { AppUpdateInfo, UpdateInfo } from "../lib/api";
 import { DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS } from "../lib/defaults";
 import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
+import { LocalApiSettings } from "./LocalApiSettings";
 import {
   ProviderWindowSettings,
   type WindowDisplayPatch
@@ -214,6 +215,8 @@ export function SettingsPanel({
   const [appUpdateMessage, setAppUpdateMessage] = useState<string | null>(null);
   const [isAppUpdateBusy, setIsAppUpdateBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
+  const [localApiStatusRevision, setLocalApiStatusRevision] = useState(0);
+  const [localApiTokenRequired, setLocalApiTokenRequired] = useState(false);
   const [providerSettingsView, setProviderSettingsView] = useState<"main" | "add" | "sources" | "setup">(
     initialProviderSettingsView
   );
@@ -249,6 +252,7 @@ export function SettingsPanel({
     !lowQuotaWarningError &&
     !logMaxSizeError &&
     !hasProviderTimeoutError &&
+    !localApiTokenRequired &&
     !isSaving;
   const isPortableMode = configStorageInfo?.mode === "portable";
   const storageModeLabel = isPortableMode ? t.settings.portableMode : t.settings.appDataMode;
@@ -328,6 +332,7 @@ export function SettingsPanel({
       const returnToAddProvider = providerSettingsView === "sources";
       await onSave();
       initialConfigRef.current = JSON.stringify(config);
+      setLocalApiStatusRevision((revision) => revision + 1);
       setSaveMessage(t.settings.saved);
       if (returnToAddProvider) {
         setProviderSettingsView("add");
@@ -764,7 +769,13 @@ export function SettingsPanel({
   function renderSaveBar() {
     return (
       <div className="fixed-save-bar" data-testid="fixed-save-bar">
-        <span>{hasChanges ? t.settings.unsavedChanges : saveMessage}</span>
+        <span>
+          {localApiTokenRequired
+            ? t.localApi.tokenRequiredBeforeSave
+            : hasChanges
+              ? t.settings.unsavedChanges
+              : saveMessage}
+        </span>
         <div className="settings-actions">
           <button type="button" className="button-secondary" onClick={resetChanges} disabled={!hasChanges || isSaving}>
             {t.settings.resetChanges}
@@ -1087,6 +1098,12 @@ export function SettingsPanel({
           {t.settings.launchAtStartup}
         </label>
         </div>
+        <LocalApiSettings
+          settings={config.localApi}
+          refreshKey={`${configStorageInfo?.configPath ?? ""}:${localApiStatusRevision}`}
+          onChange={(localApi) => onChange({ ...config, localApi })}
+          onTokenRequirementChange={setLocalApiTokenRequired}
+        />
         <section className="settings-section config-storage-section" aria-label={t.settings.configurationStorage}>
           <div className="settings-section-title">
             <h3>{t.settings.configurationStorage}</h3>

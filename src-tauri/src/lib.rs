@@ -8,6 +8,8 @@ mod cli;
 mod config;
 mod diagnostics;
 mod external_links;
+mod local_api;
+mod local_api_token;
 pub mod logger;
 mod managed_secret_store;
 #[cfg(test)]
@@ -39,6 +41,10 @@ pub use config::{
     open_remote_provider_guide, reset_config, save_config, set_portable_mode, AppConfig,
 };
 pub use diagnostics::export_diagnostics;
+pub use local_api::{
+    get_local_api_access_token, get_local_api_status, list_local_api_network_interfaces,
+    set_local_api_access_token,
+};
 pub use provider_setup::{get_provider_setup, save_provider_setup, test_provider_setup};
 pub use proxy::{test_network_proxy, ProxyConfig, ProxyKind};
 pub use quota::{
@@ -137,6 +143,7 @@ pub fn run() {
                 }
                 Err(error) => eprintln!("Failed to load launch-at-startup setting: {error}"),
             }
+            local_api::start(app.handle().clone());
             refresh_scheduler::start(app.handle().clone());
             Ok(())
         })
@@ -161,6 +168,10 @@ pub fn run() {
             refresh_snapshot,
             refresh_provider,
             get_cached_snapshot,
+            get_local_api_status,
+            list_local_api_network_interfaces,
+            get_local_api_access_token,
+            set_local_api_access_token,
             get_network_proxy,
             set_network_proxy,
             test_network_proxy,

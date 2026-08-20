@@ -60,12 +60,51 @@ export type AppConfig = {
   trayPopupPosition?: TrayPopupPosition | null;
   trayPopupSize?: TrayPopupSize | null;
   appUpdate?: AppUpdateSettings;
+  localApi?: LocalApiSettings;
   remoteProviderRegistry?: RemoteProviderRegistrySettings;
   providers: RemoteProviderConfig[];
 };
 
 export type AppUpdateSettings = {
   autoCheck: boolean;
+};
+
+export type LocalApiSettings = {
+  enabled: boolean;
+  bindTarget: LocalApiBindTarget;
+  port: number;
+};
+
+export type LocalApiBindTarget =
+  | { kind: "loopback" }
+  // Kept so configurations created by the first v1.3.0 build still render.
+  | { kind: "network-interface"; adapterId: string; includeLoopback?: boolean }
+  | { kind: "network-interfaces"; adapterIds: string[]; includeLoopback?: boolean }
+  | { kind: "all-network-interfaces"; includeLoopback?: boolean };
+
+export type LocalApiNetworkInterface = {
+  id: string;
+  name: string;
+  addresses: LocalApiNetworkAddress[];
+  isPrivate: boolean;
+};
+
+export type LocalApiNetworkAddress = {
+  address: string;
+  scopeId?: number | null;
+};
+
+export type LocalApiStatus = {
+  enabled: boolean;
+  running: boolean;
+  endpoints: string[];
+  requiresAuth: boolean;
+  tokenConfigured: boolean;
+  error?: string | null;
+};
+
+export type LocalApiAccessToken = {
+  token: string;
 };
 
 export type RemoteProviderRegistrySettings = {

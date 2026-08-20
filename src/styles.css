@@ -527,6 +527,97 @@ button:disabled {
   color: #0f766e;
 }
 
+.local-api-settings {
+  background: #ffffff;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.local-api-settings__grid {
+  align-items: end;
+}
+
+.local-api-settings__status {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.local-api-settings__status span,
+.local-api-settings__auth strong {
+  color: #334155;
+  font-size: 13px;
+}
+
+.local-api-settings__status code {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #334155;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  padding: 3px 6px;
+}
+
+.local-api-settings__interfaces,
+.local-api-settings__endpoints {
+  display: grid;
+  gap: 6px;
+}
+
+.local-api-settings__interfaces .settings-hint {
+  margin: 0;
+}
+
+.local-api-settings .checkbox-row .settings-hint {
+  display: block;
+  margin-top: 2px;
+}
+
+.local-api-settings__auth {
+  display: grid;
+  gap: 8px;
+}
+
+.local-api-settings__auth p {
+  margin: 0;
+}
+
+.local-api-settings__saved-token {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #d9e2ec;
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+}
+
+.local-api-settings__saved-token code {
+  color: #475569;
+  letter-spacing: 0.12em;
+}
+
+.local-api-settings__saved-token span {
+  color: #475569;
+  font-size: 13px;
+}
+
+.local-api-settings__warning {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  color: #9a3412;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 10px;
+}
+
 .settings-toggle-row {
   align-self: center;
   min-height: 34px;

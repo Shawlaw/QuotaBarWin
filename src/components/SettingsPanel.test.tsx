@@ -6,6 +6,7 @@ import { I18nProvider } from "../i18n";
 import type {
   AppConfig,
   ConfigStorageInfo,
+  LocalApiStatus,
   ProviderSnapshot,
   QuotaWindow,
   RemoteProviderConfig,
@@ -63,6 +64,10 @@ const apiMocks = vi.hoisted(() => {
       notesUrl: null,
       downloaded: false,
     })),
+    getLocalApiAccessToken: vi.fn(async () => ({ token: "x".repeat(32) })),
+    getLocalApiStatus: vi.fn<() => Promise<LocalApiStatus>>(
+      () => new Promise<never>(() => undefined),
+    ),
     getConfig: vi.fn(async () => state.config),
     listenForAppUpdateStatus: vi.fn(async () => () => undefined),
     getInstalledRemoteProviderManifest: vi.fn(async (id: string) => ({
@@ -98,6 +103,7 @@ const apiMocks = vi.hoisted(() => {
       skipped: [],
       failed: [],
     })),
+    listLocalApiNetworkInterfaces: vi.fn(() => new Promise<never>(() => undefined)),
     installRemoteProviderManifest: vi.fn(async (url: string) => {
       const provider: RemoteProviderConfig = {
         id: "catalog-kimi",
@@ -148,6 +154,7 @@ const apiMocks = vi.hoisted(() => {
       }
     }),
     saveProviderSetup: vi.fn(async () => undefined),
+    setLocalApiAccessToken: vi.fn(async () => ({ token: "x".repeat(32) })),
     testProviderSetup: vi.fn(async () => ({ success: true, provider: null })),
   };
 });
@@ -636,6 +643,34 @@ test("settings_save_bar_tracks_dirty_state_and_validation", () => {
   expect(
     screen.getByText("Refresh interval must be greater than 0."),
   ).toBeInTheDocument();
+  expect(screen.getByTestId("save-settings-button")).toBeDisabled();
+});
+
+test("settings blocks saving an external local API listener until a token is saved", async () => {
+  apiMocks.getLocalApiStatus.mockResolvedValue({
+    enabled: false,
+    running: false,
+    endpoints: [],
+    requiresAuth: false,
+    tokenConfigured: false,
+    error: null,
+  });
+  renderSettings({
+    ...configWithProviders([remoteProvider]),
+    localApi: {
+      enabled: true,
+      bindTarget: { kind: "all-network-interfaces", includeLoopback: true },
+      port: 41833,
+    },
+  });
+
+  fireEvent.change(screen.getByTestId("local-api-port"), { target: { value: "41834" } });
+
+  await waitFor(() => {
+    expect(
+      screen.getAllByText("Save an access token before saving network listener settings."),
+    ).toHaveLength(2);
+  });
   expect(screen.getByTestId("save-settings-button")).toBeDisabled();
 });
 

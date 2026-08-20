@@ -15,9 +15,10 @@ use crate::{
     proxy::ProxyConfig,
 };
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 19;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 20;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
+pub const DEFAULT_LOCAL_API_PORT: u16 = 41833;
 pub const DEFAULT_REMOTE_PROVIDER_REGISTRY_URL: &str =
     "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json";
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
@@ -54,6 +55,8 @@ pub struct AppConfig {
     #[serde(default = "default_app_update_settings")]
     pub app_update: AppUpdateSettings,
     #[serde(default)]
+    pub local_api: LocalApiSettings,
+    #[serde(default)]
     pub remote_provider_registry: RemoteProviderRegistrySettings,
     pub providers: Vec<ProviderConfig>,
 }
@@ -68,6 +71,55 @@ pub struct AppUpdateSettings {
 impl Default for AppUpdateSettings {
     fn default() -> Self {
         default_app_update_settings()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalApiSettings {
+    #[serde(default = "default_local_api_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub bind_target: LocalApiBindTarget,
+    #[serde(default = "default_local_api_port")]
+    pub port: u16,
+}
+
+impl Default for LocalApiSettings {
+    fn default() -> Self {
+        default_local_api_settings()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+pub enum LocalApiBindTarget {
+    Loopback,
+    // Kept for configurations written by v1.3.0 before multi-interface listening
+    // was added. New settings use `NetworkInterfaces` instead.
+    NetworkInterface {
+        adapter_id: String,
+        #[serde(default = "default_local_api_include_loopback")]
+        include_loopback: bool,
+    },
+    NetworkInterfaces {
+        adapter_ids: Vec<String>,
+        #[serde(default = "default_local_api_include_loopback")]
+        include_loopback: bool,
+    },
+    AllNetworkInterfaces {
+        #[serde(default = "default_local_api_include_loopback")]
+        include_loopback: bool,
+    },
+}
+
+impl Default for LocalApiBindTarget {
+    fn default() -> Self {
+        Self::Loopback
     }
 }
 
@@ -301,6 +353,26 @@ fn default_app_update_settings() -> AppUpdateSettings {
     }
 }
 
+fn default_local_api_enabled() -> bool {
+    false
+}
+
+fn default_local_api_include_loopback() -> bool {
+    true
+}
+
+fn default_local_api_port() -> u16 {
+    DEFAULT_LOCAL_API_PORT
+}
+
+fn default_local_api_settings() -> LocalApiSettings {
+    LocalApiSettings {
+        enabled: default_local_api_enabled(),
+        bind_target: LocalApiBindTarget::Loopback,
+        port: default_local_api_port(),
+    }
+}
+
 fn default_update_interval_seconds() -> u64 {
     3600
 }
@@ -346,6 +418,7 @@ pub fn default_config() -> AppConfig {
         tray_popup_position: None,
         tray_popup_size: None,
         app_update: AppUpdateSettings::default(),
+        local_api: LocalApiSettings::default(),
         remote_provider_registry: RemoteProviderRegistrySettings::default(),
         providers: Vec::new(),
     }
@@ -848,6 +921,19 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(19);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(19);
+    if version < 20 {
+        value["localApi"] = serde_json::json!({
+            "enabled": false,
+            "bindTarget": { "kind": "loopback" },
+            "port": DEFAULT_LOCAL_API_PORT
+        });
+        value["schemaVersion"] = serde_json::json!(20);
+    }
+
     Ok(value)
 }
 
@@ -884,12 +970,68 @@ fn backup_config(path: &Path, reason: &str) -> Result<PathBuf, String> {
 }
 
 pub fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(), String> {
+    validate_local_api_settings(&config.local_api)?;
+    if local_api_requires_access_token(&config.local_api)
+        && crate::local_api_token::read_token(path)?.is_none()
+    {
+        return Err(
+            "Set and save a local integration API access token before enabling network listeners"
+                .to_string(),
+        );
+    }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
 
     let contents = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
     fs::write(path, contents).map_err(|error| error.to_string())
+}
+
+pub fn local_api_requires_access_token(settings: &LocalApiSettings) -> bool {
+    if !settings.enabled {
+        return false;
+    }
+    match &settings.bind_target {
+        LocalApiBindTarget::Loopback => false,
+        LocalApiBindTarget::NetworkInterface { .. }
+        | LocalApiBindTarget::AllNetworkInterfaces { .. } => true,
+        LocalApiBindTarget::NetworkInterfaces { adapter_ids, .. } => !adapter_ids.is_empty(),
+    }
+}
+
+pub fn validate_local_api_settings(settings: &LocalApiSettings) -> Result<(), String> {
+    if settings.port == 0 {
+        return Err("Local integration API port must be between 1 and 65535".to_string());
+    }
+
+    let adapter_ids: &[String] = match &settings.bind_target {
+        LocalApiBindTarget::Loopback | LocalApiBindTarget::AllNetworkInterfaces { .. } => &[],
+        LocalApiBindTarget::NetworkInterface { adapter_id, .. } => std::slice::from_ref(adapter_id),
+        LocalApiBindTarget::NetworkInterfaces {
+            adapter_ids,
+            include_loopback,
+        } => {
+            if adapter_ids.is_empty() && !include_loopback {
+                return Err(
+                    "Select at least one local integration API network interface".to_string(),
+                );
+            }
+            adapter_ids
+        }
+    };
+
+    let mut seen = std::collections::HashSet::new();
+    for adapter_id in adapter_ids {
+        if adapter_id.trim().is_empty()
+            || adapter_id.len() > 256
+            || adapter_id.contains(['\r', '\n'])
+            || !seen.insert(adapter_id)
+        {
+            return Err("Local integration API network interface is invalid".to_string());
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -1195,6 +1337,7 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
         .await
         .map_err(|error| error.to_string())??;
     sync_launch_at_startup_for_app(&app, launch_at_startup)?;
+    crate::local_api::reconfigure(&app);
     crate::refresh_scheduler::signal_config_changed();
     crate::tray::refresh_tray_menu(&app)
 }
@@ -1233,36 +1376,95 @@ pub async fn set_portable_mode(app: AppHandle, enabled: bool) -> Result<ConfigSt
             &app_data_path
         };
         let destination_original = fs::read(destination_path).ok();
+        let destination_token_path =
+            crate::local_api_token::token_path_for_config_path(destination_path);
+        let destination_token_original = fs::read(&destination_token_path).ok();
+        let source_token = crate::local_api_token::read_token(&current_path)?;
         let migration =
             migrate_remote_provider_cache_dirs(&mut config, &current_path, destination_path)?;
 
-        if let Err(error) = save_config_to_path(destination_path, &config) {
+        let token_result = match source_token {
+            Some(token) => crate::local_api_token::write_token(destination_path, &token),
+            None => crate::local_api_token::delete_token(destination_path),
+        };
+        if let Err(error) = token_result {
+            let restore_token_error = restore_file(
+                &destination_token_path,
+                destination_token_original.as_deref(),
+            )
+            .err();
             let rollback_error = migration.rollback().err();
-            return Err(match rollback_error {
-                Some(rollback_error) => format!(
-                    "failed to save config while switching storage mode: {error}; provider cache rollback failed: {rollback_error}"
-                ),
-                None => format!(
-                    "failed to save config while switching storage mode: {error}"
-                ),
-            });
+            return Err(format!(
+                "failed to move local integration API token: {error}{}{}",
+                restore_token_error
+                    .as_ref()
+                    .map(|value| format!(
+                        "; failed to restore local integration API token: {value}"
+                    ))
+                    .unwrap_or_default(),
+                rollback_error
+                    .as_ref()
+                    .map(|value| format!("; provider cache rollback failed: {value}"))
+                    .unwrap_or_default()
+            ));
+        }
+
+        if let Err(error) = save_config_to_path(destination_path, &config) {
+            let restore_error =
+                restore_file(destination_path, destination_original.as_deref()).err();
+            let restore_token_error = restore_file(
+                &destination_token_path,
+                destination_token_original.as_deref(),
+            )
+            .err();
+            let rollback_error = migration.rollback().err();
+            return Err(format!(
+                "failed to save config while switching storage mode: {error}{}{}{}",
+                restore_error
+                    .as_ref()
+                    .map(|value| format!("; failed to restore destination config: {value}"))
+                    .unwrap_or_default(),
+                restore_token_error
+                    .as_ref()
+                    .map(|value| format!(
+                        "; failed to restore local integration API token: {value}"
+                    ))
+                    .unwrap_or_default(),
+                rollback_error
+                    .as_ref()
+                    .map(|value| format!("; provider cache rollback failed: {value}"))
+                    .unwrap_or_default()
+            ));
         }
 
         let marker_result = if enabled {
-            fs::write(&marker_path, "QuotaBarWin portable mode\n").map_err(|error| error.to_string())
+            fs::write(&marker_path, "QuotaBarWin portable mode\n")
+                .map_err(|error| error.to_string())
         } else if marker_path.exists() {
             fs::remove_file(&marker_path).map_err(|error| error.to_string())
         } else {
             Ok(())
         };
         if let Err(error) = marker_result {
-            let restore_error = restore_file(destination_path, destination_original.as_deref()).err();
+            let restore_error =
+                restore_file(destination_path, destination_original.as_deref()).err();
+            let restore_token_error = restore_file(
+                &destination_token_path,
+                destination_token_original.as_deref(),
+            )
+            .err();
             let rollback_error = migration.rollback().err();
             return Err(format!(
-                "failed to switch storage mode marker: {error}{}{}",
+                "failed to switch storage mode marker: {error}{}{}{}",
                 restore_error
                     .as_ref()
                     .map(|value| format!("; failed to restore destination config: {value}"))
+                    .unwrap_or_default(),
+                restore_token_error
+                    .as_ref()
+                    .map(|value| format!(
+                        "; failed to restore local integration API token: {value}"
+                    ))
                     .unwrap_or_default(),
                 rollback_error
                     .as_ref()
@@ -1276,6 +1478,7 @@ pub async fn set_portable_mode(app: AppHandle, enabled: bool) -> Result<ConfigSt
     .map_err(|error| error.to_string())??;
 
     crate::tray::refresh_tray_menu(&app)?;
+    crate::local_api::reconfigure(&app);
     crate::refresh_scheduler::signal_config_changed();
     config_storage_info_for_app(&app)
 }
@@ -1295,6 +1498,7 @@ pub async fn reset_config(app: AppHandle) -> Result<AppConfig, String> {
     .map_err(|error| error.to_string())??;
 
     crate::tray::refresh_tray_menu(&app)?;
+    crate::local_api::reconfigure(&app);
     crate::refresh_scheduler::signal_config_changed();
     Ok(config)
 }
@@ -1456,6 +1660,7 @@ mod tests {
                 height: 640.0,
             }),
             app_update: AppUpdateSettings { auto_check: true },
+            local_api: LocalApiSettings::default(),
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![remote_provider_config("remote")],
         };
@@ -1465,6 +1670,24 @@ mod tests {
 
         assert_eq!(loaded.config, config);
         assert!(loaded.recovery_messages.is_empty());
+    }
+
+    #[test]
+    fn network_local_api_requires_a_saved_token_before_config_can_be_saved() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let mut config = default_config();
+        config.local_api = LocalApiSettings {
+            enabled: true,
+            bind_target: LocalApiBindTarget::AllNetworkInterfaces {
+                include_loopback: true,
+            },
+            port: DEFAULT_LOCAL_API_PORT,
+        };
+
+        assert!(save_config_to_path(&path, &config).is_err());
+        crate::local_api_token::write_token(&path, &"x".repeat(32)).expect("write token");
+        save_config_to_path(&path, &config).expect("save config with token");
     }
 
     #[test]
@@ -2010,7 +2233,10 @@ mod tests {
 
         let migrated = migrate_config_value(value).expect("migrates");
 
-        assert_eq!(migrated["schemaVersion"], serde_json::json!(19));
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
         assert_eq!(
             migrated["providers"][0]["setupState"],
             serde_json::json!("ready")
@@ -2030,7 +2256,10 @@ mod tests {
 
         let migrated = migrate_config_value(value).expect("migrates");
 
-        assert_eq!(migrated["schemaVersion"], serde_json::json!(19));
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
         assert_eq!(migrated["appUpdate"]["autoCheck"], serde_json::json!(true));
         assert!(default_config().app_update.auto_check);
     }
@@ -2045,8 +2274,94 @@ mod tests {
 
         let migrated = migrate_config_value(value).expect("migrates");
 
-        assert_eq!(migrated["schemaVersion"], serde_json::json!(19));
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
         assert_eq!(migrated["appUpdate"]["autoCheck"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn config_migration_v19_adds_loopback_local_api_defaults() {
+        let value = serde_json::json!({
+            "schemaVersion": 19,
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(migrated["localApi"]["enabled"], serde_json::json!(false));
+        assert_eq!(
+            migrated["localApi"]["bindTarget"]["kind"],
+            serde_json::json!("loopback")
+        );
+        assert_eq!(
+            migrated["localApi"]["port"],
+            serde_json::json!(DEFAULT_LOCAL_API_PORT)
+        );
+        assert!(!default_config().local_api.enabled);
+    }
+
+    #[test]
+    fn local_api_accepts_multiple_or_all_network_interface_targets_without_schema_change() {
+        let multiple = LocalApiSettings {
+            enabled: true,
+            bind_target: LocalApiBindTarget::NetworkInterfaces {
+                adapter_ids: vec!["ethernet".to_string(), "wifi".to_string()],
+                include_loopback: true,
+            },
+            port: DEFAULT_LOCAL_API_PORT,
+        };
+        validate_local_api_settings(&multiple).expect("multiple interfaces are valid");
+        assert_eq!(
+            serde_json::to_value(&multiple).expect("serialize")["bindTarget"]["kind"],
+            serde_json::json!("network-interfaces")
+        );
+
+        validate_local_api_settings(&LocalApiSettings {
+            enabled: true,
+            bind_target: LocalApiBindTarget::AllNetworkInterfaces {
+                include_loopback: true,
+            },
+            port: DEFAULT_LOCAL_API_PORT,
+        })
+        .expect("all interfaces are valid");
+
+        validate_local_api_settings(&LocalApiSettings {
+            enabled: true,
+            bind_target: LocalApiBindTarget::NetworkInterfaces {
+                adapter_ids: Vec::new(),
+                include_loopback: true,
+            },
+            port: DEFAULT_LOCAL_API_PORT,
+        })
+        .expect("loopback-only selected interface mode is valid");
+        assert!(validate_local_api_settings(&LocalApiSettings {
+            enabled: true,
+            bind_target: LocalApiBindTarget::NetworkInterfaces {
+                adapter_ids: Vec::new(),
+                include_loopback: false,
+            },
+            port: DEFAULT_LOCAL_API_PORT,
+        })
+        .is_err());
+
+        let legacy_target: LocalApiBindTarget = serde_json::from_value(serde_json::json!({
+            "kind": "network-interfaces",
+            "adapterIds": ["ethernet"]
+        }))
+        .expect("legacy v1.3.0 target deserializes");
+        assert!(matches!(
+            legacy_target,
+            LocalApiBindTarget::NetworkInterfaces {
+                include_loopback: true,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -2101,6 +2416,7 @@ mod tests {
                 height: 640.0,
             }),
             app_update: AppUpdateSettings { auto_check: true },
+            local_api: LocalApiSettings::default(),
             remote_provider_registry: RemoteProviderRegistrySettings {
                 registry_url: Some("https://example.com/registry.json".to_string()),
                 provider_proxy_url: Some("http://proxy:8080".to_string()),

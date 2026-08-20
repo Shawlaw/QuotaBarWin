@@ -1,7 +1,19 @@
 pub fn redact_sensitive(input: &str) -> String {
+    let mut redact_next_word = false;
     input
         .split_whitespace()
-        .map(redact_word)
+        .map(|word| {
+            if redact_next_word {
+                redact_next_word = false;
+                return "[REDACTED]".to_string();
+            }
+
+            let upper = word.to_ascii_uppercase();
+            if upper == "BEARER" || upper.contains("BEARER") {
+                redact_next_word = true;
+            }
+            redact_word(word)
+        })
         .collect::<Vec<_>>()
         .join(" ")
 }

@@ -16,6 +16,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 
 - [Simplified Chinese README](README.md)
 - [Remote Provider Guide](docs/remote-provider-guide.en.md)
+- [Local Integration API](docs/local-integration-api.en.md)
 - [Agent / CLI Guide](docs/cli.en.md)
 - [Remote Provider Examples](examples/remote-providers/)
 - [Remote Provider registry example](examples/remote-providers/registry.json)
@@ -30,9 +31,9 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 
 - Platform: **Windows**
 - Distribution: **portable zip + single exe**
-- Current version: **v1.2.3**
+- Current version: **v1.3.0**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
-- Current config schema version: **19**
+- Current config schema version: **20**
 
 ---
 
@@ -122,6 +123,20 @@ Click **Save and test** in the setup form. On success, click **Done** to return 
 
 ---
 
+## Local Integration API
+
+Enable the HTTP API under **Settings → General → Local Integration API**. When enabled, it listens only on the loopback address by default: `http://127.0.0.1:41833`. Local automation, scripts, browser extensions, and other desktop tools can consume the normalized quota snapshot directly instead of exchanging files in the application directory.
+
+- `GET /v1/health` reports service and snapshot availability.
+- `GET /v1/snapshot` returns the latest normalized quota snapshot.
+- `POST /v1/refresh` schedules a refresh; read the snapshot afterwards.
+
+The default loopback listener is reachable only from the same computer and does not require authentication. In the same settings page, you can disable it, change its port, bind it to one or more active network interfaces with IPv4 or IPv6 addresses, or listen on every active interface; network modes keep `127.0.0.1` available without a token by default. When loopback remains selected, an empty external-interface selection is valid and runs as a local-only service. Before enabling non-loopback addresses, save either a manually entered or randomly generated Bearer token in the settings page. Network listener settings cannot be saved until a token exists; a saved token is shown in masked form and can be copied, replaced, or rotated. It is never written to the main configuration, logs, or API responses. This API exposes only read-only snapshots and refresh scheduling: it cannot change Providers, settings, or credentials.
+
+See the [Local Integration API guide](docs/local-integration-api.en.md) for requests, responses, and security boundaries.
+
+---
+
 ## Agent / CLI
 
 The portable release also includes `QuotaBarWin.Cli.exe`. It reuses installed Providers, credentials, and configuration to give agents and scripts JSON-only quota queries and threshold decisions. It does not open a window or tray, or start another desktop-app instance.
@@ -143,7 +158,7 @@ The CLI can also validate Provider configuration, manifest, source checksum, and
 ## Core Features
 
 - Shows quota windows, remaining usage, reset times, status, and progress bars per Provider.
-- Includes a JSON CLI for agents and scripts, with refresh, cached reads, and remaining-percent threshold decisions.
+- Includes a local HTTP API and a JSON CLI for agents and scripts, with refresh, cached reads, and remaining-percent threshold decisions.
 - Supports per-Provider manual refresh and global interval-based auto refresh.
 - Includes Windows tray integration, hidden startup, single-instance behavior, and a resizable tray popup.
 - Provides settings for refresh interval, display mode, low-quota warning threshold, language, log level, and launch at startup.

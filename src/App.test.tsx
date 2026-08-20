@@ -65,9 +65,12 @@ const mocks = vi.hoisted(() => {
     getAppVersion: vi.fn(async () => "1.0.0(abc1234)"),
     getConfig: vi.fn(async () => config),
     getConfigStorageInfo: vi.fn(async () => configStorageInfo),
+    getLocalApiAccessToken: vi.fn(async () => ({ token: "x".repeat(32) })),
+    getLocalApiStatus: vi.fn(() => new Promise<never>(() => undefined)),
     getNetworkProxy: vi.fn(async () => null),
     getProviderPresets: vi.fn(async () => []),
     getTrayPopupPresentationId: vi.fn(async () => 0),
+    listLocalApiNetworkInterfaces: vi.fn(() => new Promise<never>(() => undefined)),
     listenForRefreshRequests: vi.fn(async (callback) => {
       listeners.refreshRequested = callback;
       return () => {
@@ -140,6 +143,7 @@ const mocks = vi.hoisted(() => {
     resetConfig: vi.fn(async () => config),
     saveConfig: vi.fn(async () => undefined),
     setNetworkProxy: vi.fn(async () => undefined),
+    setLocalApiAccessToken: vi.fn(async () => ({ token: "x".repeat(32) })),
     setPortableMode: vi.fn(async () => configStorageInfo),
   };
 });

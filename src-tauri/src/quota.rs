@@ -1104,6 +1104,7 @@ mod tests {
             tray_popup_position: None,
             tray_popup_size: None,
             app_update: crate::config::AppUpdateSettings { auto_check: true },
+            local_api: crate::config::LocalApiSettings::default(),
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers,
         }

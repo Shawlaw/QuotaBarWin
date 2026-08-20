@@ -16,6 +16,7 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 
 - [English README](README.en.md)
 - [远程 Provider 作者指南](docs/remote-provider-guide.md)
+- [本地集成 API](docs/local-integration-api.md)
 - [Agent / CLI 使用指南](docs/cli.md)
 - [远程 Provider 示例](examples/remote-providers/)
 - [远程 Provider registry 示例](examples/remote-providers/registry.json)
@@ -30,9 +31,9 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 
 - 平台：**Windows**
 - 分发方式：**绿色版 portable zip + 单 exe**
-- 当前版本：**v1.2.3**
+- 当前版本：**v1.3.0**
 - 技术栈：Tauri 2、Rust 2021、React 19、TypeScript、Vite
-- 当前配置 schema version：**19**
+- 当前配置 schema version：**20**
 
 ---
 
@@ -122,6 +123,20 @@ Codex usage 的代理由内置 runtime 宿主处理：Provider 环境变量 `QBW
 
 ---
 
+## 本地集成 API
+
+可在 **设置 → 通用 → 本地集成 API** 启用 HTTP API。启用后默认只监听本机回环地址：`http://127.0.0.1:41833`。它适合本机自动化、脚本、浏览器扩展或其他桌面工具直接读取统一后的额度快照，不需要通过应用目录下的文件交换数据。
+
+- `GET /v1/health`：查询服务与快照可用状态。
+- `GET /v1/snapshot`：读取最近一次归一化额度快照。
+- `POST /v1/refresh`：异步触发一次刷新，随后再读取快照。
+
+默认仅本机可访问且不要求鉴权。可在同一设置页关闭服务、修改端口，或选择一个或多个具有 IPv4/IPv6 地址的活动网卡，也可监听全部活动网卡；网络监听默认也会同时保留无需 Token 的 `127.0.0.1`。勾选本机回环时，即使未选外部网卡也可保存并作为仅本机服务运行。启用外部网卡前，必须先在设置页保存手动填写或随机生成的 Bearer token；未保存令牌时无法保存网络监听设置。已保存令牌会以掩码状态显示，可直接复制、替换或重新生成，且不会写入主配置、日志或 API 响应。该 API 只提供只读快照与刷新入口，不提供 Provider、配置或凭据的修改接口。
+
+完整的请求、响应和安全边界见 [本地集成 API 文档](docs/local-integration-api.md)。
+
+---
+
 ## Agent / CLI
 
 portable 发布包同时包含 `QuotaBarWin.Cli.exe`。它复用已安装 Provider、凭据和配置，为 Agent 或脚本提供只输出 JSON 的额度查询与阈值判断；不会打开窗口、托盘或启动另一个桌面应用实例。
@@ -143,7 +158,7 @@ CLI 也可在安装前或排障时校验 Provider 配置、manifest、source che
 ## 核心能力
 
 - 在概览页按 Provider 展示额度窗口、剩余额度、重置时间、状态和进度条。
-- 附带面向 Agent 与脚本的 JSON CLI，支持刷新、读取快照和按剩余百分比判断是否应延后任务。
+- 提供本地 HTTP API，以及面向 Agent 与脚本的 JSON CLI，支持刷新、读取快照和按剩余百分比判断是否应延后任务。
 - 支持单个 Provider 手动刷新，也支持按全局间隔自动刷新。
 - 支持 Windows 托盘、隐藏启动、单实例运行和可调整尺寸的托盘弹窗。
 - 支持刷新间隔、显示模式、低额度警告阈值、语言、日志级别、开机启动等通用设置。
