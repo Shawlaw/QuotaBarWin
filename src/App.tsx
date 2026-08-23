@@ -28,9 +28,11 @@ import {
   setPortableMode
 } from "./lib/api";
 import { I18nProvider, useI18n } from "./i18n";
+import { applyAppTheme } from "./lib/theme";
 import type {
   AppConfig,
   AppSnapshot,
+  AppTheme,
   ConfigStorageInfo,
   ProviderSnapshot,
   ProviderSetupTestResult,
@@ -198,7 +200,21 @@ function configRefreshTargets(
 
 export function App() {
   const [frontendLanguage, setFrontendLanguage] = useState<AppConfig["language"]>("zh-CN");
+  const [theme, setTheme] = useState<AppTheme>("system");
   const trayView = isTrayView();
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const syncTheme = () => applyAppTheme(theme);
+    syncTheme();
+
+    if (theme !== "system" || !mediaQuery) {
+      return;
+    }
+
+    mediaQuery.addEventListener("change", syncTheme);
+    return () => mediaQuery.removeEventListener("change", syncTheme);
+  }, [theme]);
 
   useEffect(() => {
     if (!trayView) {
@@ -209,6 +225,7 @@ export function App() {
     void getConfig().then((config) => {
       if (isMounted) {
         setFrontendLanguage(config.language);
+        setTheme(config.theme ?? "system");
       }
     });
 
@@ -219,16 +236,21 @@ export function App() {
 
   return (
     <I18nProvider language={frontendLanguage}>
-      {trayView ? <TrayPopup /> : <MainApp onLanguageChange={setFrontendLanguage} />}
+      {trayView ? (
+        <TrayPopup onThemeChange={setTheme} />
+      ) : (
+        <MainApp onLanguageChange={setFrontendLanguage} onThemeChange={setTheme} />
+      )}
     </I18nProvider>
   );
 }
 
 type MainAppProps = {
   onLanguageChange: (language: AppConfig["language"]) => void;
+  onThemeChange: (theme: AppTheme) => void;
 };
 
-function MainApp({ onLanguageChange }: MainAppProps) {
+function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const { t } = useI18n();
   const refreshInFlight = useRef(false);
   const queuedGlobalRefresh = useRef(false);
@@ -346,8 +368,9 @@ function MainApp({ onLanguageChange }: MainAppProps) {
   useEffect(() => {
     if (config) {
       onLanguageChange(config.language);
+      onThemeChange(config.theme ?? "system");
     }
-  }, [config, onLanguageChange]);
+  }, [config, onLanguageChange, onThemeChange]);
 
   useEffect(() => {
     if (!config || snapshot !== null || refreshInFlight.current) {

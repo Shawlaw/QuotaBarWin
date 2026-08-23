@@ -34,6 +34,7 @@ const fallbackConfig: AppConfig = {
   logMaxBytes: 10 * 1024 * 1024,
   logQuotaData: false,
   language: "zh-CN",
+  theme: "system",
   networkProxy: null,
   appUpdate: {
     autoCheck: true,

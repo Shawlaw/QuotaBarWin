@@ -1080,6 +1080,23 @@ export function SettingsPanel({
             <option value="zh-CN">{t.settings.languageChinese}</option>
           </select>
         </label>
+        <label>
+          {t.settings.theme}
+          <select
+            data-testid="theme-select"
+            value={config.theme ?? "system"}
+            onChange={(event) =>
+              onChange({
+                ...config,
+                theme: event.currentTarget.value as NonNullable<AppConfig["theme"]>
+              })
+            }
+          >
+            <option value="system">{t.settings.themeSystem}</option>
+            <option value="light">{t.settings.themeLight}</option>
+            <option value="dark">{t.settings.themeDark}</option>
+          </select>
+        </label>
         <NetworkProxySettings
           proxy={config.networkProxy}
           onChange={(proxy) => onChange({ ...config, networkProxy: proxy })}

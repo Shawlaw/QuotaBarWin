@@ -84,6 +84,10 @@ export type I18nCatalog = {
     languageSystem: string;
     languageEnglish: string;
     languageChinese: string;
+    theme: string;
+    themeSystem: string;
+    themeLight: string;
+    themeDark: string;
     launchAtStartup: string;
     providers: string;
     configuredCount: (count: number) => string;
@@ -478,6 +482,10 @@ export const en: I18nCatalog = {
     languageSystem: "System",
     languageEnglish: "English",
     languageChinese: "Simplified Chinese",
+    theme: "Theme",
+    themeSystem: "Follow system",
+    themeLight: "Light",
+    themeDark: "Dark",
     launchAtStartup: "Launch at startup",
     providers: "Providers",
     configuredCount: (count) => `${count} configured`,
@@ -910,6 +918,10 @@ export const zhCN: I18nCatalog = {
     languageSystem: "跟随系统",
     languageEnglish: "English",
     languageChinese: "简体中文",
+    theme: "主题",
+    themeSystem: "跟随系统",
+    themeLight: "浅色",
+    themeDark: "深色",
     launchAtStartup: "开机启动",
     providers: "提供方",
     configuredCount: (count) => `已配置 ${count} 个`,

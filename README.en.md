@@ -33,7 +33,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 - Distribution: **portable zip + single exe**
 - Current version: **v1.3.0**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
-- Current config schema version: **20**
+- Current config schema version: **21**
 
 ---
 
@@ -161,7 +161,7 @@ The CLI can also validate Provider configuration, manifest, source checksum, and
 - Includes a local HTTP API and a JSON CLI for agents and scripts, with refresh, cached reads, and remaining-percent threshold decisions.
 - Supports per-Provider manual refresh and global interval-based auto refresh.
 - Includes Windows tray integration, hidden startup, single-instance behavior, and a resizable tray popup.
-- Provides settings for refresh interval, display mode, low-quota warning threshold, language, log level, and launch at startup.
+- Provides settings for refresh interval, display mode, low-quota warning threshold, language, light/dark theme, log level, and launch at startup. The theme follows Windows by default and can be fixed to light or dark.
 - Supports AppData storage and portable mode. Portable mode keeps config, logs, secrets, and cached remote providers beside the exe.
 - Supports Provider enablement, ordering, visible quota windows, and custom window labels.
 - Installs Providers from remote registries/manifests with caching, SHA-256 verification, and update checks.

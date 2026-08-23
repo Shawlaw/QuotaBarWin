@@ -73,7 +73,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `19`.
+Current config schema version: `21`.
 
 Supported persisted provider config kind:
 
@@ -105,6 +105,12 @@ Remote provider public contract:
 - Schema `17 -> 18` adds the application-update automatic-check setting.
   New configurations enable it; migrated configurations preserve the prior
   manual-only behaviour by disabling it.
+- Schema `18 -> 19` enables application-update automatic checks for migrated
+  configurations, matching the current default.
+- Schema `19 -> 20` adds local integration API settings. New configurations
+  default to a disabled loopback-only listener on port `41833`.
+- Schema `20 -> 21` adds the application theme preference. New and migrated
+  configurations default to `system`; users can also select `light` or `dark`.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.

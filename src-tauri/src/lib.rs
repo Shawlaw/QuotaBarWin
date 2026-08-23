@@ -110,8 +110,6 @@ pub fn run() {
                     let _ = window.hide();
                 }
             }
-            tray::create_tray_popup_window(app.handle())?;
-            tray::create_tray(app.handle())?;
             if let Err(error) = app_update::acknowledge_applied_update(app.handle()) {
                 eprintln!("Failed to acknowledge applied application update: {error}");
             }
@@ -133,9 +131,10 @@ pub fn run() {
                     "app",
                     &startup_log_message(&app_version, start_hidden),
                 );
-                Ok(loaded.config.launch_at_startup)
+                Ok((loaded.config.launch_at_startup, loaded.config.theme))
             }) {
-                Ok(enabled) => {
+                Ok((enabled, theme)) => {
+                    config::apply_app_theme(&app_handle, &theme);
                     if let Err(error) = config::sync_launch_at_startup_for_app(&app_handle, enabled)
                     {
                         eprintln!("Failed to sync launch-at-startup setting: {error}");
@@ -143,6 +142,8 @@ pub fn run() {
                 }
                 Err(error) => eprintln!("Failed to load launch-at-startup setting: {error}"),
             }
+            tray::create_tray_popup_window(app.handle())?;
+            tray::create_tray(app.handle())?;
             local_api::start(app.handle().clone());
             refresh_scheduler::start(app.handle().clone());
             Ok(())
@@ -214,6 +215,9 @@ pub fn run() {
             }
             tauri::WindowEvent::Focused(false) if window.label() == tray::TRAY_POPUP_LABEL => {
                 tray::handle_tray_popup_focus_lost(window.clone());
+            }
+            tauri::WindowEvent::ThemeChanged(_) if window.label() == "main" => {
+                tray::sync_tray_popup_background(window.app_handle());
             }
             tauri::WindowEvent::Resized(size) if window.label() == tray::TRAY_POPUP_LABEL => {
                 let scale_factor = window.scale_factor().unwrap_or(1.0);

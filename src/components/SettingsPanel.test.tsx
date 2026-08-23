@@ -501,6 +501,18 @@ test("saved message stays visible until the next edit", async () => {
   expect(screen.queryByText("Saved")).not.toBeInTheDocument();
 });
 
+test("settings_edits_theme_preference", () => {
+  renderSettings();
+
+  const theme = screen.getByTestId("theme-select");
+  expect(theme).toHaveValue("system");
+
+  fireEvent.change(theme, { target: { value: "dark" } });
+
+  expect(apiMocks.state.config?.theme).toBe("dark");
+  expect(screen.getByTestId("save-settings-button")).toBeEnabled();
+});
+
 test("ctrl+s saves when there are unsaved changes", async () => {
   const onSave = vi.fn(async () => undefined);
   renderSettings(configWithProviders([remoteProvider]), [], configStorageInfo, onSave);

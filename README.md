@@ -33,7 +33,7 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 - 分发方式：**绿色版 portable zip + 单 exe**
 - 当前版本：**v1.3.0**
 - 技术栈：Tauri 2、Rust 2021、React 19、TypeScript、Vite
-- 当前配置 schema version：**20**
+- 当前配置 schema version：**21**
 
 ---
 
@@ -161,7 +161,7 @@ CLI 也可在安装前或排障时校验 Provider 配置、manifest、source che
 - 提供本地 HTTP API，以及面向 Agent 与脚本的 JSON CLI，支持刷新、读取快照和按剩余百分比判断是否应延后任务。
 - 支持单个 Provider 手动刷新，也支持按全局间隔自动刷新。
 - 支持 Windows 托盘、隐藏启动、单实例运行和可调整尺寸的托盘弹窗。
-- 支持刷新间隔、显示模式、低额度警告阈值、语言、日志级别、开机启动等通用设置。
+- 支持刷新间隔、显示模式、低额度警告阈值、语言、亮/暗主题、日志级别、开机启动等通用设置；主题默认跟随 Windows 系统，并可固定为浅色或深色。
 - 支持 AppData 配置和便携模式；便携模式会把配置、日志、secrets 和远程 Provider 缓存放在 exe 旁。
 - 支持 Provider 启用状态、排序、自定义窗口显示和窗口名称覆盖。
 - 支持从 remote registry / manifest 安装 Provider，并进行缓存、SHA-256 校验和更新检查。

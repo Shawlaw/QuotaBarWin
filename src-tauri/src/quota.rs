@@ -1100,6 +1100,7 @@ mod tests {
             log_max_bytes: crate::config::DEFAULT_LOG_MAX_BYTES,
             log_quota_data: false,
             language: AppLanguage::System,
+            theme: crate::config::AppTheme::System,
             network_proxy: None,
             tray_popup_position: None,
             tray_popup_size: None,

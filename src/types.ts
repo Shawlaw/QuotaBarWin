@@ -2,6 +2,7 @@ export type ProviderStatus = "ok" | "warning" | "error" | "stale" | "unknown";
 export type ConfidenceLevel = "exact" | "estimated" | "unknown";
 export type ProviderSource = "mock" | "native" | "remote";
 export type AppLanguage = "system" | "en" | "zh-CN";
+export type AppTheme = "system" | "light" | "dark";
 
 export type QuotaWindow = {
   id: string;
@@ -56,6 +57,7 @@ export type AppConfig = {
   logMaxBytes?: number;
   logQuotaData?: boolean;
   language: AppLanguage;
+  theme?: AppTheme;
   networkProxy?: ProxyConfig | null;
   trayPopupPosition?: TrayPopupPosition | null;
   trayPopupSize?: TrayPopupSize | null;

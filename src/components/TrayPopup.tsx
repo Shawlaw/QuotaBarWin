@@ -28,7 +28,7 @@ import {
   formatShortDateTime,
   windowStatus
 } from "../lib/providerStatus";
-import type { AppConfig, AppSnapshot, ProviderSnapshot } from "../types";
+import type { AppConfig, AppSnapshot, AppTheme, ProviderSnapshot } from "../types";
 import { useI18n } from "../i18n";
 import { ProgressBar } from "./ProgressBar";
 import { AppUpdateNotice } from "./AppUpdateNotice";
@@ -92,7 +92,11 @@ function shouldAutoSizeTrayPopup(config: AppConfig | null): boolean {
   return config?.trayPopupSize == null;
 }
 
-export function TrayPopup() {
+type TrayPopupProps = {
+  onThemeChange?: (theme: AppTheme) => void;
+};
+
+export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
   const { t } = useI18n();
   const popupRef = useRef<HTMLElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
@@ -185,6 +189,12 @@ export function TrayPopup() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (config) {
+      onThemeChange(config.theme ?? "system");
+    }
+  }, [config, onThemeChange]);
 
   useEffect(() => {
     let isMounted = true;

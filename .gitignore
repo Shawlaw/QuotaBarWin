@@ -6,6 +6,7 @@ src-tauri/gen/
 .tmp/
 .zcode/
 .codex/
+/artifacts/
 .env
 .env.*
 !.env.example

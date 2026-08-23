@@ -7,7 +7,7 @@ use std::{
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Theme};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
     proxy::ProxyConfig,
 };
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 20;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 21;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_LOCAL_API_PORT: u16 = 41833;
@@ -44,6 +44,8 @@ pub struct AppConfig {
     pub log_quota_data: bool,
     #[serde(default = "default_language")]
     pub language: AppLanguage,
+    #[serde(default = "default_theme")]
+    pub theme: AppTheme,
     #[serde(default)]
     pub network_proxy: Option<ProxyConfig>,
     // Legacy data is retained only so existing config files continue to deserialize. Tray quick
@@ -183,6 +185,16 @@ pub enum AppLanguage {
     En,
     #[serde(rename = "zh-CN")]
     ZhCn,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum AppTheme {
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "light")]
+    Light,
+    #[serde(rename = "dark")]
+    Dark,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -343,6 +355,10 @@ fn default_language() -> AppLanguage {
     AppLanguage::ZhCn
 }
 
+fn default_theme() -> AppTheme {
+    AppTheme::System
+}
+
 fn default_app_update_auto_check() -> bool {
     true
 }
@@ -414,6 +430,7 @@ pub fn default_config() -> AppConfig {
         log_max_bytes: default_log_max_bytes(),
         log_quota_data: false,
         language: default_language(),
+        theme: default_theme(),
         network_proxy: None,
         tray_popup_position: None,
         tray_popup_size: None,
@@ -934,6 +951,15 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(20);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(20);
+    if version < 21 {
+        value["theme"] = serde_json::json!("system");
+        value["schemaVersion"] = serde_json::json!(21);
+    }
+
     Ok(value)
 }
 
@@ -1333,13 +1359,25 @@ pub async fn get_config(app: AppHandle) -> Result<AppConfig, String> {
 pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
     let path = config_path_for_app(&app)?;
     let launch_at_startup = config.launch_at_startup;
+    let theme = config.theme;
     tauri::async_runtime::spawn_blocking(move || save_config_to_path(&path, &config))
         .await
         .map_err(|error| error.to_string())??;
+    apply_app_theme(&app, &theme);
     sync_launch_at_startup_for_app(&app, launch_at_startup)?;
     crate::local_api::reconfigure(&app);
     crate::refresh_scheduler::signal_config_changed();
     crate::tray::refresh_tray_menu(&app)
+}
+
+pub fn apply_app_theme(app: &AppHandle, theme: &AppTheme) {
+    let theme = match theme {
+        AppTheme::System => None,
+        AppTheme::Light => Some(Theme::Light),
+        AppTheme::Dark => Some(Theme::Dark),
+    };
+    app.set_theme(theme);
+    crate::tray::sync_tray_popup_background(app);
 }
 
 pub fn sync_launch_at_startup_for_app(app: &AppHandle, enabled: bool) -> Result<(), String> {
@@ -1497,6 +1535,7 @@ pub async fn reset_config(app: AppHandle) -> Result<AppConfig, String> {
     .await
     .map_err(|error| error.to_string())??;
 
+    apply_app_theme(&app, &config.theme);
     crate::tray::refresh_tray_menu(&app)?;
     crate::local_api::reconfigure(&app);
     crate::refresh_scheduler::signal_config_changed();
@@ -1653,6 +1692,7 @@ mod tests {
             log_max_bytes: DEFAULT_LOG_MAX_BYTES,
             log_quota_data: true,
             language: AppLanguage::System,
+            theme: AppTheme::Dark,
             network_proxy: None,
             tray_popup_position: Some(TrayPopupPosition { x: 111, y: 222 }),
             tray_popup_size: Some(TrayPopupSize {
@@ -2307,6 +2347,23 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v20_adds_system_theme() {
+        let value = serde_json::json!({
+            "schemaVersion": 20,
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(migrated["theme"], serde_json::json!("system"));
+        assert_eq!(default_config().theme, AppTheme::System);
+    }
+
+    #[test]
     fn local_api_accepts_multiple_or_all_network_interface_targets_without_schema_change() {
         let multiple = LocalApiSettings {
             enabled: true,
@@ -2409,6 +2466,7 @@ mod tests {
             log_max_bytes: DEFAULT_LOG_MAX_BYTES,
             log_quota_data: true,
             language: AppLanguage::System,
+            theme: AppTheme::System,
             network_proxy: None,
             tray_popup_position: None,
             tray_popup_size: Some(TrayPopupSize {

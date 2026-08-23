@@ -49,6 +49,8 @@ const TRAY_POPUP_DRAG_FOCUS_GRACE: Duration = Duration::from_secs(2);
 const TRAY_POPUP_FOCUS_LOST_HIDE_DELAY: Duration = Duration::from_millis(180);
 const TRAY_POPUP_SIZE_SAVE_GRACE: Duration = Duration::from_secs(30);
 const E2E_TRAY_COMMANDS_ENV: &str = "QBWIN_E2E";
+const TRAY_POPUP_LIGHT_BACKGROUND: Color = Color(246, 248, 251, 255);
+const TRAY_POPUP_DARK_BACKGROUND: Color = Color(15, 23, 42, 255);
 static TRAY_POPUP_FOCUS_HIDE_SUPPRESSED_UNTIL: Mutex<Option<FocusHideSuppression>> =
     Mutex::new(None);
 static TRAY_POPUP_SIZE_SAVE_ALLOWED_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
@@ -378,7 +380,7 @@ pub fn create_tray_popup_window(app: &AppHandle) -> tauri::Result<()> {
     .visible(false)
     .focused(false)
     .shadow(true)
-    .background_color(Color(255, 255, 255, 255))
+    .background_color(tray_popup_background_color(app))
     .build();
 
     match &result {
@@ -391,6 +393,35 @@ pub fn create_tray_popup_window(app: &AppHandle) -> tauri::Result<()> {
     }
 
     result.map(|_| ())
+}
+
+fn tray_popup_background_color(app: &AppHandle) -> Color {
+    let theme = app
+        .get_webview_window("main")
+        .and_then(|window| window.theme().ok())
+        .unwrap_or(tauri::Theme::Light);
+    tray_popup_background_color_for_theme(theme)
+}
+
+fn tray_popup_background_color_for_theme(theme: tauri::Theme) -> Color {
+    match theme {
+        tauri::Theme::Dark => TRAY_POPUP_DARK_BACKGROUND,
+        _ => TRAY_POPUP_LIGHT_BACKGROUND,
+    }
+}
+
+pub fn sync_tray_popup_background(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) else {
+        return;
+    };
+
+    if let Err(error) = window.set_background_color(Some(tray_popup_background_color(app))) {
+        log_tray_popup_event(
+            app,
+            LogLevel::Warn,
+            &format!("sync popup background failed error={error}"),
+        );
+    }
 }
 
 #[tauri::command]
@@ -1428,6 +1459,18 @@ mod tests {
     #[test]
     fn tray_popup_uses_dedicated_view_route() {
         assert_eq!(tray_popup_view(), "index.html?view=tray");
+    }
+
+    #[test]
+    fn tray_popup_background_matches_the_effective_theme() {
+        assert_eq!(
+            tray_popup_background_color_for_theme(tauri::Theme::Light),
+            TRAY_POPUP_LIGHT_BACKGROUND
+        );
+        assert_eq!(
+            tray_popup_background_color_for_theme(tauri::Theme::Dark),
+            TRAY_POPUP_DARK_BACKGROUND
+        );
     }
 
     #[test]
