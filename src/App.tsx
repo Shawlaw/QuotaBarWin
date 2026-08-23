@@ -535,15 +535,19 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
     void runDataRefresh(target === "all" ? "all" : new Set(target));
   }
 
-  function synchronizeProviderSetupConfig(
+  function synchronizePersistedConfig(
     updatedConfig: AppConfig,
     testResult?: ProviderSetupTestResult
   ) {
+    const refreshTarget = configRefreshTargets(persistedConfigRef.current, updatedConfig);
     persistedConfigRef.current = updatedConfig;
     setConfig(updatedConfig);
     setSnapshot((current) =>
       mergeProviderSetupSnapshot(current, updatedConfig, testResult?.provider)
     );
+    if (refreshTarget) {
+      queueDataRefresh(refreshTarget);
+    }
   }
 
   async function persistConfig() {
@@ -707,7 +711,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
             onResetConfig={restoreDefaultConfig}
             onSave={persistConfig}
             onSetPortableMode={(enabled) => void togglePortableMode(enabled)}
-            onProviderSetupConfigChanged={synchronizeProviderSetupConfig}
+            onPersistedConfigChanged={synchronizePersistedConfig}
             onRequestClose={closeSettings}
             closeRequest={settingsCloseRequest}
             settingsHomeRequest={settingsHomeRequest}

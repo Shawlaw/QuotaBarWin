@@ -285,7 +285,7 @@ function renderSettings(
           onResetConfig={async () => undefined}
           onSave={onSave}
           onSetPortableMode={() => undefined}
-          onProviderSetupConfigChanged={() => undefined}
+          onPersistedConfigChanged={handleChange}
           onRequestClose={navigation.onRequestClose ?? (() => undefined)}
           closeRequest={navigation.closeRequest ?? 0}
           settingsHomeRequest={0}

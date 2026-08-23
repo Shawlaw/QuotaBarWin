@@ -53,7 +53,7 @@ type SettingsPanelProps = {
   onResetConfig: () => Promise<void>;
   onSave: () => void | Promise<void>;
   onSetPortableMode: (enabled: boolean) => void;
-  onProviderSetupConfigChanged: (
+  onPersistedConfigChanged: (
     config: AppConfig,
     testResult?: ProviderSetupTestResult
   ) => void;
@@ -194,7 +194,7 @@ export function SettingsPanel({
   onResetConfig,
   onSave,
   onSetPortableMode,
-  onProviderSetupConfigChanged,
+  onPersistedConfigChanged,
   onRequestClose,
   closeRequest,
   settingsHomeRequest,
@@ -350,9 +350,12 @@ export function SettingsPanel({
     setSaveMessage(t.settings.noChanges);
   }
 
-  function acceptPersistedConfig(updated: AppConfig) {
+  function acceptPersistedConfig(
+    updated: AppConfig,
+    testResult?: ProviderSetupTestResult,
+  ) {
     initialConfigRef.current = JSON.stringify(updated);
-    onChange(updated);
+    onPersistedConfigChanged(updated, testResult);
     setSaveMessage(t.settings.saved);
   }
 
@@ -953,8 +956,7 @@ export function SettingsPanel({
           onRequestClose={onRequestClose}
           onConfigChanged={async (testResult) => {
             const updated = await getConfig();
-            acceptPersistedConfig(updated);
-            onProviderSetupConfigChanged(updated, testResult);
+            acceptPersistedConfig(updated, testResult);
           }}
         />
       </section>

@@ -1,6 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App, mergeProviderSetupSnapshot } from "./App";
-import type { AppConfig, AppSnapshot, RemoteProviderConfig } from "./types";
+import type {
+  AppConfig,
+  AppSnapshot,
+  ProviderSetupTestResult,
+  ProviderSnapshot,
+  RemoteProviderConfig,
+} from "./types";
 
 const mocks = vi.hoisted(() => {
   const config: AppConfig = {
@@ -129,6 +135,15 @@ const mocks = vi.hoisted(() => {
       output: "provider-snapshot-v1",
       parameters: [],
     })),
+    getProviderSetup: vi.fn(async (providerId: string) => ({
+      providerId,
+      providerType: "mock",
+      displayName: "Mock",
+      setupState: "pending",
+      fields: [],
+      hasUnknownEnvVars: false,
+      canAutoDetect: true,
+    })),
     previewRemoteProviderRegistry: vi.fn(async () => []),
     removeRemoteProvider: vi.fn(async () => undefined),
     refreshRemoteProvider: vi.fn(async () => ({
@@ -141,10 +156,15 @@ const mocks = vi.hoisted(() => {
     refreshProvider: vi.fn(async () => snapshot),
     refreshSnapshot: vi.fn(async () => snapshot),
     resetConfig: vi.fn(async () => config),
+    saveProviderSetup: vi.fn(async () => undefined),
     saveConfig: vi.fn(async () => undefined),
     setNetworkProxy: vi.fn(async () => undefined),
     setLocalApiAccessToken: vi.fn(async () => ({ token: "x".repeat(32) })),
     setPortableMode: vi.fn(async () => configStorageInfo),
+    testProviderSetup: vi.fn<() => Promise<ProviderSetupTestResult>>(async () => ({
+      success: true,
+      provider: null,
+    })),
   };
 });
 
@@ -634,6 +654,67 @@ test("provider setup test result fills an otherwise empty overview snapshot", ()
     name: "Set up provider",
     status: "ok",
   });
+});
+
+test("provider setup completion refreshes the newly enabled provider", async () => {
+  const pendingProvider = {
+    ...buildRemoteProvider("remote-a", "Remote A"),
+    enabled: false,
+    setupState: "pending" as const,
+  };
+  const pendingConfig: AppConfig = {
+    schemaVersion: 17,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "en",
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
+    providers: [pendingProvider],
+  };
+  const readyConfig: AppConfig = {
+    ...pendingConfig,
+    providers: [{ ...pendingProvider, enabled: true, setupState: "ready" }],
+  };
+  const setupSnapshot: ProviderSnapshot = {
+    id: "remote-a",
+    name: "Remote A",
+    status: "ok",
+    source: "remote",
+    updatedAt: "2026-06-08T10:01:00+08:00",
+    error: null,
+    diagnostics: null,
+    metadata: null,
+    windows: [],
+  };
+
+  mocks.getConfig
+    .mockResolvedValueOnce(pendingConfig)
+    .mockResolvedValueOnce(pendingConfig)
+    .mockResolvedValueOnce(readyConfig);
+  mocks.getProviderSetup.mockResolvedValue({
+    providerId: "remote-a",
+    providerType: "mock",
+    displayName: "Remote A",
+    setupState: "pending",
+    fields: [],
+    hasUnknownEnvVars: false,
+    canAutoDetect: true,
+  });
+  mocks.testProviderSetup.mockResolvedValue({ success: true, provider: setupSnapshot });
+
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(await screen.findByTestId("setup-provider-remote-a"));
+  await screen.findByTestId("provider-setup-page");
+  fireEvent.click(screen.getByRole("button", { name: "Save and test" }));
+
+  await waitFor(() => expect(mocks.refreshProvider).toHaveBeenCalledWith("remote-a"));
+  expect(mocks.refreshProvider).toHaveBeenCalledTimes(1);
 });
 
 test("leaving_settings_requires_resolving_unsaved_changes", async () => {
