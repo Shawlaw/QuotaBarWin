@@ -266,7 +266,7 @@ npm run tauri -- build --features update-preview --no-bundle
 & .\src-tauri\target\release\quotabarwin.exe
 ```
 
-Open the main window or tray popup after startup. About 700ms later, one simulated update notice lets you try the entrance animation, **Go to update**, and **Later**. Normal Release builds do not include this preview capability; only an internal build made explicitly with the `update-preview` feature reads this environment variable.
+Open the main window or tray popup after startup. About 700ms later, one simulated update notice lets you try the entrance animation, **Go to update**, and **Later**. Set the environment variable to `manual` instead to start without a notice; **Settings → Application update → Check for updates** will then simulate the update discovery, which is useful for verifying that the main window and tray popup synchronize a manual result. Normal Release builds do not include this preview capability; only an internal build made explicitly with the `update-preview` feature reads this environment variable.
 
 Build frontend assets:
 
@@ -333,7 +333,7 @@ Install: download the portable zip from GitHub Releases, extract it to any folde
 
 The first release containing the updater must still be installed manually. Later releases can be checked from **Settings → Application update** and installed with **Download and restart to update**.
 
-**Settings → Application update** enables automatic checks by default. Once after 08:00 local time each day, the first opening of either the main window or tray popup checks in the background. When a new version is found, both windows show an update notice; **Later** closes it and silences that version. **Go to update** opens Settings and focuses the **Application update** section so the user can continue with **Download and restart to update**. Download always uses the signed candidate represented by the notice, rather than a version that may be published later; manually checking again refreshes that candidate. Automatic checks never download, install, or restart the app. Users can turn this feature off at any time in Settings.
+**Settings → Application update** enables automatic checks by default. Once after 08:00 local time each day, the first opening of either the main window or tray popup checks in the background; if a check temporarily fails, the app retries later. When a new version is found, whether automatically or manually, both windows show an update notice; **Later** closes it and silences that version. **Go to update** opens Settings and focuses the **Application update** section so the user can continue with **Download and restart to update**. Download always uses the signed candidate represented by the notice, rather than a version that may be published later; manually checking again refreshes that candidate. Automatic checks never download, install, or restart the app. Users can turn this feature off at any time in Settings.
 
 Uninstall: quit QuotaBarWin from the tray menu, then delete the extracted folder.
 

@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { TrayPopup } from "./TrayPopup";
 import type { AppConfig, AppSnapshot } from "../types";
+import type { AppUpdateInfo } from "../lib/api";
 import { I18nProvider } from "../i18n";
 import type { ReactElement } from "react";
 
@@ -151,7 +152,7 @@ const mocks = vi.hoisted(() => {
     dismissAppUpdateNotice: vi.fn(async () => ({
       configured: true, currentVersion: "1.0.0", available: false, version: null, notesUrl: null, downloaded: false,
     })),
-    getAppUpdateStatus: vi.fn(async () => ({
+    getAppUpdateStatus: vi.fn<() => Promise<AppUpdateInfo>>(async () => ({
       configured: true, currentVersion: "1.0.0", available: false, version: null, notesUrl: null, downloaded: false,
     })),
     getCachedSnapshot: vi.fn(async (): Promise<AppSnapshot | null> => null),
@@ -629,6 +630,33 @@ test("tray_popup_offers_a_closable_application_update_notice", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Later" }));
   await waitFor(() => expect(mocks.dismissAppUpdateNotice).toHaveBeenCalledTimes(1));
   expect(mocks.hideTrayPopup).not.toHaveBeenCalled();
+});
+
+test("tray_popup_reloads_an_available_update_each_time_it_is_presented", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await waitFor(() => expect(mocks.getAppUpdateStatus).toHaveBeenCalled());
+  mocks.getAppUpdateStatus.mockClear();
+  mocks.getAppUpdateStatus.mockResolvedValueOnce({
+    configured: true,
+    currentVersion: "1.0.0",
+    available: true,
+    version: "1.1.0",
+    notesUrl: "https://example.com/releases/v1.1.0",
+    downloaded: false,
+    checkedAt: null,
+    error: null,
+    dismissed: false,
+  });
+
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+
+  expect(await screen.findByTestId("tray-app-update-notice")).toHaveTextContent(
+    "QuotaBarWin 1.1.0 is available.",
+  );
 });
 
 test("tray_popup_follows_main_snapshot_provider_order_for_quota_windows", async () => {

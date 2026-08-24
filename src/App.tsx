@@ -38,7 +38,7 @@ import type {
   ProviderSetupTestResult,
   RemoteProviderConfig
 } from "./types";
-import type { AppUpdateInfo } from "./lib/api";
+import type { AppUpdateInfo, AppUpdateStatusEvent } from "./lib/api";
 
 function fallbackSnapshot(error: unknown): AppSnapshot {
   return {
@@ -62,6 +62,17 @@ function fallbackSnapshot(error: unknown): AppSnapshot {
 
 function isTrayView(): boolean {
   return new URLSearchParams(window.location.search).get("view") === "tray";
+}
+
+function isSameAvailableAppUpdate(
+  previous: AppUpdateInfo | null,
+  next: AppUpdateInfo
+): boolean {
+  return (
+    previous?.available === next.available &&
+    previous?.version === next.version &&
+    previous?.dismissed === next.dismissed
+  );
 }
 
 function projectProviderSnapshot(
@@ -270,6 +281,8 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [appUpdateNoticeSequence, setAppUpdateNoticeSequence] = useState(0);
   const [appUpdateFocusRequest, setAppUpdateFocusRequest] = useState(0);
+  const appUpdateStatusRevisionRef = useRef(0);
+  const appUpdateInfoRef = useRef<AppUpdateInfo | null>(null);
   const handledAppUpdateNavigationRequestRef = useRef(0);
   const settingsOpenRef = useRef(false);
   const overviewScrollRegionRef = useRef<HTMLDivElement>(null);
@@ -299,6 +312,39 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
       return cached;
     } catch {
       return null;
+    }
+  }, []);
+
+  const syncAppUpdateStatus = useCallback(async () => {
+    const requestRevision = appUpdateStatusRevisionRef.current + 1;
+    appUpdateStatusRevisionRef.current = requestRevision;
+    try {
+      const info = await getAppUpdateStatus();
+      if (requestRevision === appUpdateStatusRevisionRef.current) {
+        appUpdateInfoRef.current = info;
+        setAppUpdateInfo(info);
+      }
+    } catch {
+      // A transient status read must not replace the last known update notice.
+    }
+  }, []);
+
+  const applyAppUpdateStatus = useCallback((status: AppUpdateStatusEvent) => {
+    const isDuplicateAvailableUpdate = isSameAvailableAppUpdate(
+      appUpdateInfoRef.current,
+      status.info
+    );
+    appUpdateStatusRevisionRef.current += 1;
+    appUpdateInfoRef.current = status.info;
+    setAppUpdateInfo(status.info);
+    if (
+      status.animate &&
+      status.info.available &&
+      !status.info.dismissed &&
+      !isDuplicateAvailableUpdate &&
+      document.hasFocus()
+    ) {
+      setAppUpdateNoticeSequence((current) => current + 1);
     }
   }, []);
 
@@ -384,10 +430,13 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
     // The background scheduler owns network refreshes even while the main
     // window is hidden. When this window becomes active again, read the
     // native cache so the overview immediately reflects its latest result.
-    const syncOnFocus = () => void syncCachedSnapshot();
+    const syncOnFocus = () => {
+      void syncCachedSnapshot();
+      void syncAppUpdateStatus();
+    };
     window.addEventListener("focus", syncOnFocus);
     return () => window.removeEventListener("focus", syncOnFocus);
-  }, [syncCachedSnapshot]);
+  }, [syncAppUpdateStatus, syncCachedSnapshot]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -443,26 +492,12 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   useEffect(() => {
     let isMounted = true;
     let unlisten: (() => void) | undefined;
-    void getAppUpdateStatus()
-      .then((info) => {
-        if (isMounted) {
-          setAppUpdateInfo(info);
-        }
-      })
-      .catch(() => undefined);
+    void syncAppUpdateStatus();
     void listenForAppUpdateStatus((status) => {
       if (!isMounted) {
         return;
       }
-      setAppUpdateInfo(status.info);
-      if (
-        status.animate &&
-        status.info.available &&
-        !status.info.dismissed &&
-        document.hasFocus()
-      ) {
-        setAppUpdateNoticeSequence((current) => current + 1);
-      }
+      applyAppUpdateStatus(status);
     }).then((cleanup) => {
       unlisten = cleanup;
     });
@@ -471,7 +506,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
       isMounted = false;
       unlisten?.();
     };
-  }, []);
+  }, [applyAppUpdateStatus, syncAppUpdateStatus]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -655,7 +690,9 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   }
 
   function dismissApplicationUpdate() {
-    void dismissAppUpdateNotice().then(setAppUpdateInfo).catch(() => undefined);
+    void dismissAppUpdateNotice()
+      .then((info) => applyAppUpdateStatus({ info, animate: false }))
+      .catch(() => undefined);
   }
 
   return (
@@ -717,6 +754,9 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
             settingsHomeRequest={settingsHomeRequest}
             appUpdateFocusRequest={appUpdateFocusRequest}
             onAppUpdateFocusHandled={() => setAppUpdateFocusRequest(0)}
+            onAppUpdateStatusChange={(info) =>
+              applyAppUpdateStatus({ info, animate: true })
+            }
             initialProviderSettingsView={initialProviderSettingsView}
           />
         </div>

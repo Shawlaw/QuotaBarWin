@@ -9,13 +9,15 @@ use std::{
     time::Duration,
 };
 
-use chrono::{Local, Timelike};
+use chrono::{DateTime, Duration as ChronoDuration, Local, Timelike};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use desktop_updater::{
     ApplyRequest, CheckResult, DownloadedUpdate, PortableLayout, UpdateCandidate, UpdateConfig,
 };
+
+use crate::logger::{LogLevel, LogSink};
 
 const APP_UPDATE_MANIFEST_URL: &str =
     "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/stable.json";
@@ -28,10 +30,12 @@ const APP_UPDATE_MAIN_EXE_NAME: &str = "QuotaBarWin.exe";
 const APP_UPDATE_STATUS_CACHE_FILE: &str = "app_update_status.quotaBarWin.json";
 const APP_UPDATE_STATUS_CACHE_SCHEMA_VERSION: u8 = 1;
 const AUTOMATIC_CHECK_START_HOUR: u32 = 8;
+const AUTOMATIC_CHECK_RETRY_DELAY: ChronoDuration = ChronoDuration::minutes(15);
 const APP_UPDATE_HELPER_COPY_PREFIX: &str = "helper-";
 const APP_UPDATE_HELPER_COPY_SUFFIX: &str = ".exe";
 const APP_UPDATE_HELPER_CLEANUP_RETRY_DELAY: Duration = Duration::from_millis(250);
 const APP_UPDATE_HELPER_CLEANUP_MAX_RETRIES: usize = 40;
+const MAIN_WINDOW_LABEL: &str = "main";
 #[cfg(any(debug_assertions, feature = "update-preview"))]
 const APP_UPDATE_DEMO_ENV: &str = "QBWIN_DEMO_APP_UPDATE";
 #[cfg(any(debug_assertions, feature = "update-preview"))]
@@ -120,6 +124,8 @@ struct CachedAppUpdateStatus {
     #[serde(default)]
     last_automatic_check_date: Option<String>,
     #[serde(default)]
+    next_automatic_retry_at: Option<String>,
+    #[serde(default)]
     checked_at: Option<String>,
     #[serde(default)]
     current_version: Option<String>,
@@ -142,20 +148,21 @@ pub async fn get_app_update_status(
 ) -> Result<AppUpdateInfo, String> {
     #[cfg(any(debug_assertions, feature = "update-preview"))]
     {
-        let demo_requested = demo_update_preview_requested();
-        log_demo_preview(
-            &app,
-            &format!("status requested demoRequested={demo_requested}"),
-        );
-        if demo_requested {
+        let demo_mode = demo_update_preview_mode();
+        log_demo_preview(&app, &format!("status requested demoMode={demo_mode:?}"));
+        if let Some(mode) = demo_mode {
             let demo_state = state.inner.clone();
-            request_demo_update_preview(app.clone(), demo_state.clone());
+            if mode == DemoUpdatePreviewMode::Automatic {
+                request_demo_update_preview(app.clone(), demo_state.clone());
+            }
             let info = {
                 let mut state = demo_state
                     .lock()
                     .map_err(|_| "Application update state is unavailable")?;
                 if let Some(info) = state.demo_info.clone() {
                     info
+                } else if mode == DemoUpdatePreviewMode::Manual {
+                    pending_demo_update_info()
                 } else {
                     let info = demo_update_info();
                     state.demo_info = Some(info.clone());
@@ -198,6 +205,41 @@ pub async fn check_app_update(
     app: AppHandle,
     state: State<'_, AppUpdateState>,
 ) -> Result<AppUpdateInfo, String> {
+    #[cfg(any(debug_assertions, feature = "update-preview"))]
+    if let Some(mode) = demo_update_preview_mode() {
+        let info = match mode {
+            DemoUpdatePreviewMode::Automatic => {
+                request_demo_update_preview(app.clone(), state.inner.clone());
+                state
+                    .inner
+                    .lock()
+                    .map_err(|_| "Application update state is unavailable")?
+                    .demo_info
+                    .clone()
+                    .unwrap_or_else(demo_update_info)
+            }
+            DemoUpdatePreviewMode::Manual => {
+                let info = demo_update_info();
+                state
+                    .inner
+                    .lock()
+                    .map_err(|_| "Application update state is unavailable")?
+                    .demo_info = Some(info.clone());
+                info
+            }
+        };
+        log_demo_preview(
+            &app,
+            &format!(
+                "manual check returned available={} version={}",
+                info.available,
+                info.version.as_deref().unwrap_or("none")
+            ),
+        );
+        emit_update_status(&app, &info, info.available && !info.dismissed);
+        return Ok(info);
+    }
+
     if !app_updates_are_configured() {
         let app_for_cache = app.clone();
         let cache =
@@ -207,6 +249,7 @@ pub async fn check_app_update(
         return Ok(info_from_cache(&cache, false, false));
     }
 
+    log_app_update_event(&app, LogLevel::Info, "manual check started");
     begin_check(&state.inner)?;
     let result = run_update_check(app.clone()).await;
     match result {
@@ -222,17 +265,40 @@ pub async fn check_app_update(
                 Ok(cache) => {
                     let downloaded = finish_check(&state.inner, candidate_for_result(result))?;
                     let info = info_from_cache(&cache, true, downloaded);
-                    emit_update_status(&app, &info, false);
+                    log_app_update_event(
+                        &app,
+                        LogLevel::Info,
+                        &format!(
+                            "manual check finished available={} version={} checkedAt={}",
+                            info.available,
+                            info.version.as_deref().unwrap_or("none"),
+                            info.checked_at.as_deref().unwrap_or("none")
+                        ),
+                    );
+                    emit_update_status(&app, &info, info.available && !info.dismissed);
                     Ok(info)
                 }
                 Err(error) => {
                     let _ = finish_check(&state.inner, None);
+                    log_app_update_event(
+                        &app,
+                        LogLevel::Warn,
+                        &format!(
+                            "manual check persistence failed error={}",
+                            redacted_error(&error)
+                        ),
+                    );
                     Err(redacted_error(error))
                 }
             }
         }
         Err(error) => {
             let _ = finish_check(&state.inner, None);
+            log_app_update_event(
+                &app,
+                LogLevel::Warn,
+                &format!("manual check failed error={}", redacted_error(&error)),
+            );
             Err(error)
         }
     }
@@ -244,7 +310,7 @@ pub async fn dismiss_app_update_notice(
     state: State<'_, AppUpdateState>,
 ) -> Result<AppUpdateInfo, String> {
     #[cfg(any(debug_assertions, feature = "update-preview"))]
-    if demo_update_preview_requested() {
+    if demo_update_preview_mode().is_some() {
         let info = state
             .inner
             .lock()
@@ -346,13 +412,12 @@ pub fn request_automatic_update_check(app: AppHandle) {
     let state = app.state::<AppUpdateState>().inner.clone();
     #[cfg(any(debug_assertions, feature = "update-preview"))]
     {
-        let demo_requested = demo_update_preview_requested();
-        log_demo_preview(
-            &app,
-            &format!("focus trigger demoRequested={demo_requested}"),
-        );
-        if demo_requested {
-            request_demo_update_preview(app, state);
+        let demo_mode = demo_update_preview_mode();
+        log_demo_preview(&app, &format!("focus trigger demoMode={demo_mode:?}"));
+        if let Some(mode) = demo_mode {
+            if mode == DemoUpdatePreviewMode::Automatic {
+                request_demo_update_preview(app, state);
+            }
             return;
         }
     }
@@ -360,13 +425,35 @@ pub fn request_automatic_update_check(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let app_for_start = app.clone();
         let state_for_start = state.clone();
-        let should_check = tauri::async_runtime::spawn_blocking(move || {
+        let should_check = match tauri::async_runtime::spawn_blocking(move || {
             begin_automatic_check(&app_for_start, &state_for_start)
         })
         .await
-        .ok()
-        .and_then(Result::ok)
-        .unwrap_or(false);
+        {
+            Ok(Ok(should_check)) => should_check,
+            Ok(Err(error)) => {
+                log_app_update_event(
+                    &app,
+                    LogLevel::Warn,
+                    &format!(
+                        "automatic check scheduling failed error={}",
+                        redacted_error(error)
+                    ),
+                );
+                false
+            }
+            Err(error) => {
+                log_app_update_event(
+                    &app,
+                    LogLevel::Warn,
+                    &format!(
+                        "automatic check scheduling task failed error={}",
+                        redacted_error(error)
+                    ),
+                );
+                false
+            }
+        };
 
         if !should_check {
             return;
@@ -389,6 +476,7 @@ pub fn request_automatic_update_check(app: AppHandle) {
             return;
         }
 
+        log_app_update_event(&app, LogLevel::Info, "automatic check started");
         match run_update_check(app.clone()).await {
             Ok(result) => {
                 let app_for_cache = app.clone();
@@ -401,15 +489,31 @@ pub fn request_automatic_update_check(app: AppHandle) {
                     Ok(Ok(cache)) => {
                         if let Ok(downloaded) = finish_check(&state, candidate_for_result(result)) {
                             let info = info_from_cache(&cache, true, downloaded);
+                            log_app_update_event(
+                                &app,
+                                LogLevel::Info,
+                                &format!(
+                                    "automatic check finished available={} version={} checkedAt={}",
+                                    info.available,
+                                    info.version.as_deref().unwrap_or("none"),
+                                    info.checked_at.as_deref().unwrap_or("none")
+                                ),
+                            );
                             emit_update_status(&app, &info, info.available && !info.dismissed);
                         }
                     }
                     _ => {
                         let _ = finish_check(&state, None);
+                        log_app_update_event(
+                            &app,
+                            LogLevel::Warn,
+                            "automatic check result could not be persisted",
+                        );
                     }
                 }
             }
             Err(error) => {
+                let redacted = redacted_error(&error);
                 let app_for_cache = app.clone();
                 let cache = tauri::async_runtime::spawn_blocking(move || {
                     persist_automatic_failure(&app_for_cache, &error)
@@ -418,7 +522,24 @@ pub fn request_automatic_update_check(app: AppHandle) {
                 if let Ok(downloaded) = finish_check(&state, None) {
                     if let Ok(Ok(cache)) = cache {
                         let info = info_from_cache(&cache, true, downloaded);
+                        log_app_update_event(
+                            &app,
+                            LogLevel::Warn,
+                            &format!(
+                                "automatic check failed error={} retryNotBefore={}",
+                                redacted,
+                                cache.next_automatic_retry_at.as_deref().unwrap_or("none")
+                            ),
+                        );
                         emit_update_status(&app, &info, false);
+                    } else {
+                        log_app_update_event(
+                            &app,
+                            LogLevel::Warn,
+                            &format!(
+                                "automatic check failed and could not persist error={redacted}"
+                            ),
+                        );
                     }
                 }
             }
@@ -427,10 +548,27 @@ pub fn request_automatic_update_check(app: AppHandle) {
 }
 
 #[cfg(any(debug_assertions, feature = "update-preview"))]
-fn demo_update_preview_requested() -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DemoUpdatePreviewMode {
+    Automatic,
+    Manual,
+}
+
+#[cfg(any(debug_assertions, feature = "update-preview"))]
+fn demo_update_preview_mode() -> Option<DemoUpdatePreviewMode> {
     std::env::var(APP_UPDATE_DEMO_ENV)
         .ok()
-        .is_some_and(|value| matches!(value.trim(), "1" | "true" | "TRUE"))
+        .as_deref()
+        .and_then(demo_update_preview_mode_from_value)
+}
+
+#[cfg(any(debug_assertions, feature = "update-preview"))]
+fn demo_update_preview_mode_from_value(value: &str) -> Option<DemoUpdatePreviewMode> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "automatic" => Some(DemoUpdatePreviewMode::Automatic),
+        "manual" => Some(DemoUpdatePreviewMode::Manual),
+        _ => None,
+    }
 }
 
 #[cfg(any(debug_assertions, feature = "update-preview"))]
@@ -570,14 +708,32 @@ fn begin_automatic_check(
     let config_path = crate::config::config_path_for_app(app)?;
     let config = crate::config::load_or_create_config(&config_path)?.config;
     let now = Local::now();
-    let today = now.date_naive().to_string();
     let cache = load_status_cache_from_path(&status_cache_path_for_config_path(&config_path)?)?;
+    let app_version = current_version();
+    let cache_matches_current_version =
+        cache.current_version.as_deref() == Some(app_version.as_str());
+    let last_automatic_check_date = cache_matches_current_version
+        .then(|| cache.last_automatic_check_date.as_deref())
+        .flatten();
+    let next_automatic_retry_at = cache_matches_current_version
+        .then(|| cache.next_automatic_retry_at.as_deref())
+        .flatten();
     if !automatic_check_is_due(
         config.app_update.auto_check,
-        now.hour(),
-        &today,
-        cache.last_automatic_check_date.as_deref(),
+        now,
+        last_automatic_check_date,
+        next_automatic_retry_at,
     ) {
+        log_app_update_event(
+            app,
+            LogLevel::Debug,
+            &format!(
+                "automatic check skipped enabled={} lastAutomaticCheckDate={} retryNotBefore={}",
+                config.app_update.auto_check,
+                last_automatic_check_date.unwrap_or("none"),
+                next_automatic_retry_at.unwrap_or("none")
+            ),
+        );
         return Ok(false);
     }
 
@@ -585,6 +741,11 @@ fn begin_automatic_check(
         .lock()
         .map_err(|_| "Application update state is unavailable")?;
     if state.check_in_flight {
+        log_app_update_event(
+            app,
+            LogLevel::Debug,
+            "automatic check skipped inFlight=true",
+        );
         return Ok(false);
     }
     state.check_in_flight = true;
@@ -593,13 +754,25 @@ fn begin_automatic_check(
 
 fn automatic_check_is_due(
     auto_check_enabled: bool,
-    local_hour: u32,
-    today: &str,
+    now: DateTime<Local>,
     last_automatic_check_date: Option<&str>,
+    next_automatic_retry_at: Option<&str>,
 ) -> bool {
+    let today = now.date_naive().to_string();
     auto_check_enabled
-        && local_hour >= AUTOMATIC_CHECK_START_HOUR
-        && last_automatic_check_date != Some(today)
+        && now.hour() >= AUTOMATIC_CHECK_START_HOUR
+        && last_automatic_check_date != Some(today.as_str())
+        && automatic_retry_is_ready(now, next_automatic_retry_at)
+}
+
+fn automatic_retry_is_ready(now: DateTime<Local>, next_automatic_retry_at: Option<&str>) -> bool {
+    let Some(retry_at) = next_automatic_retry_at
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .map(|value| value.with_timezone(&Local))
+    else {
+        return true;
+    };
+    now >= retry_at
 }
 
 async fn run_update_check(app: AppHandle) -> Result<CheckResult, String> {
@@ -633,6 +806,7 @@ fn persist_check_result(
     cache.current_version = Some(current_version);
     cache.checked_at = Some(Local::now().to_rfc3339());
     cache.error = None;
+    cache.next_automatic_retry_at = None;
     match result {
         CheckResult::UpToDate => {
             cache.available = false;
@@ -668,9 +842,10 @@ fn persist_automatic_failure(
     }
     cache.schema_version = APP_UPDATE_STATUS_CACHE_SCHEMA_VERSION;
     cache.current_version = Some(current_version);
-    cache.checked_at = Some(Local::now().to_rfc3339());
+    let now = Local::now();
+    cache.checked_at = Some(now.to_rfc3339());
     cache.error = Some(redacted_error(error));
-    cache.last_automatic_check_date = Some(Local::now().date_naive().to_string());
+    cache.next_automatic_retry_at = Some((now + AUTOMATIC_CHECK_RETRY_DELAY).to_rfc3339());
     write_status_cache_for_app(app, &cache)?;
     Ok(cache)
 }
@@ -679,6 +854,7 @@ fn persist_automatic_unconfigured(app: &AppHandle) -> Result<CachedAppUpdateStat
     let cache = CachedAppUpdateStatus {
         schema_version: APP_UPDATE_STATUS_CACHE_SCHEMA_VERSION,
         last_automatic_check_date: Some(Local::now().date_naive().to_string()),
+        next_automatic_retry_at: None,
         checked_at: Some(Local::now().to_rfc3339()),
         current_version: Some(current_version()),
         ..Default::default()
@@ -762,14 +938,39 @@ fn current_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+fn log_app_update_event(app: &AppHandle, level: LogLevel, message: &str) {
+    let Ok(path) = crate::config::config_path_for_app(app) else {
+        return;
+    };
+    let Ok(loaded) = crate::config::load_or_create_config(&path) else {
+        return;
+    };
+    let log = LogSink::from_config_path(&path, &loaded.config);
+    let _ = log.write(level, "app_update", message);
+}
+
 fn emit_update_status(app: &AppHandle, info: &AppUpdateInfo, animate: bool) {
-    let _ = app.emit(
-        APP_UPDATE_STATUS_CHANGED_EVENT,
-        AppUpdateStatusEvent {
-            info: info.clone(),
-            animate,
-        },
-    );
+    let status = AppUpdateStatusEvent {
+        info: info.clone(),
+        animate,
+    };
+    let targets = [MAIN_WINDOW_LABEL, crate::tray::TRAY_POPUP_LABEL];
+
+    for target in targets {
+        if app.get_webview_window(target).is_none() {
+            continue;
+        }
+        if let Err(error) = app.emit_to(target, APP_UPDATE_STATUS_CHANGED_EVENT, status.clone()) {
+            log_app_update_event(
+                app,
+                LogLevel::Warn,
+                &format!(
+                    "status event emission failed target={target} error={}",
+                    redacted_error(error)
+                ),
+            );
+        }
+    }
 }
 
 fn redacted_error(error: impl ToString) -> String {
@@ -871,15 +1072,48 @@ mod tests {
 
     #[test]
     fn automatic_check_only_runs_once_after_eight_am() {
-        assert!(!automatic_check_is_due(true, 7, "2026-08-14", None));
-        assert!(automatic_check_is_due(true, 8, "2026-08-14", None));
+        let now = Local::now();
+        let after_eight = now
+            .with_hour(8)
+            .and_then(|value| value.with_minute(0))
+            .and_then(|value| value.with_second(0))
+            .expect("a local time at 08:00 should exist");
+        let before_eight = after_eight - ChronoDuration::hours(1);
+        let today = after_eight.date_naive().to_string();
+
+        assert!(!automatic_check_is_due(true, before_eight, None, None));
+        assert!(automatic_check_is_due(true, after_eight, None, None));
         assert!(!automatic_check_is_due(
             true,
-            9,
-            "2026-08-14",
-            Some("2026-08-14")
+            after_eight,
+            Some(today.as_str()),
+            None
         ));
-        assert!(!automatic_check_is_due(false, 9, "2026-08-14", None));
+        assert!(!automatic_check_is_due(false, after_eight, None, None));
+    }
+
+    #[test]
+    fn automatic_check_retries_after_the_retry_delay_when_a_previous_attempt_failed() {
+        let now = Local::now();
+        let after_eight = now
+            .with_hour(8)
+            .and_then(|value| value.with_minute(0))
+            .and_then(|value| value.with_second(0))
+            .expect("a local time at 08:00 should exist");
+        let retry_at = (after_eight + AUTOMATIC_CHECK_RETRY_DELAY).to_rfc3339();
+
+        assert!(!automatic_check_is_due(
+            true,
+            after_eight,
+            None,
+            Some(retry_at.as_str())
+        ));
+        assert!(automatic_check_is_due(
+            true,
+            after_eight + AUTOMATIC_CHECK_RETRY_DELAY,
+            None,
+            Some(retry_at.as_str())
+        ));
     }
 
     #[test]
@@ -915,6 +1149,10 @@ mod tests {
         let info = demo_update_info();
         assert!(info.available);
         assert_eq!(info.version.as_deref(), Some("1.2.3-demo"));
+        assert_eq!(
+            demo_update_preview_mode_from_value("manual"),
+            Some(DemoUpdatePreviewMode::Manual)
+        );
     }
 
     #[test]

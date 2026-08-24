@@ -105,6 +105,7 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
   const lastHandledPresentationId = useRef(0);
   const lastRequestedAutoHeight = useRef<number | null>(null);
   const pendingTitleDrag = useRef<TitleDragStart | null>(null);
+  const appUpdateStatusRevisionRef = useRef(0);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -121,6 +122,19 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
       return cached;
     } catch {
       return null;
+    }
+  }, []);
+
+  const syncAppUpdateStatus = useCallback(async () => {
+    const requestRevision = appUpdateStatusRevisionRef.current + 1;
+    appUpdateStatusRevisionRef.current = requestRevision;
+    try {
+      const info = await getAppUpdateStatus();
+      if (requestRevision === appUpdateStatusRevisionRef.current) {
+        setAppUpdateInfo(info);
+      }
+    } catch {
+      // A transient status read must not replace the last known update notice.
     }
   }, []);
 
@@ -152,8 +166,9 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
 
     lastHandledPresentationId.current = presentationId;
     void getConfig().then(setConfig).catch(() => undefined);
+    void syncAppUpdateStatus();
     void loadSnapshot();
-  }, [loadSnapshot]);
+  }, [loadSnapshot, syncAppUpdateStatus]);
 
   const syncTrayPopupPresentation = useCallback(async () => {
     try {
@@ -199,17 +214,12 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
   useEffect(() => {
     let isMounted = true;
     let unlisten: (() => void) | undefined;
-    void getAppUpdateStatus()
-      .then((info) => {
-        if (isMounted) {
-          setAppUpdateInfo(info);
-        }
-      })
-      .catch(() => undefined);
+    void syncAppUpdateStatus();
     void listenForAppUpdateStatus((status) => {
       if (!isMounted) {
         return;
       }
+      appUpdateStatusRevisionRef.current += 1;
       setAppUpdateInfo(status.info);
       if (
         status.animate &&
@@ -227,7 +237,7 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
       isMounted = false;
       unlisten?.();
     };
-  }, []);
+  }, [syncAppUpdateStatus]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -254,11 +264,12 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
   useEffect(() => {
     function onFocus() {
       void syncTrayPopupPresentation();
+      void syncAppUpdateStatus();
     }
 
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [syncTrayPopupPresentation]);
+  }, [syncAppUpdateStatus, syncTrayPopupPresentation]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

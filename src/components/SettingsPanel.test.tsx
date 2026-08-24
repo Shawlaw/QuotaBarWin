@@ -11,6 +11,7 @@ import type {
   QuotaWindow,
   RemoteProviderConfig,
 } from "../types";
+import type { AppUpdateInfo } from "../lib/api";
 
 const apiMocks = vi.hoisted(() => {
   const state: { config: AppConfig | null } = { config: null };
@@ -260,6 +261,7 @@ function renderSettings(
     closeRequest?: number;
     appUpdateFocusRequest?: number;
     onAppUpdateFocusHandled?: () => void;
+    onAppUpdateStatusChange?: (info: AppUpdateInfo) => void;
     initialProviderSettingsView?: "main" | "add";
     onRequestClose?: () => void;
   } = {},
@@ -291,6 +293,7 @@ function renderSettings(
           settingsHomeRequest={0}
           appUpdateFocusRequest={navigation.appUpdateFocusRequest ?? 0}
           onAppUpdateFocusHandled={navigation.onAppUpdateFocusHandled ?? (() => undefined)}
+          onAppUpdateStatusChange={navigation.onAppUpdateStatusChange ?? (() => undefined)}
           initialProviderSettingsView={navigation.initialProviderSettingsView ?? "main"}
           snapshotProviders={snapshotProviders}
         />
@@ -372,6 +375,21 @@ test("settings_checks_and_applies_signed application updates", async () => {
   await waitFor(() => expect(apiMocks.downloadAppUpdate).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(apiMocks.applyAppUpdate).toHaveBeenCalledTimes(1));
   expect(apiMocks.checkAppUpdate).toHaveBeenCalledTimes(1);
+});
+
+test("manual application update checks notify the owning main window directly", async () => {
+  const onAppUpdateStatusChange = vi.fn();
+  renderSettings(configWithProviders([remoteProvider]), [], configStorageInfo, () => undefined, {
+    onAppUpdateStatusChange,
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+
+  await waitFor(() =>
+    expect(onAppUpdateStatusChange).toHaveBeenCalledWith(
+      expect.objectContaining({ available: true, version: "1.0.4" }),
+    ),
+  );
 });
 
 test("settings_saves_the_application_update_auto_check_toggle", async () => {

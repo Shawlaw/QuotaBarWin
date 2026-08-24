@@ -7,6 +7,7 @@ import type {
   ProviderSnapshot,
   RemoteProviderConfig,
 } from "./types";
+import type { AppUpdateInfo } from "./lib/api";
 
 const mocks = vi.hoisted(() => {
   const config: AppConfig = {
@@ -65,7 +66,7 @@ const mocks = vi.hoisted(() => {
     })),
     getCachedSnapshot: vi.fn(async (): Promise<AppSnapshot | null> => null),
     getApplicationUpdateNavigationRequest: vi.fn(async () => 0),
-    getAppUpdateStatus: vi.fn(async () => ({
+    getAppUpdateStatus: vi.fn<() => Promise<AppUpdateInfo>>(async () => ({
       configured: true, currentVersion: "1.0.0", available: false, version: null, notesUrl: null, downloaded: false,
     })),
     getAppVersion: vi.fn(async () => "1.0.0(abc1234)"),
@@ -152,6 +153,17 @@ const mocks = vi.hoisted(() => {
       newChecksum: null,
     })),
     checkRemoteUpdates: vi.fn(async () => []),
+    checkAppUpdate: vi.fn(async () => ({
+      configured: true,
+      currentVersion: "1.0.0",
+      available: true,
+      version: "1.1.0",
+      notesUrl: "https://example.com/releases/v1.1.0",
+      downloaded: false,
+      checkedAt: "2026-08-24T11:30:00+08:00",
+      error: null,
+      dismissed: false,
+    })),
     applyRemoteUpdate: vi.fn(async () => undefined),
     refreshProvider: vi.fn(async () => snapshot),
     refreshSnapshot: vi.fn(async () => snapshot),
@@ -222,6 +234,46 @@ test("main_app_animates_and_dismisses_an_automatic_update_notice", async () => {
   expect(screen.queryByRole("button", { name: "Dismiss update notice" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Later" }));
   await waitFor(() => expect(mocks.dismissAppUpdateNotice).toHaveBeenCalledTimes(1));
+});
+
+test("main_app_reloads_an_available_update_when_focus_recovers_a_missed_status_event", async () => {
+  render(<App />);
+
+  await waitFor(() => expect(mocks.getAppUpdateStatus).toHaveBeenCalled());
+  mocks.getAppUpdateStatus.mockClear();
+  mocks.getAppUpdateStatus.mockResolvedValueOnce({
+    configured: true,
+    currentVersion: "1.0.0",
+    available: true,
+    version: "1.1.0",
+    notesUrl: "https://example.com/releases/v1.1.0",
+    downloaded: false,
+    checkedAt: null,
+    error: null,
+    dismissed: false,
+  });
+
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+  });
+
+  expect(await screen.findByTestId("app-update-notice")).toHaveTextContent(
+    "QuotaBarWin 1.1.0 is available.",
+  );
+});
+
+test("manual application update check immediately updates the main notice", async () => {
+  render(<App />);
+
+  expect(await screen.findByText("Codex Mock")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(await screen.findByTestId("app-update-section")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+
+  expect(await screen.findByTestId("app-update-notice")).toHaveTextContent(
+    "QuotaBarWin 1.1.0 is available.",
+  );
 });
 
 test("main_app_update_navigation opens and focuses the application update settings", async () => {

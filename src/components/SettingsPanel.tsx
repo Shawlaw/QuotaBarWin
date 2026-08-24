@@ -62,6 +62,7 @@ type SettingsPanelProps = {
   settingsHomeRequest: number;
   appUpdateFocusRequest: number;
   onAppUpdateFocusHandled: () => void;
+  onAppUpdateStatusChange: (info: AppUpdateInfo) => void;
   initialProviderSettingsView: "main" | "add";
 };
 
@@ -200,6 +201,7 @@ export function SettingsPanel({
   settingsHomeRequest,
   appUpdateFocusRequest,
   onAppUpdateFocusHandled,
+  onAppUpdateStatusChange,
   initialProviderSettingsView
 }: SettingsPanelProps) {
   const { t } = useI18n();
@@ -621,6 +623,10 @@ export function SettingsPanel({
     try {
       const result = await checkAppUpdate();
       setAppUpdateInfo(result);
+      // The main renderer owns the persistent update notice. A command result is
+      // authoritative for the window that initiated the check, so update it
+      // directly instead of waiting for a cross-webview event to round-trip.
+      onAppUpdateStatusChange(result);
       setAppUpdateMessage(
         !result.configured
           ? t.appUpdate.unavailable
