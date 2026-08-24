@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "appId": "com.quotabarwin.app",
   "channel": "stable",
-  "version": "1.4.0",
-  "publishedAt": "2026-08-23T16:32:14.6612175Z",
+  "version": "1.4.1",
+  "publishedAt": "2026-08-24T14:13:12.5465127Z",
   "target": "windows-x64",
   "asset": {
-    "url": "https://github.com/Shawlaw/QuotaBarWin/releases/download/v1.4.0/QuotaBarWin_1.4.0_windows_x64_portable_b733ed2.zip",
-    "sha256": "388c2c1217fe4a21ecfa983f1becf55788890b8057bac3e9d506d228878da063",
-    "size": 5819386
+    "url": "https://github.com/Shawlaw/QuotaBarWin/releases/download/v1.4.1/QuotaBarWin_1.4.1_windows_x64_portable_e4ff28d.zip",
+    "sha256": "2f9486c4577be743a78810a26b074c788470a0e7fe965db2ab5afb8f93a7823a",
+    "size": 5822097
   },
-  "notesUrl": "https://github.com/Shawlaw/QuotaBarWin/releases/tag/v1.4.0"
+  "notesUrl": "https://github.com/Shawlaw/QuotaBarWin/releases/tag/v1.4.1"
 }
