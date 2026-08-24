@@ -39,8 +39,8 @@ pub const TRAY_POPUP_LABEL: &str = "tray-popup";
 pub const TRAY_POPUP_VIEW: &str = "index.html?view=tray";
 const TRAY_POPUP_WIDTH: f64 = 380.0;
 const TRAY_POPUP_HEIGHT: f64 = 520.0;
-const TRAY_POPUP_MIN_WIDTH: f64 = 320.0;
-const TRAY_POPUP_MIN_HEIGHT: f64 = 220.0;
+const TRAY_POPUP_MIN_WIDTH: f64 = 360.0;
+const TRAY_POPUP_MIN_HEIGHT: f64 = 300.0;
 const TRAY_POPUP_AUTO_MAX_HEIGHT: f64 = 640.0;
 const TRAY_POPUP_MAX_RESTORED_WIDTH: f64 = 2000.0;
 const TRAY_POPUP_MAX_RESTORED_HEIGHT: f64 = 2000.0;
@@ -599,8 +599,8 @@ pub fn e2e_show_tray_popup(app: AppHandle) -> Result<(), String> {
 pub fn e2e_set_tray_popup_size(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
     ensure_e2e_tray_commands_enabled()?;
     if let Some(window) = app.get_webview_window(TRAY_POPUP_LABEL) {
-        window
-            .set_size(LogicalSize::new(width, height))
+        let size = tray_popup_size_from_saved(Some(TrayPopupSize { width, height }));
+        set_tray_popup_size_for_current_display(&window, size)
             .map_err(|error| error.to_string())?;
     }
     Ok(())

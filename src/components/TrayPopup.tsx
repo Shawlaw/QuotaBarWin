@@ -33,7 +33,7 @@ import { useI18n } from "../i18n";
 import { ProgressBar } from "./ProgressBar";
 import { AppUpdateNotice } from "./AppUpdateNotice";
 
-const TRAY_POPUP_AUTO_MIN_HEIGHT = 220;
+const TRAY_POPUP_AUTO_MIN_HEIGHT = 300;
 const TRAY_POPUP_AUTO_MAX_HEIGHT = 640;
 const TITLE_DRAG_START_DISTANCE = 4;
 

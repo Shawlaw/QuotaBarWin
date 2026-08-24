@@ -793,7 +793,7 @@ test("tray_popup_requests_auto_height_without_manual_size", async () => {
     renderWithEnglish(<TrayPopup />);
 
     await waitFor(() =>
-      expect(mocks.setTrayPopupAutoHeight).toHaveBeenCalledWith(228),
+      expect(mocks.setTrayPopupAutoHeight).toHaveBeenCalledWith(300),
     );
   } finally {
     if (scrollHeightDescriptor) {
@@ -876,7 +876,7 @@ test("tray_popup_uses_natural_content_height instead of the stretched scroll are
     });
 
     await waitFor(() =>
-      expect(mocks.setTrayPopupAutoHeight).toHaveBeenLastCalledWith(228),
+      expect(mocks.setTrayPopupAutoHeight).toHaveBeenLastCalledWith(300),
     );
   } finally {
     if (scrollHeightDescriptor) {

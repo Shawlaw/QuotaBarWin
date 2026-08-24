@@ -1,7 +1,7 @@
 [package]
 name = "quotabarwin"
 default-run = "quotabarwin"
-version = "1.4.0"
+version = "1.4.1"
 description = "Windows-only desktop app for monitoring AI usage and quota windows."
 authors = ["QuotaBarWin Contributors"]
 edition = "2021"

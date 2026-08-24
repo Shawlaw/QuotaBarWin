@@ -48,7 +48,7 @@ Reports the API version and whether a snapshot is available.
 ```json
 {
   "apiVersion": 1,
-  "appVersion": "1.4.0",
+  "appVersion": "1.4.1",
   "snapshotAvailable": true
 }
 ```
