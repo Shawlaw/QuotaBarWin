@@ -498,6 +498,59 @@ test("tray_popup_uses_window_focus_to_check_for_missed_presentation", async () =
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2));
 });
 
+test("tray_popup_presentation_clears_focus_restored_onto_action_buttons", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  const close = screen.getByTestId("tray-popup-close");
+  close.focus();
+  expect(document.activeElement).toBe(close);
+
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+
+  expect(document.activeElement).toBe(document.body);
+});
+
+test("tray_popup_keeps_button_focus_within_the_same_presentation", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+
+  const refresh = screen.getByTestId("tray-popup-refresh");
+  refresh.focus();
+
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+
+  expect(document.activeElement).toBe(refresh);
+});
+
+test("tray_popup_clears_button_focus_when_hidden", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  const close = screen.getByTestId("tray-popup-close");
+  close.focus();
+  expect(document.activeElement).toBe(close);
+
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => "hidden",
+  });
+  try {
+    fireEvent(document, new Event("visibilitychange"));
+  } finally {
+    delete (document as Partial<Document> & { visibilityState?: string }).visibilityState;
+  }
+
+  expect(document.activeElement).toBe(document.body);
+});
+
 test("tray_popup_groups_windows_by_provider_and_reset_stays_secondary", async () => {
   renderWithEnglish(<TrayPopup />);
 

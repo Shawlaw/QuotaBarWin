@@ -92,6 +92,18 @@ function shouldAutoSizeTrayPopup(config: AppConfig | null): boolean {
   return config?.trayPopupSize == null;
 }
 
+// The popup webview is reused across presentations: WebView2 restores DOM focus
+// to the element that held focus when the popup was hidden. If that element is
+// an action button and keyboard focus mode is active (for example after hiding
+// with Escape), the restored focus draws the default focus ring and lets Enter
+// re-trigger the button. Every presentation must therefore start unfocused.
+function blurStalePopupFocus() {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body) {
+    active.blur();
+  }
+}
+
 type TrayPopupProps = {
   onThemeChange?: (theme: AppTheme) => void;
 };
@@ -165,6 +177,7 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
     }
 
     lastHandledPresentationId.current = presentationId;
+    blurStalePopupFocus();
     void getConfig().then(setConfig).catch(() => undefined);
     void syncAppUpdateStatus();
     void loadSnapshot();
@@ -280,6 +293,19 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    function onVisibilityChange() {
+      // Hiding the window preserves DOM focus; clear it here so the next
+      // presentation cannot restore focus onto a previously used button.
+      if (document.visibilityState === "hidden") {
+        blurStalePopupFocus();
+      }
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, []);
 
   const hasSnapshot = snapshot !== null;
