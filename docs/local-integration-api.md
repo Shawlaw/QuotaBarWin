@@ -48,7 +48,7 @@ Authorization: Bearer <在设置页中取得的令牌>
 ```json
 {
   "apiVersion": 1,
-  "appVersion": "1.4.1",
+  "appVersion": "1.4.2",
   "snapshotAvailable": true
 }
 ```
