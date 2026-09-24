@@ -418,10 +418,44 @@ fn summarize_builtin_js_error(error: &str) -> String {
         .strip_prefix("Error:")
         .map(str::trim)
         .unwrap_or(first_line);
+    let message = strip_builtin_js_error_wrapper(message);
+    let message = strip_inline_js_stack(message).trim();
     if message.is_empty() {
         "Builtin-js provider failed. Check the diagnostics log for details.".to_string()
     } else {
         message.to_string()
+    }
+}
+
+/// Removes the `Error converting from js '<from>' into type '<to>': ` wrapper
+/// `rquickjs` adds when a host function fails, so the Provider's own message is
+/// what reaches the user.
+fn strip_builtin_js_error_wrapper(message: &str) -> &str {
+    let Some(rest) = message.strip_prefix("Error converting from js '") else {
+        return message;
+    };
+    let Some((_from, rest)) = rest.split_once("' into type '") else {
+        return message;
+    };
+    let Some((_to, rest)) = rest.split_once('\'') else {
+        return message;
+    };
+    let unwrapped = rest.strip_prefix(": ").unwrap_or(rest);
+    if unwrapped.trim().is_empty() {
+        return message;
+    }
+    unwrapped
+}
+
+/// Drops the JavaScript stack frames `rquickjs` appends to host-function
+/// failures, such as ` at request (eval_script:9:94)`.
+fn strip_inline_js_stack(message: &str) -> &str {
+    let Some(frame) = message.find("(eval_script:") else {
+        return message;
+    };
+    match message[..frame].rfind(" at ") {
+        Some(cut) => message[..cut].trim_end(),
+        None => message,
     }
 }
 
@@ -1671,6 +1705,42 @@ mod tests {
         assert_eq!(
             error,
             "Codex sign-in is required. Sign in with Codex or configure CODEX_ACCESS_TOKEN."
+        );
+    }
+
+    #[test]
+    fn builtin_js_host_errors_drop_the_rquickjs_wrapper_and_inline_stack() {
+        let error = summarize_builtin_js_error(
+            "Error: Error converting from js 'builtin-js' into type 'http': HTTP request timed out after 30.0s with no response from chatgpt.com at request (eval_script:9:94) at fetchCodexUsage (eval_script:61:36) at main (eval_script:20:59) at <eval> (eval_script:1:25)",
+        );
+        assert_eq!(
+            error,
+            "HTTP request timed out after 30.0s with no response from chatgpt.com"
+        );
+    }
+
+    #[test]
+    fn builtin_js_host_errors_keep_the_generic_request_failure_message() {
+        let error = summarize_builtin_js_error(
+            "Error: Error converting from js 'builtin-js' into type 'http': builtin-js HTTP request failed: error sending request for url (https://chatgpt.com/[REDACTED]) at request (eval_script:9:94)",
+        );
+        assert_eq!(
+            error,
+            "builtin-js HTTP request failed: error sending request for url (https://chatgpt.com/[REDACTED])"
+        );
+    }
+
+    #[test]
+    fn builtin_js_errors_without_a_usable_message_fall_back_to_advice() {
+        assert_eq!(
+            summarize_builtin_js_error(
+                "Error: Error converting from js 'builtin-js' into type 'http'"
+            ),
+            "Error converting from js 'builtin-js' into type 'http'"
+        );
+        assert_eq!(
+            summarize_builtin_js_error("   "),
+            "Builtin-js provider failed. Check the diagnostics log for details."
         );
     }
 

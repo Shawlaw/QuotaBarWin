@@ -66,6 +66,8 @@ pub fn classify_provider_error(provider: &ProviderSnapshot) -> Option<ProviderEr
         &[
             "network",
             "connection",
+            "could not connect",
+            "connect error",
             "dns",
             "http error",
             "request failed",
@@ -114,6 +116,30 @@ mod tests {
         assert_eq!(
             classify_provider_error(&error_provider("Unable to parse provider output JSON")),
             Some(ProviderErrorCategory::ProviderOutput)
+        );
+    }
+
+    #[test]
+    fn classifies_http_transport_failures_by_kind_not_by_os_locale() {
+        assert_eq!(
+            classify_provider_error(&error_provider(
+                "HTTP request timed out after 30.0s with no response from chatgpt.com"
+            )),
+            Some(ProviderErrorCategory::Timeout)
+        );
+        // The OS error text is localized on some Windows systems, so the
+        // classification must not depend on words like "Connection refused".
+        assert_eq!(
+            classify_provider_error(&error_provider(
+                "Could not connect to chatgpt.com: client error (Connect): tcp connect error: 在其上下文中，该请求的地址无效。 (os error 10049)"
+            )),
+            Some(ProviderErrorCategory::Network)
+        );
+        assert_eq!(
+            classify_provider_error(&error_provider(
+                "Could not connect to chatgpt.com (via the configured proxy): client error (Connect): socks connect error"
+            )),
+            Some(ProviderErrorCategory::Proxy)
         );
     }
 }

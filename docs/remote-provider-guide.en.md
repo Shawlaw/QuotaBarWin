@@ -154,6 +154,15 @@ settings such as `DEEPSEEK_BALANCE_WARNING_` per currency. `QBWIN_` is a
 reserved host prefix and cannot be granted through `env:` or `fs:env:`; use
 `qb.meta` for generic metadata and let `qb.http` use the proxy automatically.
 
+When `qb.http.request` fails, the host distinguishes timeouts from connection
+failures and names the failing host, for example
+`HTTP request timed out after 30.0s with no response from api.example.com`, so a
+broken link is distinguishable from an error status code; when a proxy is
+configured the message is annotated with `(via the configured proxy)` so the
+proxy link is checked first. URLs that reach logs or the UI keep only the
+scheme, host, and port; paths, queries, and credentials become `[REDACTED]`, so
+never put credentials in a URL path or query.
+
 ### Supported scope and intentional exclusions
 
 Use synchronous standard JavaScript plus `Date`, `JSON`, `RegExp`, `Map`, and

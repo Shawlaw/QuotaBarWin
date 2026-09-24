@@ -148,6 +148,12 @@ function main(qb) {
 `DEEPSEEK_BALANCE_WARNING_` 这种按币种动态命名的可选参数。`QBWIN_` 是宿主保留前缀，
 不能通过 `env:` 或 `fs:env:` 授权；通用元信息用 `qb.meta` 读取，代理由 `qb.http` 自动使用。
 
+`qb.http.request` 失败时，宿主会区分超时和连接失败，并把失败主机写进错误信息，例如
+`HTTP request timed out after 30.0s with no response from api.example.com`，便于区分链路
+问题和接口返回的错误状态码；配置了代理时还会标注 `(via the configured proxy)`，提示
+优先排查代理链路。日志和 UI 中出现的 URL 只保留 scheme、主机和端口，路径、查询串和
+凭据会被替换为 `[REDACTED]`，因此不要把凭据放在 URL 路径或查询串里。
+
 ### 支持范围与非目标
 
 可使用标准同步 JavaScript 及 `Date`、`JSON`、`RegExp`、`Map`、`Set`。`main(qb)` 必须

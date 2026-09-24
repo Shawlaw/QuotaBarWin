@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    error::Error as StdError,
     fs,
     io::Read,
     path::PathBuf,
@@ -315,7 +316,7 @@ impl BuiltinJsHost {
         }
         let client = build_http_client(self.proxy_url.as_deref(), None, remaining)
             .map_err(|error| format!("builtin-js could not create HTTP client: {error}"))?;
-        let mut request = client.request(method, url);
+        let mut request = client.request(method, url.clone());
         for (name, value) in options.headers {
             let header_name = header::HeaderName::from_bytes(name.as_bytes())
                 .map_err(|_| format!("builtin-js http header name is invalid: {name}"))?;
@@ -323,10 +324,13 @@ impl BuiltinJsHost {
                 .map_err(|_| format!("builtin-js http header value is invalid: {name}"))?;
             request = request.header(header_name, header_value);
         }
+        let request_started = Instant::now();
         let response = request.body(body).send().map_err(|error| {
-            format!(
-                "builtin-js HTTP request failed: {}",
-                redact_sensitive(&error.to_string())
+            describe_http_request_error(
+                &error,
+                &url,
+                request_started.elapsed(),
+                self.proxy_url.is_some(),
             )
         })?;
         let status = response.status();
@@ -383,6 +387,66 @@ impl BuiltinJsHost {
             );
         }
     }
+}
+
+/// Describes a failed HTTP request in terms a user can act on.
+///
+/// `reqwest` renders timeouts, DNS failures, and refused connections with the
+/// same "error sending request" text, so the error kind has to be inspected
+/// explicitly; otherwise every network problem reaches the UI as an
+/// indistinguishable HTTP error.
+fn describe_http_request_error(
+    error: &reqwest::Error,
+    url: &Url,
+    elapsed: Duration,
+    via_proxy: bool,
+) -> String {
+    let host = redact_sensitive(url.host_str().unwrap_or("the requested host"));
+    // When traffic goes through a configured proxy, a stall there is
+    // indistinguishable from a stall at the target host, so say so.
+    let via = if via_proxy {
+        " (via the configured proxy)"
+    } else {
+        ""
+    };
+    if error.is_timeout() {
+        return format!(
+            "HTTP request timed out after {:.1}s with no response from {host}{via}",
+            elapsed.as_secs_f32()
+        );
+    }
+    if error.is_connect() {
+        let cause = request_error_cause(error);
+        return if cause.is_empty() {
+            format!("Could not connect to {host}{via}")
+        } else {
+            format!("Could not connect to {host}{via}: {cause}")
+        };
+    }
+    format!(
+        "builtin-js HTTP request failed: {}",
+        redact_sensitive(&error.to_string())
+    )
+}
+
+/// Walks the `reqwest`/`hyper`/`io` source chain so connection failures keep
+/// their concrete cause (refused, DNS, reset) instead of only the generic
+/// wrapper message.
+fn request_error_cause(error: &reqwest::Error) -> String {
+    let mut cause = String::new();
+    let mut next: Option<&(dyn StdError + 'static)> = error.source();
+    while let Some(current) = next {
+        let text = redact_sensitive(&current.to_string());
+        let text = text.trim();
+        if !text.is_empty() && !cause.contains(text) {
+            if !cause.is_empty() {
+                cause.push_str(": ");
+            }
+            cause.push_str(text);
+        }
+        next = current.source();
+    }
+    cause
 }
 
 pub fn run_builtin_js_provider(run: BuiltinJsRun<'_>) -> Result<BuiltinJsResult, String> {
@@ -855,5 +919,126 @@ mod tests {
         })
         .unwrap_err();
         assert!(!error.is_empty());
+    }
+
+    #[test]
+    fn reports_stalled_http_requests_as_timeouts_with_the_target_host() {
+        // Accepts the connection but never answers, so the request can only end
+        // in a client timeout instead of an error response.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = thread::spawn(move || {
+            let (_stream, _) = listener.accept().expect("connection");
+            thread::sleep(Duration::from_millis(600));
+        });
+
+        let url = Url::parse(&format!("http://{address}/usage")).expect("url");
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(250))
+            .no_proxy()
+            .build()
+            .expect("client");
+        let error = client.get(url.clone()).send().expect_err("timeout");
+        assert!(error.is_timeout(), "{error}");
+
+        let message = describe_http_request_error(&error, &url, Duration::from_millis(250), false);
+
+        assert!(message.contains("timed out"), "{message}");
+        assert!(message.contains(&address.ip().to_string()), "{message}");
+        assert!(
+            message.contains("0.2s") || message.contains("0.3s"),
+            "{message}"
+        );
+        assert!(!message.contains("via the configured proxy"), "{message}");
+
+        let proxied = describe_http_request_error(&error, &url, Duration::from_millis(250), true);
+        assert!(proxied.contains("(via the configured proxy)"), "{proxied}");
+        server.join().expect("server");
+    }
+
+    #[test]
+    fn reports_connect_failures_with_the_concrete_cause() {
+        // Port 0 cannot be connected to, and unlike a closed loopback port it
+        // fails deterministically on Windows setups whose firewall or proxy
+        // drops the SYN packets that would otherwise produce a refusal.
+        let url = Url::parse("http://127.0.0.1:0/usage").expect("url");
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .no_proxy()
+            .build()
+            .expect("client");
+        let error = client.get(url.clone()).send().expect_err("connect failure");
+        assert!(error.is_connect(), "{error}");
+
+        let message = describe_http_request_error(&error, &url, Duration::from_millis(5), false);
+
+        assert!(
+            message.starts_with("Could not connect to 127.0.0.1: "),
+            "{message}"
+        );
+        assert!(!message.contains("error sending request"), "{message}");
+    }
+
+    #[test]
+    fn builtin_js_timeouts_name_the_proxy_when_one_is_configured() {
+        // The "proxy" accepts the TCP connection but never speaks SOCKS, so the
+        // request can only end in a client timeout.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = thread::spawn(move || {
+            let (_stream, _) = listener.accept().expect("connection");
+            thread::sleep(Duration::from_secs(2));
+        });
+        let manifest = manifest(&["net:http"]);
+        let env = HashMap::new();
+        let proxy_url = format!("socks5h://{address}");
+
+        let error = run_builtin_js_provider(BuiltinJsRun {
+            provider_id: "builtin-test",
+            provider_name: "Builtin Test",
+            manifest: &manifest,
+            source: "function main(qb) { return qb.http.request('http://example.invalid/usage'); }",
+            env: &env,
+            sensitive_values: &[],
+            timeout: Duration::from_millis(400),
+            proxy_url: Some(&proxy_url),
+            log: None,
+        })
+        .unwrap_err();
+
+        server.join().expect("server");
+        assert!(error.contains("timed out"), "{error}");
+        assert!(error.contains("example.invalid"), "{error}");
+        assert!(error.contains("(via the configured proxy)"), "{error}");
+    }
+
+    #[test]
+    fn stalled_builtin_js_requests_reach_the_provider_error_as_a_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = thread::spawn(move || {
+            let (_stream, _) = listener.accept().expect("connection");
+            thread::sleep(Duration::from_secs(2));
+        });
+        let origin = format!("http://{address}");
+        let manifest = manifest(&[&format!("net:{origin}")]);
+        let env = HashMap::new();
+
+        let error = run_builtin_js_provider(BuiltinJsRun {
+            provider_id: "builtin-test",
+            provider_name: "Builtin Test",
+            manifest: &manifest,
+            source: &format!("function main(qb) {{ return qb.http.request('{origin}/usage'); }}"),
+            env: &env,
+            sensitive_values: &[],
+            timeout: Duration::from_millis(400),
+            proxy_url: None,
+            log: None,
+        })
+        .unwrap_err();
+
+        server.join().expect("server");
+        assert!(error.contains("timed out"), "{error}");
+        assert!(error.contains(&address.ip().to_string()), "{error}");
     }
 }
