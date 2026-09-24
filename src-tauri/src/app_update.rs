@@ -9,12 +9,14 @@ use std::{
     time::Duration,
 };
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::{DateTime, Duration as ChronoDuration, Local, Timelike};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use desktop_updater::{
-    ApplyRequest, CheckResult, DownloadedUpdate, PortableLayout, UpdateCandidate, UpdateConfig,
+    ApplyRequest, CheckResult, DownloadedUpdate, PortableLayout, SignedCheck, UpdateCandidate,
+    UpdateConfig,
 };
 
 use crate::logger::{LogLevel, LogSink};
@@ -28,7 +30,7 @@ const APP_UPDATE_CHANNEL: &str = "stable";
 const APP_UPDATE_HELPER_NAME: &str = "QuotaBarWin.Updater.exe";
 const APP_UPDATE_MAIN_EXE_NAME: &str = "QuotaBarWin.exe";
 const APP_UPDATE_STATUS_CACHE_FILE: &str = "app_update_status.quotaBarWin.json";
-const APP_UPDATE_STATUS_CACHE_SCHEMA_VERSION: u8 = 1;
+const APP_UPDATE_STATUS_CACHE_SCHEMA_VERSION: u8 = 2;
 const AUTOMATIC_CHECK_START_HOUR: u32 = 8;
 const AUTOMATIC_CHECK_RETRY_DELAY: ChronoDuration = ChronoDuration::minutes(15);
 const APP_UPDATE_HELPER_COPY_PREFIX: &str = "helper-";
@@ -139,6 +141,13 @@ struct CachedAppUpdateStatus {
     error: Option<String>,
     #[serde(default)]
     dismissed_version: Option<String>,
+    /// Base64 of the exact manifest bytes that were signature-verified when
+    /// `available` was recorded. Enables an offline candidate restore through
+    /// `UpdateCandidate::from_persisted_bytes` after a restart.
+    #[serde(default)]
+    verified_manifest_base64: Option<String>,
+    #[serde(default)]
+    verified_signature_base64: Option<String>,
 }
 
 #[tauri::command]
@@ -263,7 +272,8 @@ pub async fn check_app_update(
             .map_err(redacted_error)?;
             match cache {
                 Ok(cache) => {
-                    let downloaded = finish_check(&state.inner, candidate_for_result(result))?;
+                    let downloaded =
+                        finish_check_success(&state.inner, candidate_for_result(result.result))?;
                     let info = info_from_cache(&cache, true, downloaded);
                     log_app_update_event(
                         &app,
@@ -279,7 +289,9 @@ pub async fn check_app_update(
                     Ok(info)
                 }
                 Err(error) => {
-                    let _ = finish_check(&state.inner, None);
+                    // The signed check itself succeeded, so keep its candidate
+                    // downloadable even though the status could not be persisted.
+                    let _ = finish_check_success(&state.inner, candidate_for_result(result.result));
                     log_app_update_event(
                         &app,
                         LogLevel::Warn,
@@ -293,7 +305,7 @@ pub async fn check_app_update(
             }
         }
         Err(error) => {
-            let _ = finish_check(&state.inner, None);
+            let _ = finish_check_failure(&state.inner);
             log_app_update_event(
                 &app,
                 LogLevel::Warn,
@@ -346,23 +358,76 @@ pub async fn download_app_update(
     app: AppHandle,
     state: State<'_, AppUpdateState>,
 ) -> Result<AppUpdateInfo, String> {
-    let candidate = {
+    let existing_candidate = {
         let state = state
             .inner
             .lock()
             .map_err(|_| "Application update state is unavailable")?;
-        state
-            .candidate
-            .clone()
-            .ok_or_else(|| "Check for an application update before downloading it".to_string())?
+        state.candidate.clone()
     };
+    let candidate = match existing_candidate {
+        Some(candidate) => candidate,
+        None => {
+            // Fresh session (for example after a restart): rebuild the
+            // candidate from the persisted signed check without network I/O.
+            let app_for_restore = app.clone();
+            let restored = tauri::async_runtime::spawn_blocking(move || {
+                restore_candidate_from_disk(&app_for_restore)
+            })
+            .await
+            .map_err(redacted_error)??;
+            let Some(candidate) = restored else {
+                return Err("Check for an application update before downloading it".to_string());
+            };
+            log_app_update_event(
+                &app,
+                LogLevel::Info,
+                &format!(
+                    "candidate restored from persisted signed check version={}",
+                    candidate.version()
+                ),
+            );
+            if let Ok(mut inner) = state.inner.lock() {
+                inner.candidate = Some(candidate.clone());
+            }
+            candidate
+        }
+    };
+    let version = candidate.version().to_string();
     let (config, updates_dir) = update_context(&app)?;
-    let downloaded = tauri::async_runtime::spawn_blocking(move || {
+    log_app_update_event(
+        &app,
+        LogLevel::Info,
+        &format!("download started version={version}"),
+    );
+    let downloaded = match tauri::async_runtime::spawn_blocking(move || {
         desktop_updater::download(&config, candidate, &updates_dir, |_, _| {})
     })
     .await
-    .map_err(redacted_error)?
-    .map_err(redacted_error)?;
+    {
+        Ok(Ok(downloaded)) => downloaded,
+        Ok(Err(error)) => {
+            let error = redacted_error(error);
+            log_app_update_event(
+                &app,
+                LogLevel::Warn,
+                &format!("download failed version={version} error={error}"),
+            );
+            return Err(error);
+        }
+        Err(error) => {
+            let error = redacted_error(error);
+            log_app_update_event(
+                &app,
+                LogLevel::Warn,
+                &format!("download task failed version={version} error={error}"),
+            );
+            return Err(error);
+        }
+    };
+    let package_bytes = fs::metadata(&downloaded.package_path)
+        .map(|metadata| metadata.len())
+        .unwrap_or_default();
     let downloaded = {
         let mut state = state
             .inner
@@ -371,6 +436,11 @@ pub async fn download_app_update(
         state.downloaded = Some(downloaded);
         state.downloaded.is_some()
     };
+    log_app_update_event(
+        &app,
+        LogLevel::Info,
+        &format!("download finished version={version} bytes={package_bytes}"),
+    );
     let app_for_cache = app.clone();
     let cache =
         tauri::async_runtime::spawn_blocking(move || load_status_cache_for_app(&app_for_cache))
@@ -394,13 +464,46 @@ pub async fn apply_app_update(
             .clone()
             .ok_or_else(|| "Download an application update before applying it".to_string())?
     };
+    let version = downloaded.candidate.version().to_string();
     let request = update_apply_request()?;
-    tauri::async_runtime::spawn_blocking(move || {
+    log_app_update_event(
+        &app,
+        LogLevel::Info,
+        &format!("apply started version={version}"),
+    );
+    let pending = match tauri::async_runtime::spawn_blocking(move || {
         desktop_updater::apply_and_restart(&downloaded, &request)
     })
     .await
-    .map_err(redacted_error)?
-    .map_err(redacted_error)?;
+    {
+        Ok(Ok(pending)) => pending,
+        Ok(Err(error)) => {
+            let error = redacted_error(error);
+            log_app_update_event(
+                &app,
+                LogLevel::Warn,
+                &format!("apply failed version={version} error={error}"),
+            );
+            return Err(error);
+        }
+        Err(error) => {
+            let error = redacted_error(error);
+            log_app_update_event(
+                &app,
+                LogLevel::Warn,
+                &format!("apply task failed version={version} error={error}"),
+            );
+            return Err(error);
+        }
+    };
+    log_app_update_event(
+        &app,
+        LogLevel::Info,
+        &format!(
+            "apply scheduled version={} pendingVersion={}",
+            version, pending.version
+        ),
+    );
     app.exit(0);
     Ok(())
 }
@@ -466,12 +569,12 @@ pub fn request_automatic_update_check(app: AppHandle) {
             })
             .await
             {
-                if let Ok(downloaded) = finish_check(&state, None) {
+                if let Ok(downloaded) = finish_check_success(&state, None) {
                     let info = info_from_cache(&cache, false, downloaded);
                     emit_update_status(&app, &info, false);
                 }
             } else {
-                let _ = finish_check(&state, None);
+                let _ = finish_check_failure(&state);
             }
             return;
         }
@@ -487,7 +590,9 @@ pub fn request_automatic_update_check(app: AppHandle) {
                 .await;
                 match cache {
                     Ok(Ok(cache)) => {
-                        if let Ok(downloaded) = finish_check(&state, candidate_for_result(result)) {
+                        if let Ok(downloaded) =
+                            finish_check_success(&state, candidate_for_result(result.result))
+                        {
                             let info = info_from_cache(&cache, true, downloaded);
                             log_app_update_event(
                                 &app,
@@ -503,7 +608,10 @@ pub fn request_automatic_update_check(app: AppHandle) {
                         }
                     }
                     _ => {
-                        let _ = finish_check(&state, None);
+                        // The signed check itself succeeded, so keep its
+                        // candidate downloadable even though the automatic
+                        // status could not be persisted.
+                        let _ = finish_check_success(&state, candidate_for_result(result.result));
                         log_app_update_event(
                             &app,
                             LogLevel::Warn,
@@ -519,7 +627,7 @@ pub fn request_automatic_update_check(app: AppHandle) {
                     persist_automatic_failure(&app_for_cache, &error)
                 })
                 .await;
-                if let Ok(downloaded) = finish_check(&state, None) {
+                if let Ok(downloaded) = finish_check_failure(&state) {
                     if let Ok(Ok(cache)) = cache {
                         let info = info_from_cache(&cache, true, downloaded);
                         log_app_update_event(
@@ -688,7 +796,10 @@ fn begin_check(state: &Arc<Mutex<AppUpdateStateInner>>) -> Result<(), String> {
     Ok(())
 }
 
-fn finish_check(
+/// Ends an in-flight check that completed. The candidate is replaced with the
+/// fresh signed result, and any previous download is dropped: the next download
+/// re-verifies and reuses the cached package file when it still matches.
+fn finish_check_success(
     state: &Arc<Mutex<AppUpdateStateInner>>,
     candidate: Option<UpdateCandidate>,
 ) -> Result<bool, String> {
@@ -697,6 +808,20 @@ fn finish_check(
         .map_err(|_| "Application update state is unavailable")?;
     state.candidate = candidate;
     state.downloaded = None;
+    state.check_in_flight = false;
+    Ok(false)
+}
+
+/// Ends an in-flight check that failed. A transport failure carries no
+/// information about the signed manifest, so a previously verified candidate
+/// and its downloaded package must stay usable. Clearing them here used to
+/// deadlock the UI: the persisted status cache kept advertising an available
+/// update while every download failed with "check first" because the network
+/// also kept failing the checks.
+fn finish_check_failure(state: &Arc<Mutex<AppUpdateStateInner>>) -> Result<bool, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Application update state is unavailable")?;
     state.check_in_flight = false;
     Ok(state.downloaded.is_some())
 }
@@ -775,10 +900,10 @@ fn automatic_retry_is_ready(now: DateTime<Local>, next_automatic_retry_at: Optio
     now >= retry_at
 }
 
-async fn run_update_check(app: AppHandle) -> Result<CheckResult, String> {
+async fn run_update_check(app: AppHandle) -> Result<SignedCheck, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (config, _) = update_context(&app)?;
-        desktop_updater::check(&config).map_err(redacted_error)
+        desktop_updater::check_signed(&config).map_err(redacted_error)
     })
     .await
     .map_err(redacted_error)?
@@ -793,26 +918,43 @@ fn candidate_for_result(result: CheckResult) -> Option<UpdateCandidate> {
 
 fn persist_check_result(
     app: &AppHandle,
-    result: &CheckResult,
+    signed: &SignedCheck,
     automatic: bool,
 ) -> Result<CachedAppUpdateStatus, String> {
     let mut cache = load_status_cache_for_app(app)?;
+    apply_signed_check_to_cache(&mut cache, signed, automatic, Local::now());
+    write_status_cache_for_app(app, &cache)?;
+    Ok(cache)
+}
+
+/// Pure core of [`persist_check_result`], separated so the persistence
+/// semantics stay testable without a Tauri app handle. The exact verified
+/// bytes are persisted so a later session can restore the candidate offline
+/// through [`restore_persisted_candidate`].
+fn apply_signed_check_to_cache(
+    cache: &mut CachedAppUpdateStatus,
+    signed: &SignedCheck,
+    automatic: bool,
+    now: DateTime<Local>,
+) {
     let current_version = current_version();
     if cache.current_version.as_deref() != Some(current_version.as_str()) {
-        cache = CachedAppUpdateStatus::default();
+        *cache = CachedAppUpdateStatus::default();
     }
 
     cache.schema_version = APP_UPDATE_STATUS_CACHE_SCHEMA_VERSION;
     cache.current_version = Some(current_version);
-    cache.checked_at = Some(Local::now().to_rfc3339());
+    cache.checked_at = Some(now.to_rfc3339());
     cache.error = None;
     cache.next_automatic_retry_at = None;
-    match result {
+    match &signed.result {
         CheckResult::UpToDate => {
             cache.available = false;
             cache.version = None;
             cache.notes_url = None;
             cache.dismissed_version = None;
+            cache.verified_manifest_base64 = None;
+            cache.verified_signature_base64 = None;
         }
         CheckResult::UpdateAvailable(candidate) => {
             let version = candidate.version().to_string();
@@ -822,13 +964,59 @@ fn persist_check_result(
             cache.available = true;
             cache.version = Some(version);
             cache.notes_url = candidate.notes_url().map(str::to_string);
+            cache.verified_manifest_base64 = Some(STANDARD.encode(&signed.manifest_bytes));
+            cache.verified_signature_base64 = Some(STANDARD.encode(&signed.signature_bytes));
         }
     }
     if automatic {
-        cache.last_automatic_check_date = Some(Local::now().date_naive().to_string());
+        cache.last_automatic_check_date = Some(now.date_naive().to_string());
     }
-    write_status_cache_for_app(app, &cache)?;
-    Ok(cache)
+}
+
+/// Rebuilds a download candidate from the persisted signed check without
+/// network access. The updater library re-verifies the detached signature
+/// against the pinned public key, so a tampered cache file fails closed and
+/// yields no candidate instead of redirecting the download.
+fn restore_persisted_candidate(
+    cache: &CachedAppUpdateStatus,
+    config: &UpdateConfig,
+) -> Option<UpdateCandidate> {
+    if !cache.available || cache.current_version.as_deref() != Some(current_version().as_str()) {
+        return None;
+    }
+    let manifest_bytes = decode_persisted_bytes(cache.verified_manifest_base64.as_deref()?)?;
+    let signature_bytes = decode_persisted_bytes(cache.verified_signature_base64.as_deref()?)?;
+    UpdateCandidate::from_persisted_bytes(config, &manifest_bytes, &signature_bytes)
+        .ok()
+        .flatten()
+}
+
+fn decode_persisted_bytes(value: &str) -> Option<Vec<u8>> {
+    STANDARD.decode(value.trim()).ok()
+}
+
+fn restore_candidate_from_disk(app: &AppHandle) -> Result<Option<UpdateCandidate>, String> {
+    let (config, _) = update_context(app)?;
+    let cache = load_status_cache_for_app(app)?;
+    if cache.available
+        && cache.current_version.as_deref() == Some(current_version().as_str())
+        && cache.verified_manifest_base64.is_some()
+        && cache.verified_signature_base64.is_some()
+    {
+        match restore_persisted_candidate(&cache, &config) {
+            Some(candidate) => Ok(Some(candidate)),
+            None => {
+                log_app_update_event(
+                    app,
+                    LogLevel::Warn,
+                    "persisted update candidate failed offline verification",
+                );
+                Ok(None)
+            }
+        }
+    } else {
+        Ok(None)
+    }
 }
 
 fn persist_automatic_failure(
@@ -1127,6 +1315,199 @@ mod tests {
                 .schema_version,
             0
         );
+    }
+
+    fn update_candidate_fixture(version: &str) -> UpdateCandidate {
+        UpdateCandidate {
+            manifest: desktop_updater::UpdateManifest {
+                schema_version: 1,
+                app_id: APP_UPDATE_APP_ID.to_string(),
+                channel: APP_UPDATE_CHANNEL.to_string(),
+                version: version.to_string(),
+                published_at: "2026-09-20T00:00:00Z".to_string(),
+                target: "windows-x64".to_string(),
+                asset: desktop_updater::UpdateAsset {
+                    url: "https://example.test/package.zip".to_string(),
+                    sha256: "a".repeat(64),
+                    size: 123,
+                },
+                notes_url: None,
+            },
+        }
+    }
+
+    fn downloaded_fixture(version: &str) -> DownloadedUpdate {
+        DownloadedUpdate {
+            candidate: update_candidate_fixture(version),
+            package_path: PathBuf::from("updates").join(format!("{version}.zip")),
+        }
+    }
+
+    /// Builds a real Ed25519-signed manifest/signature pair plus the matching
+    /// verifier config, so persistence and offline-restore tests exercise the
+    /// actual signature path.
+    fn signed_bytes_fixture(manifest_version: &str) -> (UpdateConfig, Vec<u8>, Vec<u8>) {
+        use ed25519_dalek::{Signer, SigningKey};
+        let signing_key = SigningKey::from_bytes(&[7; 32]);
+        let public_key = STANDARD.encode(signing_key.verifying_key().as_bytes());
+        let config = UpdateConfig::new(
+            APP_UPDATE_APP_ID,
+            APP_UPDATE_CHANNEL,
+            current_version(),
+            "https://example.test/stable.json",
+            "https://example.test/stable.json.sig",
+            public_key,
+        );
+        let manifest_bytes =
+            serde_json::to_vec(&update_candidate_fixture(manifest_version).manifest)
+                .expect("manifest JSON");
+        let signature_bytes = format!(
+            "{}\n",
+            STANDARD.encode(signing_key.sign(&manifest_bytes).to_bytes())
+        )
+        .into_bytes();
+        (config, manifest_bytes, signature_bytes)
+    }
+
+    fn signed_check_fixture(manifest_version: &str) -> (UpdateConfig, SignedCheck) {
+        let (config, manifest_bytes, signature_bytes) = signed_bytes_fixture(manifest_version);
+        let candidate =
+            UpdateCandidate::from_persisted_bytes(&config, &manifest_bytes, &signature_bytes)
+                .expect("offline verification")
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{manifest_version} must be newer than {}",
+                        current_version()
+                    )
+                });
+        (
+            config,
+            SignedCheck {
+                result: CheckResult::UpdateAvailable(candidate),
+                manifest_bytes,
+                signature_bytes,
+            },
+        )
+    }
+
+    #[test]
+    fn persisted_signed_check_round_trips_into_a_restorable_candidate() {
+        let (config, signed) = signed_check_fixture("9.9.9");
+        let mut cache = CachedAppUpdateStatus::default();
+        apply_signed_check_to_cache(&mut cache, &signed, false, Local::now());
+
+        assert!(cache.available);
+        assert_eq!(cache.version.as_deref(), Some("9.9.9"));
+
+        let restored = restore_persisted_candidate(&cache, &config).expect("restored candidate");
+        assert_eq!(restored.version(), "9.9.9");
+    }
+
+    #[test]
+    fn restore_rejects_a_tampered_persisted_manifest() {
+        let (config, signed) = signed_check_fixture("9.9.9");
+        let mut cache = CachedAppUpdateStatus::default();
+        apply_signed_check_to_cache(&mut cache, &signed, false, Local::now());
+
+        let mut tampered = signed.manifest_bytes.clone();
+        tampered[0] = b' ';
+        cache.verified_manifest_base64 = Some(STANDARD.encode(&tampered));
+
+        assert!(restore_persisted_candidate(&cache, &config).is_none());
+    }
+
+    #[test]
+    fn restore_requires_a_matching_app_version_and_available_flag() {
+        let (config, signed) = signed_check_fixture("9.9.9");
+        let mut cache = CachedAppUpdateStatus::default();
+        apply_signed_check_to_cache(&mut cache, &signed, false, Local::now());
+
+        cache.available = false;
+        assert!(restore_persisted_candidate(&cache, &config).is_none());
+
+        cache.available = true;
+        cache.current_version = Some("0.0.1".to_string());
+        assert!(restore_persisted_candidate(&cache, &config).is_none());
+    }
+
+    #[test]
+    fn an_up_to_date_check_clears_the_persisted_signed_bytes() {
+        let (config, signed) = signed_check_fixture("9.9.9");
+        let mut cache = CachedAppUpdateStatus::default();
+        apply_signed_check_to_cache(&mut cache, &signed, false, Local::now());
+        assert!(cache.verified_manifest_base64.is_some());
+
+        // Any validly signed manifest that is not newer must clear the bytes.
+        let (_, older_bytes, older_signature) = signed_bytes_fixture("1.0.0");
+        let older = SignedCheck {
+            result: CheckResult::UpToDate,
+            manifest_bytes: older_bytes,
+            signature_bytes: older_signature,
+        };
+        apply_signed_check_to_cache(&mut cache, &older, false, Local::now());
+
+        assert!(!cache.available);
+        assert!(cache.verified_manifest_base64.is_none());
+        assert!(cache.verified_signature_base64.is_none());
+        assert!(restore_persisted_candidate(&cache, &config).is_none());
+    }
+
+    #[test]
+    fn a_failed_check_keeps_the_verified_candidate_and_download() {
+        let state = Arc::new(Mutex::new(AppUpdateStateInner::default()));
+        {
+            let mut inner = state.lock().expect("state lock");
+            inner.candidate = Some(update_candidate_fixture("1.4.2"));
+            inner.downloaded = Some(downloaded_fixture("1.4.2"));
+            inner.check_in_flight = true;
+        }
+
+        let still_downloaded = finish_check_failure(&state).expect("finish failed check");
+
+        assert!(still_downloaded);
+        let inner = state.lock().expect("state lock");
+        assert_eq!(
+            inner
+                .candidate
+                .as_ref()
+                .map(|candidate| candidate.version().to_string()),
+            Some("1.4.2".to_string())
+        );
+        assert!(inner.downloaded.is_some());
+        assert!(!inner.check_in_flight);
+    }
+
+    #[test]
+    fn a_successful_check_replaces_the_candidate_and_drops_the_previous_download() {
+        let state = Arc::new(Mutex::new(AppUpdateStateInner::default()));
+        {
+            let mut inner = state.lock().expect("state lock");
+            inner.candidate = Some(update_candidate_fixture("1.4.2"));
+            inner.downloaded = Some(downloaded_fixture("1.4.2"));
+            inner.check_in_flight = true;
+        }
+
+        let still_downloaded =
+            finish_check_success(&state, Some(update_candidate_fixture("1.4.3")))
+                .expect("finish successful check");
+
+        assert!(!still_downloaded);
+        {
+            // Scoped so the guard is released before the second finish call below.
+            let inner = state.lock().expect("state lock");
+            assert_eq!(
+                inner
+                    .candidate
+                    .as_ref()
+                    .map(|candidate| candidate.version().to_string()),
+                Some("1.4.3".to_string())
+            );
+            assert!(inner.downloaded.is_none());
+            assert!(!inner.check_in_flight);
+        }
+
+        finish_check_success(&state, None).expect("finish up-to-date check");
+        assert!(state.lock().expect("state lock").candidate.is_none());
     }
 
     #[test]

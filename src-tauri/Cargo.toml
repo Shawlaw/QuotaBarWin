@@ -51,9 +51,10 @@ tauri-plugin-single-instance = "2"
 tiny_http = "0.12"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"] }
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
-desktop-updater = { git = "https://github.com/Shawlaw/DeskFoundry.git", tag = "v0.1.4" }
+desktop-updater = { git = "https://github.com/Shawlaw/DeskFoundry.git", tag = "v0.1.5" }
 
 [dev-dependencies]
+ed25519-dalek = "2"
 serde_yaml = "0.9"
 tempfile = "3"
 
