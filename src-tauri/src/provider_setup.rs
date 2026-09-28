@@ -220,7 +220,10 @@ fn setup_descriptor(
     let config_dir = config_path
         .parent()
         .ok_or_else(|| "Unable to resolve config directory".to_string())?;
-    let store = ManagedSecretStore::new(config_dir);
+    let store = ManagedSecretStore::new(
+        config_dir,
+        crate::config::secret_storage_mode_for_config_path(config_path),
+    );
     let ProviderConfig::Remote {
         id,
         name,
@@ -360,7 +363,7 @@ fn value_to_env_value(
 fn restore_secret_changes(
     store: &ManagedSecretStore,
     provider_id: &str,
-    previous_values: &[(String, Option<String>)],
+    previous_values: &[(String, Option<Vec<u8>>)],
 ) -> Result<(), String> {
     for (parameter_name, previous_value) in previous_values.iter().rev() {
         store.restore_for_rollback(provider_id, parameter_name, previous_value.as_deref())?;
@@ -432,9 +435,12 @@ where
     let config_dir = config_path
         .parent()
         .ok_or_else(|| "Unable to resolve config directory".to_string())?;
-    let store = ManagedSecretStore::new(config_dir);
+    let store = ManagedSecretStore::new(
+        config_dir,
+        crate::config::secret_storage_mode_for_config_path(config_path),
+    );
     let provider_id = request.provider_id.as_str();
-    let mut previous_secret_values = Vec::new();
+    let mut previous_secret_values: Vec<(String, Option<Vec<u8>>)> = Vec::new();
     let mut updated_secret_placeholders = HashMap::new();
     for (name, update) in &request.secret_updates {
         let parameter = parameters_by_name[name.as_str()];
@@ -647,7 +653,9 @@ pub async fn test_provider_setup(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{default_config, save_config_to_path, ProviderSetupState};
+    use crate::config::{
+        default_config, save_config_to_path, ProviderSetupState, SecretStorageMode,
+    };
 
     fn setup_provider(temp: &tempfile::TempDir, with_required_secret: bool) -> ProviderConfig {
         let provider_dir = temp.path().join("providers/remote/setup-provider");
@@ -732,6 +740,9 @@ mod tests {
     ) -> std::path::PathBuf {
         let path = temp.path().join("config.quotaBarWin.json");
         let mut config = default_config();
+        // These tests exercise rollback and config-merge semantics; dedicated
+        // tests below cover the encrypted storage mode.
+        config.secrets_storage = SecretStorageMode::Plaintext;
         config.providers.push(provider);
         save_config_to_path(&path, &config).expect("save config");
         path
@@ -840,7 +851,7 @@ mod tests {
     fn invalid_regular_value_is_rejected_before_secret_changes() {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = config_path_with_provider(&temp, setup_provider(&temp, true));
-        let store = ManagedSecretStore::new(temp.path());
+        let store = ManagedSecretStore::new(temp.path(), SecretStorageMode::Plaintext);
         store
             .write("setup-provider", "API_KEY", "previous-secret")
             .expect("write previous secret");
@@ -880,7 +891,7 @@ mod tests {
     fn config_save_failure_restores_previous_secret() {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = config_path_with_provider(&temp, setup_provider(&temp, true));
-        let store = ManagedSecretStore::new(temp.path());
+        let store = ManagedSecretStore::new(temp.path(), SecretStorageMode::Plaintext);
         store
             .write("setup-provider", "API_KEY", "previous-secret")
             .expect("write previous secret");
@@ -914,6 +925,46 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&path).expect("unchanged config"),
             original_config
+        );
+    }
+
+    #[test]
+    fn save_setup_writes_dpapi_encrypted_secret_when_encryption_enabled() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.quotaBarWin.json");
+        let mut config = default_config();
+        config.secrets_storage = SecretStorageMode::Encrypted;
+        config.providers.push(setup_provider(&temp, true));
+        save_config_to_path(&path, &config).expect("save config");
+
+        save_provider_setup_to_path(
+            &path,
+            SaveProviderSetupRequest {
+                provider_id: "setup-provider".to_string(),
+                display_name: "Work account".to_string(),
+                values: HashMap::new(),
+                secret_updates: HashMap::from([(
+                    "API_KEY".to_string(),
+                    Some("encrypted-secret".to_string()),
+                )]),
+            },
+        )
+        .expect("save setup");
+
+        let bytes = std::fs::read(
+            temp.path()
+                .join("secrets/providers/setup-provider/API_KEY.txt"),
+        )
+        .expect("managed secret payload");
+        assert!(crate::secret_encryption::is_encrypted_payload(&bytes));
+        assert!(!bytes.windows(16).any(|window| *window == b"encrypted-secret"[..]));
+        assert_eq!(
+            crate::secret_encryption::decrypt_managed_secret(
+                &bytes,
+                "providers/setup-provider/API_KEY"
+            )
+            .expect("decrypt"),
+            "encrypted-secret"
         );
     }
 

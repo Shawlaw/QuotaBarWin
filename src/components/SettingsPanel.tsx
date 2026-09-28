@@ -31,6 +31,7 @@ import { DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS } from "../lib/defaults";
 import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
 import { LocalApiSettings } from "./LocalApiSettings";
+import { SecretSecuritySettings } from "./SecretSecuritySettings";
 import {
   ProviderWindowSettings,
   type WindowDisplayPatch
@@ -1129,6 +1130,7 @@ export function SettingsPanel({
           onChange={(localApi) => onChange({ ...config, localApi })}
           onTokenRequirementChange={setLocalApiTokenRequired}
         />
+        <SecretSecuritySettings />
         <section className="settings-section config-storage-section" aria-label={t.settings.configurationStorage}>
           <div className="settings-section-title">
             <h3>{t.settings.configurationStorage}</h3>

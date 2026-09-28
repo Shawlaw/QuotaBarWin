@@ -97,7 +97,7 @@ The normal path does not require creating a `secrets` directory or txt file, ent
 <config-dir>\secrets\providers\<provider-instance-id>\<parameter-name>.txt
 ```
 
-The main config stores only the `${secret:providers/<provider-instance-id>/<parameter-name>}` reference, and existing secret values are never shown in the UI. This file is still local plaintext; it travels with the configuration directory in portable mode or backups, so protect that directory.
+The main config stores only the `${secret:providers/<provider-instance-id>/<parameter-name>}` reference, and existing secret values are never shown in the UI. These files are encrypted with Windows data protection (DPAPI) by default, and the ciphertext can only be decrypted by the current Windows account — after copying the configuration directory to another PC or account (including portable installs moved between machines), re-enter the secrets in Provider settings. The **Secret security** section in Settings can enable or disable encryption and migrate existing files at any time. Users upgrading from older versions see a one-time confirmation prompt on first launch asking whether to migrate existing plaintext secrets; choosing "Not now" keeps plaintext storage, and encryption can still be enabled later in Settings.
 
 **Advanced compatibility:** existing `${secret:NAME}`, `${env:NAME}`, `${file:C:\path\secret.txt}`, literal values, and the raw **Environment variables** editor remain available for third-party Providers and automation. Upgrading never forces a migration.
 

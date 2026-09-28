@@ -69,6 +69,12 @@ const apiMocks = vi.hoisted(() => {
     getLocalApiStatus: vi.fn<() => Promise<LocalApiStatus>>(
       () => new Promise<never>(() => undefined),
     ),
+    getManagedSecretsEncryptionStatus: vi.fn<() => Promise<never>>(
+      () => new Promise<never>(() => undefined),
+    ),
+    enableManagedSecretsEncryption: vi.fn(async () => 0),
+    disableManagedSecretsEncryption: vi.fn(async () => 0),
+    dismissManagedSecretsEncryptionPrompt: vi.fn(async () => undefined),
     getConfig: vi.fn(async () => state.config),
     listenForAppUpdateStatus: vi.fn(async () => () => undefined),
     getInstalledRemoteProviderManifest: vi.fn(async (id: string) => ({

@@ -97,7 +97,7 @@ QuotaBarWin 项目维护的 registry 当前包含以下 manifest；实际可安�
 <config-dir>\secrets\providers\<provider-instance-id>\<parameter-name>.txt
 ```
 
-主配置只保存 `${secret:providers/<provider-instance-id>/<parameter-name>}` 引用，已有密钥不会回显到界面。该文件仍是本地明文；便携模式或备份时会与配置目录一起复制，请妥善保护目录。
+主配置只保存 `${secret:providers/<provider-instance-id>/<parameter-name>}` 引用，已有密钥不会回显到界面。默认使用 Windows 数据保护（DPAPI）加密保存这些文件，密文只能在当前 Windows 账户下解密；因此把配置目录复制到其他电脑或账户后，需要在 Provider 设置里重新输入密钥（便携模式换机同样适用）。设置页的 **密钥安全** 可以随时启用或关闭加密并迁移已有文件。从旧版本升级的用户会在首次启动时看到一次性确认提示，自行决定是否把现有明文密钥迁移为加密存储；选择暂不启用则继续明文保存，之后仍可在设置页启用。
 
 **高级兼容模式：** 旧 `${secret:NAME}`、`${env:NAME}`、`${file:C:\path\secret.txt}`、明文值和原始 **环境变量** 编辑器仍然可用，适合已有自动化或第三方 Provider；这些不会在升级时被强制迁移。
 

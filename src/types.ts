@@ -63,8 +63,19 @@ export type AppConfig = {
   trayPopupSize?: TrayPopupSize | null;
   appUpdate?: AppUpdateSettings;
   localApi?: LocalApiSettings;
+  secretsStorage?: SecretStorageMode;
+  secretsEncryptionPromptPending?: boolean;
   remoteProviderRegistry?: RemoteProviderRegistrySettings;
   providers: RemoteProviderConfig[];
+};
+
+export type SecretStorageMode = "encrypted" | "plaintext";
+
+export type ManagedSecretsEncryptionStatus = {
+  storage: SecretStorageMode;
+  promptPending: boolean;
+  plaintextCount: number;
+  encryptedCount: number;
 };
 
 export type AppUpdateSettings = {

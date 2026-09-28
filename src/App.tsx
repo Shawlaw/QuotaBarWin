@@ -5,14 +5,18 @@ import { ProviderCard } from "./components/ProviderCard";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TrayPopup } from "./components/TrayPopup";
 import { AppUpdateNotice } from "./components/AppUpdateNotice";
+import { SecretEncryptionPrompt } from "./components/SecretEncryptionPrompt";
 import {
   dismissAppUpdateNotice,
+  dismissManagedSecretsEncryptionPrompt,
+  enableManagedSecretsEncryption,
   getApplicationUpdateNavigationRequest,
   getCachedSnapshot,
   getAppUpdateStatus,
   getAppVersion,
   getConfig,
   getConfigStorageInfo,
+  getManagedSecretsEncryptionStatus,
   listenForRefreshRequests,
   listenForAppUpdateStatus,
   listenForApplicationUpdateRequests,
@@ -34,6 +38,7 @@ import type {
   AppSnapshot,
   AppTheme,
   ConfigStorageInfo,
+  ManagedSecretsEncryptionStatus,
   ProviderSnapshot,
   ProviderSetupTestResult,
   RemoteProviderConfig
@@ -281,6 +286,10 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [appUpdateNoticeSequence, setAppUpdateNoticeSequence] = useState(0);
   const [appUpdateFocusRequest, setAppUpdateFocusRequest] = useState(0);
+  const [secretPromptStatus, setSecretPromptStatus] =
+    useState<ManagedSecretsEncryptionStatus | null>(null);
+  const [secretPromptBusy, setSecretPromptBusy] = useState(false);
+  const [secretPromptError, setSecretPromptError] = useState(false);
   const appUpdateStatusRevisionRef = useRef(0);
   const appUpdateInfoRef = useRef<AppUpdateInfo | null>(null);
   const handledAppUpdateNavigationRequestRef = useRef(0);
@@ -417,6 +426,26 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
       onThemeChange(config.theme ?? "system");
     }
   }, [config, onLanguageChange, onThemeChange]);
+
+  const secretsPromptPending = config?.secretsEncryptionPromptPending === true;
+  useEffect(() => {
+    if (!secretsPromptPending) {
+      setSecretPromptStatus(null);
+      setSecretPromptError(false);
+      return;
+    }
+    let isMounted = true;
+    getManagedSecretsEncryptionStatus()
+      .then((status) => {
+        if (isMounted && status.promptPending) {
+          setSecretPromptStatus(status);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      isMounted = false;
+    };
+  }, [secretsPromptPending]);
 
   useEffect(() => {
     if (!config || snapshot !== null || refreshInFlight.current) {
@@ -695,6 +724,26 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
       .catch(() => undefined);
   }
 
+  async function reloadConfigAfterSecretEncryptionChange() {
+    const updated = await getConfig();
+    persistedConfigRef.current = updated;
+    setConfig(updated);
+  }
+
+  async function handleSecretEncryptionPrompt(action: () => Promise<unknown>) {
+    setSecretPromptBusy(true);
+    setSecretPromptError(false);
+    try {
+      await action();
+      await reloadConfigAfterSecretEncryptionChange();
+      setSecretPromptStatus(null);
+    } catch {
+      setSecretPromptError(true);
+    } finally {
+      setSecretPromptBusy(false);
+    }
+  }
+
   return (
     <main className="app-shell">
       <Header
@@ -726,6 +775,17 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
         info={appUpdateInfo}
         onDismiss={dismissApplicationUpdate}
         onOpenUpdate={openApplicationUpdate}
+      />
+      <SecretEncryptionPrompt
+        status={secretPromptStatus}
+        busy={secretPromptBusy}
+        error={secretPromptError}
+        onEnable={() =>
+          void handleSecretEncryptionPrompt(() => enableManagedSecretsEncryption())
+        }
+        onDismiss={() =>
+          void handleSecretEncryptionPrompt(() => dismissManagedSecretsEncryptionPrompt())
+        }
       />
       {isShowingSettings ? (
         <div

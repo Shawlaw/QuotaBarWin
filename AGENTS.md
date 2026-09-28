@@ -48,9 +48,11 @@ Start with these files:
   instance behavior, hidden startup, tray setup, and background scheduler setup.
 - `src-tauri/src/config.rs` for config schema, migration, portable mode, storage
   paths, startup sync, guide export, and secret placeholders.
-- `src-tauri/src/managed_secret_store.rs`, `src-tauri/src/provider_setup.rs`,
+- `src-tauri/src/managed_secret_store.rs`, `src-tauri/src/secret_encryption.rs`,
+  `src-tauri/src/managed_secret_commands.rs`, `src-tauri/src/provider_setup.rs`,
   and `src-tauri/src/provider_error.rs` for instance-isolated managed secrets,
-  structured setup/save/test behavior, rollback, and actionable error categories.
+  DPAPI at-rest encryption and mode migration, structured setup/save/test
+  behavior, rollback, and actionable error categories.
 - `src-tauri/src/quota.rs` for snapshot building, retry, stale fallback,
   on-disk snapshot cache, and provider dispatch.
 - `src-tauri/src/remote_provider.rs`,
@@ -73,7 +75,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `21`.
+Current config schema version: `22`.
 
 Supported persisted provider config kind:
 
@@ -111,6 +113,11 @@ Remote provider public contract:
   default to a disabled loopback-only listener on port `41833`.
 - Schema `20 -> 21` adds the application theme preference. New and migrated
   configurations default to `system`; users can also select `light` or `dark`.
+- Schema `21 -> 22` adds managed secret storage settings (`secretsStorage`,
+  `secretsEncryptionPromptPending`). New configurations default to encrypted
+  storage; migrated configurations keep plaintext with a one-time upgrade
+  prompt. Encrypted managed secret files are DPAPI blobs (magic prefix
+  `QBWSEC1`) bound to the current Windows user and the secret reference.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.
@@ -153,9 +160,17 @@ Important storage details:
 Secret placeholders:
 
 - `${secret:NAME}` reads `<config-dir>\secrets\NAME.txt`, then env var `NAME`.
+  These user-managed files always stay plaintext.
 - `${secret:providers/INSTANCE/PARAMETER}` reads the application-managed,
   instance-isolated file under
-  `<config-dir>\secrets\providers\INSTANCE\PARAMETER.txt`.
+  `<config-dir>\secrets\providers\INSTANCE\PARAMETER.txt`. When
+  `secretsStorage` is `encrypted`, the file content is a DPAPI payload with the
+  `QBWSEC1` magic prefix, sealed with entropy derived from the reference
+  (`secret_encryption.rs`); reads always accept both encrypted and legacy
+  plaintext files, and writes follow the configured mode
+  (`managed_secret_store.rs`). Migration between modes is user-consented via
+  the startup prompt (`managed_secret_commands.rs` plus
+  `SecretEncryptionPrompt`/`SecretSecuritySettings` on the frontend).
 - `${env:NAME}` reads env var `NAME`.
 - `${file:C:\path\secret.txt}` reads a local file and trims whitespace. Quoted
   paths with spaces are accepted.
@@ -220,6 +235,9 @@ The E2E runner requires `tauri-driver`, WebDriverIO, and a release build path.
 It seeds schema `17` remote Provider fixtures, including current setup state,
 and exercises settings save, guided Provider save/test/enable, secret
 non-disclosure, refresh/timeout, tray behavior, and managed-secret removal.
+The seeded legacy config migrates to the current schema, so the runner defers
+the one-time secret encryption upgrade prompt at startup to keep exercising
+the plaintext storage path.
 
 ## Testing Expectations
 

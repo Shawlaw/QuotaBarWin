@@ -404,7 +404,7 @@ QuotaBarWin 只会解析和提供实例配置中的环境变量。
 <config-dir>/secrets/providers/<provider-instance-id>/<parameter-name>.txt
 ```
 
-对应 `envVars` 只保存 `${secret:providers/<provider-instance-id>/<parameter-name>}`。这是本地明文文件而非系统凭据存储；它会随便携目录复制，应用不会把其内容写入 config、日志、诊断或表单回显。这个应用托管形式也通过下述既有 `${secret:...}` resolver 读取。
+对应 `envVars` 只保存 `${secret:providers/<provider-instance-id>/<parameter-name>}`。该文件默认使用 Windows 数据保护（DPAPI）加密保存（仅当前 Windows 账户可解密，换机或换账户后需重新输入），应用不会把其内容写入 config、日志、诊断或表单回显。这个应用托管形式也通过下述既有 `${secret:...}` resolver 读取。
 
 `${secret:NAME}` 会优先读取 `<config-dir>/secrets/NAME.txt`，找不到时回退到环境变量
 `NAME`。`${env:NAME}` 和 `${file:C:\path\secret.txt}` 也仍然支持。

@@ -1922,3 +1922,64 @@ button:disabled {
   border-color: var(--qb-accent);
   opacity: 1;
 }
+
+.secret-encryption-backdrop {
+  align-items: center;
+  background: color-mix(in srgb, var(--qb-canvas) 72%, transparent);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 80;
+}
+
+.secret-encryption-prompt {
+  background: var(--qb-surface);
+  border: 1px solid var(--qb-border-strong);
+  border-radius: 10px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  max-width: 460px;
+  padding: 18px 20px;
+}
+
+.secret-encryption-prompt h2 {
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+
+.secret-encryption-prompt p {
+  color: var(--qb-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+
+.secret-encryption-prompt__note {
+  color: var(--qb-text-subtle);
+  font-size: 12px;
+}
+
+.secret-encryption-prompt__error {
+  color: var(--qb-danger);
+}
+
+.secret-encryption-prompt__actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.secret-security-section__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.secret-security-section__body p {
+  color: var(--qb-text-secondary);
+  font-size: 13px;
+  margin: 0;
+}

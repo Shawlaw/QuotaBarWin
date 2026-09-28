@@ -1218,7 +1218,10 @@ pub async fn remove_remote_provider(
                 .parent()
                 .ok_or_else(|| "Unable to resolve config directory".to_string())?;
             let secret_dir = crate::managed_secret_store::managed_provider_secret_dir(config_dir, &id)?;
-            crate::managed_secret_store::ManagedSecretStore::new(config_dir)
+            crate::managed_secret_store::ManagedSecretStore::new(
+                config_dir,
+                crate::config::SecretStorageMode::Plaintext,
+            )
                 .delete_provider_secrets(&id)
                 .map_err(|error| {
                     format!(

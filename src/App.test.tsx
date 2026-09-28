@@ -3,6 +3,7 @@ import { App, mergeProviderSetupSnapshot } from "./App";
 import type {
   AppConfig,
   AppSnapshot,
+  ManagedSecretsEncryptionStatus,
   ProviderSetupTestResult,
   ProviderSnapshot,
   RemoteProviderConfig,
@@ -74,6 +75,17 @@ const mocks = vi.hoisted(() => {
     getConfigStorageInfo: vi.fn(async () => configStorageInfo),
     getLocalApiAccessToken: vi.fn(async () => ({ token: "x".repeat(32) })),
     getLocalApiStatus: vi.fn(() => new Promise<never>(() => undefined)),
+    getManagedSecretsEncryptionStatus: vi.fn(
+      async (): Promise<ManagedSecretsEncryptionStatus> => ({
+        storage: "encrypted",
+        promptPending: false,
+        plaintextCount: 0,
+        encryptedCount: 0,
+      }),
+    ),
+    enableManagedSecretsEncryption: vi.fn(async () => 0),
+    disableManagedSecretsEncryption: vi.fn(async () => 0),
+    dismissManagedSecretsEncryptionPrompt: vi.fn(async () => undefined),
     getNetworkProxy: vi.fn(async () => null),
     getProviderPresets: vi.fn(async () => []),
     getTrayPopupPresentationId: vi.fn(async () => 0),
@@ -987,4 +999,83 @@ test("saving_network_proxy_change_triggers_full_refresh", async () => {
   await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
   expect(mocks.refreshProvider).not.toHaveBeenCalled();
+});
+
+function buildSecretsUpgradeConfig(promptPending: boolean): AppConfig {
+  return {
+    schemaVersion: 22,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "en",
+    secretsStorage: promptPending ? "plaintext" : "encrypted",
+    secretsEncryptionPromptPending: promptPending,
+    providers: [],
+  };
+}
+
+test("secret encryption prompt migrates managed secrets after confirmation", async () => {
+  let promptPending = true;
+  mocks.getConfig.mockImplementation(async () => buildSecretsUpgradeConfig(promptPending));
+  mocks.getManagedSecretsEncryptionStatus.mockImplementation(async () => ({
+    storage: promptPending ? "plaintext" : "encrypted",
+    promptPending,
+    plaintextCount: promptPending ? 2 : 0,
+    encryptedCount: promptPending ? 0 : 2,
+  }));
+  mocks.enableManagedSecretsEncryption.mockImplementation(async () => {
+    promptPending = false;
+    return 2;
+  });
+
+  render(<App />);
+
+  expect(await screen.findByTestId("secret-encryption-prompt")).toBeInTheDocument();
+  expect(screen.getByTestId("secret-encryption-prompt-body")).toHaveTextContent("2");
+
+  await act(async () => {
+    fireEvent.click(screen.getByTestId("secret-encryption-enable"));
+  });
+
+  await waitFor(() =>
+    expect(screen.queryByTestId("secret-encryption-prompt")).not.toBeInTheDocument(),
+  );
+  expect(mocks.enableManagedSecretsEncryption).toHaveBeenCalledTimes(1);
+  expect(mocks.dismissManagedSecretsEncryptionPrompt).not.toHaveBeenCalled();
+});
+
+test("secret encryption prompt can be deferred and does not reappear", async () => {
+  let promptPending = true;
+  mocks.getConfig.mockImplementation(async () => buildSecretsUpgradeConfig(promptPending));
+  mocks.getManagedSecretsEncryptionStatus.mockImplementation(async () => ({
+    storage: promptPending ? "plaintext" : "encrypted",
+    promptPending,
+    plaintextCount: 1,
+    encryptedCount: 0,
+  }));
+  mocks.dismissManagedSecretsEncryptionPrompt.mockImplementation(async () => {
+    promptPending = false;
+  });
+
+  render(<App />);
+
+  expect(await screen.findByTestId("secret-encryption-prompt")).toBeInTheDocument();
+
+  await act(async () => {
+    fireEvent.click(screen.getByTestId("secret-encryption-dismiss"));
+  });
+
+  await waitFor(() =>
+    expect(screen.queryByTestId("secret-encryption-prompt")).not.toBeInTheDocument(),
+  );
+  expect(mocks.dismissManagedSecretsEncryptionPrompt).toHaveBeenCalledTimes(1);
+  expect(mocks.enableManagedSecretsEncryption).not.toHaveBeenCalled();
+});
+
+test("secret encryption prompt stays hidden without a pending decision", async () => {
+  render(<App />);
+
+  expect(await screen.findByTestId("global-status-strip")).toBeInTheDocument();
+  expect(screen.queryByTestId("secret-encryption-prompt")).not.toBeInTheDocument();
+  expect(mocks.getManagedSecretsEncryptionStatus).not.toHaveBeenCalled();
 });

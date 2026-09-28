@@ -189,6 +189,24 @@ export type I18nCatalog = {
     openUpdate: string;
     later: string;
   };
+  secretSecurity: {
+    promptTitle: string;
+    promptIntro: string;
+    promptMigrateBody: (count: number) => string;
+    promptEnableBody: string;
+    promptPortabilityNote: string;
+    promptEnable: string;
+    promptLater: string;
+    migrating: string;
+    settingsTitle: string;
+    statusEncrypted: string;
+    statusPlaintext: string;
+    statusDetail: (plaintextCount: number, encryptedCount: number) => string;
+    enableAction: string;
+    disableAction: string;
+    working: string;
+    failed: string;
+  };
   networkProxy: {
     label: string;
     noProxy: string;
@@ -591,6 +609,29 @@ export const en: I18nCatalog = {
     checkFailed: "The last automatic check failed. You can try again manually.",
     openUpdate: "Update",
     later: "Later"
+  },
+  secretSecurity: {
+    promptTitle: "Encrypted secret storage",
+    promptIntro:
+      "QuotaBarWin can protect locally stored Provider secrets with Windows data protection (DPAPI). Encrypted secrets can only be read by the current Windows account.",
+    promptMigrateBody: (count) =>
+      `${count} existing plaintext secret${count === 1 ? "" : "s"} will be encrypted immediately.`,
+    promptEnableBody:
+      "No saved secrets yet; secrets saved from now on will be stored encrypted.",
+    promptPortabilityNote:
+      "Note: in portable mode, encrypted secrets must be re-entered after moving the app to another PC or Windows account.",
+    promptEnable: "Enable encryption",
+    promptLater: "Not now",
+    migrating: "Encrypting...",
+    settingsTitle: "Secret security",
+    statusEncrypted: "Encrypted storage enabled (Windows DPAPI)",
+    statusPlaintext: "Encryption disabled (secrets stored in plaintext)",
+    statusDetail: (plaintextCount, encryptedCount) =>
+      `${plaintextCount} plaintext, ${encryptedCount} encrypted.`,
+    enableAction: "Enable encryption and migrate existing secrets",
+    disableAction: "Disable encryption (decrypt to plaintext)",
+    working: "Working...",
+    failed: "Secret encryption operation failed"
   },
   networkProxy: {
     label: "Network proxy",
@@ -1027,6 +1068,27 @@ export const zhCN: I18nCatalog = {
     checkFailed: "最近一次自动检查失败，可手动重试。",
     openUpdate: "前往更新",
     later: "稍后"
+  },
+  secretSecurity: {
+    promptTitle: "密钥加密存储",
+    promptIntro:
+      "QuotaBarWin 可以使用 Windows 数据保护（DPAPI）加密保存在本机的 Provider 密钥，加密后仅当前 Windows 账户可以读取。",
+    promptMigrateBody: (count) => `检测到 ${count} 个现有明文密钥，启用后将立即加密。`,
+    promptEnableBody: "当前还没有已保存的密钥，启用后新保存的密钥会加密存储。",
+    promptPortabilityNote:
+      "注意：便携模式下移动到其他电脑或 Windows 账户后，加密的密钥需要重新输入。",
+    promptEnable: "启用加密",
+    promptLater: "暂不启用",
+    migrating: "正在加密...",
+    settingsTitle: "密钥安全",
+    statusEncrypted: "已启用加密存储（Windows DPAPI）",
+    statusPlaintext: "未启用加密（密钥明文保存）",
+    statusDetail: (plaintextCount, encryptedCount) =>
+      `明文密钥 ${plaintextCount} 个，加密密钥 ${encryptedCount} 个。`,
+    enableAction: "启用加密并迁移现有密钥",
+    disableAction: "关闭加密（解密为明文）",
+    working: "正在处理...",
+    failed: "密钥加密操作失败"
   },
   networkProxy: {
     label: "网络代理",

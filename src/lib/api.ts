@@ -8,6 +8,7 @@ import type {
   LocalApiAccessToken,
   LocalApiNetworkInterface,
   LocalApiStatus,
+  ManagedSecretsEncryptionStatus,
   ProxyConfig,
   ProxyTestResult,
   RemoteProviderCatalogEntry,
@@ -229,11 +230,49 @@ export async function setLocalApiAccessToken(
   return invoke<LocalApiAccessToken>("set_local_api_access_token", { token });
 }
 
+const FALLBACK_MANAGED_SECRETS_STATUS: ManagedSecretsEncryptionStatus = {
+  storage: "encrypted",
+  promptPending: false,
+  plaintextCount: 0,
+  encryptedCount: 0,
+};
+
+export async function getManagedSecretsEncryptionStatus(): Promise<ManagedSecretsEncryptionStatus> {
+  if (!hasTauriInternals()) {
+    return FALLBACK_MANAGED_SECRETS_STATUS;
+  }
+
+  return invoke<ManagedSecretsEncryptionStatus>("get_managed_secrets_encryption_status");
+}
+
+export async function enableManagedSecretsEncryption(): Promise<number> {
+  if (!hasTauriInternals()) {
+    return 0;
+  }
+
+  return invoke<number>("enable_managed_secrets_encryption");
+}
+
+export async function disableManagedSecretsEncryption(): Promise<number> {
+  if (!hasTauriInternals()) {
+    return 0;
+  }
+
+  return invoke<number>("disable_managed_secrets_encryption");
+}
+
+export async function dismissManagedSecretsEncryptionPrompt(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  return invoke<void>("dismiss_managed_secrets_encryption_prompt");
+}
+
 export async function getAppVersion(): Promise<string> {
   if (!hasTauriInternals()) {
     return "browser-preview";
   }
-
   return invoke<string>("get_app_version");
 }
 

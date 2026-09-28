@@ -519,7 +519,7 @@ For an installation form backed by `parameters`, a secret entered by a normal us
 <config-dir>/secrets/providers/<provider-instance-id>/<parameter-name>.txt
 ```
 
-The matching `envVars` entry stores only `${secret:providers/<provider-instance-id>/<parameter-name>}`. This is a local plaintext file, not system credential storage; it moves with a portable directory, and the app does not place its contents in config, logs, diagnostics, or form read-back. This application-managed form is read through the existing `${secret:...}` resolver described below.
+The matching `envVars` entry stores only `${secret:providers/<provider-instance-id>/<parameter-name>}`. The file is encrypted with Windows data protection (DPAPI) by default and can only be decrypted by the current Windows account (secrets must be re-entered after moving to another PC or account); the app does not place its contents in config, logs, diagnostics, or form read-back. This application-managed form is read through the existing `${secret:...}` resolver described below.
 
 `${secret:NAME}` reads `<config-dir>/secrets/NAME.txt` first and falls back to environment variable `NAME`. Existing `${file:C:\path\secret.txt}` and `${env:NAME}` placeholders are still supported.
 

@@ -15,7 +15,7 @@ use crate::{
     proxy::ProxyConfig,
 };
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 21;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 22;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_LOCAL_API_PORT: u16 = 41833;
@@ -58,6 +58,10 @@ pub struct AppConfig {
     pub app_update: AppUpdateSettings,
     #[serde(default)]
     pub local_api: LocalApiSettings,
+    #[serde(default = "default_secret_storage_mode")]
+    pub secrets_storage: SecretStorageMode,
+    #[serde(default)]
+    pub secrets_encryption_prompt_pending: bool,
     #[serde(default)]
     pub remote_provider_registry: RemoteProviderRegistrySettings,
     pub providers: Vec<ProviderConfig>,
@@ -195,6 +199,17 @@ pub enum AppTheme {
     Light,
     #[serde(rename = "dark")]
     Dark,
+}
+
+/// At-rest format for application-managed Provider secrets. New installations
+/// encrypt with Windows DPAPI; configurations migrated from schema 21 keep
+/// plaintext until the user confirms the one-time upgrade prompt.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SecretStorageMode {
+    #[serde(rename = "encrypted")]
+    Encrypted,
+    #[serde(rename = "plaintext")]
+    Plaintext,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -359,6 +374,10 @@ fn default_theme() -> AppTheme {
     AppTheme::System
 }
 
+fn default_secret_storage_mode() -> SecretStorageMode {
+    SecretStorageMode::Encrypted
+}
+
 fn default_app_update_auto_check() -> bool {
     true
 }
@@ -436,6 +455,8 @@ pub fn default_config() -> AppConfig {
         tray_popup_size: None,
         app_update: AppUpdateSettings::default(),
         local_api: LocalApiSettings::default(),
+        secrets_storage: default_secret_storage_mode(),
+        secrets_encryption_prompt_pending: false,
         remote_provider_registry: RemoteProviderRegistrySettings::default(),
         providers: Vec::new(),
     }
@@ -585,6 +606,17 @@ fn config_storage_info_for_app(app: &AppHandle) -> Result<ConfigStorageInfo, Str
         portable_config_path: portable_config_path.display().to_string(),
         portable_marker_path: portable_marker_path.display().to_string(),
     })
+}
+
+/// Resolves the managed secret storage mode recorded in the config at
+/// `config_path`. Falls back to encrypted storage when the file is missing or
+/// unreadable so a transient failure never downgrades newly written secrets.
+pub fn secret_storage_mode_for_config_path(config_path: &Path) -> SecretStorageMode {
+    fs::read_to_string(config_path)
+        .ok()
+        .and_then(|contents| serde_json::from_str::<AppConfig>(&contents).ok())
+        .map(|config| config.secrets_storage)
+        .unwrap_or(SecretStorageMode::Encrypted)
 }
 
 pub fn load_or_create_config(path: &Path) -> Result<LoadedConfig, String> {
@@ -960,6 +992,19 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(21);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(21);
+    if version < 22 {
+        // Managed Provider secrets gain optional DPAPI encryption. Existing
+        // installations keep plaintext until the user accepts the one-time
+        // upgrade prompt; new configurations default to encrypted storage.
+        value["secretsStorage"] = serde_json::json!("plaintext");
+        value["secretsEncryptionPromptPending"] = serde_json::json!(true);
+        value["schemaVersion"] = serde_json::json!(22);
+    }
+
     Ok(value)
 }
 
@@ -1283,15 +1328,19 @@ pub fn resolve_named_secret(name: &str, config_dir: &Path) -> Result<String, Str
         crate::managed_secret_store::managed_secret_path_from_reference(config_dir, name)
     {
         let secret_path = managed_path?;
-        return match fs::read_to_string(&secret_path) {
-            Ok(secret) => {
-                let secret = secret.trim().to_string();
-                if secret.is_empty() {
-                    Err(format!("Missing managed Provider secret {name}"))
-                } else {
-                    Ok(secret)
-                }
+        let decode = |bytes: Vec<u8>| -> Result<String, String> {
+            let secret =
+                crate::secret_encryption::decode_managed_secret_payload(&bytes, name)?
+                    .trim()
+                    .to_string();
+            if secret.is_empty() {
+                Err(format!("Missing managed Provider secret {name}"))
+            } else {
+                Ok(secret)
             }
+        };
+        return match fs::read(&secret_path) {
+            Ok(bytes) => decode(bytes),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 Err(format!("Missing managed Provider secret {name}"))
             }
@@ -1701,6 +1750,8 @@ mod tests {
             }),
             app_update: AppUpdateSettings { auto_check: true },
             local_api: LocalApiSettings::default(),
+            secrets_storage: default_secret_storage_mode(),
+            secrets_encryption_prompt_pending: false,
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers: vec![remote_provider_config("remote")],
         };
@@ -2364,6 +2415,50 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v21_defaults_to_plaintext_secrets_and_prompts_once() {
+        let value = serde_json::json!({
+            "schemaVersion": 21,
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(migrated["secretsStorage"], serde_json::json!("plaintext"));
+        assert_eq!(
+            migrated["secretsEncryptionPromptPending"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            default_config().secrets_storage,
+            SecretStorageMode::Encrypted
+        );
+        assert!(!default_config().secrets_encryption_prompt_pending);
+    }
+
+    #[test]
+    fn secret_storage_mode_for_config_path_reads_disk_and_defaults_encrypted() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.quotaBarWin.json");
+
+        assert_eq!(
+            secret_storage_mode_for_config_path(&path),
+            SecretStorageMode::Encrypted
+        );
+
+        let mut config = default_config();
+        config.secrets_storage = SecretStorageMode::Plaintext;
+        save_config_to_path(&path, &config).expect("save config");
+        assert_eq!(
+            secret_storage_mode_for_config_path(&path),
+            SecretStorageMode::Plaintext
+        );
+    }
+
+    #[test]
     fn local_api_accepts_multiple_or_all_network_interface_targets_without_schema_change() {
         let multiple = LocalApiSettings {
             enabled: true,
@@ -2475,6 +2570,8 @@ mod tests {
             }),
             app_update: AppUpdateSettings { auto_check: true },
             local_api: LocalApiSettings::default(),
+            secrets_storage: default_secret_storage_mode(),
+            secrets_encryption_prompt_pending: false,
             remote_provider_registry: RemoteProviderRegistrySettings {
                 registry_url: Some("https://example.com/registry.json".to_string()),
                 provider_proxy_url: Some("http://proxy:8080".to_string()),
@@ -2806,7 +2903,10 @@ mod tests {
     #[test]
     fn managed_provider_secret_placeholder_reads_instance_scoped_file() {
         let temp = tempfile::tempdir().expect("temp dir");
-        let store = crate::managed_secret_store::ManagedSecretStore::new(temp.path());
+        let store = crate::managed_secret_store::ManagedSecretStore::new(
+            temp.path(),
+            SecretStorageMode::Plaintext,
+        );
         let reference = store
             .write("provider-a", "API_TOKEN", "scoped-secret")
             .expect("write managed secret");
@@ -2815,6 +2915,48 @@ mod tests {
             .expect("resolve managed secret");
 
         assert_eq!(actual, "scoped-secret");
+    }
+
+    #[test]
+    fn managed_provider_secret_placeholder_decrypts_dpapi_payload() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let store = crate::managed_secret_store::ManagedSecretStore::new(
+            temp.path(),
+            SecretStorageMode::Encrypted,
+        );
+        let reference = store
+            .write("provider-a", "API_TOKEN", "scoped-secret")
+            .expect("write encrypted managed secret");
+
+        let actual = resolve_secret_value(&reference.placeholder(), temp.path())
+            .expect("resolve encrypted managed secret");
+
+        assert_eq!(actual, "scoped-secret");
+    }
+
+    #[test]
+    fn undecryptable_managed_secret_reports_actionable_error_without_ciphertext() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        // Encrypt under a different reference so DPAPI entropy does not match.
+        let payload = crate::secret_encryption::encrypt_managed_secret(
+            "scoped-secret",
+            "providers/provider-b/API_TOKEN",
+        )
+        .expect("encrypt");
+        let secret_dir = temp
+            .path()
+            .join("secrets")
+            .join("providers")
+            .join("provider-a");
+        std::fs::create_dir_all(&secret_dir).expect("secret dir");
+        std::fs::write(secret_dir.join("API_TOKEN.txt"), &payload).expect("mismatched payload");
+
+        let error = resolve_secret_value("${secret:providers/provider-a/API_TOKEN}", temp.path())
+            .expect_err("undecryptable secret");
+
+        assert!(error.contains("Unable to decrypt"));
+        assert!(error.contains("re-enter the secret"));
+        assert!(!error.contains("scoped-secret"));
     }
 
     #[test]

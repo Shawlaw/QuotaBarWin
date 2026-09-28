@@ -11,6 +11,7 @@ mod external_links;
 mod local_api;
 mod local_api_token;
 pub mod logger;
+mod managed_secret_commands;
 mod managed_secret_store;
 #[cfg(test)]
 mod productization;
@@ -23,6 +24,7 @@ mod refresh_scheduler;
 mod remote_provider;
 mod remote_provider_commands;
 mod remote_provider_runner;
+mod secret_encryption;
 mod tray;
 
 use tauri::{Emitter, Manager};
@@ -173,6 +175,10 @@ pub fn run() {
             list_local_api_network_interfaces,
             get_local_api_access_token,
             set_local_api_access_token,
+            managed_secret_commands::get_managed_secrets_encryption_status,
+            managed_secret_commands::enable_managed_secrets_encryption,
+            managed_secret_commands::disable_managed_secrets_encryption,
+            managed_secret_commands::dismiss_managed_secrets_encryption_prompt,
             get_network_proxy,
             set_network_proxy,
             test_network_proxy,

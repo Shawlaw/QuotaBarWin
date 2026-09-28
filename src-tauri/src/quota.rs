@@ -1106,6 +1106,8 @@ mod tests {
             tray_popup_size: None,
             app_update: crate::config::AppUpdateSettings { auto_check: true },
             local_api: crate::config::LocalApiSettings::default(),
+            secrets_storage: crate::config::SecretStorageMode::Encrypted,
+            secrets_encryption_prompt_pending: false,
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
             providers,
         }

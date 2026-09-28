@@ -67,6 +67,7 @@ try {
   // Tauri creates the hidden tray popup during startup. WebDriver can attach to that window
   // first, so explicitly select the main window before exercising the application UI.
   await switchToWindowWithTestId("open-overview");
+  await dismissSecretEncryptionUpgradePrompt();
   await assertAppStartedAndShowsQuota();
   await assertConfigCanBeSaved();
   await assertProviderSetupCanSaveTestAndEnable();
@@ -353,6 +354,21 @@ async function openOverview() {
 
 async function byTestId(id) {
   return app.$(`[data-testid="${id}"]`);
+}
+
+// Schema 22 migration marks upgraded configurations with a one-time secret
+// encryption consent prompt. The E2E seeds a legacy config on purpose, so the
+// dialog appears over the main window; defer it to keep testing the plaintext
+// path (the encrypted path is covered by unit tests).
+async function dismissSecretEncryptionUpgradePrompt() {
+  const prompt = await byTestId("secret-encryption-prompt");
+  if (!(await prompt.isExisting())) {
+    return;
+  }
+  const dismiss = await byTestId("secret-encryption-dismiss");
+  await dismiss.waitForDisplayed({ timeout: 10000 });
+  await dismiss.click();
+  await prompt.waitForDisplayed({ timeout: 10000, reverse: true });
 }
 
 async function clickByTestId(id) {
