@@ -162,6 +162,7 @@ pub fn run() {
             dismiss_app_update_notice,
             external_links::open_project_github,
             external_links::open_app_update_notes,
+            external_links::open_external_link,
             export_diagnostics,
             open_config_folder,
             open_remote_provider_guide,

@@ -418,6 +418,15 @@ export async function openAppUpdateNotes(notesUrl: string): Promise<void> {
   return invoke<void>("open_app_update_notes", { notesUrl });
 }
 
+export async function openExternalLink(url: string): Promise<void> {
+  if (!hasTauriInternals()) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  return invoke<void>("open_external_link", { url });
+}
+
 export async function getNetworkProxy(): Promise<ProxyConfig | null> {
   if (!hasTauriInternals()) {
     return null;

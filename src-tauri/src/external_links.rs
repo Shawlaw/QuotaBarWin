@@ -18,6 +18,19 @@ pub fn open_app_update_notes(notes_url: String) -> Result<(), String> {
     open_url_external(notes_url)
 }
 
+// Opens Provider help links supplied by remote manifests. The scheme is
+// restricted to http/https because manifest content is third-party data and
+// must not reach other protocol handlers or local files.
+#[tauri::command]
+pub fn open_external_link(url: String) -> Result<(), String> {
+    let url = url.trim();
+    if !is_allowed_external_link_url(url) {
+        return Err("External link must be a non-empty http(s) URL".to_string());
+    }
+
+    open_url_external(url)
+}
+
 pub(crate) fn is_allowed_release_notes_url(url: &str) -> bool {
     let Some(tag) = url.strip_prefix(RELEASE_NOTES_URL_PREFIX) else {
         return false;
@@ -27,6 +40,21 @@ pub(crate) fn is_allowed_release_notes_url(url: &str) -> bool {
         && tag
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+}
+
+pub(crate) fn is_allowed_external_link_url(url: &str) -> bool {
+    for prefix in ["http://", "https://"] {
+        if let Some(rest) = url.strip_prefix(prefix) {
+            return !rest.is_empty();
+        }
+    }
+    let lowered = url.to_ascii_lowercase();
+    for prefix in ["http://", "https://"] {
+        if let Some(rest) = lowered.strip_prefix(prefix) {
+            return !rest.is_empty();
+        }
+    }
+    false
 }
 
 fn open_url_external(url: &str) -> Result<(), String> {
@@ -61,7 +89,7 @@ fn open_url_external(url: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_allowed_release_notes_url;
+    use super::*;
 
     #[test]
     fn release_notes_are_limited_to_project_release_tags() {
@@ -80,5 +108,19 @@ mod tests {
         assert!(!is_allowed_release_notes_url(
             "https://github.com/Shawlaw/QuotaBarWin/releases/tag/v1.0.5?download=1"
         ));
+    }
+
+    #[test]
+    fn external_links_allow_only_non_empty_http_urls() {
+        assert!(is_allowed_external_link_url("https://platform.example.com/docs"));
+        assert!(is_allowed_external_link_url("http://example.com"));
+        assert!(is_allowed_external_link_url("HTTPS://EXAMPLE.COM/KEYS"));
+
+        assert!(!is_allowed_external_link_url("https://"));
+        assert!(!is_allowed_external_link_url(""));
+        assert!(!is_allowed_external_link_url("file:///C:/Windows/System32/calc.exe"));
+        assert!(!is_allowed_external_link_url("ms-settings:windows-defender"));
+        assert!(!is_allowed_external_link_url("javascript:alert(1)"));
+        assert!(!is_allowed_external_link_url("\\\\localhost\\share"));
     }
 }

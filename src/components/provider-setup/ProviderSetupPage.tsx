@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getProviderSetup, saveProviderSetup, testProviderSetup } from "../../lib/api";
+import {
+  getProviderSetup,
+  openExternalLink,
+  saveProviderSetup,
+  testProviderSetup,
+} from "../../lib/api";
 import type {
   ProviderSetupDescriptor,
   ProviderSetupField,
@@ -276,7 +281,21 @@ export function ProviderSetupPage({
           />
         )}
         {field.description ? <span className="settings-hint">{field.description}</span> : null}
-        {field.helpUrl ? <a href={field.helpUrl} target="_blank" rel="noreferrer">{t.providerSetup.openGuide}</a> : null}
+        {field.helpUrl ? (
+          <a
+            href={field.helpUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => {
+              // The WebView does not route target="_blank" to the system
+              // browser, so guide links go through the external-link command.
+              event.preventDefault();
+              void openExternalLink(field.helpUrl ?? "");
+            }}
+          >
+            {t.providerSetup.openGuide}
+          </a>
+        ) : null}
       </label>
     );
   }

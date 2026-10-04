@@ -6,6 +6,7 @@ import type { ProviderSetupDescriptor } from "../../types";
 
 const apiMocks = vi.hoisted(() => ({
   getProviderSetup: vi.fn(),
+  openExternalLink: vi.fn(async () => undefined),
   saveProviderSetup: vi.fn(),
   testProviderSetup: vi.fn(),
 }));
@@ -96,6 +97,24 @@ function renderPage(
   );
   return { onBack, onComplete, onConfigChanged, onRequestClose };
 }
+
+test("provider setup opens field guide links through the external browser", async () => {
+  const openExternalLinkMock = vi.mocked(apiMocks.openExternalLink);
+  const withGuide: ProviderSetupDescriptor = {
+    ...descriptor,
+    fields: descriptor.fields.map((field) =>
+      field.name === "API_KEY"
+        ? { ...field, helpUrl: "https://platform.example.com/api-keys" }
+        : field,
+    ),
+  };
+
+  renderPage(withGuide);
+  const guide = await screen.findByRole("link", { name: "View guide" });
+  fireEvent.click(guide);
+
+  expect(openExternalLinkMock).toHaveBeenCalledWith("https://platform.example.com/api-keys");
+});
 
 test("provider setup renders structured fields without echoing configured secret", async () => {
   renderPage();
