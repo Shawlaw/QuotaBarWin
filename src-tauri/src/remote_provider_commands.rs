@@ -20,7 +20,8 @@ use crate::{
         cache_remote_provider, check_update, compute_checksum, fetch_manifest, fetch_manifest_text,
         fetch_provider_registry, fetch_source, is_builtin_js_runtime, load_cached_manifest,
         parse_manifest, resolve_provider_url, resolve_runtime, resolve_source_url,
-        validate_runtime_executable, ProviderManifest, UpdateInfo,
+        source_file_name, validate_runtime_executable, verify_checksum, ProviderManifest,
+        UpdateInfo,
     },
 };
 
@@ -31,16 +32,180 @@ pub(crate) fn remote_provider_dir(config_path: &Path, id: &str) -> Result<PathBu
     let config_dir = config_path
         .parent()
         .ok_or_else(|| "Unable to resolve config directory for provider cache".to_string())?;
-    Ok(config_dir.join(REMOTE_PROVIDERS_DIR).join(id))
+    Ok(remote_provider_dir_for_config_dir(config_dir, id))
 }
 
-fn cached_provider_dir(config_path: &Path, provider: &ProviderConfig) -> Result<PathBuf, String> {
-    match provider {
-        ProviderConfig::Remote {
-            provider_dir: Some(provider_dir),
+pub(crate) fn remote_provider_dir_for_config_dir(config_dir: &Path, id: &str) -> PathBuf {
+    config_dir.join(REMOTE_PROVIDERS_DIR).join(id)
+}
+
+/// Resolves the on-disk cache directory for an installed Provider. The
+/// persisted `providerDir` is only migration bookkeeping; the cache always
+/// lives beside the active config so copied or relocated installs never
+/// read, overwrite, or delete another install's cache.
+pub(crate) fn cached_provider_dir(
+    config_path: &Path,
+    provider: &ProviderConfig,
+) -> Result<PathBuf, String> {
+    remote_provider_dir(config_path, provider_id(provider))
+}
+
+fn remote_provider_cache_is_healthy(provider_dir: &Path) -> bool {
+    let Ok(manifest) = load_cached_manifest(provider_dir) else {
+        return false;
+    };
+    provider_dir.join(source_file_name(&manifest.entry)).is_file()
+}
+
+/// Ensures an installed Provider's cache can actually run: a readable cached
+/// manifest plus the source file it references. A missing or corrupted cache
+/// (for example a deleted cache directory) is re-downloaded from the
+/// configured manifest URL so the Provider recovers without a manual
+/// reinstall. Returns `Ok(true)` when a repair was performed.
+pub(crate) fn ensure_remote_provider_cache(
+    config_path: &Path,
+    provider: &ProviderConfig,
+    global_proxy: Option<&ProxyConfig>,
+    log: Option<&LogSink>,
+) -> Result<bool, String> {
+    let id = provider_id(provider).to_string();
+    let provider_dir = remote_provider_dir(config_path, &id)?;
+    if remote_provider_cache_is_healthy(&provider_dir) {
+        return Ok(false);
+    }
+
+    let ProviderConfig::Remote {
+        manifest_url,
+        trusted_checksum,
+        ..
+    } = provider;
+
+    if let Some(log) = log {
+        log_remote(
+            log,
+            LogLevel::Warn,
+            &format!(
+                "provider cache heal started id={} dir={} manifestUrl={}",
+                id,
+                provider_dir.display(),
+                manifest_url
+            ),
+        );
+    }
+
+    let heal = || -> Result<bool, String> {
+        let cached_manifest_id = load_cached_manifest(&provider_dir)
+            .ok()
+            .map(|manifest| manifest.id);
+        let manifest = fetch_manifest(manifest_url, None, global_proxy, FETCH_TIMEOUT)
+            .map_err(|error| error.to_string())?;
+        if let Some(cached_id) = cached_manifest_id.as_deref() {
+            if cached_id != manifest.id {
+                return Err(format!(
+                    "manifest id '{}' no longer matches the cached Provider id '{}'",
+                    manifest.id, cached_id
+                ));
+            }
+        }
+
+        let source_url = resolve_source_url(manifest_url, &manifest.entry);
+        let source = fetch_source(&source_url, None, global_proxy, FETCH_TIMEOUT)
+            .map_err(|error| error.to_string())?;
+        let expected_checksum = manifest
+            .checksums
+            .source
+            .as_deref()
+            .ok_or_else(|| "manifest does not contain a source checksum".to_string())?;
+        verify_checksum(&source, expected_checksum).map_err(|error| error.to_string())?;
+        let actual_checksum = compute_checksum(&source);
+
+        match (trusted_checksum.as_deref(), cached_manifest_id.as_deref()) {
+            (Some(trusted), _) if trusted == actual_checksum => {
+                // Byte-identical restore of what the config already trusts.
+            }
+            (_, Some(_)) => {
+                // The cached manifest identified the Provider, so accepting
+                // newer upstream source is an in-place update of the same
+                // Provider from the configured source.
+            }
+            (Some(_), None) => {
+                return Err(
+                    "the upstream Provider source changed since install; use check for updates and apply the update manually"
+                        .to_string(),
+                );
+            }
+            (None, None) => {
+                if manifest.id != id {
+                    return Err(format!(
+                        "manifest id '{}' does not match installed Provider id '{}'",
+                        manifest.id, id
+                    ));
+                }
+            }
+        }
+
+        let resolved_runtime = resolve_manifest_runtime(&manifest)?;
+        let parent = provider_dir
+            .parent()
+            .ok_or_else(|| "provider cache directory has no parent".to_string())?
+            .to_path_buf();
+        cache_remote_provider(
+            &parent,
+            &id,
+            manifest_url,
+            &manifest,
+            &source,
+            resolved_runtime.as_deref(),
+        )
+        .map_err(|error| error.to_string())?;
+
+        let mut loaded = load_or_create_config(config_path)?;
+        let ProviderConfig::Remote {
+            manifest_url: config_manifest_url,
+            provider_dir: config_provider_dir,
+            trusted_checksum: config_trusted_checksum,
+            source_url: config_source_url,
+            version,
+            runtime,
+            resolved_runtime: config_resolved_runtime,
+            updated_at,
             ..
-        } => Ok(provider_dir.clone()),
-        ProviderConfig::Remote { id, .. } => remote_provider_dir(config_path, id),
+        } = find_provider_config_mut(&mut loaded.config, &id)
+            .ok_or_else(|| "provider not found".to_string())?;
+        *config_manifest_url = manifest_url.clone();
+        *config_provider_dir = Some(provider_dir.clone());
+        *config_trusted_checksum = Some(actual_checksum);
+        *config_source_url = source_url;
+        *version = manifest.version.clone();
+        *runtime = manifest.runtime.clone();
+        *config_resolved_runtime =
+            resolved_runtime.as_ref().map(|path| path.display().to_string());
+        *updated_at = Some(Utc::now().to_rfc3339());
+        save_config_to_path(config_path, &loaded.config)?;
+        Ok(true)
+    };
+
+    match heal() {
+        Ok(healed) => {
+            if let Some(log) = log {
+                log_remote(
+                    log,
+                    LogLevel::Info,
+                    &format!("provider cache heal finished id={} dir={}", id, provider_dir.display()),
+                );
+            }
+            Ok(healed)
+        }
+        Err(error) => {
+            if let Some(log) = log {
+                log_remote(
+                    log,
+                    LogLevel::Warn,
+                    &format!("provider cache heal failed id={} error={}", id, error),
+                );
+            }
+            Err(error)
+        }
     }
 }
 
@@ -250,12 +415,18 @@ fn load_registry_update_candidates(
     Ok(candidates)
 }
 
-fn update_is_available(new_checksum: Option<&str>, trusted_checksum: Option<&str>) -> bool {
-    match (new_checksum, trusted_checksum) {
-        (Some(new), Some(trusted)) => new != trusted,
-        (Some(_), None) => true,
-        (None, _) => false,
-    }
+fn update_is_available(
+    new_checksum: Option<&str>,
+    trusted_checksum: Option<&str>,
+    current_version: Option<&str>,
+    new_version: Option<&str>,
+) -> bool {
+    crate::remote_provider::update_is_available(
+        new_checksum,
+        trusted_checksum,
+        current_version,
+        new_version,
+    )
 }
 
 fn check_registry_update(
@@ -287,7 +458,12 @@ fn check_registry_update(
     let new_checksum = manifest.checksums.source.clone();
     Ok(UpdateInfo {
         id: expected_manifest_id.to_string(),
-        available: update_is_available(new_checksum.as_deref(), trusted_checksum),
+        available: update_is_available(
+            new_checksum.as_deref(),
+            trusted_checksum,
+            current_version.as_deref(),
+            manifest.version.as_deref(),
+        ),
         new_checksum,
         update_manifest_url: Some(candidate.manifest_url.clone()),
         current_version,
@@ -1294,7 +1470,6 @@ async fn check_remote_updates_inner(
             let ProviderConfig::Remote {
                 id,
                 manifest_url,
-                provider_dir,
                 trusted_checksum,
                 version,
                 last_checked_at,
@@ -1312,9 +1487,7 @@ async fn check_remote_updates_inner(
                 LogLevel::Info,
                 &format!("remote update check provider started id={} manifestUrl={}", id, manifest_url),
             );
-            let provider_dir = provider_dir
-                .clone()
-                .unwrap_or(remote_provider_dir(&path, id)?);
+            let provider_dir = remote_provider_dir(&path, id)?;
             let installed_manifest_id = load_cached_manifest(&provider_dir)
                 .map(|manifest| manifest.id)
                 .unwrap_or_else(|_| id.clone());
@@ -1759,5 +1932,191 @@ mod tests {
             ),
             2
         );
+    }
+
+    #[test]
+    fn cached_provider_dir_resolves_beside_the_active_config() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config_path = temp.path().join("config.json");
+        let mut provider = remote_provider("kimi", "Kimi", "https://example.com/provider.json");
+        let alien_dir = temp
+            .path()
+            .join("alien-install")
+            .join("providers")
+            .join("remote")
+            .join("kimi");
+        let ProviderConfig::Remote { provider_dir, .. } = &mut provider;
+        *provider_dir = Some(alien_dir.clone());
+
+        let resolved = cached_provider_dir(&config_path, &provider).expect("resolve cache dir");
+
+        assert_eq!(
+            resolved,
+            remote_provider_dir(&config_path, "kimi").expect("canonical cache dir")
+        );
+        assert_ne!(resolved, alien_dir);
+    }
+
+    fn write_upstream_manifest(dir: &Path, id: &str, version: &str, source: &str) -> String {
+        fs::create_dir_all(dir).expect("create upstream dir");
+        fs::write(dir.join("provider.cjs"), source).expect("write source");
+        let manifest = serde_json::json!({
+            "schemaVersion": 1,
+            "id": id,
+            "displayName": id,
+            "version": version,
+            "runtime": "node",
+            "entry": "provider.cjs",
+            "requiredEnvVars": [],
+            "output": "provider-snapshot-v1",
+            "checksums": { "source": compute_checksum(source) }
+        });
+        let manifest_path = dir.join("provider.json");
+        fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&manifest).expect("manifest json"),
+        )
+        .expect("write manifest");
+        manifest_path.to_string_lossy().to_string()
+    }
+
+    fn provider_with_trusted_checksum(
+        manifest_url: &str,
+        version: &str,
+        trusted_checksum: &str,
+    ) -> ProviderConfig {
+        let mut provider = remote_provider("kimi", "Kimi", manifest_url);
+        let ProviderConfig::Remote {
+            version: provider_version,
+            trusted_checksum: checksum,
+            ..
+        } = &mut provider;
+        *provider_version = Some(version.to_string());
+        *checksum = Some(trusted_checksum.to_string());
+        provider
+    }
+
+    #[test]
+    fn ensure_remote_provider_cache_redownloads_missing_cache() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let source = "// provider source";
+        let manifest_url =
+            write_upstream_manifest(&temp.path().join("upstream"), "kimi", "1.2.0", source);
+
+        let config_path = temp.path().join("config.json");
+        let mut config = crate::config::default_config();
+        config.providers = vec![provider_with_trusted_checksum(
+            &manifest_url,
+            "1.1.0",
+            &compute_checksum(source),
+        )];
+        save_config_to_path(&config_path, &config).expect("save config");
+
+        let healed = ensure_remote_provider_cache(&config_path, &config.providers[0], None, None)
+            .expect("heal cache");
+        assert!(healed);
+
+        let provider_dir = remote_provider_dir(&config_path, "kimi").expect("cache dir");
+        assert!(provider_dir.join("provider.json").is_file());
+        assert_eq!(
+            fs::read_to_string(provider_dir.join("provider.cjs")).expect("read source"),
+            source
+        );
+        assert!(provider_dir.join(".meta.json").is_file());
+
+        let reloaded = load_or_create_config(&config_path).expect("reload config");
+        let ProviderConfig::Remote {
+            version,
+            trusted_checksum,
+            provider_dir: stored_dir,
+            ..
+        } = &reloaded.config.providers[0];
+        assert_eq!(version.as_deref(), Some("1.2.0"));
+        assert_eq!(trusted_checksum.as_deref(), Some(compute_checksum(source).as_str()));
+        assert_eq!(stored_dir.as_ref(), Some(&provider_dir));
+
+        // A healthy cache is left alone on later refreshes.
+        assert!(
+            !ensure_remote_provider_cache(&config_path, &reloaded.config.providers[0], None, None)
+                .expect("second check")
+        );
+    }
+
+    #[test]
+    fn ensure_remote_provider_cache_rejects_changed_source_without_cached_identity() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let manifest_url = write_upstream_manifest(
+            &temp.path().join("upstream"),
+            "kimi",
+            "1.2.0",
+            "// changed upstream source",
+        );
+
+        let config_path = temp.path().join("config.json");
+        let mut config = crate::config::default_config();
+        config.providers = vec![provider_with_trusted_checksum(
+            &manifest_url,
+            "1.1.0",
+            &compute_checksum("// trusted source"),
+        )];
+        save_config_to_path(&config_path, &config).expect("save config");
+
+        let error = ensure_remote_provider_cache(&config_path, &config.providers[0], None, None)
+            .expect_err("refuse heal");
+        assert!(error.contains("upstream Provider source changed"));
+        assert!(!remote_provider_dir(&config_path, "kimi")
+            .expect("cache dir")
+            .exists());
+    }
+
+    #[test]
+    fn ensure_remote_provider_cache_rejects_manifest_id_changes() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config_path = temp.path().join("config.json");
+        let source = "// provider source";
+        let manifest = parse_manifest(
+            &serde_json::json!({
+                "schemaVersion": 1,
+                "id": "kimi",
+                "displayName": "Kimi",
+                "version": "1.1.0",
+                "runtime": "node",
+                "entry": "provider.cjs",
+                "requiredEnvVars": [],
+                "output": "provider-snapshot-v1",
+                "checksums": { "source": compute_checksum(source) }
+            })
+            .to_string(),
+        )
+        .expect("parse manifest");
+        let provider_dir = remote_provider_dir(&config_path, "kimi").expect("cache dir");
+        cache_remote_provider(
+            provider_dir.parent().expect("cache parent"),
+            "kimi",
+            "https://example.com/provider.json",
+            &manifest,
+            source,
+            None,
+        )
+        .expect("cache provider");
+        // Corrupt the cache (source file missing) so a heal is attempted
+        // while the cached manifest still identifies the Provider.
+        fs::remove_file(provider_dir.join("provider.cjs")).expect("remove cached source");
+
+        let manifest_url =
+            write_upstream_manifest(&temp.path().join("upstream"), "other", "1.2.0", source);
+        let mut config = crate::config::default_config();
+        config.providers = vec![provider_with_trusted_checksum(
+            &manifest_url,
+            "1.1.0",
+            &compute_checksum(source),
+        )];
+        save_config_to_path(&config_path, &config).expect("save config");
+
+        let error = ensure_remote_provider_cache(&config_path, &config.providers[0], None, None)
+            .expect_err("refuse heal");
+        assert!(error.contains("no longer matches the cached Provider id"));
+        // The existing cache is untouched by the failed heal.
+        assert!(provider_dir.join("provider.json").is_file());
     }
 }

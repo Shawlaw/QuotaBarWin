@@ -16,7 +16,7 @@ use crate::{
     provider_error::{classify_provider_error, ProviderErrorCategory},
     quota::ProviderSnapshot,
     remote_provider::{load_cached_manifest, ProviderManifest, ProviderParameter},
-    remote_provider_commands::remote_provider_dir,
+    remote_provider_commands::cached_provider_dir,
     remote_provider_runner::run_remote_provider,
 };
 
@@ -88,19 +88,6 @@ pub struct ProviderSetupTestResult {
     pub provider: Option<ProviderSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_category: Option<ProviderErrorCategory>,
-}
-
-fn cached_provider_dir(
-    path: &Path,
-    provider: &ProviderConfig,
-) -> Result<std::path::PathBuf, String> {
-    match provider {
-        ProviderConfig::Remote {
-            provider_dir: Some(provider_dir),
-            ..
-        } => Ok(provider_dir.clone()),
-        ProviderConfig::Remote { id, .. } => remote_provider_dir(path, id),
-    }
 }
 
 fn provider_parameters(manifest: &ProviderManifest) -> Vec<ProviderParameter> {

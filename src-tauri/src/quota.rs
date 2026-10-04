@@ -276,7 +276,6 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     let _locks = acquire_refresh_locks(path)?;
     let loaded = load_or_create_config(path)?;
     let log = LogSink::from_config_path(path, &loaded.config);
-    let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
     let global_proxy = loaded.config.network_proxy.clone();
     let should_log_quota_data = loaded.config.log_quota_data;
     let cached = cached_snapshot_for_refresh(path, &loaded.config)?;
@@ -300,7 +299,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
         let provider_id = provider_config_id(&provider).to_string();
         let results = run_provider_with_retry(
             provider.clone(),
-            config_dir,
+            path,
             global_proxy.as_ref(),
             &loaded.recovery_messages,
             &[
@@ -313,7 +312,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
             &provider,
             results,
             old_providers,
-            config_dir,
+            path,
             global_proxy.as_ref(),
             &loaded.recovery_messages,
             Some(&log),
@@ -505,16 +504,27 @@ fn is_non_retryable_error(provider: &ProviderSnapshot) -> bool {
 
 fn run_provider_with_retry(
     provider: ProviderConfig,
-    config_dir: &Path,
+    config_path: &Path,
     global_proxy: Option<&crate::proxy::ProxyConfig>,
     recovery_messages: &[String],
     delays: &[std::time::Duration],
     log: Option<&LogSink>,
 ) -> Vec<ProviderSnapshot> {
     let provider_id = provider_config_id(&provider).to_string();
+    if matches!(provider, ProviderConfig::Remote { enabled: true, .. }) {
+        // A missing or corrupted cache is repaired from the configured
+        // manifest URL before running; failures fall through to the run
+        // error below.
+        let _ = crate::remote_provider_commands::ensure_remote_provider_cache(
+            config_path,
+            &provider,
+            global_proxy,
+            log,
+        );
+    }
     let mut result = run_provider_config(
         provider.clone(),
-        config_dir,
+        config_path,
         global_proxy,
         recovery_messages,
         log,
@@ -538,7 +548,7 @@ fn run_provider_with_retry(
         std::thread::sleep(*delay);
         result = run_provider_config(
             provider.clone(),
-            config_dir,
+            config_path,
             global_proxy,
             recovery_messages,
             log,
@@ -579,7 +589,7 @@ fn stabilize_provider_results(
     provider_config: &ProviderConfig,
     initial_results: Vec<ProviderSnapshot>,
     previous_providers: &[ProviderSnapshot],
-    config_dir: &Path,
+    config_path: &Path,
     global_proxy: Option<&crate::proxy::ProxyConfig>,
     recovery_messages: &[String],
     log: Option<&LogSink>,
@@ -628,7 +638,7 @@ fn stabilize_provider_results(
 
     let confirmation_results = run_provider_with_retry(
         provider_config.clone(),
-        config_dir,
+        config_path,
         global_proxy,
         recovery_messages,
         &[
@@ -870,17 +880,17 @@ fn verification_pending_provider(
 
 fn run_provider_config(
     provider: ProviderConfig,
-    config_dir: &Path,
+    config_path: &Path,
     global_proxy: Option<&crate::proxy::ProxyConfig>,
     _recovery_messages: &[String],
     log: Option<&LogSink>,
 ) -> Vec<ProviderSnapshot> {
+    let config_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
     match provider {
         ProviderConfig::Remote {
             id,
             name,
             enabled,
-            provider_dir,
             runtime,
             resolved_runtime,
             timeout_seconds,
@@ -888,20 +898,26 @@ fn run_provider_config(
             visible_window_ids,
             env_vars,
             ..
-        } if enabled => run_remote_provider(
-            &id,
-            &name,
-            provider_dir.as_deref(),
-            &runtime,
-            resolved_runtime.as_deref(),
-            global_proxy,
-            timeout_seconds,
-            config_dir,
-            &env_vars,
-            &window_label_overrides,
-            &visible_window_ids,
-            log,
-        ),
+        } if enabled => {
+            // The cache always resolves beside the active config; the
+            // persisted providerDir is migration bookkeeping only.
+            let provider_dir =
+                crate::remote_provider_commands::remote_provider_dir_for_config_dir(config_dir, &id);
+            run_remote_provider(
+                &id,
+                &name,
+                Some(&provider_dir),
+                &runtime,
+                resolved_runtime.as_deref(),
+                global_proxy,
+                timeout_seconds,
+                config_dir,
+                &env_vars,
+                &window_label_overrides,
+                &visible_window_ids,
+                log,
+            )
+        }
         ProviderConfig::Remote { .. } => Vec::new(),
     }
 }
@@ -919,7 +935,6 @@ pub fn refresh_provider_from_config_path(
     let _locks = acquire_refresh_locks(path)?;
     let loaded = load_or_create_config(path)?;
     let log = LogSink::from_config_path(path, &loaded.config);
-    let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
     let global_proxy = loaded.config.network_proxy.clone();
     let should_log_quota_data = loaded.config.log_quota_data;
     let _ = log.write(
@@ -945,7 +960,7 @@ pub fn refresh_provider_from_config_path(
 
     let refreshed_providers = run_provider_with_retry(
         provider.clone(),
-        config_dir,
+        path,
         global_proxy.as_ref(),
         &loaded.recovery_messages,
         &[
@@ -958,7 +973,7 @@ pub fn refresh_provider_from_config_path(
         &provider,
         refreshed_providers,
         &snapshot.providers,
-        config_dir,
+        path,
         global_proxy.as_ref(),
         &loaded.recovery_messages,
         Some(&log),
@@ -1120,7 +1135,8 @@ mod tests {
         enabled: bool,
         used_percent: f64,
     ) -> ProviderConfig {
-        let provider_dir = temp.path().join(id);
+        let provider_dir =
+            crate::remote_provider_commands::remote_provider_dir_for_config_dir(temp.path(), id);
         std::fs::create_dir_all(&provider_dir).expect("create provider dir");
         std::fs::write(
             provider_dir.join("provider.json"),
@@ -1172,14 +1188,22 @@ mod tests {
         }
     }
 
-    fn broken_remote_provider(id: &str, name: &str) -> ProviderConfig {
+    fn broken_remote_provider(temp: &tempfile::TempDir, id: &str, name: &str) -> ProviderConfig {
+        // The provider is genuinely broken: no cache beside the active
+        // config, and a manifest URL that fails locally without network so
+        // the refresh self-heal stays hermetic in tests.
+        let canonical = crate::remote_provider_commands::remote_provider_dir_for_config_dir(
+            temp.path(),
+            id,
+        );
+        let _ = std::fs::remove_dir_all(canonical);
         ProviderConfig::Remote {
             id: id.to_string(),
             name: name.to_string(),
             enabled: true,
             version: None,
-            manifest_url: "https://example.com/provider.json".to_string(),
-            source_url: "https://example.com/provider.cjs".to_string(),
+            manifest_url: "missing-test-manifest/provider.json".to_string(),
+            source_url: "missing-test-manifest/provider.cjs".to_string(),
             provider_dir: None,
             runtime: "node".to_string(),
             resolved_runtime: None,
@@ -1198,6 +1222,48 @@ mod tests {
             setup_state: crate::config::ProviderSetupState::Ready,
             setup_last_tested_at: None,
         }
+    }
+
+    #[test]
+    fn run_provider_config_ignores_cached_paths_outside_active_config() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config_path = temp.path().join("config.json");
+        let alien_dir = temp.path().join("alien").join("kimi");
+        std::fs::create_dir_all(&alien_dir).expect("create alien dir");
+        std::fs::write(
+            alien_dir.join("provider.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "id": "kimi",
+                "displayName": "Kimi",
+                "version": "1.0.0",
+                "runtime": "node",
+                "entry": "provider.cjs",
+                "requiredEnvVars": [],
+                "output": "provider-snapshot-v1"
+            })
+            .to_string(),
+        )
+        .expect("write alien manifest");
+        std::fs::write(alien_dir.join("provider.cjs"), "console.log('alien');")
+            .expect("write alien source");
+
+        let mut provider = broken_remote_provider(&temp, "kimi", "Kimi");
+        let ProviderConfig::Remote { provider_dir, .. } = &mut provider;
+        *provider_dir = Some(alien_dir.clone());
+
+        let results = run_provider_config(provider, &config_path, None, &[], None);
+
+        // The runnable cache must resolve beside the active config; the
+        // alien directory referenced by the copied config is never used.
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, "error");
+        assert!(results[0]
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Failed to load remote provider manifest"));
+        assert!(alien_dir.join("provider.json").is_file());
     }
 
     fn cached_provider(id: &str, name: &str) -> ProviderSnapshot {
@@ -1747,7 +1813,7 @@ console.log(JSON.stringify({
         assert!(!initial.providers[0].windows.is_empty());
 
         let broken_config = test_config(vec![
-            broken_remote_provider("stale-a", "Stale A"),
+            broken_remote_provider(&temp, "stale-a", "Stale A"),
             remote_provider(&temp, "stale-b", "Stale B", true, 40.0),
         ]);
         save_config_to_path(&path, &broken_config).expect("save broken config");
@@ -1780,7 +1846,7 @@ console.log(JSON.stringify({
         assert_eq!(initial.providers.len(), 2);
 
         let broken_config = test_config(vec![
-            broken_remote_provider("stale-a", "Stale A"),
+            broken_remote_provider(&temp, "stale-a", "Stale A"),
             remote_provider(&temp, "stale-b", "Stale B", true, 40.0),
         ]);
         save_config_to_path(&path, &broken_config).expect("save broken config");
@@ -1802,7 +1868,7 @@ console.log(JSON.stringify({
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
 
-        let config = test_config(vec![broken_remote_provider("broken", "Broken")]);
+        let config = test_config(vec![broken_remote_provider(&temp, "broken", "Broken")]);
         save_config_to_path(&path, &config).expect("save config");
 
         let snapshot = build_app_snapshot_from_config_path(&path).expect("snapshot");

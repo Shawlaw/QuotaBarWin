@@ -17,6 +17,7 @@ use crate::{
         is_builtin_js_runtime, parse_manifest, resolve_runtime, validate_runtime_executable,
         verify_checksum, ProviderManifest, BUILTIN_JS_RUNTIME,
     },
+    remote_provider_commands::remote_provider_dir,
     remote_provider_runner::run_remote_provider,
 };
 
@@ -377,7 +378,6 @@ fn validate_installed_provider(options: &ValidationOptions) -> Result<Validation
     let ProviderConfig::Remote {
         id,
         name,
-        provider_dir,
         runtime,
         resolved_runtime,
         timeout_seconds,
@@ -386,9 +386,15 @@ fn validate_installed_provider(options: &ValidationOptions) -> Result<Validation
         visible_window_ids,
         ..
     } = provider;
-    let provider_dir = provider_dir.as_ref().ok_or_else(|| {
-        format!("Provider {provider_id} has no cached providerDir; reinstall the Provider")
-    })?;
+    // The cache always resolves beside the active config; the persisted
+    // providerDir is migration bookkeeping only.
+    let provider_dir = remote_provider_dir(&config_path, id)?;
+    if !provider_dir.is_dir() {
+        return Err(format!(
+            "Provider {provider_id} cache directory {} does not exist; refresh once in the app to re-download it, or reinstall the Provider",
+            provider_dir.display()
+        ));
+    }
     let manifest_path = provider_dir.join("provider.json");
     let manifest_text = fs::read_to_string(&manifest_path).map_err(|error| error.to_string())?;
     let manifest = parse_manifest(&manifest_text).map_err(|error| error.to_string())?;
@@ -430,7 +436,7 @@ fn validate_installed_provider(options: &ValidationOptions) -> Result<Validation
         let result = run_remote_provider(
             id,
             name,
-            Some(provider_dir),
+            Some(&provider_dir),
             runtime,
             resolved_runtime.as_deref(),
             global_proxy.as_ref(),
@@ -868,6 +874,109 @@ fn option_value(arguments: &[String], index: &mut usize, option: &str) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn validate_options(provider_id: &str, config_path: &Path) -> ValidationOptions {
+        ValidationOptions {
+            provider_id: Some(provider_id.to_string()),
+            manifest_path: None,
+            source_path: None,
+            config_path: Some(config_path.to_path_buf()),
+            run_script: false,
+        }
+    }
+
+    fn cli_provider_config(id: &str, provider_dir: PathBuf) -> ProviderConfig {
+        ProviderConfig::Remote {
+            id: id.to_string(),
+            name: "Cli Provider".to_string(),
+            enabled: true,
+            version: Some("1.0.0".to_string()),
+            manifest_url: "https://example.com/provider.json".to_string(),
+            source_url: "https://example.com/provider.cjs".to_string(),
+            provider_dir: Some(provider_dir),
+            runtime: "node".to_string(),
+            resolved_runtime: None,
+            proxy_url: None,
+            auto_update: false,
+            update_interval_seconds: 3600,
+            timeout_seconds: crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
+            trusted_checksum: None,
+            installed_at: None,
+            updated_at: None,
+            last_checked_at: None,
+            window_label_overrides: std::collections::HashMap::new(),
+            visible_window_ids: Vec::new(),
+            show_in_tray: true,
+            env_vars: std::collections::HashMap::new(),
+            setup_state: crate::config::ProviderSetupState::Ready,
+            setup_last_tested_at: None,
+        }
+    }
+
+    #[test]
+    fn validate_uses_cache_beside_the_config_not_the_stored_dir() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config_path = temp.path().join("config.json");
+        let source = "// provider source";
+        let canonical = remote_provider_dir(&config_path, "kimi").expect("canonical cache dir");
+        fs::create_dir_all(&canonical).expect("create canonical cache");
+        fs::write(
+            canonical.join("provider.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "id": "kimi",
+                "displayName": "Kimi",
+                "version": "1.0.0",
+                "runtime": "node",
+                "entry": "provider.cjs",
+                "requiredEnvVars": [],
+                "output": "provider-snapshot-v1",
+                "checksums": { "source": crate::remote_provider::compute_checksum(source) }
+            })
+            .to_string(),
+        )
+        .expect("write canonical manifest");
+        fs::write(canonical.join("provider.cjs"), source).expect("write canonical source");
+
+        // The stored providerDir points at another install whose manifest is
+        // garbage; it must be ignored in favour of the config-side cache.
+        let alien_dir = temp.path().join("alien").join("kimi");
+        fs::create_dir_all(&alien_dir).expect("create alien dir");
+        fs::write(alien_dir.join("provider.json"), "not json").expect("write alien manifest");
+        fs::write(alien_dir.join("provider.cjs"), "// alien").expect("write alien source");
+
+        let mut config = crate::config::default_config();
+        config.providers = vec![cli_provider_config("kimi", alien_dir)];
+        crate::config::save_config_to_path(&config_path, &config)
+            .expect("save config");
+
+        let report =
+            validate_installed_provider(&validate_options("kimi", &config_path)).expect("validate");
+
+        assert!(report.valid, "errors: {:?}", report.errors);
+        assert_eq!(
+            report.target.manifest_path,
+            canonical.join("provider.json").display().to_string()
+        );
+    }
+
+    #[test]
+    fn validate_reports_actionable_error_when_cache_is_missing() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config_path = temp.path().join("config.json");
+        let mut config = crate::config::default_config();
+        config.providers = vec![cli_provider_config("kimi", temp.path().join("elsewhere"))];
+        crate::config::save_config_to_path(&config_path, &config)
+            .expect("save config");
+
+        let error = match validate_installed_provider(&validate_options("kimi", &config_path)) {
+            Err(error) => error,
+            Ok(report) => panic!("missing cache should fail, got valid={}", report.valid),
+        };
+
+        assert!(error.contains("cache directory"));
+        assert!(error.contains("refresh once in the app"));
+    }
 
     fn snapshot(status: &str, remaining_percent: Option<f64>) -> AppSnapshot {
         AppSnapshot {

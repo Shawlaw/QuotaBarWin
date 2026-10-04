@@ -102,7 +102,7 @@ pub fn run_remote_provider(
             "remote provider run started name={} runtime={} providerDirPresent={}",
             name,
             runtime,
-            provider_dir.is_some()
+            provider_dir.map(|dir| dir.exists()).unwrap_or(false)
         ),
     );
     let Some(provider_dir) = provider_dir else {

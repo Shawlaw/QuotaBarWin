@@ -486,7 +486,7 @@ fn local_path_to_string(path: PathBuf) -> String {
     }
 }
 
-fn source_file_name(entry: &str) -> String {
+pub(crate) fn source_file_name(entry: &str) -> String {
     entry
         .rsplit('/')
         .next()
@@ -501,6 +501,64 @@ pub fn compute_checksum(source: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(source.as_bytes());
     format!("sha256:{}", hex::encode(hasher.finalize()))
+}
+
+/// Decides whether a fetched manifest offers an update for an installed
+/// Provider. The source checksum stays authoritative, but a manifest that
+/// only bumps its version (unchanged source) is also an update so the
+/// installed metadata can catch up with the registry.
+pub fn update_is_available(
+    new_checksum: Option<&str>,
+    trusted_checksum: Option<&str>,
+    current_version: Option<&str>,
+    new_version: Option<&str>,
+) -> bool {
+    let checksum_changed = match (new_checksum, trusted_checksum) {
+        (Some(new), Some(trusted)) => new != trusted,
+        (Some(_), None) => true,
+        (None, _) => false,
+    };
+    if checksum_changed {
+        return true;
+    }
+    version_is_newer(new_version, current_version)
+}
+
+fn parse_version_components(version: &str) -> Option<Vec<u64>> {
+    let core = version.trim().split(['-', '+']).next()?.trim();
+    if core.is_empty() {
+        return None;
+    }
+    let mut components = Vec::new();
+    for part in core.split('.') {
+        if part.is_empty() {
+            return None;
+        }
+        components.push(part.parse::<u64>().ok()?);
+    }
+    Some(components)
+}
+
+fn version_is_newer(new_version: Option<&str>, current_version: Option<&str>) -> bool {
+    let (Some(new_version), Some(current_version)) = (new_version, current_version) else {
+        return false;
+    };
+    // Versions that do not parse as dotted numerals fall back to the
+    // checksum-only decision instead of forcing or masking an update.
+    let (Some(new_parts), Some(current_parts)) = (
+        parse_version_components(new_version),
+        parse_version_components(current_version),
+    ) else {
+        return false;
+    };
+    for index in 0..new_parts.len().max(current_parts.len()) {
+        let new_part = new_parts.get(index).copied().unwrap_or(0);
+        let current_part = current_parts.get(index).copied().unwrap_or(0);
+        if new_part != current_part {
+            return new_part > current_part;
+        }
+    }
+    false
 }
 
 pub fn verify_checksum(source: &str, expected: &str) -> Result<(), RemoteProviderError> {
@@ -748,12 +806,6 @@ pub fn check_update(
     validate_remote_manifest(&manifest)?;
 
     let new_checksum = manifest.checksums.source.clone();
-    let available = match (&new_checksum, trusted_checksum) {
-        (Some(new), Some(trusted)) => new != trusted,
-        (Some(_), None) => true,
-        (None, _) => false,
-    };
-
     let checked_at = chrono::Utc::now().to_rfc3339();
     let source_url = resolve_source_url(manifest_url, &manifest.entry);
     let mut meta = existing_meta.unwrap_or_else(|| RemoteProviderMeta {
@@ -767,6 +819,12 @@ pub fn check_update(
         resolved_runtime: None,
     });
     let current_version = meta.version.clone();
+    let available = update_is_available(
+        new_checksum.as_deref(),
+        trusted_checksum,
+        current_version.as_deref(),
+        manifest.version.as_deref(),
+    );
     meta.etag = new_etag;
     meta.last_check_at = Some(checked_at.clone());
     meta.source_url = source_url;
@@ -1023,7 +1081,7 @@ mod tests {
     }
 
     #[test]
-    fn check_update_reads_local_manifest_and_refreshes_metadata_when_source_unchanged() {
+    fn check_update_flags_version_only_bumps() {
         let temp = tempfile::tempdir().expect("temp dir");
         let source = "// source";
         let source_checksum = compute_checksum(source);
@@ -1087,12 +1145,126 @@ mod tests {
         )
         .expect("check local update");
 
-        assert!(!update.available);
+        assert!(update.available);
+        assert_eq!(update.current_version.as_deref(), Some("1.0.0"));
         assert_eq!(update.new_version.as_deref(), Some("1.0.1"));
+
+        let cached = load_cached_manifest(&provider_dir).expect("load cached manifest");
+        assert_eq!(cached.version.as_deref(), Some("1.0.0"));
+        assert!(cached.parameters.is_empty());
+    }
+
+    #[test]
+    fn check_update_refreshes_metadata_when_source_and_version_unchanged() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let source = "// source";
+        let source_checksum = compute_checksum(source);
+        let manifest_path = temp.path().join("provider.json");
+
+        let old_manifest = ProviderManifest {
+            schema_version: 1,
+            id: "local".to_string(),
+            display_name: "Local".to_string(),
+            version: Some("1.0.0".to_string()),
+            description: None,
+            min_app_version: None,
+            runtime: "node".to_string(),
+            entry: "provider.cjs".to_string(),
+            required_env_vars: vec![],
+            output: "provider-snapshot-v1".to_string(),
+            permissions: vec![],
+            default_config: ManifestDefaultConfig::default(),
+            parameters: vec![],
+            checksums: Checksums {
+                source: Some(source_checksum.clone()),
+            },
+        };
+        let provider_dir = cache_remote_provider(
+            temp.path(),
+            "local",
+            &manifest_path.to_string_lossy(),
+            &old_manifest,
+            source,
+            None,
+        )
+        .expect("cache old provider");
+
+        let mut new_manifest = old_manifest.clone();
+        new_manifest.parameters = vec![ProviderParameter {
+            name: "QBWIN_PROXY_URL".to_string(),
+            label: Some("Provider proxy URL".to_string()),
+            kind: Some("string".to_string()),
+            required: false,
+            default_value: None,
+            placeholder: Some("http://127.0.0.1:7890".to_string()),
+            description: Some("Optional proxy".to_string()),
+            options: vec![],
+            help_url: None,
+            advanced: false,
+        }];
+        fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&new_manifest).expect("manifest json"),
+        )
+        .expect("write new manifest");
+
+        let update = check_update(
+            &provider_dir,
+            &manifest_path.to_string_lossy(),
+            None,
+            None,
+            Some(&source_checksum),
+            Duration::from_secs(1),
+        )
+        .expect("check local update");
+
+        assert!(!update.available);
+        assert_eq!(update.new_version.as_deref(), Some("1.0.0"));
 
         let cached = load_cached_manifest(&provider_dir).expect("load refreshed manifest");
         assert_eq!(cached.parameters.len(), 1);
         assert_eq!(cached.parameters[0].name, "QBWIN_PROXY_URL");
+    }
+
+    #[test]
+    fn update_is_available_accepts_version_only_bumps() {
+        let checksum = Some("sha256:identical");
+        let trusted = Some("sha256:identical");
+
+        assert!(update_is_available(
+            checksum,
+            trusted,
+            Some("1.1.0"),
+            Some("1.2.0")
+        ));
+        assert!(update_is_available(checksum, trusted, Some("1.9"), Some("2.0.0")));
+        assert!(!update_is_available(
+            checksum,
+            trusted,
+            Some("1.2.0"),
+            Some("1.2.0")
+        ));
+        assert!(!update_is_available(
+            checksum,
+            trusted,
+            Some("1.2.0"),
+            Some("1.1.0")
+        ));
+        assert!(!update_is_available(
+            checksum,
+            trusted,
+            Some("1.2.0"),
+            Some("1.2.0-rc.1")
+        ));
+        // Missing or unparseable versions fall back to the checksum decision.
+        assert!(!update_is_available(checksum, trusted, None, Some("9.9.9")));
+        assert!(!update_is_available(checksum, trusted, Some("abc"), Some("9.9.9")));
+        assert!(update_is_available(
+            Some("sha256:new"),
+            trusted,
+            Some("2.0.0"),
+            Some("1.0.0")
+        ));
     }
 
     #[test]

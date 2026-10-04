@@ -1217,7 +1217,10 @@ fn migrate_remote_provider_cache_dirs(
         let destination =
             crate::remote_provider_commands::remote_provider_dir(destination_config_path, id)?;
 
-        if source != destination && source.exists() {
+        // A destination that already holds a local cache (for example after
+        // copying a portable install) keeps its local copy: only the config
+        // path is rebound below instead of failing the whole migration.
+        if source != destination && source.exists() && !destination.exists() {
             if let Err(error) = move_provider_cache_dir(&source, &destination) {
                 let rollback_error = migration.rollback().err();
                 *config = original_config;
@@ -1261,20 +1264,30 @@ pub fn repair_remote_provider_cache_paths(
     config_path: &Path,
     config: &mut AppConfig,
 ) -> Result<bool, String> {
+    // The startup repair only rebinds persisted providerDir values to the
+    // active config directory. It deliberately never moves cache directories:
+    // another install referenced by a copied config must keep its own caches,
+    // and a missing local cache is re-downloaded by the refresh self-heal.
+    // Deliberate cache moves happen only when switching storage scope in
+    // set_portable_mode.
     let original_config = config.clone();
-    let migration = migrate_remote_provider_cache_dirs(config, config_path, config_path)?;
-    if !migration.config_changed {
+    let mut changed = false;
+    for provider in &mut config.providers {
+        let ProviderConfig::Remote { id, provider_dir, .. } = provider;
+        let destination = crate::remote_provider_commands::remote_provider_dir(config_path, id)?;
+        if provider_dir.as_ref() != Some(&destination) {
+            *provider_dir = Some(destination);
+            changed = true;
+        }
+    }
+    if !changed {
         return Ok(false);
     }
     if let Err(error) = save_config_to_path(config_path, config) {
-        let rollback_error = migration.rollback().err();
         *config = original_config;
-        return Err(match rollback_error {
-            Some(rollback_error) => format!(
-                "failed to persist repaired provider cache paths: {error}; rollback failed: {rollback_error}"
-            ),
-            None => format!("failed to persist repaired provider cache paths: {error}"),
-        });
+        return Err(format!(
+            "failed to persist repaired provider cache paths: {error}"
+        ));
     }
     Ok(true)
 }
@@ -1823,7 +1836,7 @@ mod tests {
     }
 
     #[test]
-    fn provider_cache_migration_rolls_back_earlier_moves_when_later_cache_collides() {
+    fn provider_cache_migration_keeps_populated_destination_cache() {
         let temp = tempfile::tempdir().expect("temp dir");
         let source_config_path = temp.path().join("app-data").join("config.json");
         let destination_config_path = temp.path().join("portable").join("config.json");
@@ -1845,6 +1858,13 @@ mod tests {
         for path in [&source_first, &source_second, &destination_second] {
             fs::create_dir_all(path).expect("create cache directory");
         }
+        fs::write(source_first.join("provider.json"), "first source").expect("write source");
+        fs::write(source_second.join("provider.json"), "second source").expect("write source");
+        fs::write(
+            destination_second.join("provider.json"),
+            "local destination",
+        )
+        .expect("write local destination");
 
         let mut config = default_config();
         for (id, cache) in [
@@ -1856,23 +1876,48 @@ mod tests {
             *provider_dir = Some(cache);
             config.providers.push(provider);
         }
-        let original_config = config.clone();
 
-        let error = migrate_remote_provider_cache_dirs(
+        migrate_remote_provider_cache_dirs(
             &mut config,
             &source_config_path,
             &destination_config_path,
         )
-        .expect_err("collision rejects migration");
+        .expect("populated destination keeps local cache");
 
-        assert!(error.contains("destination already exists"));
-        assert!(source_first.exists());
-        assert!(source_second.exists());
-        assert_eq!(config, original_config);
+        let destination_first = crate::remote_provider_commands::remote_provider_dir(
+            &destination_config_path,
+            "provider-first",
+        )
+        .expect("first destination cache");
+        // The provider without a local destination still moves.
+        assert!(!source_first.exists());
+        assert_eq!(
+            fs::read_to_string(destination_first.join("provider.json")).expect("read cache"),
+            "first source"
+        );
+        // The populated destination keeps its local copy and the other
+        // install's cache stays untouched.
+        assert_eq!(
+            fs::read_to_string(destination_second.join("provider.json")).expect("read cache"),
+            "local destination"
+        );
+        assert!(source_second.join("provider.json").exists());
+        for (id, cache) in [
+            ("provider-first", destination_first),
+            ("provider-second", destination_second),
+        ] {
+            let provider = config
+                .providers
+                .iter()
+                .find(|provider| matches!(provider, ProviderConfig::Remote { id: provider_id, .. } if provider_id == id))
+                .expect("find provider");
+            let ProviderConfig::Remote { provider_dir, .. } = provider;
+            assert_eq!(provider_dir.as_ref(), Some(&cache));
+        }
     }
 
     #[test]
-    fn repair_moves_legacy_provider_cache_to_active_config_directory() {
+    fn repair_rebinds_provider_cache_paths_without_moving_caches() {
         let temp = tempfile::tempdir().expect("temp dir");
         let legacy_config_path = temp.path().join("app-data").join("config.json");
         let portable_config_path = temp.path().join("portable").join("config.json");
@@ -1898,11 +1943,55 @@ mod tests {
             "provider-a",
         )
         .expect("portable cache path");
-        assert!(!legacy_cache.exists());
-        assert!(portable_cache.join("provider.json").exists());
+        // Another install's cache is never absorbed or deleted by the
+        // startup repair; only the persisted path is rebound.
+        assert!(legacy_cache.join("provider.json").exists());
+        assert!(!portable_cache.exists());
         let loaded = load_or_create_config(&portable_config_path).expect("load repaired config");
         let ProviderConfig::Remote { provider_dir, .. } = &loaded.config.providers[0];
         assert_eq!(provider_dir.as_ref(), Some(&portable_cache));
+    }
+
+    #[test]
+    fn repair_rebinds_copied_install_to_its_own_cache() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let original_config_path = temp.path().join("original").join("config.json");
+        let copied_config_path = temp.path().join("copied").join("config.json");
+        let original_cache =
+            crate::remote_provider_commands::remote_provider_dir(&original_config_path, "provider-a")
+                .expect("original cache path");
+        let copied_cache =
+            crate::remote_provider_commands::remote_provider_dir(&copied_config_path, "provider-a")
+                .expect("copied cache path");
+        for (dir, marker) in [(&original_cache, "original cache"), (&copied_cache, "copied cache")] {
+            fs::create_dir_all(dir).expect("create cache directory");
+            fs::write(dir.join("provider.json"), marker).expect("write cache marker");
+        }
+
+        let mut config = default_config();
+        let mut provider = remote_provider_config("provider-a");
+        let ProviderConfig::Remote { provider_dir, .. } = &mut provider;
+        // The copied config still points at the install it was copied from.
+        *provider_dir = Some(original_cache.clone());
+        config.providers.push(provider);
+        save_config_to_path(&copied_config_path, &config).expect("save copied config");
+
+        assert!(
+            repair_remote_provider_cache_paths(&copied_config_path, &mut config)
+                .expect("repair cache paths")
+        );
+
+        assert_eq!(
+            fs::read_to_string(original_cache.join("provider.json")).expect("read original"),
+            "original cache"
+        );
+        assert_eq!(
+            fs::read_to_string(copied_cache.join("provider.json")).expect("read copied"),
+            "copied cache"
+        );
+        let loaded = load_or_create_config(&copied_config_path).expect("load repaired config");
+        let ProviderConfig::Remote { provider_dir, .. } = &loaded.config.providers[0];
+        assert_eq!(provider_dir.as_ref(), Some(&copied_cache));
     }
 
     #[test]

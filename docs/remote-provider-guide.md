@@ -81,7 +81,7 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 | `permissions` | 否 | 对外部 runtime 是说明字段；对 `builtin-js` 是强制能力边界，格式和用法见下一节。 |
 | `defaultConfig` | 否 | 首次安装时写入本地 provider 配置的默认值，例如 `name`、`timeoutSeconds`、`visibleWindowIds`、`windowLabelOverrides`、`envVars`。后续 provider 更新不会覆盖用户本地修改。 |
 | `parameters` | 否 | 设置页展示的结构化参数。每项可包含 `name`、`label`、`kind`、`required`、`defaultValue`、`placeholder`、`description`、`options`、`helpUrl`、`advanced`。不要放真实凭据。 |
-| `checksums.source` | 否 | Source 文件 SHA-256。启用安全 auto-update 时需要，格式为 `sha256:<hex>`。`version` 只用于展示，不替代 checksum 校验。 |
+| `checksums.source` | 否 | Source 文件 SHA-256。启用安全 auto-update 时需要，格式为 `sha256:<hex>`。更新检测以 checksum 为准；`version` 升高时即使 source 未变化也会视为有可用更新，但不会替代 checksum 校验。 |
 
 ### 向导式配置字段
 
