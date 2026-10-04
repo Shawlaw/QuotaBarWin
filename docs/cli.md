@@ -53,7 +53,7 @@ English version: [`cli.en.md`](cli.en.md)。
 
 `validate` 用于 Provider 作者、CI 和排障场景。默认不会执行 source script 或发起 Provider API 请求；只有显式传入 `--run` 时才会执行。
 
-- `validate --provider ID`：读取本地配置和已缓存 Provider，检查 `providerDir`、`timeoutSeconds`、config runtime 与 manifest runtime 是否一致、required env var 是否已配置、manifest、source 文件、checksum 和 runtime 是否可用。`builtin-js` 显示为内置 runtime，不要求外部可执行文件。
+- `validate --provider ID`：读取本地配置和当前配置目录旁已缓存的 Provider，检查 `timeoutSeconds`、config runtime 与 manifest runtime 是否一致、required env var 是否已配置、manifest、source 文件、checksum 和 runtime 是否可用（缓存始终按当前配置目录解析，不使用配置里记录的 `providerDir`）。`builtin-js` 显示为内置 runtime，不要求外部可执行文件。
 - `validate --manifest PATH`：检查本地 manifest；若 `entry` 是相对本地路径，会自动定位 source。entry 是 URL 时必须传 `--source PATH`。
 
 如需连同实际输出协议一起检查，使用 `validate --provider ID --run`。它会按照该 Provider 已配置的 runtime、secret 和代理执行一次缓存脚本，并确认结果能被当前 `provider-snapshot-v1` 解析器接受；外部 runtime 解析 stdout，`builtin-js` 解析 `main(qb)` 返回值。这可能访问网络和账户 API，因此默认不会执行。结果的 `scriptRun` 为 `notRun`、`passed` 或 `failed`。

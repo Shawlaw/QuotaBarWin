@@ -59,7 +59,7 @@ upstream response fluctuations.
 
 `validate` is for Provider authors, CI, and troubleshooting. By default it does not run the source script or make Provider API requests; it runs only when `--run` is explicitly supplied.
 
-- `validate --provider ID` reads the local config and cached Provider. It checks `providerDir`, `timeoutSeconds`, consistency between config and manifest runtime, configured required env-var names, the manifest, source file, checksum, and runtime availability. `builtin-js` is reported as embedded and needs no external executable.
+- `validate --provider ID` reads the local config and the Provider cached beside the active config directory. It checks `timeoutSeconds`, consistency between config and manifest runtime, configured required env-var names, the manifest, source file, checksum, and runtime availability (the cache always resolves beside the active config; the recorded `providerDir` is ignored). `builtin-js` is reported as embedded and needs no external executable.
 - `validate --manifest PATH` checks a local manifest. It automatically locates the source when `entry` is a relative local path. When entry is a URL, pass `--source PATH`.
 
 To validate the live output protocol too, use `validate --provider ID --run`. It executes the cached script using that Provider's configured runtime, secrets, and proxy, then verifies that the result is accepted by the current `provider-snapshot-v1` parser. External runtimes use stdout; `builtin-js` uses the value returned from `main(qb)`. This can access the network and account API, so it is opt-in. The report's `scriptRun` is `notRun`, `passed`, or `failed`.

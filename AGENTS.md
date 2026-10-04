@@ -156,6 +156,13 @@ Important storage details:
   `remote_provider_commands::remote_provider_dir`; do not duplicate this path
   logic by hand. Cached provider dirs contain `provider.json`, the source file,
   `.meta.json`, and a `.bak` copy of the previous source when overwritten.
+  The cache always resolves beside the active config directory; the persisted
+  `providerDir` field is migration bookkeeping only and is never trusted at
+  run/update/remove time. Refresh self-heals a missing or corrupted cache by
+  re-downloading from the configured manifest URL
+  (`remote_provider_commands::ensure_remote_provider_cache`); update checks
+  treat a higher manifest version as an update even when the source checksum
+  is unchanged.
 
 Secret placeholders:
 
