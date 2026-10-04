@@ -47,6 +47,9 @@ describe("SecretSecuritySettings", () => {
       /Encrypted storage enabled/,
     );
     expect(screen.getByTestId("secret-security-detail")).toHaveTextContent("2");
+    expect(screen.getByTestId("secret-security-note")).toHaveTextContent(
+      /secrets folder/,
+    );
     expect(screen.getByTestId("secret-security-disable")).toBeInTheDocument();
   });
 

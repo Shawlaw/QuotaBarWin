@@ -1342,10 +1342,10 @@ pub fn resolve_named_secret(name: &str, config_dir: &Path) -> Result<String, Str
     {
         let secret_path = managed_path?;
         let decode = |bytes: Vec<u8>| -> Result<String, String> {
-            let secret =
-                crate::secret_encryption::decode_managed_secret_payload(&bytes, name)?
-                    .trim()
-                    .to_string();
+            let secret = crate::secret_encryption::decode_managed_secret_payload(&bytes, name)
+                .map_err(|error| format!("{error}; re-enter the secret in Provider settings"))?
+                .trim()
+                .to_string();
             if secret.is_empty() {
                 Err(format!("Missing managed Provider secret {name}"))
             } else {
@@ -1367,12 +1367,15 @@ pub fn resolve_named_secret(name: &str, config_dir: &Path) -> Result<String, Str
     }
 
     let secret_path = config_dir.join("secrets").join(format!("{name}.txt"));
-    match fs::read_to_string(&secret_path) {
-        Ok(secret) => {
-            let secret = secret.trim().to_string();
-            if !secret.is_empty() {
+    match fs::read(&secret_path) {
+        Ok(bytes) => {
+            // The file may be plaintext the user maintains by hand or a DPAPI
+            // payload produced by the encryption migration; both resolve here.
+            if let Some(secret) = decode_user_secret_file(&bytes, name)? {
                 return Ok(secret);
             }
+            // An empty value keeps falling through to the environment
+            // variable, matching the plaintext-only behavior.
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
@@ -1387,7 +1390,28 @@ pub fn resolve_named_secret(name: &str, config_dir: &Path) -> Result<String, Str
     })
 }
 
-fn is_valid_secret_name(name: &str) -> bool {
+/// Decodes user-managed secret file bytes. Encrypted payloads are unsealed
+/// with DPAPI entropy bound to the secret name; plaintext bytes are returned
+/// as-is. Returns `None` when the value is empty after trimming so callers
+/// can fall back to the environment variable. Errors never contain the value.
+fn decode_user_secret_file(bytes: &[u8], name: &str) -> Result<Option<String>, String> {
+    let value = if crate::secret_encryption::is_encrypted_payload(bytes) {
+        crate::secret_encryption::decrypt_managed_secret(bytes, name).map_err(|_| {
+            format!(
+                "Unable to decrypt secret {name}: it may have been encrypted for a different \
+                 Windows account or copied from another machine; recreate secrets/{name}.txt in \
+                 the config folder"
+            )
+        })?
+    } else {
+        String::from_utf8(bytes.to_vec())
+            .map_err(|_| format!("Secret {name} in the local secrets folder is not valid UTF-8"))?
+    };
+    let trimmed = value.trim().to_string();
+    Ok((!trimmed.is_empty()).then_some(trimmed))
+}
+
+pub(crate) fn is_valid_secret_name(name: &str) -> bool {
     !name.is_empty()
         && name
             .bytes()
@@ -3021,6 +3045,63 @@ mod tests {
             .expect("resolve encrypted managed secret");
 
         assert_eq!(actual, "scoped-secret");
+    }
+
+    #[test]
+    fn user_secret_placeholder_decrypts_dpapi_payload() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let secret_dir = temp.path().join("secrets");
+        fs::create_dir(&secret_dir).expect("create secrets dir");
+        let payload = crate::secret_encryption::encrypt_managed_secret(
+            " user-secret \n",
+            "QBWIN_TEST_USER_ENCRYPTED",
+        )
+        .expect("encrypt");
+        fs::write(secret_dir.join("QBWIN_TEST_USER_ENCRYPTED.txt"), &payload)
+            .expect("write encrypted user secret");
+
+        let actual =
+            resolve_secret_value("${secret:QBWIN_TEST_USER_ENCRYPTED}", temp.path())
+                .expect("resolve encrypted user secret");
+
+        assert_eq!(actual, "user-secret");
+    }
+
+    #[test]
+    fn undecryptable_user_secret_reports_recreate_hint_without_value() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let secret_dir = temp.path().join("secrets");
+        fs::create_dir(&secret_dir).expect("create secrets dir");
+        // Encrypt under a different name so the DPAPI entropy does not match.
+        let payload = crate::secret_encryption::encrypt_managed_secret(
+            "user-secret-value",
+            "QBWIN_TEST_OTHER_NAME",
+        )
+        .expect("encrypt");
+        fs::write(secret_dir.join("QBWIN_TEST_USER_MISMATCH.txt"), &payload)
+            .expect("mismatched payload");
+
+        let error = resolve_secret_value("${secret:QBWIN_TEST_USER_MISMATCH}", temp.path())
+            .expect_err("undecryptable user secret");
+
+        assert!(error.contains("Unable to decrypt secret QBWIN_TEST_USER_MISMATCH"));
+        assert!(error.contains("recreate secrets/QBWIN_TEST_USER_MISMATCH.txt"));
+        assert!(!error.contains("user-secret-value"));
+    }
+
+    #[test]
+    fn empty_user_secret_file_still_falls_back_to_env() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let secret_dir = temp.path().join("secrets");
+        fs::create_dir(&secret_dir).expect("create secrets dir");
+        fs::write(secret_dir.join("QBWIN_TEST_EMPTY_FILE.txt",), " \n").expect("write empty secret");
+        std::env::set_var("QBWIN_TEST_EMPTY_FILE", "from-env");
+
+        let actual = resolve_secret_value("${secret:QBWIN_TEST_EMPTY_FILE}", temp.path())
+            .expect("resolve secret");
+
+        assert_eq!(actual, "from-env");
+        std::env::remove_var("QBWIN_TEST_EMPTY_FILE");
     }
 
     #[test]

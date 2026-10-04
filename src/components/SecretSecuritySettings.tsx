@@ -64,6 +64,9 @@ export function SecretSecuritySettings() {
         <p data-testid="secret-security-detail">
           {t.secretSecurity.statusDetail(status.plaintextCount, status.encryptedCount)}
         </p>
+        <p className="secret-security-section__note" data-testid="secret-security-note">
+          {t.secretSecurity.settingsNote}
+        </p>
         {error ? (
           <p role="alert">{t.secretSecurity.failed}</p>
         ) : null}

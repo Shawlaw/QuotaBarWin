@@ -97,7 +97,7 @@ QuotaBarWin 项目维护的 registry 当前包含以下 manifest；实际可安�
 <config-dir>\secrets\providers\<provider-instance-id>\<parameter-name>.txt
 ```
 
-主配置只保存 `${secret:providers/<provider-instance-id>/<parameter-name>}` 引用，已有密钥不会回显到界面。默认使用 Windows 数据保护（DPAPI）加密保存这些文件，密文只能在当前 Windows 账户下解密；因此把配置目录复制到其他电脑或账户后，需要在 Provider 设置里重新输入密钥（便携模式换机同样适用）。设置页的 **密钥安全** 可以随时启用或关闭加密并迁移已有文件。从旧版本升级的用户会在首次启动时看到一次性确认提示，自行决定是否把现有明文密钥迁移为加密存储；选择暂不启用则继续明文保存，之后仍可在设置页启用。
+主配置只保存 `${secret:providers/<provider-instance-id>/<parameter-name>}` 引用，已有密钥不会回显到界面。默认使用 Windows 数据保护（DPAPI）加密保存这些文件，密文只能在当前 Windows 账户下解密；因此把配置目录复制到其他电脑或账户后，需要在 Provider 设置里重新输入密钥（便携模式换机同样适用）。设置页的 **密钥安全** 可以随时启用或关闭加密并迁移已有文件，迁移范围同时包括手动创建的 `secrets\NAME.txt` 用户密钥文件（见下文 Secret 占位符）：这些文件加密后仍按原来的 `${secret:NAME}` 方式解析，但不能再直接用文本编辑器编辑，需要先在设置页关闭加密恢复明文。从旧版本升级的用户会在首次启动时看到一次性确认提示，自行决定是否把现有明文密钥迁移为加密存储；选择暂不启用则继续明文保存，之后仍可在设置页启用。
 
 **高级兼容模式：** 旧 `${secret:NAME}`、`${env:NAME}`、`${file:C:\path\secret.txt}`、明文值和原始 **环境变量** 编辑器仍然可用，适合已有自动化或第三方 Provider；这些不会在升级时被强制迁移。
 
@@ -222,7 +222,7 @@ Windows AppData 配置：
 
 Secret 占位符：
 
-- `${secret:NAME}`：读取 `<config-dir>\secrets\NAME.txt`，找不到时回退到环境变量 `NAME`。
+- `${secret:NAME}`：读取 `<config-dir>\secrets\NAME.txt`，找不到时回退到环境变量 `NAME`。文件可以是明文，也可以是设置页「密钥安全」迁移出的 DPAPI 加密内容，两种格式解析结果相同。
 - `${env:NAME}`：读取环境变量 `NAME`。
 - `${file:C:\path\secret.txt}`：读取本地文件并裁剪首尾空白。
 

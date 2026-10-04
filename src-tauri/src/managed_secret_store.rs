@@ -34,12 +34,14 @@ impl ManagedSecretRef {
 
 /// File-backed storage for secrets entered through the Provider setup UI.
 ///
-/// The store intentionally provides only instance-scoped files. It is not a
+/// The store intentionally provides only instance-scoped writes; it is not a
 /// system credential store. When the configured storage mode is `Encrypted`,
 /// values are sealed with Windows DPAPI bound to the current user and to the
 /// secret reference; in `Plaintext` mode values are written as-is for
 /// installations that have not opted in. Reads always accept both formats so
-/// mixed state during migration keeps resolving.
+/// mixed state during migration keeps resolving. Batch mode migrations also
+/// cover user-managed `secrets/NAME.txt` files so the whole secrets directory
+/// follows one storage mode.
 #[derive(Debug, Clone)]
 pub struct ManagedSecretStore {
     config_dir: PathBuf,
@@ -195,47 +197,88 @@ impl ManagedSecretStore {
         Ok(entries)
     }
 
-    /// Re-encrypts every plaintext managed secret on disk. Returns the number
-    /// of migrated files. Already-encrypted files are skipped, so partial runs
-    /// can be retried.
+    /// Enumerates every user-managed secret file (`secrets/NAME.txt`) on disk
+    /// in a deterministic order. Only names that the secret resolver could
+    /// actually reference are returned, so unrelated files users parked in the
+    /// secrets directory are left alone.
+    pub fn list_user_secret_entries(&self) -> Result<Vec<UserSecretEntry>, String> {
+        let root = self.config_dir.join(SECRET_DIRECTORY);
+        let mut entries = Vec::new();
+        let files = match fs::read_dir(&root) {
+            Ok(files) => files,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(entries),
+            Err(error) => return Err(format!("Unable to list user secret files: {error}")),
+        };
+        for file in files {
+            let file =
+                file.map_err(|error| format!("Unable to list user secret files: {error}"))?;
+            if !file.file_type().map_err(|error| error.to_string())?.is_file() {
+                continue;
+            }
+            let file_name = file.file_name().to_string_lossy().to_string();
+            let Some(name) = file_name.strip_suffix(".txt") else {
+                continue;
+            };
+            // `${secret:providers}` is parsed as an invalid managed Provider
+            // reference, so a file with that exact name is unreachable.
+            if name.is_empty()
+                || file_name.starts_with('.')
+                || name == PROVIDER_SECRET_DIRECTORY
+                || !crate::config::is_valid_secret_name(name)
+            {
+                continue;
+            }
+            entries.push(UserSecretEntry {
+                name: name.to_string(),
+                path: file.path(),
+            });
+        }
+        entries.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(entries)
+    }
+
+    /// Re-encrypts every plaintext secret file on disk, covering both
+    /// application-managed Provider secrets and user-managed
+    /// `secrets/NAME.txt` files. Returns the number of migrated files.
+    /// Already-encrypted files are skipped, so partial runs can be retried.
     pub fn encrypt_plaintext_secrets(&self) -> Result<u32, String> {
         let mut migrated = 0;
         for entry in self.list_provider_secret_entries()? {
-            let bytes = read_entry_bytes(&entry)?;
-            if secret_encryption::is_encrypted_payload(&bytes) {
-                continue;
-            }
-            if bytes.is_empty() {
-                // Empty legacy files resolve as "missing" anyway; leave them.
-                continue;
-            }
-            let value = String::from_utf8(bytes).map_err(|_| {
-                format!(
-                    "Unable to encrypt managed Provider secret {}: value is not valid UTF-8",
-                    entry.reference_name()
-                )
-            })?;
-            let payload =
-                secret_encryption::encrypt_managed_secret(&value, &entry.reference_name())?;
-            write_payload_atomic(&entry.path, &payload)?;
-            migrated += 1;
+            migrated += u32::from(encrypt_entry_if_plaintext(
+                &entry.path,
+                &entry.reference_name(),
+                "managed Provider secret",
+            )?);
+        }
+        for entry in self.list_user_secret_entries()? {
+            migrated += u32::from(encrypt_entry_if_plaintext(
+                &entry.path,
+                &entry.name,
+                "user secret file",
+            )?);
         }
         Ok(migrated)
     }
 
-    /// Decrypts every encrypted managed secret back to plaintext files for
-    /// installations that opt out of encryption. Returns the number of
+    /// Decrypts every encrypted secret file back to plaintext files for
+    /// installations that opt out of encryption, covering both managed
+    /// Provider secrets and user-managed files. Returns the number of
     /// decrypted files.
     pub fn decrypt_encrypted_secrets(&self) -> Result<u32, String> {
         let mut decrypted = 0;
         for entry in self.list_provider_secret_entries()? {
-            let bytes = read_entry_bytes(&entry)?;
-            if !secret_encryption::is_encrypted_payload(&bytes) {
-                continue;
-            }
-            let value = secret_encryption::decrypt_managed_secret(&bytes, &entry.reference_name())?;
-            write_payload_atomic(&entry.path, value.as_bytes())?;
-            decrypted += 1;
+            decrypted += u32::from(decrypt_entry_if_encrypted(
+                &entry.path,
+                &entry.reference_name(),
+                "managed Provider secret",
+            )?);
+        }
+        for entry in self.list_user_secret_entries()? {
+            decrypted += u32::from(decrypt_entry_if_encrypted(
+                &entry.path,
+                &entry.name,
+                "user secret file",
+            )?);
         }
         Ok(decrypted)
     }
@@ -253,6 +296,13 @@ impl ManagedSecretEntry {
     pub fn reference_name(&self) -> String {
         managed_secret_reference(&self.provider_id, &self.parameter_name)
     }
+}
+
+/// A discovered user-managed secret file (`secrets/NAME.txt`) on disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserSecretEntry {
+    pub name: String,
+    pub path: PathBuf,
 }
 
 pub fn managed_secret_reference(provider_id: &str, parameter_name: &str) -> String {
@@ -296,13 +346,33 @@ pub fn managed_secret_path_from_reference(
     }
 }
 
-fn read_entry_bytes(entry: &ManagedSecretEntry) -> Result<Vec<u8>, String> {
-    fs::read(&entry.path).map_err(|error| {
-        format!(
-            "Unable to read managed Provider secret {}: {error}",
-            entry.reference_name()
-        )
-    })
+/// Encrypts one secret file in place if it currently holds plaintext bytes.
+/// Returns whether the file was migrated. Empty files are left alone because
+/// they resolve as "missing" anyway.
+fn encrypt_entry_if_plaintext(path: &Path, reference: &str, label: &str) -> Result<bool, String> {
+    let bytes = fs::read(path)
+        .map_err(|error| format!("Unable to read {label} {reference}: {error}"))?;
+    if secret_encryption::is_encrypted_payload(&bytes) || bytes.is_empty() {
+        return Ok(false);
+    }
+    let value = String::from_utf8(bytes)
+        .map_err(|_| format!("Unable to encrypt {label} {reference}: value is not valid UTF-8"))?;
+    let payload = secret_encryption::encrypt_managed_secret(&value, reference)?;
+    write_payload_atomic(path, &payload)?;
+    Ok(true)
+}
+
+/// Decrypts one secret file in place if it currently holds an encrypted
+/// payload. Returns whether the file was restored to plaintext.
+fn decrypt_entry_if_encrypted(path: &Path, reference: &str, label: &str) -> Result<bool, String> {
+    let bytes = fs::read(path)
+        .map_err(|error| format!("Unable to read {label} {reference}: {error}"))?;
+    if !secret_encryption::is_encrypted_payload(&bytes) {
+        return Ok(false);
+    }
+    let value = secret_encryption::decrypt_managed_secret(&bytes, reference)?;
+    write_payload_atomic(path, value.as_bytes())?;
+    Ok(true)
 }
 
 fn ensure_parent(path: &Path) -> Result<(), String> {
@@ -633,5 +703,108 @@ mod tests {
             .list_provider_secret_entries()
             .expect("entries")
             .is_empty());
+    }
+
+    fn user_secret_path(temp: &tempfile::TempDir, name: &str) -> PathBuf {
+        temp.path().join(SECRET_DIRECTORY).join(format!("{name}.txt"))
+    }
+
+    #[test]
+    fn list_user_secret_entries_returns_only_referencable_files() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let store = ManagedSecretStore::new(temp.path(), PLAINTEXT);
+        store
+            .write("provider-a", "API_KEY", "one")
+            .expect("write managed secret");
+        let secret_dir = temp.path().join(SECRET_DIRECTORY);
+        fs::write(secret_dir.join("USER_KEY.txt"), "value").expect("valid user file");
+        fs::write(secret_dir.join(".USER_KEY.123.0.tmp"), "partial").expect("temp file");
+        fs::write(secret_dir.join("dashed-name.txt"), "value").expect("unreachable name");
+        fs::write(secret_dir.join("providers.txt"), "value").expect("reserved name");
+        fs::write(secret_dir.join("notes.md"), "value").expect("non-secret file");
+
+        let entries = store.list_user_secret_entries().expect("entries");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "USER_KEY");
+        assert_eq!(entries[0].path, user_secret_path(&temp, "USER_KEY"));
+    }
+
+    #[test]
+    fn list_user_secret_entries_handles_missing_store() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        assert!(ManagedSecretStore::new(temp.path(), ENCRYPTED)
+            .list_user_secret_entries()
+            .expect("entries")
+            .is_empty());
+    }
+
+    #[test]
+    fn encrypt_plaintext_secrets_migrates_user_files_bound_to_name() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        fs::create_dir_all(temp.path().join(SECRET_DIRECTORY)).expect("secrets dir");
+        fs::write(user_secret_path(&temp, "USER_KEY"), "user-value").expect("user file");
+        ManagedSecretStore::new(temp.path(), PLAINTEXT)
+            .write("provider-a", "API_KEY", "managed-value")
+            .expect("managed file");
+
+        let migrated = ManagedSecretStore::new(temp.path(), ENCRYPTED)
+            .encrypt_plaintext_secrets()
+            .expect("migrate");
+        assert_eq!(migrated, 2);
+
+        let bytes = fs::read(user_secret_path(&temp, "USER_KEY")).expect("user payload");
+        assert!(secret_encryption::is_encrypted_payload(&bytes));
+        assert!(!bytes.windows(11).any(|w| *w == b"user-value"[..]));
+        assert_eq!(
+            decode_managed_secret_payload(&bytes, "USER_KEY").expect("decrypt by name"),
+            "user-value"
+        );
+        assert!(secret_encryption::decrypt_managed_secret(&bytes, "OTHER_NAME").is_err());
+
+        let migrated_again = ManagedSecretStore::new(temp.path(), ENCRYPTED)
+            .encrypt_plaintext_secrets()
+            .expect("migrate again");
+        assert_eq!(migrated_again, 0);
+    }
+
+    #[test]
+    fn encrypt_plaintext_secrets_leaves_empty_user_files_untouched() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        fs::create_dir_all(temp.path().join(SECRET_DIRECTORY)).expect("secrets dir");
+        fs::write(user_secret_path(&temp, "EMPTY_KEY"), "").expect("empty user file");
+
+        let migrated = ManagedSecretStore::new(temp.path(), ENCRYPTED)
+            .encrypt_plaintext_secrets()
+            .expect("migrate");
+
+        assert_eq!(migrated, 0);
+        assert_eq!(
+            fs::read_to_string(user_secret_path(&temp, "EMPTY_KEY")).expect("empty file"),
+            ""
+        );
+    }
+
+    #[test]
+    fn decrypt_encrypted_secrets_restores_user_files() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        fs::create_dir_all(temp.path().join(SECRET_DIRECTORY)).expect("secrets dir");
+        let encrypted = secret_encryption::encrypt_managed_secret("user-value", "USER_KEY")
+            .expect("encrypt");
+        fs::write(user_secret_path(&temp, "USER_KEY"), &encrypted).expect("user file");
+
+        let decrypted = ManagedSecretStore::new(temp.path(), PLAINTEXT)
+            .decrypt_encrypted_secrets()
+            .expect("decrypt all");
+        assert_eq!(decrypted, 1);
+        assert_eq!(
+            fs::read_to_string(user_secret_path(&temp, "USER_KEY")).expect("plaintext"),
+            "user-value"
+        );
+
+        let decrypted_again = ManagedSecretStore::new(temp.path(), PLAINTEXT)
+            .decrypt_encrypted_secrets()
+            .expect("decrypt again");
+        assert_eq!(decrypted_again, 0);
     }
 }

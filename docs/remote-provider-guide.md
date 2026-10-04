@@ -407,7 +407,9 @@ QuotaBarWin 只会解析和提供实例配置中的环境变量。
 对应 `envVars` 只保存 `${secret:providers/<provider-instance-id>/<parameter-name>}`。该文件默认使用 Windows 数据保护（DPAPI）加密保存（仅当前 Windows 账户可解密，换机或换账户后需重新输入），应用不会把其内容写入 config、日志、诊断或表单回显。这个应用托管形式也通过下述既有 `${secret:...}` resolver 读取。
 
 `${secret:NAME}` 会优先读取 `<config-dir>/secrets/NAME.txt`，找不到时回退到环境变量
-`NAME`。`${env:NAME}` 和 `${file:C:\path\secret.txt}` 也仍然支持。
+`NAME`。这些用户自管文件默认是明文，也可以在设置页的「密钥安全」中随托管密钥一起
+加密迁移；加密后仍按同一占位符解析，但需要先关闭加密才能再用文本编辑器直接编辑。
+`${env:NAME}` 和 `${file:C:\path\secret.txt}` 也仍然支持。
 
 单账号时，如果 manifest 声明了 `requiredEnvVars: ["KIMI_API_KEY"]`，并且你没有在
 设置页填写 `envVars`，QuotaBarWin 会默认尝试读取：

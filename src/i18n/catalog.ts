@@ -199,6 +199,7 @@ export type I18nCatalog = {
     promptLater: string;
     migrating: string;
     settingsTitle: string;
+    settingsNote: string;
     statusEncrypted: string;
     statusPlaintext: string;
     statusDetail: (plaintextCount: number, encryptedCount: number) => string;
@@ -613,7 +614,7 @@ export const en: I18nCatalog = {
   secretSecurity: {
     promptTitle: "Encrypted secret storage",
     promptIntro:
-      "QuotaBarWin can protect locally stored Provider secrets with Windows data protection (DPAPI). Encrypted secrets can only be read by the current Windows account.",
+      "QuotaBarWin can protect locally stored secret files — Provider secrets and the txt files you created in the secrets folder — with Windows data protection (DPAPI). Encrypted secrets can only be read by the current Windows account.",
     promptMigrateBody: (count) =>
       `${count} existing plaintext secret${count === 1 ? "" : "s"} will be encrypted immediately.`,
     promptEnableBody:
@@ -624,6 +625,8 @@ export const en: I18nCatalog = {
     promptLater: "Not now",
     migrating: "Encrypting...",
     settingsTitle: "Secret security",
+    settingsNote:
+      "Encryption covers Provider secrets saved in settings and the txt files you created in the secrets folder. Encrypted files can no longer be edited directly in a text editor; disable encryption here to restore plaintext.",
     statusEncrypted: "Encrypted storage enabled (Windows DPAPI)",
     statusPlaintext: "Encryption disabled (secrets stored in plaintext)",
     statusDetail: (plaintextCount, encryptedCount) =>
@@ -1072,7 +1075,7 @@ export const zhCN: I18nCatalog = {
   secretSecurity: {
     promptTitle: "密钥加密存储",
     promptIntro:
-      "QuotaBarWin 可以使用 Windows 数据保护（DPAPI）加密保存在本机的 Provider 密钥，加密后仅当前 Windows 账户可以读取。",
+      "QuotaBarWin 可以使用 Windows 数据保护（DPAPI）加密保存在本机的密钥文件（包括 Provider 密钥和 secrets 目录下手动创建的 txt 文件），加密后仅当前 Windows 账户可以读取。",
     promptMigrateBody: (count) => `检测到 ${count} 个现有明文密钥，启用后将立即加密。`,
     promptEnableBody: "当前还没有已保存的密钥，启用后新保存的密钥会加密存储。",
     promptPortabilityNote:
@@ -1081,6 +1084,8 @@ export const zhCN: I18nCatalog = {
     promptLater: "暂不启用",
     migrating: "正在加密...",
     settingsTitle: "密钥安全",
+    settingsNote:
+      "加密范围包括设置中保存的 Provider 密钥和 secrets 目录下手动创建的 txt 文件；加密后这些文件无法再用文本编辑器直接编辑，可随时在此关闭加密恢复明文。",
     statusEncrypted: "已启用加密存储（Windows DPAPI）",
     statusPlaintext: "未启用加密（密钥明文保存）",
     statusDetail: (plaintextCount, encryptedCount) =>

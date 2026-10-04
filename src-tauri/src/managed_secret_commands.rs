@@ -115,18 +115,21 @@ fn classify_provider_secrets(config_dir: &Path) -> Result<(u32, u32), String> {
     let store = ManagedSecretStore::new(config_dir, SecretStorageMode::Encrypted);
     let mut plaintext_count = 0;
     let mut encrypted_count = 0;
-    for entry in store.list_provider_secret_entries()? {
-        let bytes = std::fs::read(&entry.path).map_err(|error| {
-            format!(
-                "Unable to read managed Provider secret {}: {error}",
-                entry.reference_name()
-            )
-        })?;
+    let mut classify = |path: &std::path::Path, label: &str| -> Result<(), String> {
+        let bytes = std::fs::read(path)
+            .map_err(|error| format!("Unable to read {label}: {error}"))?;
         if secret_encryption::is_encrypted_payload(&bytes) {
             encrypted_count += 1;
         } else {
             plaintext_count += 1;
         }
+        Ok(())
+    };
+    for entry in store.list_provider_secret_entries()? {
+        classify(&entry.path, &format!("managed Provider secret {}", entry.reference_name()))?;
+    }
+    for entry in store.list_user_secret_entries()? {
+        classify(&entry.path, &format!("user secret file {}", entry.name))?;
     }
     Ok((plaintext_count, encrypted_count))
 }
@@ -182,13 +185,16 @@ mod tests {
         ManagedSecretStore::new(temp.path(), SecretStorageMode::Encrypted)
             .write("provider-b", "TOKEN", "two")
             .expect("encrypted secret");
+        std::fs::create_dir_all(temp.path().join("secrets")).expect("secrets dir");
+        std::fs::write(temp.path().join("secrets").join("USER_KEY.txt"), "user-one")
+            .expect("plaintext user secret");
 
         let status =
             managed_secrets_encryption_status_for_path(&path).expect("status");
 
         assert_eq!(status.storage, SecretStorageMode::Plaintext);
         assert!(status.prompt_pending);
-        assert_eq!(status.plaintext_count, 1);
+        assert_eq!(status.plaintext_count, 2);
         assert_eq!(status.encrypted_count, 1);
     }
 
@@ -199,14 +205,20 @@ mod tests {
         ManagedSecretStore::new(temp.path(), SecretStorageMode::Plaintext)
             .write("provider-a", "API_KEY", "one")
             .expect("plaintext secret");
+        std::fs::create_dir_all(temp.path().join("secrets")).expect("secrets dir");
+        let user_secret = temp.path().join("secrets").join("USER_KEY.txt");
+        std::fs::write(&user_secret, "user-one").expect("plaintext user secret");
 
         let migrated =
             enable_managed_secrets_encryption_for_path(&path).expect("enable");
 
-        assert_eq!(migrated, 1);
+        assert_eq!(migrated, 2);
         assert!(secret_encryption::is_encrypted_payload(&secret_bytes(
             &temp, "provider-a", "API_KEY"
         )));
+        assert!(secret_encryption::is_encrypted_payload(
+            &std::fs::read(&user_secret).expect("user secret file")
+        ));
         assert_eq!(
             read_storage(&path),
             (SecretStorageMode::Encrypted, false)

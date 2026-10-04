@@ -167,7 +167,10 @@ Important storage details:
 Secret placeholders:
 
 - `${secret:NAME}` reads `<config-dir>\secrets\NAME.txt`, then env var `NAME`.
-  These user-managed files always stay plaintext.
+  These user-managed files are plaintext by hand and may also hold a DPAPI
+  payload (`QBWSEC1`) sealed with entropy derived from the secret name when
+  the user migrates them through the secret-security settings; reads accept
+  both formats, and only the batch mode migration rewrites them.
 - `${secret:providers/INSTANCE/PARAMETER}` reads the application-managed,
   instance-isolated file under
   `<config-dir>\secrets\providers\INSTANCE\PARAMETER.txt`. When

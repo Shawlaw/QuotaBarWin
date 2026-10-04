@@ -49,8 +49,7 @@ pub fn decrypt_managed_secret(payload: &[u8], reference: &str) -> Result<String,
     let value = crypt_data(false, blob, &entropy).map_err(|error| {
         format!(
             "Unable to decrypt managed Provider secret {reference}: {error}; it may have been \
-             encrypted for a different Windows account or copied from another machine, so \
-             re-enter the secret in Provider settings"
+             encrypted for a different Windows account or copied from another machine"
         )
     })?;
     String::from_utf8(value)

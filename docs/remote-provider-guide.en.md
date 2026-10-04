@@ -521,7 +521,7 @@ For an installation form backed by `parameters`, a secret entered by a normal us
 
 The matching `envVars` entry stores only `${secret:providers/<provider-instance-id>/<parameter-name>}`. The file is encrypted with Windows data protection (DPAPI) by default and can only be decrypted by the current Windows account (secrets must be re-entered after moving to another PC or account); the app does not place its contents in config, logs, diagnostics, or form read-back. This application-managed form is read through the existing `${secret:...}` resolver described below.
 
-`${secret:NAME}` reads `<config-dir>/secrets/NAME.txt` first and falls back to environment variable `NAME`. Existing `${file:C:\path\secret.txt}` and `${env:NAME}` placeholders are still supported.
+`${secret:NAME}` reads `<config-dir>/secrets/NAME.txt` first and falls back to environment variable `NAME`. These user-managed files are plaintext by default, but they can be encrypted together with the managed secrets through the "Secret security" settings; encrypted files still resolve through the same placeholder, and disabling encryption restores direct text-editor editing. Existing `${file:C:\path\secret.txt}` and `${env:NAME}` placeholders are still supported.
 
 For a single account, if the manifest declares `requiredEnvVars:
 ["KIMI_API_KEY"]` and you leave provider `envVars` empty, QuotaBarWin tries this

@@ -97,7 +97,7 @@ The normal path does not require creating a `secrets` directory or txt file, ent
 <config-dir>\secrets\providers\<provider-instance-id>\<parameter-name>.txt
 ```
 
-The main config stores only the `${secret:providers/<provider-instance-id>/<parameter-name>}` reference, and existing secret values are never shown in the UI. These files are encrypted with Windows data protection (DPAPI) by default, and the ciphertext can only be decrypted by the current Windows account — after copying the configuration directory to another PC or account (including portable installs moved between machines), re-enter the secrets in Provider settings. The **Secret security** section in Settings can enable or disable encryption and migrate existing files at any time. Users upgrading from older versions see a one-time confirmation prompt on first launch asking whether to migrate existing plaintext secrets; choosing "Not now" keeps plaintext storage, and encryption can still be enabled later in Settings.
+The main config stores only the `${secret:providers/<provider-instance-id>/<parameter-name>}` reference, and existing secret values are never shown in the UI. These files are encrypted with Windows data protection (DPAPI) by default, and the ciphertext can only be decrypted by the current Windows account — after copying the configuration directory to another PC or account (including portable installs moved between machines), re-enter the secrets in Provider settings. The **Secret security** section in Settings can enable or disable encryption and migrate existing files at any time. The migration also covers user-managed `secrets\NAME.txt` files (see the secret placeholders below): once encrypted they still resolve through the same `${secret:NAME}` placeholder, but they can no longer be edited directly in a text editor — disable encryption in Settings first to restore plaintext. Users upgrading from older versions see a one-time confirmation prompt on first launch asking whether to migrate existing plaintext secrets; choosing "Not now" keeps plaintext storage, and encryption can still be enabled later in Settings.
 
 **Advanced compatibility:** existing `${secret:NAME}`, `${env:NAME}`, `${file:C:\path\secret.txt}`, literal values, and the raw **Environment variables** editor remain available for third-party Providers and automation. Upgrading never forces a migration.
 
@@ -222,7 +222,7 @@ In portable mode, the remote provider cache is stored beside the exe with the re
 
 Secret placeholders:
 
-- `${secret:NAME}`: reads `<config-dir>\secrets\NAME.txt`, then falls back to the environment variable `NAME`.
+- `${secret:NAME}`: reads `<config-dir>\secrets\NAME.txt`, then falls back to the environment variable `NAME`. The file may hold plaintext or a DPAPI-encrypted payload migrated through the "Secret security" settings; both formats resolve the same way.
 - `${env:NAME}`: reads the environment variable `NAME`.
 - `${file:C:\path\secret.txt}`: reads a local file and trims surrounding whitespace.
 
