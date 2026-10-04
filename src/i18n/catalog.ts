@@ -204,6 +204,7 @@ export type I18nCatalog = {
     statusPlaintext: string;
     statusDetail: (plaintextCount: number, encryptedCount: number) => string;
     enableAction: string;
+    migrateAction: string;
     disableAction: string;
     working: string;
     failed: string;
@@ -632,6 +633,7 @@ export const en: I18nCatalog = {
     statusDetail: (plaintextCount, encryptedCount) =>
       `${plaintextCount} plaintext, ${encryptedCount} encrypted.`,
     enableAction: "Enable encryption and migrate existing secrets",
+    migrateAction: "Encrypt remaining plaintext secrets",
     disableAction: "Disable encryption (decrypt to plaintext)",
     working: "Working...",
     failed: "Secret encryption operation failed"
@@ -1091,6 +1093,7 @@ export const zhCN: I18nCatalog = {
     statusDetail: (plaintextCount, encryptedCount) =>
       `明文密钥 ${plaintextCount} 个，加密密钥 ${encryptedCount} 个。`,
     enableAction: "启用加密并迁移现有密钥",
+    migrateAction: "加密剩余明文密钥",
     disableAction: "关闭加密（解密为明文）",
     working: "正在处理...",
     failed: "密钥加密操作失败"

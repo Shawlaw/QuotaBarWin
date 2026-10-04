@@ -50,6 +50,35 @@ describe("SecretSecuritySettings", () => {
     expect(screen.getByTestId("secret-security-note")).toHaveTextContent(
       /secrets folder/,
     );
+    expect(screen.queryByTestId("secret-security-migrate")).not.toBeInTheDocument();
+    expect(screen.getByTestId("secret-security-disable")).toBeInTheDocument();
+  });
+
+  test("encrypts leftover plaintext secrets without leaving encrypted mode", async () => {
+    statusMock
+      .mockResolvedValueOnce({
+        storage: "encrypted",
+        promptPending: false,
+        plaintextCount: 2,
+        encryptedCount: 3,
+      })
+      .mockResolvedValueOnce({
+        storage: "encrypted",
+        promptPending: false,
+        plaintextCount: 0,
+        encryptedCount: 5,
+      });
+    enableMock.mockResolvedValue(2);
+
+    renderSettings();
+
+    const migrate = await screen.findByTestId("secret-security-migrate");
+    expect(migrate).toHaveTextContent(/Encrypt remaining/i);
+    fireEvent.click(migrate);
+
+    await waitFor(() => expect(enableMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId("secret-security-detail")).toHaveTextContent("0");
+    expect(screen.queryByTestId("secret-security-migrate")).not.toBeInTheDocument();
     expect(screen.getByTestId("secret-security-disable")).toBeInTheDocument();
   });
 

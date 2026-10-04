@@ -70,6 +70,17 @@ export function SecretSecuritySettings() {
         {error ? (
           <p role="alert">{t.secretSecurity.failed}</p>
         ) : null}
+        {encrypted && status.plaintextCount > 0 ? (
+          <button
+            className="button-secondary"
+            data-testid="secret-security-migrate"
+            disabled={busy}
+            onClick={() => void runAction(enableManagedSecretsEncryption)}
+            type="button"
+          >
+            {busy ? t.secretSecurity.working : t.secretSecurity.migrateAction}
+          </button>
+        ) : null}
         <button
           className="button-secondary"
           data-testid={
