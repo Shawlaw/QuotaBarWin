@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Header } from "./components/Header";
 import { GlobalStatusStrip } from "./components/GlobalStatusStrip";
+import { HistoryPanel } from "./components/HistoryPanel";
 import { ProviderCard } from "./components/ProviderCard";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TrayPopup } from "./components/TrayPopup";
 import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { SecretEncryptionPrompt } from "./components/SecretEncryptionPrompt";
 import {
+  clearQuotaEventHistory,
   dismissAppUpdateNotice,
   dismissManagedSecretsEncryptionPrompt,
   enableManagedSecretsEncryption,
@@ -17,6 +19,7 @@ import {
   getConfig,
   getConfigStorageInfo,
   getManagedSecretsEncryptionStatus,
+  getQuotaEventHistory,
   listenForRefreshRequests,
   listenForAppUpdateStatus,
   listenForApplicationUpdateRequests,
@@ -41,6 +44,7 @@ import type {
   ManagedSecretsEncryptionStatus,
   ProviderSnapshot,
   ProviderSetupTestResult,
+  QuotaEvent,
   RemoteProviderConfig
 } from "./types";
 import type { AppUpdateInfo, AppUpdateStatusEvent } from "./lib/api";
@@ -280,6 +284,10 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isConfigStorageBusy, setIsConfigStorageBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [eventsViewOpen, setEventsViewOpen] = useState(false);
+  const [quotaEvents, setQuotaEvents] = useState<QuotaEvent[] | null>(null);
+  const [quotaEventsLoadFailed, setQuotaEventsLoadFailed] = useState(false);
+  const [eventsRefreshToken, setEventsRefreshToken] = useState(0);
   const [initialProviderSettingsView, setInitialProviderSettingsView] = useState<"main" | "add">("main");
   const [settingsCloseRequest, setSettingsCloseRequest] = useState(0);
   const [settingsHomeRequest, setSettingsHomeRequest] = useState(0);
@@ -296,21 +304,44 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const settingsOpenRef = useRef(false);
   const overviewScrollRegionRef = useRef<HTMLDivElement>(null);
   const settingsScrollRegionRef = useRef<HTMLDivElement>(null);
+  const historyScrollRegionRef = useRef<HTMLDivElement>(null);
   const overviewScrollTopRef = useRef(0);
   const settingsScrollTopRef = useRef(0);
+  const historyScrollTopRef = useRef(0);
   const isShowingSettings = settingsOpen && config !== null;
+  const isShowingEvents = eventsViewOpen && !isShowingSettings;
 
   useLayoutEffect(() => {
     const scrollRegion = isShowingSettings
       ? settingsScrollRegionRef.current
-      : overviewScrollRegionRef.current;
+      : isShowingEvents
+        ? historyScrollRegionRef.current
+        : overviewScrollRegionRef.current;
     const scrollTop = isShowingSettings
       ? settingsScrollTopRef.current
-      : overviewScrollTopRef.current;
+      : isShowingEvents
+        ? historyScrollTopRef.current
+        : overviewScrollTopRef.current;
     if (scrollRegion) {
       scrollRegion.scrollTop = scrollTop;
     }
-  }, [isShowingSettings]);
+  }, [isShowingEvents, isShowingSettings]);
+
+  const loadQuotaEvents = useCallback(async () => {
+    try {
+      const events = await getQuotaEventHistory();
+      setQuotaEvents(events);
+      setQuotaEventsLoadFailed(false);
+    } catch {
+      setQuotaEventsLoadFailed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    // New events are recorded whenever a snapshot lands (including updates
+    // pushed by the background scheduler), so the history follows snapshots.
+    void loadQuotaEvents();
+  }, [loadQuotaEvents, eventsRefreshToken, snapshot]);
 
   const syncCachedSnapshot = useCallback(async () => {
     try {
@@ -694,13 +725,23 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
       if (settingsScrollRegionRef.current) {
         settingsScrollTopRef.current = settingsScrollRegionRef.current.scrollTop;
       }
+    } else if (eventsViewOpen && historyScrollRegionRef.current) {
+      historyScrollTopRef.current = historyScrollRegionRef.current.scrollTop;
     } else if (overviewScrollRegionRef.current) {
       overviewScrollTopRef.current = overviewScrollRegionRef.current.scrollTop;
     }
   }
 
+  function openEvents() {
+    rememberActiveScrollPosition();
+    closeSettings();
+    setEventsViewOpen(true);
+    setEventsRefreshToken((current) => current + 1);
+  }
+
   function openSettings(initialView: "main" | "add") {
     rememberActiveScrollPosition();
+    setEventsViewOpen(false);
     settingsOpenRef.current = true;
     setInitialProviderSettingsView(initialView);
     setSettingsOpen(true);
@@ -747,7 +788,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   return (
     <main className="app-shell">
       <Header
-        activeView={settingsOpen ? "settings" : "overview"}
+        activeView={isShowingEvents ? "events" : settingsOpen ? "settings" : "overview"}
         appVersion={appVersion}
         isLoading={isLoading}
         onOpenOverview={() => {
@@ -755,10 +796,12 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
           // a new network refresh. The native command returns its in-memory
           // snapshot cache before falling back to the on-disk cache.
           void syncCachedSnapshot();
+          setEventsViewOpen(false);
           if (settingsOpen) {
             setSettingsCloseRequest((current) => current + 1);
           }
         }}
+        onOpenEvents={openEvents}
         onOpenSettings={() => {
           if (settingsOpen) {
             setSettingsHomeRequest((current) => current + 1);
@@ -818,6 +861,26 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
               applyAppUpdateStatus({ info, animate: true })
             }
             initialProviderSettingsView={initialProviderSettingsView}
+          />
+        </div>
+      ) : isShowingEvents ? (
+        <div
+          className="app-view-scroll-region"
+          data-testid="events-scroll-region"
+          ref={historyScrollRegionRef}
+          onScroll={(event) => {
+            historyScrollTopRef.current = event.currentTarget.scrollTop;
+          }}
+        >
+          <HistoryPanel
+            events={quotaEvents}
+            loadFailed={quotaEventsLoadFailed}
+            onRefresh={() => setEventsRefreshToken((current) => current + 1)}
+            onClear={() => {
+              void clearQuotaEventHistory()
+                .then(() => loadQuotaEvents())
+                .catch(() => setQuotaEventsLoadFailed(true));
+            }}
           />
         </div>
       ) : (

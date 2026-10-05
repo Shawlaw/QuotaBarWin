@@ -31,6 +31,7 @@ import { DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS } from "../lib/defaults";
 import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
 import { LocalApiSettings } from "./LocalApiSettings";
+import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { SecretSecuritySettings } from "./SecretSecuritySettings";
 import {
   ProviderWindowSettings,
@@ -1264,6 +1265,10 @@ export function SettingsPanel({
           {appUpdateInfo?.error ? <div className="settings-message">{t.appUpdate.checkFailed}</div> : null}
           {appUpdateMessage ? <div className="settings-message">{appUpdateMessage}</div> : null}
         </section>
+        <NotificationSettingsSection
+          settings={config.notifications}
+          onChange={(notifications) => onChange({ ...config, notifications })}
+        />
       </section>
 
       <section className="settings-section" aria-label={t.settings.providers} data-testid="providers-settings-section">

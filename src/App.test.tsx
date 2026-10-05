@@ -87,6 +87,8 @@ const mocks = vi.hoisted(() => {
     disableManagedSecretsEncryption: vi.fn(async () => 0),
     dismissManagedSecretsEncryptionPrompt: vi.fn(async () => undefined),
     getNetworkProxy: vi.fn(async () => null),
+    getQuotaEventHistory: vi.fn(async () => []),
+    clearQuotaEventHistory: vi.fn(async () => undefined),
     getProviderPresets: vi.fn(async () => []),
     getTrayPopupPresentationId: vi.fn(async () => 0),
     listLocalApiNetworkInterfaces: vi.fn(() => new Promise<never>(() => undefined)),

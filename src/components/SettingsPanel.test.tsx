@@ -76,6 +76,10 @@ const apiMocks = vi.hoisted(() => {
     disableManagedSecretsEncryption: vi.fn(async () => 0),
     dismissManagedSecretsEncryptionPrompt: vi.fn(async () => undefined),
     getConfig: vi.fn(async () => state.config),
+    sendTestNotification: vi.fn(async () => ({
+      toast: { status: "skipped", detail: "disabled" },
+      webhook: { status: "skipped", detail: "disabled" },
+    })),
     listenForAppUpdateStatus: vi.fn(async () => () => undefined),
     getInstalledRemoteProviderManifest: vi.fn(async (id: string) => ({
       schemaVersion: 1,

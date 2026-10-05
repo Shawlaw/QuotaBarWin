@@ -13,6 +13,7 @@ export type I18nCatalog = {
   header: {
     overview: string;
     settings: string;
+    events: string;
     refresh: string;
     refreshing: string;
   };
@@ -359,6 +360,51 @@ export type I18nCatalog = {
     runtime: string;
     manifestUrl: string;
   };
+  events: {
+    title: string;
+    subtitle: string;
+    empty: string;
+    loadFailed: string;
+    clear: string;
+    clearConfirm: string;
+    filterAll: string;
+    filterQuota: string;
+    filterProvider: string;
+    filterApp: string;
+    messages: {
+      appStarted: (startedHidden: boolean) => string;
+      appUpdateApplied: (version: string) => string;
+      quotaReset: (subject: string, remainingPercent: string | null) => string;
+      quotaRecoveredUnexpected: (subject: string, usedBefore: string, usedAfter: string) => string;
+      quotaExhausted: (subject: string) => string;
+      quotaLow: (subject: string, remainingPercent: string) => string;
+      providerError: (providerName: string, error: string | null) => string;
+      providerRecovered: (providerName: string) => string;
+      unknown: (eventType: string) => string;
+    };
+  };
+  notificationSettings: {
+    title: string;
+    toastEnabled: string;
+    toastHint: string;
+    webhookEnabled: string;
+    webhookHint: string;
+    webhookUrl: string;
+    webhookUrlPlaceholder: string;
+    webhookTimeout: string;
+    webhookTimeoutError: string;
+    eventsLabel: string;
+    eventsHint: string;
+    eventTypeLabel: Record<string, string>;
+    testButton: string;
+    testing: string;
+    testToastSent: string;
+    testToastDisabled: string;
+    testToastFailed: (detail: string) => string;
+    testWebhookSent: (statusCode: number | null) => string;
+    testWebhookDisabled: string;
+    testWebhookFailed: (detail: string) => string;
+  };
   providerSetup: {
     title: (name: string) => string;
     accountName: string;
@@ -420,6 +466,7 @@ export const en: I18nCatalog = {
   header: {
     overview: "Overview",
     settings: "Settings",
+    events: "Events",
     refresh: "Refresh",
     refreshing: "Refreshing"
   },
@@ -795,6 +842,71 @@ export const en: I18nCatalog = {
     runtime: "Runtime",
     manifestUrl: "Manifest"
   },
+  events: {
+    title: "Event history",
+    subtitle:
+      "Recorded locally: app lifecycle, quota resets and recoveries, exhaustion, and Provider health changes. Enable notifications in Settings to also receive webhooks and Windows notifications.",
+    empty: "No events recorded yet.",
+    loadFailed: "Unable to load the event history.",
+    clear: "Clear history",
+    clearConfirm: "Clear all recorded events? This cannot be undone.",
+    filterAll: "All",
+    filterQuota: "Quota",
+    filterProvider: "Providers",
+    filterApp: "App",
+    messages: {
+      appStarted: (startedHidden) =>
+        startedHidden ? "Application started in the background" : "Application started",
+      appUpdateApplied: (version) => `Updated to ${version}`,
+      quotaReset: (subject, remainingPercent) =>
+        remainingPercent === null
+          ? `${subject} quota reset`
+          : `${subject} quota reset (${remainingPercent}% remaining)`,
+      quotaRecoveredUnexpected: (subject, usedBefore, usedAfter) =>
+        `${subject} quota recovered unexpectedly (used ${usedBefore}% → ${usedAfter}%)`,
+      quotaExhausted: (subject) => `${subject} quota exhausted`,
+      quotaLow: (subject, remainingPercent) =>
+        `${subject} quota is low (${remainingPercent}% remaining)`,
+      providerError: (providerName, error) =>
+        error ? `${providerName} refresh failed: ${error}` : `${providerName} refresh failed`,
+      providerRecovered: (providerName) => `${providerName} recovered`,
+      unknown: (eventType) => `Event: ${eventType}`
+    }
+  },
+  notificationSettings: {
+    title: "Notifications",
+    toastEnabled: "Windows notifications",
+    toastHint:
+      "Shows a system toast for the selected events while QuotaBarWin is running.",
+    webhookEnabled: "Webhook notifications",
+    webhookHint:
+      "POSTs selected events as JSON to your webhook. The URL supports ${secret:NAME}, ${env:NAME}, and ${file:...} references, and follows the app proxy settings.",
+    webhookUrl: "Webhook URL",
+    webhookUrlPlaceholder: "https://example.com/hook or ${secret:QUOTA_WEBHOOK_URL}",
+    webhookTimeout: "Webhook timeout (seconds)",
+    webhookTimeoutError: "Webhook timeout must be between 1 and 60 seconds.",
+    eventsLabel: "Notified event types",
+    eventsHint:
+      "All events are always recorded in the event history; this list only controls notifications.",
+    eventTypeLabel: {
+      "quota-reset": "Quota reset",
+      "quota-recovered-unexpected": "Unexpected quota recovery",
+      "quota-exhausted": "Quota exhausted",
+      "quota-low": "Quota low",
+      "provider-error": "Provider failure",
+      "provider-recovered": "Provider recovered",
+      "app-update-applied": "Application updated",
+      "app-started": "Application started"
+    },
+    testButton: "Send test notification",
+    testing: "Sending...",
+    testToastSent: "Windows notification sent.",
+    testToastDisabled: "Windows notifications are disabled.",
+    testToastFailed: (detail) => `Windows notification failed: ${detail}`,
+    testWebhookSent: (statusCode) => `Webhook delivered (HTTP ${statusCode ?? "200"}).`,
+    testWebhookDisabled: "Webhook is disabled.",
+    testWebhookFailed: (detail) => `Webhook failed: ${detail}`
+  },
   providerSetup: {
     title: (name) => `Set up ${name}`,
     accountName: "Account name",
@@ -882,6 +994,7 @@ export const zhCN: I18nCatalog = {
   header: {
     overview: "概览",
     settings: "设置",
+    events: "事件",
     refresh: "刷新",
     refreshing: "刷新中"
   },
@@ -1253,6 +1366,67 @@ export const zhCN: I18nCatalog = {
     lastCheckedAt: "上次检查",
     runtime: "运行时",
     manifestUrl: "Manifest"
+  },
+  events: {
+    title: "事件历史",
+    subtitle:
+      "事件记录保存在本机：应用启动/升级、额度重置与异常回升、额度用尽/偏低、Provider 异常与恢复。可在设置中开启 Webhook 与 Windows 系统通知。",
+    empty: "还没有记录到事件。",
+    loadFailed: "无法加载事件历史。",
+    clear: "清空历史",
+    clearConfirm: "确定清空所有已记录的事件？此操作不可撤销。",
+    filterAll: "全部",
+    filterQuota: "额度",
+    filterProvider: "提供方",
+    filterApp: "应用",
+    messages: {
+      appStarted: (startedHidden) => (startedHidden ? "应用已在后台启动" : "应用已启动"),
+      appUpdateApplied: (version) => `已更新到 ${version}`,
+      quotaReset: (subject, remainingPercent) =>
+        remainingPercent === null
+          ? `${subject} 额度已重置`
+          : `${subject} 额度已重置（剩余 ${remainingPercent}%）`,
+      quotaRecoveredUnexpected: (subject, usedBefore, usedAfter) =>
+        `${subject} 额度异常回升（已用 ${usedBefore}% → ${usedAfter}%）`,
+      quotaExhausted: (subject) => `${subject} 额度已用尽`,
+      quotaLow: (subject, remainingPercent) => `${subject} 额度偏低（剩余 ${remainingPercent}%）`,
+      providerError: (providerName, error) =>
+        error ? `${providerName} 刷新失败：${error}` : `${providerName} 刷新失败`,
+      providerRecovered: (providerName) => `${providerName} 已恢复正常`,
+      unknown: (eventType) => `事件：${eventType}`
+    }
+  },
+  notificationSettings: {
+    title: "通知",
+    toastEnabled: "Windows 系统通知",
+    toastHint: "QuotaBarWin 运行期间，所选事件会弹出系统通知。",
+    webhookEnabled: "Webhook 通知",
+    webhookHint:
+      "将所选事件以 JSON POST 发送到你的 Webhook。URL 支持 ${secret:NAME}、${env:NAME}、${file:...} 引用，并遵循应用的网络代理设置。",
+    webhookUrl: "Webhook URL",
+    webhookUrlPlaceholder: "https://example.com/hook 或 ${secret:QUOTA_WEBHOOK_URL}",
+    webhookTimeout: "Webhook 超时（秒）",
+    webhookTimeoutError: "Webhook 超时必须介于 1 到 60 秒。",
+    eventsLabel: "通知的事件类型",
+    eventsHint: "所有事件始终记录在事件历史中；此列表只控制是否发送通知。",
+    eventTypeLabel: {
+      "quota-reset": "额度重置",
+      "quota-recovered-unexpected": "额度异常回升",
+      "quota-exhausted": "额度用尽",
+      "quota-low": "额度偏低",
+      "provider-error": "Provider 异常",
+      "provider-recovered": "Provider 恢复",
+      "app-update-applied": "应用已更新",
+      "app-started": "应用启动"
+    },
+    testButton: "发送测试通知",
+    testing: "正在发送...",
+    testToastSent: "Windows 通知已发送。",
+    testToastDisabled: "Windows 系统通知未启用。",
+    testToastFailed: (detail) => `Windows 通知发送失败：${detail}`,
+    testWebhookSent: (statusCode) => `Webhook 已送达（HTTP ${statusCode ?? "200"}）。`,
+    testWebhookDisabled: "Webhook 未启用。",
+    testWebhookFailed: (detail) => `Webhook 发送失败：${detail}`
   },
   providerSetup: {
     title: (name) => `配置 ${name}`,

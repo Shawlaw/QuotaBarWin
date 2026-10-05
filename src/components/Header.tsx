@@ -2,10 +2,11 @@ import { useI18n } from "../i18n";
 import { visibleAppVersion } from "../lib/appVersion";
 
 type HeaderProps = {
-  activeView: "overview" | "settings";
+  activeView: "overview" | "settings" | "events";
   appVersion: string;
   isLoading: boolean;
   onOpenOverview: () => void;
+  onOpenEvents: () => void;
   onRefresh: () => void;
   onOpenSettings: () => void;
   onOpenGithub: () => void;
@@ -16,6 +17,7 @@ export function Header({
   appVersion,
   isLoading,
   onOpenOverview,
+  onOpenEvents,
   onRefresh,
   onOpenSettings,
   onOpenGithub
@@ -49,6 +51,14 @@ export function Header({
           onClick={onOpenSettings}
         >
           {t.header.settings}
+        </button>
+        <button
+          type="button"
+          data-testid="open-events"
+          className={activeView === "events" ? "button-secondary" : undefined}
+          onClick={onOpenEvents}
+        >
+          {t.header.events}
         </button>
         <button
           type="button"

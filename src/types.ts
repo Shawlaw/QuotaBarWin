@@ -63,10 +63,44 @@ export type AppConfig = {
   trayPopupSize?: TrayPopupSize | null;
   appUpdate?: AppUpdateSettings;
   localApi?: LocalApiSettings;
+  notifications?: NotificationSettings;
   secretsStorage?: SecretStorageMode;
   secretsEncryptionPromptPending?: boolean;
   remoteProviderRegistry?: RemoteProviderRegistrySettings;
   providers: RemoteProviderConfig[];
+};
+
+export type NotificationSettings = {
+  toastEnabled: boolean;
+  webhookEnabled: boolean;
+  webhookUrl?: string | null;
+  webhookTimeoutSeconds: number;
+  events: string[];
+};
+
+export type QuotaEventSeverity = "info" | "positive" | "warning" | "error";
+
+export type QuotaEvent = {
+  id: number;
+  occurredAt: string;
+  eventType: string;
+  severity: QuotaEventSeverity | string;
+  providerId?: string | null;
+  providerName?: string | null;
+  windowId?: string | null;
+  windowLabel?: string | null;
+  details?: Record<string, unknown> | null;
+};
+
+export type TestNotificationResult = {
+  toast: TestChannelOutcome;
+  webhook: TestChannelOutcome;
+};
+
+export type TestChannelOutcome = {
+  status: "sent" | "skipped" | "failed" | string;
+  detail?: string | null;
+  statusCode?: number | null;
 };
 
 export type SecretStorageMode = "encrypted" | "plaintext";

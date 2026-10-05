@@ -11,6 +11,7 @@ import type {
   ManagedSecretsEncryptionStatus,
   ProxyConfig,
   ProxyTestResult,
+  QuotaEvent,
   RemoteProviderCatalogEntry,
   RemoteProviderConfig,
   RemoteProviderManifest,
@@ -18,6 +19,7 @@ import type {
   ProviderSetupTestResult,
   RegistryMigrationResult,
   SaveProviderSetupRequest,
+  TestNotificationResult,
 } from "../types";
 import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "./defaults";
 
@@ -44,6 +46,21 @@ const fallbackConfig: AppConfig = {
     enabled: false,
     bindTarget: { kind: "loopback" },
     port: 41833,
+  },
+  notifications: {
+    toastEnabled: false,
+    webhookEnabled: false,
+    webhookUrl: null,
+    webhookTimeoutSeconds: 10,
+    events: [
+      "app-update-applied",
+      "quota-reset",
+      "quota-recovered-unexpected",
+      "quota-exhausted",
+      "quota-low",
+      "provider-error",
+      "provider-recovered",
+    ],
   },
   remoteProviderRegistry: {
     registryUrl: DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
@@ -171,6 +188,33 @@ export async function getCachedSnapshot(): Promise<AppSnapshot | null> {
   }
 
   return invoke<AppSnapshot | null>("get_cached_snapshot");
+}
+
+export async function getQuotaEventHistory(): Promise<QuotaEvent[]> {
+  if (!hasTauriInternals()) {
+    return [];
+  }
+
+  return invoke<QuotaEvent[]>("get_quota_event_history");
+}
+
+export async function clearQuotaEventHistory(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  await invoke<void>("clear_quota_event_history");
+}
+
+export async function sendTestNotification(): Promise<TestNotificationResult> {
+  if (!hasTauriInternals()) {
+    return {
+      toast: { status: "skipped", detail: "desktop only" },
+      webhook: { status: "skipped", detail: "desktop only" },
+    };
+  }
+
+  return invoke<TestNotificationResult>("send_test_notification");
 }
 
 export async function getConfig(): Promise<AppConfig> {
