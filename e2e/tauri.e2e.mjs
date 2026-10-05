@@ -69,6 +69,7 @@ try {
   await switchToWindowWithTestId("open-overview");
   await dismissSecretEncryptionUpgradePrompt();
   await assertAppStartedAndShowsQuota();
+  await assertContextMenuIsFiltered();
   await assertConfigCanBeSaved();
   await assertProviderSetupCanSaveTestAndEnable();
   await assertRemoteProviderCanRefreshAndTimeout();
@@ -354,6 +355,38 @@ async function openOverview() {
 
 async function byTestId(id) {
   return app.$(`[data-testid="${id}"]`);
+}
+
+// The app suppresses the WebView2 page context menu (reload/back entries)
+// everywhere except editable fields. WebView2 only shows the native menu when
+// the contextmenu event is not canceled, so asserting defaultPrevented inside
+// the shipped bundle verifies the effect without reading the native UI.
+async function assertContextMenuIsFiltered() {
+  const result = await app.execute(() => {
+    const fireContextMenu = (target) => {
+      const event = new Event("contextmenu", { cancelable: true, bubbles: true });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    const menuKeptOnInput = !fireContextMenu(input);
+    input.remove();
+    return {
+      suppressedOnPage: fireContextMenu(document.body),
+      menuKeptOnInput
+    };
+  });
+  assert.equal(
+    result.suppressedOnPage,
+    true,
+    "context menu must be suppressed outside editable fields"
+  );
+  assert.equal(
+    result.menuKeptOnInput,
+    true,
+    "context menu must stay available on editable fields"
+  );
 }
 
 // Schema 22 migration marks upgraded configurations with a one-time secret
