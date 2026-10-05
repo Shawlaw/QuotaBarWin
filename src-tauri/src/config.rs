@@ -15,10 +15,30 @@ use crate::{
     proxy::ProxyConfig,
 };
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 22;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 23;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_LOCAL_API_PORT: u16 = 41833;
+pub const DEFAULT_WEBHOOK_TIMEOUT_SECONDS: u64 = 10;
+pub const NOTIFICATION_EVENT_APP_STARTED: &str = "app-started";
+pub const NOTIFICATION_EVENT_APP_UPDATE_APPLIED: &str = "app-update-applied";
+pub const NOTIFICATION_EVENT_QUOTA_RESET: &str = "quota-reset";
+pub const NOTIFICATION_EVENT_QUOTA_RECOVERED_UNEXPECTED: &str = "quota-recovered-unexpected";
+pub const NOTIFICATION_EVENT_QUOTA_EXHAUSTED: &str = "quota-exhausted";
+pub const NOTIFICATION_EVENT_QUOTA_LOW: &str = "quota-low";
+pub const NOTIFICATION_EVENT_PROVIDER_ERROR: &str = "provider-error";
+pub const NOTIFICATION_EVENT_PROVIDER_RECOVERED: &str = "provider-recovered";
+// app-started is recorded in the event history but stays out of notification
+// defaults so enabling a channel does not start pinging on every launch.
+pub const DEFAULT_NOTIFICATION_EVENTS: &[&str] = &[
+    NOTIFICATION_EVENT_APP_UPDATE_APPLIED,
+    NOTIFICATION_EVENT_QUOTA_RESET,
+    NOTIFICATION_EVENT_QUOTA_RECOVERED_UNEXPECTED,
+    NOTIFICATION_EVENT_QUOTA_EXHAUSTED,
+    NOTIFICATION_EVENT_QUOTA_LOW,
+    NOTIFICATION_EVENT_PROVIDER_ERROR,
+    NOTIFICATION_EVENT_PROVIDER_RECOVERED,
+];
 pub const DEFAULT_REMOTE_PROVIDER_REGISTRY_URL: &str =
     "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json";
 const CONFIG_FILE_NAME: &str = "config.quotaBarWin.json";
@@ -58,6 +78,8 @@ pub struct AppConfig {
     pub app_update: AppUpdateSettings,
     #[serde(default)]
     pub local_api: LocalApiSettings,
+    #[serde(default)]
+    pub notifications: NotificationSettings,
     #[serde(default = "default_secret_storage_mode")]
     pub secrets_storage: SecretStorageMode,
     #[serde(default)]
@@ -94,6 +116,48 @@ pub struct LocalApiSettings {
 impl Default for LocalApiSettings {
     fn default() -> Self {
         default_local_api_settings()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationSettings {
+    #[serde(default)]
+    pub toast_enabled: bool,
+    #[serde(default)]
+    pub webhook_enabled: bool,
+    #[serde(default)]
+    pub webhook_url: Option<String>,
+    #[serde(default = "default_webhook_timeout_seconds")]
+    pub webhook_timeout_seconds: u64,
+    #[serde(default = "default_notification_events")]
+    pub events: Vec<String>,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        default_notification_settings()
+    }
+}
+
+fn default_webhook_timeout_seconds() -> u64 {
+    DEFAULT_WEBHOOK_TIMEOUT_SECONDS
+}
+
+fn default_notification_events() -> Vec<String> {
+    DEFAULT_NOTIFICATION_EVENTS
+        .iter()
+        .map(|event| event.to_string())
+        .collect()
+}
+
+pub fn default_notification_settings() -> NotificationSettings {
+    NotificationSettings {
+        toast_enabled: false,
+        webhook_enabled: false,
+        webhook_url: None,
+        webhook_timeout_seconds: DEFAULT_WEBHOOK_TIMEOUT_SECONDS,
+        events: default_notification_events(),
     }
 }
 
@@ -455,6 +519,7 @@ pub fn default_config() -> AppConfig {
         tray_popup_size: None,
         app_update: AppUpdateSettings::default(),
         local_api: LocalApiSettings::default(),
+        notifications: default_notification_settings(),
         secrets_storage: default_secret_storage_mode(),
         secrets_encryption_prompt_pending: false,
         remote_provider_registry: RemoteProviderRegistrySettings::default(),
@@ -1003,6 +1068,24 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["secretsStorage"] = serde_json::json!("plaintext");
         value["secretsEncryptionPromptPending"] = serde_json::json!(true);
         value["schemaVersion"] = serde_json::json!(22);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(22);
+    if version < 23 {
+        // Quota event notifications (Windows toast + webhook) are opt-in for
+        // both new and migrated configurations; the event history itself is
+        // always recorded locally.
+        value["notifications"] = serde_json::json!({
+            "toastEnabled": false,
+            "webhookEnabled": false,
+            "webhookUrl": null,
+            "webhookTimeoutSeconds": DEFAULT_WEBHOOK_TIMEOUT_SECONDS,
+            "events": DEFAULT_NOTIFICATION_EVENTS
+        });
+        value["schemaVersion"] = serde_json::json!(23);
     }
 
     Ok(value)
@@ -1787,6 +1870,7 @@ mod tests {
             }),
             app_update: AppUpdateSettings { auto_check: true },
             local_api: LocalApiSettings::default(),
+            notifications: default_notification_settings(),
             secrets_storage: default_secret_storage_mode(),
             secrets_encryption_prompt_pending: false,
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
@@ -2553,6 +2637,55 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v22_adds_disabled_notification_channels() {
+        let value = serde_json::json!({
+            "schemaVersion": 22,
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(migrated["notifications"]["toastEnabled"], serde_json::json!(false));
+        assert_eq!(
+            migrated["notifications"]["webhookEnabled"],
+            serde_json::json!(false)
+        );
+        assert_eq!(migrated["notifications"]["webhookUrl"], serde_json::Value::Null);
+        assert_eq!(
+            migrated["notifications"]["webhookTimeoutSeconds"],
+            serde_json::json!(DEFAULT_WEBHOOK_TIMEOUT_SECONDS)
+        );
+        assert_eq!(
+            migrated["notifications"]["events"],
+            serde_json::json!(DEFAULT_NOTIFICATION_EVENTS)
+        );
+        assert!(!default_config().notifications.toast_enabled);
+        assert!(!default_config().notifications.webhook_enabled);
+    }
+
+    #[test]
+    fn notification_settings_deserialize_with_defaults_for_partial_input() {
+        let settings: NotificationSettings =
+            serde_json::from_value(serde_json::json!({})).expect("partial settings parse");
+
+        assert!(!settings.toast_enabled);
+        assert!(!settings.webhook_enabled);
+        assert_eq!(settings.webhook_url, None);
+        assert_eq!(settings.webhook_timeout_seconds, DEFAULT_WEBHOOK_TIMEOUT_SECONDS);
+        assert_eq!(
+            settings.events,
+            DEFAULT_NOTIFICATION_EVENTS
+                .iter()
+                .map(|event| event.to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn secret_storage_mode_for_config_path_reads_disk_and_defaults_encrypted() {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.quotaBarWin.json");
@@ -2683,6 +2816,7 @@ mod tests {
             }),
             app_update: AppUpdateSettings { auto_check: true },
             local_api: LocalApiSettings::default(),
+            notifications: default_notification_settings(),
             secrets_storage: default_secret_storage_mode(),
             secrets_encryption_prompt_pending: false,
             remote_provider_registry: RemoteProviderRegistrySettings {

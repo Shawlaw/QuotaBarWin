@@ -9,7 +9,10 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::config::{config_path_for_app, load_or_create_config, AppConfig, ProviderConfig};
+use crate::config::{
+    config_path_for_app, load_or_create_config, AppConfig, AppLanguage, NotificationSettings,
+    ProviderConfig,
+};
 use crate::logger::{LogLevel, LogSink};
 use crate::remote_provider_runner::run_remote_provider;
 
@@ -277,6 +280,9 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     let loaded = load_or_create_config(path)?;
     let log = LogSink::from_config_path(path, &loaded.config);
     let global_proxy = loaded.config.network_proxy.clone();
+    let low_quota_warning_threshold = loaded.config.low_quota_warning_threshold;
+    let notification_settings = loaded.config.notifications.clone();
+    let language = loaded.config.language.clone();
     let should_log_quota_data = loaded.config.log_quota_data;
     let cached = cached_snapshot_for_refresh(path, &loaded.config)?;
     let old_providers = cached
@@ -376,7 +382,74 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
         ),
     );
 
+    record_detected_events(
+        path,
+        old_providers,
+        &snapshot,
+        low_quota_warning_threshold,
+        &notification_settings,
+        global_proxy.as_ref(),
+        language,
+        &log,
+    );
+
     Ok(snapshot)
+}
+
+/// Records quota events by diffing the accepted refresh result against the
+/// snapshot that was current before the refresh, then hands the recorded
+/// events to the notification dispatcher. Event detection runs after
+/// stabilization, so only confirmed quota transitions are ever recorded.
+fn record_detected_events(
+    path: &Path,
+    previous_providers: &[ProviderSnapshot],
+    snapshot: &AppSnapshot,
+    low_quota_threshold: f64,
+    notification_settings: &NotificationSettings,
+    global_proxy: Option<&crate::proxy::ProxyConfig>,
+    language: AppLanguage,
+    log: &LogSink,
+) {
+    let pending = crate::quota_events::detect_provider_events(
+        previous_providers,
+        &snapshot.providers,
+        Utc::now(),
+        low_quota_threshold,
+    );
+    if pending.is_empty() {
+        return;
+    }
+    match crate::quota_events::append_events(path, pending) {
+        Ok(recorded) => {
+            for event in &recorded {
+                let _ = log.write(
+                    LogLevel::Info,
+                    "quota_events",
+                    &format!(
+                        "quota event recorded id={} type={} providerId={} windowId={}",
+                        event.id,
+                        event.event_type,
+                        event.provider_id.as_deref().unwrap_or("-"),
+                        event.window_id.as_deref().unwrap_or("-")
+                    ),
+                );
+            }
+            crate::notifications::dispatch_events(
+                path,
+                notification_settings.clone(),
+                global_proxy.cloned(),
+                language,
+                recorded,
+            );
+        }
+        Err(error) => {
+            let _ = log.write(
+                LogLevel::Warn,
+                "quota_events",
+                &format!("failed to persist quota event history: {error}"),
+            );
+        }
+    }
 }
 
 fn should_retry_provider_result(providers: &[ProviderSnapshot]) -> bool {
@@ -936,6 +1009,9 @@ pub fn refresh_provider_from_config_path(
     let loaded = load_or_create_config(path)?;
     let log = LogSink::from_config_path(path, &loaded.config);
     let global_proxy = loaded.config.network_proxy.clone();
+    let low_quota_warning_threshold = loaded.config.low_quota_warning_threshold;
+    let notification_settings = loaded.config.notifications.clone();
+    let language = loaded.config.language.clone();
     let should_log_quota_data = loaded.config.log_quota_data;
     let _ = log.write(
         LogLevel::Info,
@@ -957,6 +1033,7 @@ pub fn refresh_provider_from_config_path(
             providers: Vec::new(),
             refreshed_at: refreshed_at.clone(),
         });
+    let previous_providers = snapshot.providers.clone();
 
     let refreshed_providers = run_provider_with_retry(
         provider.clone(),
@@ -1054,6 +1131,17 @@ pub fn refresh_provider_from_config_path(
         ),
     );
 
+    record_detected_events(
+        path,
+        &previous_providers,
+        &snapshot,
+        low_quota_warning_threshold,
+        &notification_settings,
+        global_proxy.as_ref(),
+        language,
+        &log,
+    );
+
     Ok(snapshot)
 }
 
@@ -1121,6 +1209,7 @@ mod tests {
             tray_popup_size: None,
             app_update: crate::config::AppUpdateSettings { auto_check: true },
             local_api: crate::config::LocalApiSettings::default(),
+            notifications: crate::config::default_notification_settings(),
             secrets_storage: crate::config::SecretStorageMode::Encrypted,
             secrets_encryption_prompt_pending: false,
             remote_provider_registry: RemoteProviderRegistrySettings::default(),

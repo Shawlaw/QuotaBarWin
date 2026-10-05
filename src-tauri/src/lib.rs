@@ -13,12 +13,14 @@ mod local_api_token;
 pub mod logger;
 mod managed_secret_commands;
 mod managed_secret_store;
+mod notifications;
 #[cfg(test)]
 mod productization;
 mod provider_error;
 mod provider_setup;
 mod proxy;
 mod quota;
+mod quota_events;
 mod redact;
 mod refresh_scheduler;
 mod remote_provider;
@@ -76,6 +78,49 @@ fn startup_log_message(version: &str, hidden: bool) -> String {
     format!("app started version={version} hidden={hidden}")
 }
 
+/// Records an application-level event (startup, applied update) and dispatches
+/// it through the enabled notification channels.
+fn record_app_event(app: &tauri::AppHandle, pending: quota_events::PendingQuotaEvent) {
+    let Ok(path) = config::config_path_for_app(app) else {
+        return;
+    };
+    let Ok(loaded) = config::load_or_create_config(&path) else {
+        return;
+    };
+    let log = logger::LogSink::from_config_path(&path, &loaded.config);
+    match quota_events::append_events(&path, vec![pending]) {
+        Ok(recorded) => {
+            for event in &recorded {
+                let _ = log.write(
+                    logger::LogLevel::Info,
+                    "quota_events",
+                    &format!(
+                        "quota event recorded id={} type={} providerId={} windowId={}",
+                        event.id,
+                        event.event_type,
+                        event.provider_id.as_deref().unwrap_or("-"),
+                        event.window_id.as_deref().unwrap_or("-")
+                    ),
+                );
+            }
+            notifications::dispatch_events(
+                &path,
+                loaded.config.notifications.clone(),
+                loaded.config.network_proxy.clone(),
+                loaded.config.language.clone(),
+                recorded,
+            );
+        }
+        Err(error) => {
+            let _ = log.write(
+                logger::LogLevel::Warn,
+                "quota_events",
+                &format!("failed to persist quota event history: {error}"),
+            );
+        }
+    }
+}
+
 fn should_start_hidden() -> bool {
     std::env::args().any(|arg| matches!(arg.as_str(), HIDDEN_STARTUP_ARG | "--start-hidden"))
 }
@@ -112,8 +157,15 @@ pub fn run() {
                     let _ = window.hide();
                 }
             }
-            if let Err(error) = app_update::acknowledge_applied_update(app.handle()) {
-                eprintln!("Failed to acknowledge applied application update: {error}");
+            match app_update::acknowledge_applied_update(app.handle()) {
+                Ok(true) => record_app_event(
+                    app.handle(),
+                    quota_events::pending_app_update_applied(&app_info::app_display_version()),
+                ),
+                Ok(false) => {}
+                Err(error) => {
+                    eprintln!("Failed to acknowledge applied application update: {error}")
+                }
             }
             let app_handle = app.handle().clone();
             match config::config_path_for_app(&app_handle).and_then(|path| {
@@ -133,6 +185,20 @@ pub fn run() {
                     "app",
                     &startup_log_message(&app_version, start_hidden),
                 );
+                if let Ok(recorded) = quota_events::append_events(
+                    &path,
+                    vec![quota_events::pending_app_started(start_hidden)],
+                ) {
+                    if !recorded.is_empty() {
+                        notifications::dispatch_events(
+                            &path,
+                            loaded.config.notifications.clone(),
+                            loaded.config.network_proxy.clone(),
+                            loaded.config.language.clone(),
+                            recorded,
+                        );
+                    }
+                }
                 Ok((loaded.config.launch_at_startup, loaded.config.theme))
             }) {
                 Ok((enabled, theme)) => {
@@ -172,6 +238,9 @@ pub fn run() {
             refresh_snapshot,
             refresh_provider,
             get_cached_snapshot,
+            quota_events::get_quota_event_history,
+            quota_events::clear_quota_event_history,
+            notifications::send_test_notification,
             get_local_api_status,
             list_local_api_network_interfaces,
             get_local_api_access_token,
