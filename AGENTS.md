@@ -55,6 +55,12 @@ Start with these files:
   behavior, rollback, and actionable error categories.
 - `src-tauri/src/quota.rs` for snapshot building, retry, stale fallback,
   on-disk snapshot cache, and provider dispatch.
+- `src-tauri/src/quota_events.rs` and `src-tauri/src/notifications.rs` for the
+  quota event history (edge-triggered detection from stabilized snapshots,
+  `events.quotaBarWin.json` persistence capped at 200 entries) and notification
+  delivery (Windows toast via `winrt-notification` with an HKCU
+  AppUserModelID registration for the portable build; webhook POST with
+  secret-placeholder URLs, global proxy, timeout, and redacted failures).
 - `src-tauri/src/remote_provider.rs`,
   `src-tauri/src/remote_provider_commands.rs`, and
   `src-tauri/src/remote_provider_runner.rs` for remote provider install/update,
@@ -75,7 +81,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `22`.
+Current config schema version: `23`.
 
 Supported persisted provider config kind:
 
@@ -118,6 +124,10 @@ Remote provider public contract:
   storage; migrated configurations keep plaintext with a one-time upgrade
   prompt. Encrypted managed secret files are DPAPI blobs (magic prefix
   `QBWSEC1`) bound to the current Windows user and the secret reference.
+- Schema `22 -> 23` adds notification settings (`notifications`: `toastEnabled`,
+  `webhookEnabled`, `webhookUrl`, `webhookTimeoutSeconds`, `events`). Both new
+  and migrated configurations default to both channels disabled; the local
+  event history is recorded regardless of the channels.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.
@@ -152,6 +162,9 @@ Important storage details:
   `quotabarwin.log.1`; `logMaxBytes` defaults to `10 * 1024 * 1024`.
 - `last_snapshot.quotaBarWin.json` is written beside the active config. Provider
   `metadata` is stripped from this disk cache.
+- `events.quotaBarWin.json` is written beside the active config and keeps the
+  newest 200 recorded quota events. Never write provider `metadata` or secret
+  values into it.
 - Installed remote provider cache paths are resolved by
   `remote_provider_commands::remote_provider_dir`; do not duplicate this path
   logic by hand. Cached provider dirs contain `provider.json`, the source file,

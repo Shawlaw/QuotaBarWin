@@ -137,6 +137,25 @@ See the [Local Integration API guide](docs/local-integration-api.en.md) for requ
 
 ---
 
+## Event History And Notifications
+
+The **Events** tab in the main window is an in-app event history that records:
+
+- application starts and applied application updates;
+- quota resets, unexpected mid-cycle quota recoveries, quota exhaustion, and quota dropping below the warning threshold;
+- Provider refresh failures and recoveries.
+
+Events are detected by diffing consecutive snapshots after each refresh; transient spikes go through a confirmation pass first, so only confirmed transitions are recorded. The history supports category filters, manual refresh, and one-click clearing. It is stored locally next to the active configuration (`events.quotaBarWin.json`, capped at 200 entries) and never contains Provider metadata or credentials.
+
+Under **Settings → Notifications** you can enable two delivery channels (both off by default):
+
+- **Windows notifications**: shows a toast for the selected events; the portable build registers the app's AppUserModelID in the current user's registry, so no installer is required.
+- **Webhook**: POSTs the selected events as a JSON batch to your endpoint. The URL supports `${secret:NAME}`, `${env:NAME}`, and `${file:...}` placeholders (for example, keep token-bearing webhook addresses in your `secrets` folder), follows the global proxy settings, and has a configurable timeout; delivery failures are only written to redacted local logs.
+
+Notifications arrive on the **next refresh** after a change happens (default interval 300 seconds, adjustable in settings); nothing is sent retroactively while the app is not running. A webhook sends your quota event data to an external address you choose, so only point it at services you trust.
+
+---
+
 ## Agent / CLI
 
 The portable release also includes `QuotaBarWin.Cli.exe`. It reuses installed Providers, credentials, and configuration to give agents and scripts JSON-only quota queries and threshold decisions. It does not open a window or tray, or start another desktop-app instance.
@@ -160,6 +179,8 @@ The CLI can also validate Provider configuration, manifest, source checksum, and
 - Shows quota windows, remaining usage, reset times, status, and progress bars per Provider.
 - Includes a local HTTP API and a JSON CLI for agents and scripts, with refresh, cached reads, and remaining-percent threshold decisions.
 - Supports per-Provider manual refresh and global interval-based auto refresh.
+- In-app event history records app starts/updates, quota resets/unexpected recoveries/exhaustion/low quota, and Provider failures/recoveries; stored locally, filterable, and clearable.
+- Supports event notifications via Windows toasts and webhooks (JSON POST), with per-event-type selection and a test-notification button.
 - Includes Windows tray integration, hidden startup, single-instance behavior, and a resizable tray popup.
 - Provides settings for refresh interval, display mode, low-quota warning threshold, language, light/dark theme, log level, and launch at startup. The theme follows Windows by default and can be fixed to light or dark.
 - Supports AppData storage and portable mode. Portable mode keeps config, logs, secrets, and cached remote providers beside the exe.
