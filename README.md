@@ -167,6 +167,7 @@ CLI 也可在安装前或排障时校验 Provider 配置、manifest、source che
 - 支持从 remote registry / manifest 安装 Provider，并进行缓存、SHA-256 校验和更新检查。
 - 支持用于远程安装/更新和 Provider 运行兜底的全局代理，代理类型包含 HTTP 与 SOCKS5，并可在保存前检测代理可用性；Provider 可通过环境变量配置自己的运行期代理。
 - 支持 secret 占位符，避免在配置和日志中直接保存真实密钥。
+- 界面内屏蔽 WebView 默认的网页右键菜单（含「刷新」等易误触条目）；输入框右键保留系统剪切/复制/粘贴，选中文本的 Ctrl+C 等快捷键不受影响。
 
 ---
 

@@ -167,6 +167,7 @@ The CLI can also validate Provider configuration, manifest, source checksum, and
 - Installs Providers from remote registries/manifests with caching, SHA-256 verification, and update checks.
 - Supports global and per-Provider proxies with HTTP and SOCKS5, including a pre-save global proxy connectivity test.
 - Supports secret placeholders so real credentials do not need to be stored directly in config or logs.
+- Suppresses the WebView default page context menu (including easy-to-misclick entries like Reload); right-clicking editable fields keeps the system cut/copy/paste menu, and shortcuts such as Ctrl+C still work.
 
 ---
 
