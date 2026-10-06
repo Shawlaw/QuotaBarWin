@@ -10,7 +10,7 @@ It is disabled by default. When enabled, it listens only at:
 http://127.0.0.1:41833
 ```
 
-Use **Settings → General → Local Integration API** to disable it or change the port. Valid ports are `1` through `65535`.
+Use **Settings → Advanced → Local Integration API** to disable it or change the port. Valid ports are `1` through `65535`.
 
 To let trusted devices on a LAN connect, select one or more active network interfaces; the server listens on every active IPv4 and IPv6 address for each selected interface. You can also select all active network interfaces to listen on every current active IP address. Network modes keep `127.0.0.1` listening without a token by default, and the settings page can disable that additional listener. When loopback remains selected, an empty external-interface selection can be saved and runs as a local-only service. After a network change, save the settings again or restart the app to rebind addresses. Before enabling non-loopback addresses, save either a manually entered or randomly generated Bearer token in the settings page; network listener settings cannot be saved until a token exists. A saved token is shown masked, can be copied directly into a caller configuration, and can be manually replaced or rotated. Every request to such addresses must provide that token. IPv6 addresses use brackets; link-local addresses also require a URL-encoded interface scope, for example `http://[fe80::1234%2512]:41833`.
 
