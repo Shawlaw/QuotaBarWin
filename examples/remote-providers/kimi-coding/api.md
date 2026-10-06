@@ -2,7 +2,7 @@
 
 English version: [`api.en.md`](api.en.md).
 
-本文记录 `kimi-coding/provider.js`（`builtin-js`）当前实现依据的请求、响应形状和字段映射。它是示例 Provider 的实现说明，不代表第三方 API 的稳定官方契约；接口变化时应同步更新脚本和本文档。
+本文记录 `kimi-coding/provider.js`（`builtin-js`）当前实现依据的请求、响应形状和字段映射。它是示例提供方的实现说明，不代表第三方 API 的稳定官方契约；接口变化时应同步更新脚本和本文档。
 
 ## 请求
 

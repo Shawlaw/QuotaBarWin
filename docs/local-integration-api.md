@@ -1,6 +1,6 @@
 # 本地集成 API
 
-QuotaBarWin 1.3.0 起提供本地 HTTP API，供本机脚本、自动化、浏览器扩展和其他桌面应用读取归一化后的额度数据。它不是 Provider 接口，也不替代 [Agent / CLI](cli.md) 的阈值判断功能。
+QuotaBarWin 1.3.0 起提供本地 HTTP API，供本机脚本、自动化、浏览器扩展和其他桌面应用读取归一化后的额度数据。它不是提供方接口，也不替代 [Agent / CLI](cli.md) 的阈值判断功能。
 
 ## 启用与监听范围
 
@@ -73,7 +73,7 @@ Authorization: Bearer <在设置页中取得的令牌>
 }
 ```
 
-若尚未产生快照，返回 `404` 和 `snapshot_unavailable`。快照暂时不可读取时返回 `503`。为避免泄露 Provider 内部信息，每个 Provider 的 `metadata` 与 `diagnostics` 均会清空为 `null`；错误文本也会先经过敏感信息脱敏。
+若尚未产生快照，返回 `404` 和 `snapshot_unavailable`。快照暂时不可读取时返回 `503`。为避免泄露提供方内部信息，每个提供方的 `metadata` 与 `diagnostics` 均会清空为 `null`；错误文本也会先经过敏感信息脱敏。
 
 ### `POST /v1/refresh`
 
@@ -95,7 +95,7 @@ Authorization: Bearer <在设置页中取得的令牌>
 }
 ```
 
-刷新使用应用原有的 Provider 执行、缓存、重试和并发保护逻辑。该端点不会写入 Provider 配置或凭据。
+刷新使用应用原有的提供方执行、缓存、重试和并发保护逻辑。该端点不会写入提供方配置或凭据。
 
 ## 示例
 

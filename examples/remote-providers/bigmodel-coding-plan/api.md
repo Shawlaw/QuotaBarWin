@@ -2,7 +2,7 @@
 
 English version: [`api.en.md`](api.en.md).
 
-本文记录 `bigmodel-coding-plan/provider.js`（`builtin-js`）当前实现依据的请求、响应形状和字段映射。它是示例 Provider 的实现说明，不代表第三方 API 的稳定官方契约；接口变化时应同步更新脚本和本文档。
+本文记录 `bigmodel-coding-plan/provider.js`（`builtin-js`）当前实现依据的请求、响应形状和字段映射。它是示例提供方的实现说明，不代表第三方 API 的稳定官方契约；接口变化时应同步更新脚本和本文档。
 
 ## 请求
 
@@ -60,7 +60,7 @@ English version: [`api.en.md`](api.en.md).
 | `nextResetTime` | `windows[].resetAt` | Unix epoch 毫秒转 ISO 时间。 |
 | `type == "TOKENS_LIMIT"` | `windows[].unit = "tokens"` | 非 token 窗口的 `unit` 为 `null`。 |
 | `data.level` | `metadata.level` | 套餐等级。 |
-| `usageDetails[].modelCode/usage` | `metadata.usageDetails` | 按模型汇总的 Provider 专属用量。 |
+| `usageDetails[].modelCode/usage` | `metadata.usageDetails` | 按模型汇总的提供方专属用量。 |
 | `code` | `metadata.rawCode` | 原始状态码。 |
 | `msg` | `metadata.rawMsg` | 原始消息。 |
 

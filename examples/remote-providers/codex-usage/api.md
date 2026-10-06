@@ -2,7 +2,7 @@
 
 English version: [`api.en.md`](api.en.md).
 
-本文记录 `codex-usage/provider.js`（`builtin-js`）当前实现依据的请求、响应形状和字段映射。它是示例 Provider 的实现说明，不代表第三方 API 的稳定官方契约；接口变化时应同步更新脚本和本文档。
+本文记录 `codex-usage/provider.js`（`builtin-js`）当前实现依据的请求、响应形状和字段映射。它是示例提供方的实现说明，不代表第三方 API 的稳定官方契约；接口变化时应同步更新脚本和本文档。
 
 ## 请求
 
@@ -13,7 +13,7 @@ English version: [`api.en.md`](api.en.md).
 | 鉴权 | `Authorization: Bearer <access token>` |
 | 固定请求头 | `User-Agent: QuotaBarWin/1.1` |
 | 可选请求头 | `ChatGPT-Account-Id: <account id>` |
-| 超时 | Provider 实例的 `timeoutSeconds`（默认 30 秒） |
+| 超时 | 提供方实例的 `timeoutSeconds`（默认 30 秒） |
 
 Token 和 account id 来源按优先级读取：
 
@@ -21,7 +21,7 @@ Token 和 account id 来源按优先级读取：
 2. `CODEX_AUTH_FILE` 指向的 JSON 文件
 3. `~/.codex/auth.json`
 
-本地 Codex auth 文件当前读取 `tokens.access_token` 和 `tokens.account_id`。脚本通过受限 `qb.fs.readText()` 读取 manifest 允许的 auth 文件，并通过 `qb.http.request()` 请求 API；代理由宿主处理，Provider 环境中的 `QBWIN_PROXY_URL` 优先，项目全局代理为兜底。安装源代理只用于下载 registry、manifest 和脚本。支持 `socks5:`、`socks5h:`、`http:` 和 `https:` 代理。
+本地 Codex auth 文件当前读取 `tokens.access_token` 和 `tokens.account_id`。脚本通过受限 `qb.fs.readText()` 读取 manifest 允许的 auth 文件，并通过 `qb.http.request()` 请求 API；代理由宿主处理，提供方环境中的 `QBWIN_PROXY_URL` 优先，项目全局代理为兜底。安装源代理只用于下载 registry、manifest 和脚本。支持 `socks5:`、`socks5h:`、`http:` 和 `https:` 代理。
 
 ## 响应形状
 

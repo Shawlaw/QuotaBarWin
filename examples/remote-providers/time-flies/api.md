@@ -1,4 +1,4 @@
-# 光阴似箭 Provider 说明
+# 光阴似箭提供方说明
 
 English version: [`api.en.md`](api.en.md).
 

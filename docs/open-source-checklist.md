@@ -18,11 +18,11 @@
   预览开关、测试构建过程或无需用户处理的实现细节。
 - portable update 使用独立 Ed25519 密钥；私钥只存放在 GitHub Actions
   secret，公钥通过仓库变量编译进客户端。
-- 基础 CSP 已启用，日志、诊断和 Provider stderr 经过脱敏。
+- 基础 CSP 已启用，日志、诊断和提供方 stderr 经过脱敏。
 - `.gitignore` 覆盖常见私钥、证书、keystore、日志、配置和本地 secret。
-- Provider manifest/source 和 registry checksum 由 Rust 测试校验。
-- 当前 E2E 使用 schema 17 remote Provider fixture，覆盖设置保存、向导式
-  Provider 保存/测试/启用、secret 不进入 config/log、Provider 刷新/超时、
+- 提供方 manifest/source 和 registry checksum 由 Rust 测试校验。
+- 当前 E2E 使用 schema 17 的远程提供方 fixture，覆盖设置保存、向导式
+  提供方保存/测试/启用、secret 不进入 config/log、提供方刷新/超时、
   托盘交互和删除托管 secret。
 
 ## 每次公开同步前
@@ -36,8 +36,8 @@
 - [ ] 中文公开文档和已有英文对应文档同步。
 - [ ] manifest `checksums.source` 和 registry manifest checksum 同步。
 - [ ] package、Cargo、Tauri、README 和 CHANGELOG 版本一致。
-- [ ] `AGENTS.md` 中的配置 schema、Provider contract 和 E2E 说明与代码一致。
-- [ ] 应用内置 `src-tauri/src/remote_provider_guide.html` 与公开 Provider
+- [ ] `AGENTS.md` 中的配置 schema、提供方契约和 E2E 说明与代码一致。
+- [ ] 应用内置 `src-tauri/src/remote_provider_guide.html` 与公开的提供方
   指南包含相同的关键契约和安全说明。
 
 ## 每个 Release 候选必须执行
@@ -56,9 +56,9 @@ cargo audit --file src-tauri/Cargo.lock
 
 还需人工验证：
 
-- [ ] 全新 portable 目录可安装 Provider、填写表单、保存并测试、自动启用。
-- [ ] 测试失败保留配置但不启用 Provider，重试成功后恢复。
-- [ ] 旧配置升级后 Provider 保持 ready，不要求迁移旧 secret。
+- [ ] 全新 portable 目录可安装提供方、填写表单、保存并测试、自动启用。
+- [ ] 测试失败保留配置但不启用提供方，重试成功后恢复。
+- [ ] 旧配置升级后提供方保持 ready，不要求迁移旧 secret。
 - [ ] 托管 secret 不出现在 config、日志、错误、diagnostics 或界面回显。
 - [ ] HTTP、SOCKS5、系统环境代理和代理检测符合文档。
 - [ ] GUI、CLI 和 Updater 均包含在最终 portable zip。

@@ -1,21 +1,21 @@
-# 远程 Provider 示例
+# 远程提供方示例
 
 English version: [`README.en.md`](README.en.md).
 
-这里放的是 QuotaBarWin 可直接托管和安装的远程 Provider 示例。
+这里放的是 QuotaBarWin 可直接托管和安装的远程提供方示例。
 
 ## 目录结构
 
 每个子目录包含：
 
-- `provider.json`：远程 Provider manifest。
-- `provider.js`：项目维护 Provider 使用的 `builtin-js` 源脚本。
-- `api.md`：该 Provider 当前实现依据的请求、响应、字段映射和 fixture。
+- `provider.json`：远程提供方 manifest。
+- `provider.js`：项目维护的提供方使用的 `builtin-js` 源脚本。
+- `api.md`：该提供方当前实现依据的请求、响应、字段映射和 fixture。
 - `api.en.md`：`api.md` 的英文版本。
 
-`manifest.example.json` 是独立的最小 manifest 模板，创建新 Provider 时可以复制后修改。使用 `builtin-js` 时必须保留 schema 2 和 `minAppVersion`，否则新 Provider 会被拒绝；这能让旧版应用在下载新脚本前安全停止更新。
+`manifest.example.json` 是独立的最小 manifest 模板，创建新提供方时可以复制后修改。使用 `builtin-js` 时必须保留 schema 2 和 `minAppVersion`，否则新提供方会被拒绝；这能让旧版应用在下载新脚本前安全停止更新。
 
-`registry.json` 是列出所有示例 Provider 的注册表。在 QuotaBarWin 中打开 **设置 → 提供方 → 远程安装源**，把它的 URL 或本地路径填入 **注册表 URL**，点击 **安装注册表** 即可一次安装这些示例。
+`registry.json` 是列出所有示例提供方的注册表。在 QuotaBarWin 中打开 **设置 → 提供方 → 远程安装源**，把它的 URL 或本地路径填入 **注册表 URL**，点击 **安装注册表** 即可一次安装这些示例。
 
 本仓库托管的示例 registry URL：
 
@@ -23,11 +23,11 @@ English version: [`README.en.md`](README.en.md).
 https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json
 ```
 
-## Provider 列表
+## 提供方列表
 
-顶层 README 只负责发现和导航。每个 Provider 目录下的 `api.md` 记录该示例脚本当前依据的请求、响应和字段映射；修改 `provider.js` 时应同步更新同目录 API 文档。
+顶层 README 只负责发现和导航。每个提供方目录下的 `api.md` 记录该示例脚本当前依据的请求、响应和字段映射；修改 `provider.js` 时应同步更新同目录 API 文档。
 
-| Provider | 数据来源 | 必需环境变量 | API 依据 | 说明 |
+| 提供方 | 数据来源 | 必需环境变量 | API 依据 | 说明 |
 |----------|----------|--------------|----------|------|
 | `kimi-coding` | `GET https://api.kimi.com/coding/v1/usages` | `KIMI_API_KEY` | [`api.md`](kimi-coding/api.md) / [`EN`](kimi-coding/api.en.md) | Kimi 编程额度用量。 |
 | `bigmodel-coding-plan` | `GET https://open.bigmodel.cn/api/monitor/usage/quota/limit` | `BIGMODEL_API_KEY` | [`api.md`](bigmodel-coding-plan/api.md) / [`EN`](bigmodel-coding-plan/api.en.md) | 智谱 / BigModel 编程套餐额度。 |
@@ -46,23 +46,23 @@ Manifest 格式和输出协议见 [`docs/remote-provider-guide.md`](../../docs/r
 
 ## 解析模式
 
-每个 `provider.js` 都把 Provider 专属 API 解析逻辑留在脚本内部，并从 `main(qb)` 返回标准化的 `provider-snapshot-v1` 对象。它们通过受 manifest permission 约束的 `qb.env`、`qb.fs` 和 `qb.http` 访问宿主能力，不依赖 Node.js。
+每个 `provider.js` 都把供应商 API 的解析逻辑留在脚本内部，并从 `main(qb)` 返回标准化的 `provider-snapshot-v1` 对象。它们通过受 manifest permission 约束的 `qb.env`、`qb.fs` 和 `qb.http` 访问宿主能力，不依赖 Node.js。
 
 改造这些示例时，建议沿用这个模式：
 
 1. 通过 `qb.http.request()` 请求原始 API 响应；需要本地文件时，只声明并使用精确的 `fs:` permission。
 2. 用简短注释说明解析器期望的原始响应形状。
 3. 将原始额度记录转换为 `windows[]`，使用稳定的 `id`、可读的 `label`、可用时提供数值型 `used` / `limit`、百分比和 ISO 重置时间。
-4. 将套餐等级、模型用量、账户元数据、原始状态码等 Provider 专属细节放进 `metadata`。
+4. 将套餐等级、模型用量、账户元数据、原始状态码等提供方专属细节放进 `metadata`。
 5. 凭据只保留在本地。这些示例通过 `qb.env.get("NAME")` 读取 manifest 声明的变量；普通用户在安装后的结构化表单中填写凭据，QuotaBarWin 会写入实例隔离的托管 secret 文件，并通过原有 resolver 注入脚本，而不把密钥写进远程源码。
 
-同一 Provider 配多个账号时，每个账号实例都有独立的 `<config-dir>/secrets/providers/<provider-instance-id>/` 目录。高级用户仍可使用原始 `envVars`，并映射旧 `${secret:NAME}`、`${env:NAME}` 或 `${file:...}`。完整说明见 [`docs/remote-provider-guide.md`](../../docs/remote-provider-guide.md#本地配置与-secret)。
+同一提供方配多个账号时，每个账号实例都有独立的 `<config-dir>/secrets/providers/<provider-instance-id>/` 目录。高级用户仍可使用原始 `envVars`，并映射旧 `${secret:NAME}`、`${env:NAME}` 或 `${file:...}`。完整说明见 [`docs/remote-provider-guide.md`](../../docs/remote-provider-guide.md#本地配置与-secret)。
 
 ## 稳定窗口 ID
 
-Provider 窗口 ID 是面向用户配置的键。QuotaBarWin 支持用 `visibleWindowIds` 选择显示哪些窗口并控制顺序，也支持用 `windowLabelOverrides` 重命名窗口。标签覆盖会优先匹配 `window.id`，所以 Provider 发布新版本时应保持 ID 稳定。
+提供方窗口 ID 是面向用户配置的键。QuotaBarWin 支持用 `visibleWindowIds` 选择显示哪些窗口并控制顺序，也支持用 `windowLabelOverrides` 重命名窗口。标签覆盖会优先匹配 `window.id`，所以提供方发布新版本时应保持 ID 稳定。
 
-`label` 只用于友好的 UI 文本，可以更清晰、可本地化，也可以以后重命名；它不应成为唯一稳定身份。优先使用来自 Provider API 语义的 ID，例如 `5h`、`weekly`、`300-minute`、`tokens-limit-6-1` 或 `total-quota`，避免从翻译标签或营销文案生成 ID。
+`label` 只用于友好的 UI 文本，可以更清晰、可本地化，也可以以后重命名；它不应成为唯一稳定身份。优先使用来自供应商 API 语义的 ID，例如 `5h`、`weekly`、`300-minute`、`tokens-limit-6-1` 或 `total-quota`，避免从翻译标签或营销文案生成 ID。
 
 示例：
 
