@@ -61,6 +61,9 @@ type SettingsPanelProps = {
   ) => void;
   onRequestClose: () => void;
   closeRequest: number;
+  // Why the latest closeRequest was raised, so the unsaved-changes dialog can
+  // use wording that matches the flow (tab switch vs hiding the window).
+  closeRequestReason?: "navigate" | "hide-window";
   settingsHomeRequest: number;
   appUpdateFocusRequest: number;
   onAppUpdateFocusHandled: () => void;
@@ -73,6 +76,9 @@ type ProviderManifestState = Record<string, RemoteProviderManifest | null>;
 type PendingUnsavedAction = {
   action: () => Promise<void>;
   cancel: () => void;
+  // "hide-window" swaps the dialog copy for the window-close flow (the window
+  // only hides to the tray); "navigate" keeps the in-app navigation wording.
+  variant: "navigate" | "hide-window";
 };
 
 function updateProvider(
@@ -200,6 +206,7 @@ export function SettingsPanel({
   onPersistedConfigChanged,
   onRequestClose,
   closeRequest,
+  closeRequestReason = "navigate",
   settingsHomeRequest,
   appUpdateFocusRequest,
   onAppUpdateFocusHandled,
@@ -233,6 +240,11 @@ export function SettingsPanel({
   // close from a prior settings session cannot be replayed into a newly opened
   // Provider catalog.
   const handledCloseRequestRef = useRef(closeRequest);
+  // Read through a ref inside the close-request effect: the effect intentionally
+  // runs only on closeRequest changes, so a stale closure must not freeze the
+  // reason of the latest request.
+  const closeRequestReasonRef = useRef(closeRequestReason);
+  closeRequestReasonRef.current = closeRequestReason;
   const handledSettingsHomeRequestRef = useRef(0);
   const handledAppUpdateFocusRequestRef = useRef(0);
   const appUpdateSectionRef = useRef<HTMLElement>(null);
@@ -363,7 +375,10 @@ export function SettingsPanel({
     setSaveMessage(t.settings.saved);
   }
 
-  function runWithUnsavedChangesProtection<T>(action: () => Promise<T>): Promise<T | null> {
+  function runWithUnsavedChangesProtection<T>(
+    action: () => Promise<T>,
+    variant: PendingUnsavedAction["variant"] = "navigate",
+  ): Promise<T | null> {
     if (!hasChanges) {
       return action();
     }
@@ -373,7 +388,8 @@ export function SettingsPanel({
         action: async () => {
           resolve(await action());
         },
-        cancel: () => resolve(null)
+        cancel: () => resolve(null),
+        variant,
       });
     });
   }
@@ -720,7 +736,7 @@ export function SettingsPanel({
     }
     void runWithUnsavedChangesProtection(async () => {
       onRequestClose();
-    });
+    }, closeRequestReasonRef.current);
     // A close request is an event, rather than state that should be replayed when the draft changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closeRequest, providerSettingsView]);
@@ -845,7 +861,11 @@ export function SettingsPanel({
           aria-labelledby="unsaved-changes-title"
         >
           <h3 id="unsaved-changes-title">{t.settings.unsavedChangesTitle}</h3>
-          <p>{t.settings.unsavedChangesPrompt}</p>
+          <p>
+            {pendingUnsavedAction?.variant === "hide-window"
+              ? t.settings.unsavedChangesClosePrompt
+              : t.settings.unsavedChangesPrompt}
+          </p>
           <div className="dialog-actions">
             <button
               type="button"
@@ -861,7 +881,9 @@ export function SettingsPanel({
               onClick={discardAndRunPendingAction}
               data-testid="discard-unsaved-changes"
             >
-              {t.settings.discardChanges}
+              {pendingUnsavedAction?.variant === "hide-window"
+                ? t.settings.discardChangesAndClose
+                : t.settings.discardChanges}
             </button>
             <button
               type="button"
@@ -869,7 +891,9 @@ export function SettingsPanel({
               onClick={() => void saveAndRunPendingAction()}
               data-testid="save-and-continue-unsaved-changes"
             >
-              {t.settings.saveAndContinue}
+              {pendingUnsavedAction?.variant === "hide-window"
+                ? t.settings.saveAndCloseWindow
+                : t.settings.saveAndContinue}
             </button>
           </div>
         </section>

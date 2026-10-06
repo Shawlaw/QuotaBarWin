@@ -241,6 +241,8 @@ pub fn run() {
             quota_events::get_quota_event_history,
             quota_events::clear_quota_event_history,
             notifications::send_test_notification,
+            notifications::debug_show_test_toast,
+            notifications::debug_remove_toast_registration,
             get_local_api_status,
             list_local_api_network_interfaces,
             get_local_api_access_token,
@@ -266,6 +268,7 @@ pub fn run() {
             apply_remote_update,
             get_tray_popup_presentation_id,
             hide_tray_popup,
+            tray::hide_main_window,
             show_main_window,
             show_application_update,
             reset_tray_popup_size,
@@ -287,7 +290,28 @@ pub fn run() {
             }
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                let _ = window.hide();
+                if window.label() == "main" {
+                    // The renderer owns the main-window close flow so it can
+                    // offer to resolve unsaved settings changes first; it
+                    // hides the window itself via the window API.
+                    let app = window.app_handle();
+                    let emit_result = app.emit("main-window-close-requested", ());
+                    if let Ok(path) = config::config_path_for_app(app) {
+                        if let Ok(loaded) = config::load_or_create_config(&path) {
+                            let log = logger::LogSink::from_config_path(&path, &loaded.config);
+                            let _ = log.write(
+                                logger::LogLevel::Info,
+                                "app",
+                                &format!(
+                                    "main window close requested, forwarded to renderer emitOk={}",
+                                    emit_result.is_ok()
+                                ),
+                            );
+                        }
+                    }
+                } else {
+                    let _ = window.hide();
+                }
             }
             tauri::WindowEvent::Focused(false) if window.label() == tray::TRAY_POPUP_LABEL => {
                 tray::handle_tray_popup_focus_lost(window.clone());

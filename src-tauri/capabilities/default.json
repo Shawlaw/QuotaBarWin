@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core permissions for the app windows: backend-to-frontend events (listen) and the read-only window APIs. Window mutation such as hide stays behind the app's own Tauri commands.",
+  "windows": ["main", "tray-popup"],
+  "permissions": ["core:default"]
+}

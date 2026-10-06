@@ -20,9 +20,11 @@ import {
   getConfigStorageInfo,
   getManagedSecretsEncryptionStatus,
   getQuotaEventHistory,
+  hideMainWindow,
   listenForRefreshRequests,
   listenForAppUpdateStatus,
   listenForApplicationUpdateRequests,
+  listenForMainWindowCloseRequests,
   listenForSnapshotUpdates,
   listenForSingleInstance,
   openConfigFolder,
@@ -288,8 +290,13 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const [quotaEvents, setQuotaEvents] = useState<QuotaEvent[] | null>(null);
   const [quotaEventsLoadFailed, setQuotaEventsLoadFailed] = useState(false);
   const [eventsRefreshToken, setEventsRefreshToken] = useState(0);
+  // Where the UI should land after the settings panel finishes closing. The
+  // settings page may resolve unsaved changes before honoring a view switch.
+  const pendingViewAfterSettingsClose = useRef<"events" | "hide-window" | null>(null);
   const [initialProviderSettingsView, setInitialProviderSettingsView] = useState<"main" | "add">("main");
   const [settingsCloseRequest, setSettingsCloseRequest] = useState(0);
+  const [settingsCloseRequestReason, setSettingsCloseRequestReason] =
+    useState<"navigate" | "hide-window">("navigate");
   const [settingsHomeRequest, setSettingsHomeRequest] = useState(0);
   const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [appUpdateNoticeSequence, setAppUpdateNoticeSequence] = useState(0);
@@ -302,6 +309,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const appUpdateInfoRef = useRef<AppUpdateInfo | null>(null);
   const handledAppUpdateNavigationRequestRef = useRef(0);
   const settingsOpenRef = useRef(false);
+  const configRef = useRef<AppConfig | null>(null);
   const overviewScrollRegionRef = useRef<HTMLDivElement>(null);
   const settingsScrollRegionRef = useRef<HTMLDivElement>(null);
   const historyScrollRegionRef = useRef<HTMLDivElement>(null);
@@ -539,8 +547,33 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   }, []);
 
   useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listenForSnapshotUpdates((updatedSnapshot) => setSnapshot(updatedSnapshot)).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listenForMainWindowCloseRequests(() => {
+      if (settingsOpenRef.current && configRef.current !== null) {
+        // Route through the settings panel so unsaved changes get resolved
+        // before the window hides.
+        pendingViewAfterSettingsClose.current = "hide-window";
+        setSettingsCloseRequestReason("hide-window");
+        setSettingsCloseRequest((current) => current + 1);
+      } else {
+        void hideMainWindow();
+      }
+    }).then((cleanup) => {
       unlisten = cleanup;
     });
 
@@ -734,13 +767,22 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
 
   function openEvents() {
     rememberActiveScrollPosition();
-    closeSettings();
-    setEventsViewOpen(true);
-    setEventsRefreshToken((current) => current + 1);
+    pendingViewAfterSettingsClose.current = "events";
+    if (settingsOpenRef.current && configRef.current !== null) {
+      // Route through the settings panel so unsaved changes get resolved.
+      setSettingsCloseRequestReason("navigate");
+      setSettingsCloseRequest((current) => current + 1);
+    } else {
+      setSettingsOpen(false);
+      settingsOpenRef.current = false;
+      setEventsViewOpen(true);
+      setEventsRefreshToken((current) => current + 1);
+    }
   }
 
   function openSettings(initialView: "main" | "add") {
     rememberActiveScrollPosition();
+    pendingViewAfterSettingsClose.current = null;
     setEventsViewOpen(false);
     settingsOpenRef.current = true;
     setInitialProviderSettingsView(initialView);
@@ -751,6 +793,14 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
     rememberActiveScrollPosition();
     settingsOpenRef.current = false;
     setSettingsOpen(false);
+    const pendingView = pendingViewAfterSettingsClose.current;
+    pendingViewAfterSettingsClose.current = null;
+    if (pendingView === "events") {
+      setEventsViewOpen(true);
+      setEventsRefreshToken((current) => current + 1);
+    } else if (pendingView === "hide-window") {
+      void hideMainWindow();
+    }
   }
 
   function openApplicationUpdate() {
@@ -797,7 +847,9 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
           // snapshot cache before falling back to the on-disk cache.
           void syncCachedSnapshot();
           setEventsViewOpen(false);
+          pendingViewAfterSettingsClose.current = null;
           if (settingsOpen) {
+            setSettingsCloseRequestReason("navigate");
             setSettingsCloseRequest((current) => current + 1);
           }
         }}
@@ -854,6 +906,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
             onPersistedConfigChanged={synchronizePersistedConfig}
             onRequestClose={closeSettings}
             closeRequest={settingsCloseRequest}
+            closeRequestReason={settingsCloseRequestReason}
             settingsHomeRequest={settingsHomeRequest}
             appUpdateFocusRequest={appUpdateFocusRequest}
             onAppUpdateFocusHandled={() => setAppUpdateFocusRequest(0)}

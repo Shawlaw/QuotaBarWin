@@ -58,6 +58,7 @@ const mocks = vi.hoisted(() => {
     snapshotUpdated?: (snapshot: AppSnapshot) => void;
     appUpdateStatus?: (status: { info: unknown; animate: boolean }) => void;
     appUpdateNavigation?: (requestId: number) => void;
+    windowCloseRequested?: () => void;
   } = {};
 
   return {
@@ -89,6 +90,15 @@ const mocks = vi.hoisted(() => {
     getNetworkProxy: vi.fn(async () => null),
     getQuotaEventHistory: vi.fn(async () => []),
     clearQuotaEventHistory: vi.fn(async () => undefined),
+    listenForMainWindowCloseRequests: vi.fn(async (callback: () => void) => {
+      listeners.windowCloseRequested = callback;
+      return () => {
+        if (listeners.windowCloseRequested === callback) {
+          listeners.windowCloseRequested = undefined;
+        }
+      };
+    }),
+    hideMainWindow: vi.fn(async () => undefined),
     getProviderPresets: vi.fn(async () => []),
     getTrayPopupPresentationId: vi.fn(async () => 0),
     listLocalApiNetworkInterfaces: vi.fn(() => new Promise<never>(() => undefined)),
@@ -800,6 +810,43 @@ test("leaving_settings_requires_resolving_unsaved_changes", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Overview" }));
   fireEvent.click(screen.getByTestId("discard-unsaved-changes"));
   await waitFor(() => expect(screen.getByTestId("overview-page")).toBeInTheDocument());
+});
+
+test("switching_to_events_tab_from_dirty_settings_requires_resolving_changes", async () => {
+  render(<App />);
+
+  await screen.findByRole("button", { name: "Settings" });
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+  fireEvent.click(screen.getByRole("button", { name: "Events" }));
+
+  expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeInTheDocument();
+  expect(screen.getByTestId("settings-page")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByTestId("discard-unsaved-changes"));
+  await waitFor(() => expect(screen.getByTestId("history-page")).toBeInTheDocument());
+});
+
+test("closing_window_with_unsaved_changes_uses_close_specific_dialog", async () => {
+  render(<App />);
+
+  await screen.findByRole("button", { name: "Settings" });
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+
+  act(() => {
+    mocks.listeners.windowCloseRequested?.();
+  });
+
+  expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeInTheDocument();
+  expect(screen.getByText(/hides to the system tray/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Save and close" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Discard and close" })).toBeInTheDocument();
+  expect(mocks.hideMainWindow).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByTestId("discard-unsaved-changes"));
+  await waitFor(() => expect(mocks.hideMainWindow).toHaveBeenCalled());
+  expect(screen.queryByTestId("settings-page")).not.toBeInTheDocument();
 });
 
 test("saving_provider_reorder_projects_cached_snapshot_without_refreshing_data", async () => {

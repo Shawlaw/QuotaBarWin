@@ -9,6 +9,7 @@ import type {
   LocalApiNetworkInterface,
   LocalApiStatus,
   ManagedSecretsEncryptionStatus,
+  NotificationSettings,
   ProxyConfig,
   ProxyTestResult,
   QuotaEvent,
@@ -19,6 +20,7 @@ import type {
   ProviderSetupTestResult,
   RegistryMigrationResult,
   SaveProviderSetupRequest,
+  TestChannelOutcome,
   TestNotificationResult,
 } from "../types";
 import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "./defaults";
@@ -206,15 +208,35 @@ export async function clearQuotaEventHistory(): Promise<void> {
   await invoke<void>("clear_quota_event_history");
 }
 
-export async function sendTestNotification(): Promise<TestNotificationResult> {
+export async function sendTestNotification(
+  settings: NotificationSettings,
+): Promise<TestNotificationResult> {
   if (!hasTauriInternals()) {
+    void settings;
     return {
       toast: { status: "skipped", detail: "desktop only" },
       webhook: { status: "skipped", detail: "desktop only" },
     };
   }
 
-  return invoke<TestNotificationResult>("send_test_notification");
+  return invoke<TestNotificationResult>("send_test_notification", { settings });
+}
+
+// Temporary 1.6.0 self-test helpers; remove with the debug settings block.
+export async function debugShowTestToast(): Promise<TestChannelOutcome> {
+  if (!hasTauriInternals()) {
+    return { status: "skipped", detail: "desktop only" };
+  }
+
+  return invoke<TestChannelOutcome>("debug_show_test_toast");
+}
+
+export async function debugRemoveToastRegistration(): Promise<TestChannelOutcome> {
+  if (!hasTauriInternals()) {
+    return { status: "skipped", detail: "desktop only" };
+  }
+
+  return invoke<TestChannelOutcome>("debug_remove_toast_registration");
 }
 
 export async function getConfig(): Promise<AppConfig> {
@@ -743,6 +765,17 @@ export async function listenForSnapshotUpdates(
   );
 }
 
+export async function listenForMainWindowCloseRequests(
+  onCloseRequested: () => void,
+): Promise<() => void> {
+  if (!hasTauriInternals()) {
+    void onCloseRequested;
+    return () => undefined;
+  }
+
+  return listen("main-window-close-requested", () => onCloseRequested());
+}
+
 export async function listenForAppUpdateStatus(
   onStatus: (status: AppUpdateStatusEvent) => void,
 ): Promise<() => void> {
@@ -796,6 +829,16 @@ export async function hideCurrentWindow(): Promise<void> {
   }
 
   await getCurrentWindow().hide();
+}
+
+// Hides via a backend command: the JS window API would require a window
+// capability this app does not grant.
+export async function hideMainWindow(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+
+  await invoke<void>("hide_main_window");
 }
 
 export async function hideTrayPopup(): Promise<void> {

@@ -164,8 +164,11 @@ export type I18nCatalog = {
     unsavedChanges: string;
     unsavedChangesTitle: string;
     unsavedChangesPrompt: string;
+    unsavedChangesClosePrompt: string;
     saveAndContinue: string;
+    saveAndCloseWindow: string;
     discardChanges: string;
+    discardChangesAndClose: string;
     resetChanges: string;
     save: string;
   };
@@ -397,6 +400,7 @@ export type I18nCatalog = {
     eventsHint: string;
     eventTypeLabel: Record<string, string>;
     testButton: string;
+    testButtonHint: string;
     testing: string;
     testToastSent: string;
     testToastDisabled: string;
@@ -404,6 +408,11 @@ export type I18nCatalog = {
     testWebhookSent: (statusCode: number | null) => string;
     testWebhookDisabled: string;
     testWebhookFailed: (detail: string) => string;
+    debugTitle: string;
+    debugShowToast: string;
+    debugRemoveRegistration: string;
+    debugRemoved: string;
+    debugNotPresent: string;
   };
   providerSetup: {
     title: (name: string) => string;
@@ -633,8 +642,12 @@ export const en: I18nCatalog = {
     unsavedChangesTitle: "Unsaved changes",
     unsavedChangesPrompt:
       "Save your changes before continuing? You can also discard them or stay on this page.",
+    unsavedChangesClosePrompt:
+      "Save your changes before closing the window? The window hides to the system tray and QuotaBarWin keeps running in the background.",
     saveAndContinue: "Save and continue",
+    saveAndCloseWindow: "Save and close",
     discardChanges: "Discard changes",
+    discardChangesAndClose: "Discard and close",
     resetChanges: "Reset changes",
     save: "Save"
   },
@@ -899,13 +912,19 @@ export const en: I18nCatalog = {
       "app-started": "Application started"
     },
     testButton: "Send test notification",
+    testButtonHint: "Tests the current form values, so there is no need to save before testing.",
     testing: "Sending...",
     testToastSent: "Windows notification sent.",
     testToastDisabled: "Windows notifications are disabled.",
     testToastFailed: (detail) => `Windows notification failed: ${detail}`,
     testWebhookSent: (statusCode) => `Webhook delivered (HTTP ${statusCode ?? "200"}).`,
     testWebhookDisabled: "Webhook is disabled.",
-    testWebhookFailed: (detail) => `Webhook failed: ${detail}`
+    testWebhookFailed: (detail) => `Webhook failed: ${detail}`,
+    debugTitle: "Self-test debug (temporary, removed after verification)",
+    debugShowToast: "Fire a system toast now (ignores toggles)",
+    debugRemoveRegistration: "Undo system notification registration (delete registry key)",
+    debugRemoved: "AppUserModelID registry key deleted.",
+    debugNotPresent: "AppUserModelID registry key was not present."
   },
   providerSetup: {
     title: (name) => `Set up ${name}`,
@@ -1161,8 +1180,12 @@ export const zhCN: I18nCatalog = {
     unsavedChangesTitle: "未保存的更改",
     unsavedChangesPrompt:
       "继续前要保存更改吗？你也可以放弃更改，或留在当前页面。",
+    unsavedChangesClosePrompt:
+      "关闭窗口前要保存更改吗？窗口将隐藏到系统托盘，QuotaBarWin 会继续在后台运行。",
     saveAndContinue: "保存并继续",
+    saveAndCloseWindow: "保存并关闭",
     discardChanges: "放弃更改",
+    discardChangesAndClose: "放弃更改并关闭",
     resetChanges: "重置更改",
     save: "保存"
   },
@@ -1420,13 +1443,19 @@ export const zhCN: I18nCatalog = {
       "app-started": "应用启动"
     },
     testButton: "发送测试通知",
+    testButtonHint: "测试会使用当前页面填写的配置，无需先保存。",
     testing: "正在发送...",
     testToastSent: "Windows 通知已发送。",
     testToastDisabled: "Windows 系统通知未启用。",
     testToastFailed: (detail) => `Windows 通知发送失败：${detail}`,
     testWebhookSent: (statusCode) => `Webhook 已送达（HTTP ${statusCode ?? "200"}）。`,
     testWebhookDisabled: "Webhook 未启用。",
-    testWebhookFailed: (detail) => `Webhook 发送失败：${detail}`
+    testWebhookFailed: (detail) => `Webhook 发送失败：${detail}`,
+    debugTitle: "自测调试（临时，验证后移除）",
+    debugShowToast: "直接弹出系统通知（忽略开关）",
+    debugRemoveRegistration: "撤销系统通知注册（删除注册表键）",
+    debugRemoved: "AUMID 注册表键已删除。",
+    debugNotPresent: "AUMID 注册表键不存在。"
   },
   providerSetup: {
     title: (name) => `配置 ${name}`,

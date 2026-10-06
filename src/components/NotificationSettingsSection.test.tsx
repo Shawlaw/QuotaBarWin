@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { vi } from "vitest";
+import { useState } from "react";
+import { beforeEach, vi } from "vitest";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { I18nProvider } from "../i18n";
 import type { NotificationSettings } from "../types";
@@ -9,6 +10,8 @@ const apiMocks = vi.hoisted(() => ({
     toast: { status: "sent", detail: null },
     webhook: { status: "sent", detail: null, statusCode: 200 },
   })),
+  debugShowTestToast: vi.fn(async () => ({ status: "sent", detail: null })),
+  debugRemoveToastRegistration: vi.fn(async () => ({ status: "sent", detail: null })),
 }));
 
 vi.mock("../lib/api", () => apiMocks);
@@ -23,13 +26,29 @@ const baseSettings: NotificationSettings = {
 
 function renderSection(settings: NotificationSettings = baseSettings) {
   const onChange = vi.fn();
-  render(
-    <I18nProvider language="en">
-      <NotificationSettingsSection settings={settings} onChange={onChange} />
-    </I18nProvider>,
-  );
+  // Mirrors the real settings page: edits flow through the parent so the
+  // section always sees the live unsaved draft.
+  function Harness() {
+    const [draft, setDraft] = useState(settings);
+    return (
+      <I18nProvider language="en">
+        <NotificationSettingsSection
+          settings={draft}
+          onChange={(next) => {
+            onChange(next);
+            setDraft(next);
+          }}
+        />
+      </I18nProvider>
+    );
+  }
+  render(<Harness />);
   return { onChange };
 }
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("NotificationSettingsSection", () => {
   test("toggles propagate updated notification settings", () => {
@@ -52,10 +71,12 @@ describe("NotificationSettingsSection", () => {
       events: ["quota-reset", "quota-exhausted", "quota-low", "provider-error"],
     });
 
+    // The draft accumulates like the real settings page: removing quota-reset
+    // keeps the quota-low selection added above.
     fireEvent.click(screen.getByTestId("notification-event-quota-reset"));
     expect(onChange).toHaveBeenLastCalledWith({
       ...baseSettings,
-      events: ["quota-exhausted", "provider-error"],
+      events: ["quota-exhausted", "quota-low", "provider-error"],
     });
   });
 
@@ -81,10 +102,27 @@ describe("NotificationSettingsSection", () => {
     fireEvent.click(screen.getByTestId("notification-test-button"));
 
     await waitFor(() => {
-      expect(apiMocks.sendTestNotification).toHaveBeenCalled();
+      expect(apiMocks.sendTestNotification).toHaveBeenCalledWith(baseSettings);
     });
     await waitFor(() => {
       expect(screen.getByTestId("notification-test-message")).toHaveTextContent(/HTTP 200/);
+    });
+  });
+
+  test("the test button uses the unsaved form draft", async () => {
+    renderSection({ ...baseSettings, webhookEnabled: true, webhookUrl: "https://example.com/old-hook" });
+
+    fireEvent.change(screen.getByTestId("notification-webhook-url"), {
+      target: { value: "https://example.com/new-hook" },
+    });
+    fireEvent.click(screen.getByTestId("notification-test-button"));
+
+    await waitFor(() => {
+      expect(apiMocks.sendTestNotification).toHaveBeenCalledWith({
+        ...baseSettings,
+        webhookEnabled: true,
+        webhookUrl: "https://example.com/new-hook",
+      });
     });
   });
 });

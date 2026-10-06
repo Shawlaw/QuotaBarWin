@@ -17,6 +17,36 @@ use crate::quota_events::QuotaEvent;
 const NOTIFICATION_EVENT_TEST: &str = "test-notification";
 const WEBHOOK_MIN_TIMEOUT_SECONDS: u64 = 1;
 const WEBHOOK_MAX_TIMEOUT_SECONDS: u64 = 60;
+// The toast brand icon; extracted to a per-user location so both the toast XML
+// image and the AUMID registry IconUri can reference a stable file.
+#[cfg(windows)]
+const TOAST_ICON_PNG: &[u8] = include_bytes!("../icons/128x128.png");
+
+#[cfg(windows)]
+fn toast_icon_path() -> Option<std::path::PathBuf> {
+    let local_app_data = std::env::var_os("LOCALAPPDATA")?;
+    Some(
+        std::path::PathBuf::from(local_app_data)
+            .join("QuotaBarWin")
+            .join("toast-icon.png"),
+    )
+}
+
+/// Materializes the embedded brand icon for toast display. Machine-local by
+/// design, like the AppUserModelID registry key itself. Returns None on any
+/// failure; toasts then fall back to the generic Windows icon.
+#[cfg(windows)]
+fn ensure_toast_icon_file() -> Option<std::path::PathBuf> {
+    let path = toast_icon_path()?;
+    let is_current = std::fs::metadata(&path)
+        .ok()
+        .is_some_and(|metadata| metadata.len() == TOAST_ICON_PNG.len() as u64);
+    if !is_current {
+        std::fs::create_dir_all(path.parent()?).ok()?;
+        std::fs::write(&path, TOAST_ICON_PNG).ok()?;
+    }
+    Some(path)
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -361,7 +391,10 @@ pub fn show_toast_batch(
     }
 
     let result = (|| {
-        ensure_app_identity_registration()?;
+        // The icon is only registered for the notification center's app
+        // header (IconUri); the toast body itself stays text-only.
+        let icon_path = ensure_toast_icon_file();
+        ensure_app_identity_registration(icon_path.as_deref())?;
         let chinese = language_is_chinese(language);
         let first = describe_event(language, &events[0]);
         let mut toast = winrt_notification::Toast::new(APP_USER_MODEL_ID).title("QuotaBarWin");
@@ -392,23 +425,45 @@ pub fn show_toast_batch(_language: &AppLanguage, _events: &[QuotaEvent]) -> Resu
 // A WinRT toast is only displayed when its AppUserModelID is known to the
 // shell. Bundled installers create a Start Menu shortcut for this; the
 // portable build instead registers the AppUserModelID key in HKCU (the same
-// mechanism PowerShell's BurntToast uses), which survives without any
-// installer.
+// mechanism Firefox/Chrome and PowerShell's BurntToast use), including an
+// IconUri pointing at the extracted brand icon so toasts are branded.
 #[cfg(windows)]
-fn ensure_app_identity_registration() -> Result<(), String> {
+fn ensure_app_identity_registration(icon_path: Option<&Path>) -> Result<(), String> {
     use crate::app_identity::APP_USER_MODEL_ID;
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY_CURRENT_USER, KEY_SET_VALUE,
-        REG_OPTION_NON_VOLATILE, REG_SZ,
+        REG_OPTION_NON_VOLATILE, REG_EXPAND_SZ,
     };
+
+    fn set_registry_value(
+        hkey: windows_sys::Win32::Foundation::HANDLE,
+        name: &str,
+        value: &str,
+    ) -> Result<(), u32> {
+        let name: Vec<u16> = name.encode_utf16().chain([0]).collect();
+        let value: Vec<u16> = value.encode_utf16().chain([0]).collect();
+        let result = unsafe {
+            RegSetValueExW(
+                hkey,
+                name.as_ptr(),
+                0,
+                REG_EXPAND_SZ,
+                value.as_ptr().cast(),
+                (value.len() * 2) as u32,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(result)
+        }
+    }
 
     let subkey: Vec<u16> = "Software\\Classes\\AppUserModelId\\"
         .encode_utf16()
         .chain(APP_USER_MODEL_ID.encode_utf16())
         .chain([0])
         .collect();
-    let value_name: Vec<u16> = "DisplayName".encode_utf16().chain([0]).collect();
-    let display_name: Vec<u16> = "QuotaBarWin".encode_utf16().chain([0]).collect();
 
     let mut hkey = std::ptr::null_mut();
     let create_result = unsafe {
@@ -429,30 +484,35 @@ fn ensure_app_identity_registration() -> Result<(), String> {
             "failed to register AppUserModelID key: error {create_result}"
         ));
     }
-    let set_result = unsafe {
-        RegSetValueExW(
-            hkey,
-            value_name.as_ptr(),
-            0,
-            REG_SZ,
-            display_name.as_ptr().cast(),
-            (display_name.len() * 2) as u32,
-        )
-    };
+    let set_results = [
+        set_registry_value(hkey, "DisplayName", "QuotaBarWin"),
+        match icon_path {
+            Some(icon_path) => set_registry_value(
+                hkey,
+                "IconUri",
+                &icon_path.to_string_lossy(),
+            ),
+            None => Ok(()),
+        },
+    ];
     unsafe { RegCloseKey(hkey) };
-    if set_result != 0 {
-        return Err(format!(
-            "failed to set AppUserModelID display name: error {set_result}"
-        ));
+    for result in set_results {
+        if let Err(error) = result {
+            return Err(format!("failed to set AppUserModelID value: error {error}"));
+        }
     }
     Ok(())
 }
 
 #[tauri::command]
-pub async fn send_test_notification(app: AppHandle) -> Result<TestNotificationResult, String> {
+pub async fn send_test_notification(
+    app: AppHandle,
+    settings: NotificationSettings,
+) -> Result<TestNotificationResult, String> {
+    // The caller passes the settings form's current draft, so testing does not
+    // require saving first; language and proxy still follow the saved config.
     let path = config_path_for_app(&app)?;
     let loaded = load_or_create_config(&path)?;
-    let settings = loaded.config.notifications.clone();
     let language = loaded.config.language.clone();
     let global_proxy = loaded.config.network_proxy.clone();
     let event = test_event();
@@ -473,6 +533,64 @@ pub async fn send_test_notification(app: AppHandle) -> Result<TestNotificationRe
     };
 
     Ok(TestNotificationResult { toast, webhook })
+}
+
+// --- Temporary self-test helpers for the 1.6.0 manual QA pass. Remove these
+// (plus their lib.rs registrations, api.ts bindings, and settings UI block)
+// after verification.
+
+#[tauri::command]
+pub async fn debug_show_test_toast(app: AppHandle) -> Result<ChannelOutcome, String> {
+    let path = config_path_for_app(&app)?;
+    let loaded = load_or_create_config(&path)?;
+    let event = test_event();
+    match show_toast_batch(&loaded.config.language, std::slice::from_ref(&event)) {
+        Ok(()) => Ok(ChannelOutcome::sent(None)),
+        Err(error) => Ok(ChannelOutcome::failed(error)),
+    }
+}
+
+#[tauri::command]
+pub async fn debug_remove_toast_registration() -> Result<ChannelOutcome, String> {
+    remove_app_identity_registration()
+}
+
+#[cfg(windows)]
+fn remove_app_identity_registration() -> Result<ChannelOutcome, String> {
+    use crate::app_identity::APP_USER_MODEL_ID;
+    use windows_sys::Win32::System::Registry::{RegDeleteTreeW, HKEY_CURRENT_USER};
+
+    let subkey: Vec<u16> = "Software\\Classes\\AppUserModelId\\"
+        .encode_utf16()
+        .chain(APP_USER_MODEL_ID.encode_utf16())
+        .chain([0])
+        .collect();
+    const ERROR_FILE_NOT_FOUND: u32 = 2;
+    let result = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, subkey.as_ptr()) };
+    // The extracted icon is part of the same registration footprint.
+    if let Some(icon_path) = toast_icon_path() {
+        let _ = std::fs::remove_file(icon_path);
+    }
+    match result {
+        0 => Ok(ChannelOutcome {
+            status: "sent".to_string(),
+            detail: Some("app user model id registry key removed".to_string()),
+            status_code: None,
+        }),
+        ERROR_FILE_NOT_FOUND => Ok(ChannelOutcome::skipped(
+            "app user model id registry key was not present",
+        )),
+        code => Ok(ChannelOutcome::failed(format!(
+            "RegDeleteTreeW failed: error {code}"
+        ))),
+    }
+}
+
+#[cfg(not(windows))]
+fn remove_app_identity_registration() -> Result<ChannelOutcome, String> {
+    Ok(ChannelOutcome::skipped(
+        "toast registration is only managed on Windows",
+    ))
 }
 
 #[cfg(test)]

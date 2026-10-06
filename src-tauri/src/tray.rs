@@ -926,6 +926,20 @@ pub fn show_main_window(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("main") else {
+        return Err("Main window was not found".to_string());
+    };
+    let result = window.hide().map_err(|error| error.to_string());
+    log_tray_popup_event(
+        &app,
+        LogLevel::Info,
+        &format!("main window hide requested by renderer ok={}", result.is_ok()),
+    );
+    result
+}
+
+#[tauri::command]
 pub fn show_application_update(app: AppHandle) -> Result<(), String> {
     // Record first: bringing an existing main window to the foreground can fire its frontend
     // `focus` handler before the one-shot event below is delivered.
