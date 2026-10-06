@@ -60,6 +60,8 @@ The QuotaBarWin release package does not include your account credentials and do
 
 **Security notice: only install and use Providers you trust. `builtin-js` can access only manifest-declared environment values, files, and network origins; external-runtime Providers run with the permissions of their own runtime.**
 
+The same guide is available in the app at any time: **Settings → "Open guide" at the bottom of the navigation rail** opens it in the system browser (the page is bilingual with a built-in language switch).
+
 ### 1. Install And Run
 
 1. Download the Windows portable zip from GitHub Releases and extract it to any folder.
