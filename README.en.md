@@ -97,7 +97,7 @@ The normal path does not require creating a `secrets` directory or txt file, ent
 <config-dir>\secrets\providers\<provider-instance-id>\<parameter-name>.txt
 ```
 
-The main config stores only the `${secret:providers/<provider-instance-id>/<parameter-name>}` reference, and existing secret values are never shown in the UI. These files are encrypted with Windows data protection (DPAPI) by default, and the ciphertext can only be decrypted by the current Windows account — after copying the configuration directory to another PC or account (including portable installs moved between machines), re-enter the secrets in Provider settings. The **Secret security** section in Settings can enable or disable encryption and migrate existing files at any time. The migration also covers user-managed `secrets\NAME.txt` files (see the secret placeholders below): once encrypted they still resolve through the same `${secret:NAME}` placeholder, but they can no longer be edited directly in a text editor — disable encryption in Settings first to restore plaintext. When encryption is already enabled but plaintext secret files remain (for example left over from an earlier upgrade), Secret security additionally offers an "Encrypt remaining plaintext secrets" one-click migration. Users upgrading from older versions see a one-time confirmation prompt on first launch asking whether to migrate existing plaintext secrets; choosing "Not now" keeps plaintext storage, and encryption can still be enabled later in Settings.
+The main config stores only the `${secret:providers/<provider-instance-id>/<parameter-name>}` reference, and existing secret values are never shown in the UI. These files are encrypted with Windows data protection (DPAPI) by default, and the ciphertext can only be decrypted by the current Windows account — after copying the configuration directory to another PC or account (including portable installs moved between machines), re-enter the secrets in Provider settings. The **Secret security** section under **Settings → Advanced** can enable or disable encryption and migrate existing files at any time. The migration also covers user-managed `secrets\NAME.txt` files (see the secret placeholders below): once encrypted they still resolve through the same `${secret:NAME}` placeholder, but they can no longer be edited directly in a text editor — disable encryption in Settings first to restore plaintext. When encryption is already enabled but plaintext secret files remain (for example left over from an earlier upgrade), Secret security additionally offers an "Encrypt remaining plaintext secrets" one-click migration. Users upgrading from older versions see a one-time confirmation prompt on first launch asking whether to migrate existing plaintext secrets; choosing "Not now" keeps plaintext storage, and encryption can still be enabled later in Settings.
 
 **Advanced compatibility:** existing `${secret:NAME}`, `${env:NAME}`, `${file:C:\path\secret.txt}`, literal values, and the raw **Environment variables** editor remain available for third-party Providers and automation. Upgrading never forces a migration.
 
@@ -111,7 +111,7 @@ HTTPS_PROXY=http://127.0.0.1:7890
 
 The embedded runtime host handles Codex usage proxies: Provider `QBWIN_PROXY_URL` takes priority and the project-wide proxy is the fallback. When the project proxy is set to System, it reads the Windows process `HTTPS_PROXY` / `HTTP_PROXY` environment. Supported protocols are `socks5:`, `socks5h:`, `http:`, and `https:`. An installation-source proxy is used only to download registries, manifests, and scripts. For complete request, auth, and proxy notes, see [`examples/remote-providers/codex-usage/api.en.md`](examples/remote-providers/codex-usage/api.en.md).
 
-Use **Settings → General → Network proxy → Test proxy** to test the current, even unsaved, proxy settings. The default target is the GitHub homepage. If an enterprise network or GitHub restriction makes that unsuitable, expand the advanced option and enter another HTTPS URL for this test only. The target is not saved, response content is discarded, and raw transport errors are not shown.
+Use **Settings → Advanced → Network proxy → Test proxy** to test the current, even unsaved, proxy settings. The default target is the GitHub homepage. If an enterprise network or GitHub restriction makes that unsuitable, expand the advanced option and enter another HTTPS URL for this test only. The target is not saved, response content is discarded, and raw transport errors are not shown.
 
 ### 6. Multiple Accounts
 
@@ -125,7 +125,7 @@ Click **Save and test** in the setup form. On success, click **Done** to return 
 
 ## Local Integration API
 
-Enable the HTTP API under **Settings → General → Local Integration API**. When enabled, it listens only on the loopback address by default: `http://127.0.0.1:41833`. Local automation, scripts, browser extensions, and other desktop tools can consume the normalized quota snapshot directly instead of exchanging files in the application directory.
+Enable the HTTP API under **Settings → Advanced → Local Integration API**. When enabled, it listens only on the loopback address by default: `http://127.0.0.1:41833`. Local automation, scripts, browser extensions, and other desktop tools can consume the normalized quota snapshot directly instead of exchanging files in the application directory.
 
 - `GET /v1/health` reports service and snapshot availability.
 - `GET /v1/snapshot` returns the latest normalized quota snapshot.
@@ -182,7 +182,7 @@ The CLI can also validate Provider configuration, manifest, source checksum, and
 - In-app event history records app starts/updates, quota resets/unexpected recoveries/exhaustion/low quota, and Provider failures/recoveries; stored locally, filterable, and clearable.
 - Supports event notifications via Windows toasts and webhooks (JSON POST), with per-event-type selection and a test-notification button.
 - Includes Windows tray integration, hidden startup, single-instance behavior, and a resizable tray popup.
-- Provides settings for refresh interval, display mode, low-quota warning threshold, language, light/dark theme, log level, and launch at startup. The theme follows Windows by default and can be fixed to light or dark.
+- The Settings page is organized into Provider / General / Notifications / Application update / Advanced categories: General keeps the refresh interval, display mode, language, theme, and launch-at-startup; the low-quota warning threshold is edited under Notifications, with a summary and shortcut in General; the network proxy, local integration API, secret security, config storage, and logging live under Advanced. The theme follows Windows by default and can be fixed to light or dark.
 - Supports AppData storage and portable mode. Portable mode keeps config, logs, secrets, and cached remote providers beside the exe.
 - Supports Provider enablement, ordering, visible quota windows, and custom window labels.
 - Installs Providers from remote registries/manifests with caching, SHA-256 verification, and update checks.
