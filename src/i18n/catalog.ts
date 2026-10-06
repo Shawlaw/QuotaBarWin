@@ -388,7 +388,7 @@ export type I18nCatalog = {
     filterProvider: string;
     filterApp: string;
     messages: {
-      appStarted: (startedHidden: boolean) => string;
+      appStarted: (startedHidden: boolean, version: string | null) => string;
       appUpdateApplied: (version: string) => string;
       quotaReset: (subject: string, remainingPercent: string | null) => string;
       quotaRecoveredUnexpected: (subject: string, usedBefore: string, usedAfter: string) => string;
@@ -899,8 +899,8 @@ export const en: I18nCatalog = {
     filterProvider: "Providers",
     filterApp: "App",
     messages: {
-      appStarted: (startedHidden) =>
-        startedHidden ? "Application started in the background" : "Application started",
+      appStarted: (startedHidden, version) =>
+        `${startedHidden ? "Application started in the background" : "Application started"}${version ? ` (version ${version})` : ""}`,
       appUpdateApplied: (version) => `Updated to ${version}`,
       quotaReset: (subject, remainingPercent) =>
         remainingPercent === null
@@ -1140,10 +1140,10 @@ export const zhCN: I18nCatalog = {
     logMaxSizeError: "本地日志保留上限至少为 1 MB。",
     logQuotaData: "记录刷新后的额度数据",
     logQuotaDataHint:
-      "开启后，每个已启用 Provider 刷新得到的额度数值都会写入本地日志。",
+      "开启后，每个已启用提供方刷新得到的额度数值都会写入本地日志。",
     logQuotaDataConfirmTitle: "开启额度数据日志？",
     logQuotaDataConfirm:
-      "开启后，所有已启用 Provider 的刷新额度数据都会写入 quotabarwin.log。这些数据可能暴露使用节奏、额度状态或账号类型。开启后请不要将明文日志发给他人。",
+      "开启后，所有已启用提供方的刷新额度数据都会写入 quotabarwin.log。这些数据可能暴露使用节奏、额度状态或账号类型。开启后请不要将明文日志发给他人。",
     logQuotaDataConfirmAction: "开启日志",
     cancel: "取消",
     language: "语言",
@@ -1180,7 +1180,7 @@ export const zhCN: I18nCatalog = {
     timeout: "超时（秒）",
     timeoutError: "超时时间必须大于 0。",
     providerParameters: "支持的参数",
-    providerParametersHint: "提示来自此 Provider 的 manifest。",
+    providerParametersHint: "提示来自该提供方的 manifest。",
     parameterRequired: "必填",
     parameterKind: (kind) => `类型：${kind}`,
     parameterDefault: (value) => `默认：${value}`,
@@ -1267,7 +1267,7 @@ export const zhCN: I18nCatalog = {
   secretSecurity: {
     promptTitle: "密钥加密存储",
     promptIntro:
-      "QuotaBarWin 可以使用 Windows 数据保护（DPAPI）加密保存在本机的密钥文件（包括 Provider 密钥和 secrets 目录下手动创建的 txt 文件），加密后仅当前 Windows 账户可以读取。",
+      "QuotaBarWin 可以使用 Windows 数据保护（DPAPI）加密保存在本机的密钥文件（包括提供方密钥和 secrets 目录下手动创建的 txt 文件），加密后仅当前 Windows 账户可以读取。",
     promptMigrateBody: (count) => `检测到 ${count} 个现有明文密钥，启用后将立即加密。`,
     promptEnableBody: "当前还没有已保存的密钥，启用后新保存的密钥会加密存储。",
     promptPortabilityNote:
@@ -1277,7 +1277,7 @@ export const zhCN: I18nCatalog = {
     migrating: "正在加密...",
     settingsTitle: "密钥安全",
     settingsNote:
-      "加密范围包括设置中保存的 Provider 密钥和 secrets 目录下手动创建的 txt 文件；加密后这些文件无法再用文本编辑器直接编辑，可随时在此关闭加密恢复明文。",
+      "加密范围包括设置中保存的提供方密钥和 secrets 目录下手动创建的 txt 文件；加密后这些文件无法再用文本编辑器直接编辑，可随时在此关闭加密恢复明文。",
     statusEncrypted: "已启用加密存储（Windows DPAPI）",
     statusPlaintext: "未启用加密（密钥明文保存）",
     statusDetail: (plaintextCount, encryptedCount) =>
@@ -1357,9 +1357,9 @@ export const zhCN: I18nCatalog = {
     manageSourcesTitle: "提供方来源",
     recommendedProviders: "推荐",
     customInstall: "自定义安装",
-    securityNoticeLead: "安全提示：只安装使用可信任的 Provider。",
+    securityNoticeLead: "安全提示：只安装使用可信任的提供方。",
     securityNoticeBody:
-      "Provider 脚本可以直接读取你配置的各类 AI 鉴权信息，并发起网络通讯。",
+      "提供方脚本可以直接读取你配置的各类 AI 鉴权信息，并发起网络通讯。",
     sourceSummary: "当前来源",
     sourceSettings: "来源设置",
     projectMaintainedSource: "项目维护来源",
@@ -1369,17 +1369,17 @@ export const zhCN: I18nCatalog = {
     sourceEnabled: "已启用",
     addSource: "添加来源",
     removeSource: "移除来源",
-    migrateSource: "迁移已安装 Provider",
+    migrateSource: "迁移已安装提供方",
     migratingSource: "正在迁移...",
     migrateSourceConfirm: (sourceName) =>
-      `将匹配的已安装 Provider 迁移到“${sourceName}”？会保留账号设置，但将从此来源替换 manifest 与脚本。`,
+      `将匹配的已安装提供方迁移到“${sourceName}”？会保留账号设置，但将从此来源替换 manifest 与脚本。`,
     migrateSourceResult: (migrated, skipped, failed) =>
       `迁移完成：已迁移 ${migrated} 个，跳过 ${skipped} 个，失败 ${failed} 个。`,
-    failedToMigrateSource: "迁移已安装 Provider 失败",
+    failedToMigrateSource: "迁移已安装提供方失败",
     enabledSourcesCount: (count) => `已启用 ${count} 个来源`,
     sourceLoadError: (sourceName, message) => `${sourceName}：${message}`,
     sourceConflict: (providerId, sourceNames) =>
-      `Provider id '${providerId}' 同时出现在多个来源：${sourceNames}`,
+      `提供方 id '${providerId}' 同时出现在多个来源：${sourceNames}`,
     backToSettings: "返回设置",
     backToAddProvider: "返回添加提供方",
     manageSources: "管理来源",
@@ -1390,7 +1390,7 @@ export const zhCN: I18nCatalog = {
     installed: "已安装",
     installedAccounts: (count) => `${count} 个账号`,
     installFromManifest: "安装提供方",
-    manifestInstallUrl: "Provider manifest URL 或本地路径",
+    manifestInstallUrl: "提供方 manifest URL 或本地路径",
     manifestUrlPlaceholder: "https://.../provider.json 或 D:\\Providers\\provider.json",
     manifestChecksum: "Manifest checksum（可选）",
     manifestChecksumPlaceholder: "sha256:...",
@@ -1447,7 +1447,7 @@ export const zhCN: I18nCatalog = {
   events: {
     title: "事件历史",
     subtitle:
-      "事件记录保存在本机：应用启动/升级、额度重置与异常回升、额度用尽/偏低、Provider 异常与恢复。可在设置中开启 Webhook 与 Windows 系统通知。",
+      "事件记录保存在本机：应用启动/升级、额度重置与异常回升、额度用尽/偏低、提供方异常与恢复。可在设置中开启 Webhook 与 Windows 系统通知。",
     empty: "还没有记录到事件。",
     loadFailed: "无法加载事件历史。",
     clear: "清空历史",
@@ -1457,7 +1457,8 @@ export const zhCN: I18nCatalog = {
     filterProvider: "提供方",
     filterApp: "应用",
     messages: {
-      appStarted: (startedHidden) => (startedHidden ? "应用已在后台启动" : "应用已启动"),
+      appStarted: (startedHidden, version) =>
+        `${startedHidden ? "应用已在后台启动" : "应用已启动"}${version ? `（版本 ${version}）` : ""}`,
       appUpdateApplied: (version) => `已更新到 ${version}`,
       quotaReset: (subject, remainingPercent) =>
         remainingPercent === null
@@ -1479,12 +1480,12 @@ export const zhCN: I18nCatalog = {
     channelsTitle: "通知渠道",
     eventGroupLabel: {
       quota: "额度",
-      provider: "Provider",
+      provider: "提供方",
       app: "应用"
     },
     lowQuotaThresholdLabel: "低额度警告阈值（%）",
     lowQuotaThresholdHint:
-      "同时影响托盘与 Provider 卡片的低额度警示，以及 quota-low 通知事件。",
+      "同时影响托盘与提供方卡片的低额度警示，以及 quota-low 通知事件。",
     toastEnabled: "Windows 系统通知",
     toastHint: "QuotaBarWin 运行期间，所选事件会弹出系统通知。",
     webhookEnabled: "Webhook 通知",
@@ -1501,8 +1502,8 @@ export const zhCN: I18nCatalog = {
       "quota-recovered-unexpected": "额度异常回升",
       "quota-exhausted": "额度用尽",
       "quota-low": "额度偏低",
-      "provider-error": "Provider 异常",
-      "provider-recovered": "Provider 恢复",
+      "provider-error": "提供方异常",
+      "provider-recovered": "提供方恢复",
       "app-update-applied": "应用已更新",
       "app-started": "应用启动"
     },
@@ -1530,17 +1531,17 @@ export const zhCN: I18nCatalog = {
     changeSecret: "更换",
     clearSecret: "清除",
     managedSecretHint: (providerId, parameterName) =>
-      `填写并保存后，QuotaBarWin 会为当前 Provider 实例自动创建独立文件：<配置目录>\\secrets\\providers\\${providerId}\\${parameterName}.txt。主配置只保存引用，原始值不会在这里显示。`,
+      `填写并保存后，QuotaBarWin 会为当前提供方实例自动创建独立文件：<配置目录>\\secrets\\providers\\${providerId}\\${parameterName}.txt。主配置只保存引用，原始值不会在这里显示。`,
     existingCredentialHint: "不更换时请留空；只有要替换当前凭据时，才在下面输入新值。",
     enterSecret: "输入 API Key",
     replaceSecret: "输入新凭据以替换当前值（留空保持不变）",
     advancedSettings: "高级设置",
     saveAndTest: "保存并测试",
     autoDetectAndFinish: "自动检测并完成",
-    autoDetectHint: "此 Provider 会优先使用本机已有的登录信息；无需填写可选字段，也可以直接测试。",
+    autoDetectHint: "此提供方会优先使用本机已有的登录信息；无需填写可选字段，也可以直接测试。",
     saveWithoutTesting: "保存但暂不测试",
     testing: "正在测试配置...",
-    testSucceeded: "配置可用，Provider 已自动启用。",
+    testSucceeded: "配置可用，提供方已自动启用。",
     testFailed: "配置测试失败",
     complete: "完成",
     back: "返回",
@@ -1563,7 +1564,7 @@ export const zhCN: I18nCatalog = {
         environment: "环境变量",
         externalFile: "外部文件",
         literal: "配置内明文",
-        default: "Provider 默认值",
+        default: "提供方默认值",
         advancedExpression: "高级配置",
         missing: "未配置",
       };
@@ -1576,18 +1577,18 @@ export const zhCN: I18nCatalog = {
         network: "无法连接服务",
         proxy: "代理连接失败",
         timeout: "请求超时",
-        runtime: "Provider 运行异常",
-        permission: "Provider 权限不足",
-        providerOutput: "Provider 返回格式异常",
+        runtime: "提供方运行异常",
+        permission: "提供方权限不足",
+        providerOutput: "提供方返回格式异常",
         unknown: "暂时无法确定原因",
       };
       return labels[category] ?? labels.unknown;
     },
-    saveFailed: "无法保存 Provider 配置",
-    testFailedKeepSaved: "配置已安全保存，但 Provider 仍处于停用状态。修改后请重新测试。",
+    saveFailed: "无法保存提供方配置",
+    testFailedKeepSaved: "配置已安全保存，但提供方仍处于停用状态。修改后请重新测试。",
     noUsableProvidersTitle: "还没有可用的额度来源",
-    noUsableProvidersBody: "添加一个 Provider 并配置账号后，即可在这里查看额度。",
-    addProvider: "添加 Provider",
+    noUsableProvidersBody: "添加一个提供方并配置账号后，即可在这里查看额度。",
+    addProvider: "添加提供方",
     openGuide: "查看使用说明"
   },
   format: {

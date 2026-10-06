@@ -50,7 +50,10 @@ export function eventMessage(t: I18nCatalog, event: QuotaEvent): string {
 
   switch (event.eventType) {
     case "app-started":
-      return t.events.messages.appStarted(detailBoolean(details, "startedHidden"));
+      return t.events.messages.appStarted(
+        detailBoolean(details, "startedHidden"),
+        detailString(details, "version"),
+      );
     case "app-update-applied":
       return t.events.messages.appUpdateApplied(detailString(details, "version") ?? "-");
     case "quota-reset": {

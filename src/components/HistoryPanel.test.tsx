@@ -112,4 +112,36 @@ describe("HistoryPanel", () => {
     renderPanel({ events: [] });
     expect(screen.getByTestId("history-clear")).toBeDisabled();
   });
+
+  test("app started events show the version with short commit", () => {
+    renderPanel({
+      events: [
+        event({
+          id: 1,
+          eventType: "app-started",
+          severity: "info",
+          providerId: null,
+          providerName: null,
+          windowId: null,
+          windowLabel: null,
+          details: { startedHidden: false, version: "1.6.0(a1b2c3d)" },
+        }),
+        event({
+          id: 2,
+          eventType: "app-started",
+          severity: "info",
+          providerId: null,
+          providerName: null,
+          windowId: null,
+          windowLabel: null,
+          details: { startedHidden: true, version: "1.6.0(a1b2c3d)" },
+        }),
+      ],
+    });
+
+    expect(screen.getByText(/Application started \(version 1\.6\.0\(a1b2c3d\)\)/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Application started in the background \(version 1\.6\.0\(a1b2c3d\)\)/i),
+    ).toBeInTheDocument();
+  });
 });

@@ -731,6 +731,13 @@ mod tests {
     fn app_event_constructors_use_expected_types() {
         let started = pending_app_started(false);
         assert_eq!(started.event_type, NOTIFICATION_EVENT_APP_STARTED);
+        let started_details = started.details.unwrap();
+        assert_eq!(started_details["startedHidden"], serde_json::json!(false));
+        // The recorded startup version embeds the short commit when built from
+        // git; at minimum it carries the crate version.
+        assert!(started_details["version"]
+            .as_str()
+            .is_some_and(|version| version.starts_with(env!("CARGO_PKG_VERSION"))));
         let updated = pending_app_update_applied("1.6.0");
         assert_eq!(updated.event_type, NOTIFICATION_EVENT_APP_UPDATE_APPLIED);
         assert_eq!(

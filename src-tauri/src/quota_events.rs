@@ -306,7 +306,12 @@ pub fn pending_app_started(started_hidden: bool) -> PendingQuotaEvent {
         provider_name: None,
         window_id: None,
         window_label: None,
-        details: Some(serde_json::json!({ "startedHidden": started_hidden })),
+        details: Some(serde_json::json!({
+            "startedHidden": started_hidden,
+            // Display version already embeds the short commit hash, e.g.
+            // "1.6.0(a1b2c3d)", so the history entry can show both.
+            "version": crate::app_info::app_display_version(),
+        })),
     }
 }
 

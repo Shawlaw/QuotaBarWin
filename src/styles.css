@@ -631,6 +631,7 @@ button:disabled {
 }
 
 .settings-content {
+  border-left: 1px solid var(--qb-border-soft);
   min-width: 0;
 }
 
