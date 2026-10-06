@@ -228,8 +228,7 @@ export type I18nCatalog = {
     label: string;
     noProxy: string;
     systemProxy: string;
-    httpProxy: string;
-    socks5Proxy: string;
+    customProxy: string;
     proxyUrl: string;
     proxyUrlPlaceholder: string;
     testProxy: string;
@@ -724,8 +723,7 @@ export const en: I18nCatalog = {
     label: "Network proxy",
     noProxy: "No proxy",
     systemProxy: "System proxy",
-    httpProxy: "HTTP proxy",
-    socks5Proxy: "SOCKS5 proxy",
+    customProxy: "Custom proxy",
     proxyUrl: "Proxy URL",
     proxyUrlPlaceholder: "http://host:port or socks5://host:port",
     testProxy: "Test proxy",
@@ -1276,8 +1274,7 @@ export const zhCN: I18nCatalog = {
     label: "网络代理",
     noProxy: "不使用代理",
     systemProxy: "系统代理",
-    httpProxy: "HTTP 代理",
-    socks5Proxy: "SOCKS5 代理",
+    customProxy: "自定义代理",
     proxyUrl: "代理 URL",
     proxyUrlPlaceholder: "http://host:port 或 socks5://host:port",
     testProxy: "检测代理",

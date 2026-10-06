@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { NetworkProxySettings } from "./NetworkProxySettings";
 import type { ProxyConfig } from "../types";
@@ -27,16 +28,16 @@ describe("NetworkProxySettings", () => {
     const onChange = vi.fn();
     render(<NetworkProxySettings proxy={{ kind: "http", url: "http://proxy:8080" }} onChange={onChange} />);
 
-    expect(screen.getByTestId("proxy-kind-select")).toHaveValue("http");
+    // Persisted http/socks5 kinds both show as the single custom selection.
+    expect(screen.getByTestId("proxy-kind-select")).toHaveValue("custom");
     expect(screen.getByTestId("proxy-url-input")).toHaveValue("http://proxy:8080");
   });
 
-  test("changing_kind_to_http_emits_config_with_existing_url", () => {
+  test("selecting_custom_derives_the_kind_from_the_existing_url", () => {
     const onChange = vi.fn();
     render(<NetworkProxySettings proxy={null} onChange={onChange} />);
 
-    fireEvent.change(screen.getByTestId("proxy-kind-select"), { target: { value: "http" } });
-
+    fireEvent.change(screen.getByTestId("proxy-kind-select"), { target: { value: "custom" } });
     expect(onChange).toHaveBeenCalledWith<ProxyConfig[]>({ kind: "http", url: "" });
   });
 
@@ -47,6 +48,30 @@ describe("NetworkProxySettings", () => {
     fireEvent.change(screen.getByTestId("proxy-url-input"), { target: { value: "http://proxy:8080" } });
 
     expect(onChange).toHaveBeenCalledWith<ProxyConfig[]>({ kind: "http", url: "http://proxy:8080" });
+  });
+
+  test("a_socks5_url_keeps_the_socks5_kind_without_a_separate_selection", () => {
+    const onChange = vi.fn();
+    // A stateful harness mirrors the real settings page: the component only
+    // sees its updated proxy through the parent re-render.
+    function Harness() {
+      const [proxy, setProxy] = useState<ProxyConfig | null>(null);
+      return (
+        <NetworkProxySettings
+          proxy={proxy}
+          onChange={(next) => {
+            onChange(next);
+            setProxy(next);
+          }}
+        />
+      );
+    }
+    render(<Harness />);
+
+    fireEvent.change(screen.getByTestId("proxy-kind-select"), { target: { value: "custom" } });
+    fireEvent.change(screen.getByTestId("proxy-url-input"), { target: { value: "socks5h://proxy:1080" } });
+
+    expect(onChange).toHaveBeenLastCalledWith<ProxyConfig[]>({ kind: "socks5", url: "socks5h://proxy:1080" });
   });
 
   test("selecting_none_clears_proxy", () => {

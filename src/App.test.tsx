@@ -1044,7 +1044,7 @@ test("saving_network_proxy_change_triggers_full_refresh", async () => {
   expect(await screen.findByText("Remote A")).toBeInTheDocument();
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByTestId("settings-nav-advanced"));
-  fireEvent.change(screen.getByTestId("proxy-kind-select"), { target: { value: "http" } });
+  fireEvent.change(screen.getByTestId("proxy-kind-select"), { target: { value: "custom" } });
   fireEvent.change(screen.getByTestId("proxy-url-input"), {
     target: { value: "http://127.0.0.1:7890" },
   });

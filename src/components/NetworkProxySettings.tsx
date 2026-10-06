@@ -8,14 +8,22 @@ type NetworkProxySettingsProps = {
   onChange: (proxy: ProxyConfig | null) => void;
 };
 
-type ProxyKindLabelKey = "noProxy" | "systemProxy" | "httpProxy" | "socks5Proxy";
+// The select presents "custom" for both persisted http and socks5 kinds: the
+// backend passes the URL straight to reqwest, which reads the protocol from
+// the scheme itself, so the choice is derived from what the user types.
+type ProxySelection = "none" | "system" | "custom";
 
-const proxyKinds: { value: ProxyKind; labelKey: ProxyKindLabelKey; needsUrl: boolean }[] = [
+type ProxySelectionLabelKey = "noProxy" | "systemProxy" | "customProxy";
+
+const proxySelections: { value: ProxySelection; labelKey: ProxySelectionLabelKey; needsUrl: boolean }[] = [
   { value: "none", labelKey: "noProxy", needsUrl: false },
   { value: "system", labelKey: "systemProxy", needsUrl: false },
-  { value: "http", labelKey: "httpProxy", needsUrl: true },
-  { value: "socks5", labelKey: "socks5Proxy", needsUrl: true }
+  { value: "custom", labelKey: "customProxy", needsUrl: true }
 ];
+
+function deriveProxyKind(url: string): ProxyKind {
+  return /^socks5h?:\/\//i.test(url.trim()) ? "socks5" : "http";
+}
 
 const DEFAULT_PROXY_TEST_URL = "https://github.com/";
 
@@ -23,12 +31,13 @@ export function NetworkProxySettings({ proxy, onChange }: NetworkProxySettingsPr
   const { t } = useI18n();
   const kind = proxy?.kind ?? "none";
   const url = proxy?.url ?? "";
-  const needsUrl = proxyKinds.find((option) => option.value === kind)?.needsUrl ?? false;
+  const selection: ProxySelection = kind === "http" || kind === "socks5" ? "custom" : kind;
+  const needsUrl = proxySelections.find((option) => option.value === selection)?.needsUrl ?? false;
   const [testUrl, setTestUrl] = useState(DEFAULT_PROXY_TEST_URL);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<ProxyTestResult | null>(null);
   const [testUnavailable, setTestUnavailable] = useState(false);
-  const canTest = kind !== "none" && (!needsUrl || url.trim().length > 0);
+  const canTest = selection !== "none" && (!needsUrl || url.trim().length > 0);
 
   const resultMessage = testUnavailable
     ? t.networkProxy.testProxyUnavailable
@@ -73,17 +82,17 @@ export function NetworkProxySettings({ proxy, onChange }: NetworkProxySettingsPr
         {t.networkProxy.label}
         <select
           data-testid="proxy-kind-select"
-          value={kind}
+          value={selection}
           onChange={(event) => {
-            const newKind = event.currentTarget.value as ProxyKind;
-            if (newKind === "none") {
+            const newSelection = event.currentTarget.value as ProxySelection;
+            if (newSelection === "none") {
               onChange(null);
             } else {
-              onChange({ kind: newKind, url });
+              onChange({ kind: deriveProxyKind(url), url });
             }
           }}
         >
-          {proxyKinds.map((option) => (
+          {proxySelections.map((option) => (
             <option key={option.value} value={option.value}>
               {t.networkProxy[option.labelKey]}
             </option>
@@ -98,7 +107,9 @@ export function NetworkProxySettings({ proxy, onChange }: NetworkProxySettingsPr
             type="text"
             value={url}
             placeholder={t.networkProxy.proxyUrlPlaceholder}
-            onChange={(event) => onChange({ kind, url: event.currentTarget.value })}
+            onChange={(event) =>
+              onChange({ kind: deriveProxyKind(event.currentTarget.value), url: event.currentTarget.value })
+            }
           />
         </label>
       ) : null}
