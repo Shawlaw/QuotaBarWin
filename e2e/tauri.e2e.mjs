@@ -126,20 +126,13 @@ async function assertAppStartedAndShowsQuota() {
 
 async function logConfigStorageDiagnostics() {
   try {
-    await openSettings();
-    const advanced = await byTestId("advanced-settings-section");
-    if (!(await advanced.getAttribute("open"))) {
-      await advanced.$("summary").then((summary) => summary.click());
-    }
+    await openSettingsCategory("advanced");
     const storage = await app.$('[aria-label="Configuration storage"]');
-    if (!(await storage.getAttribute("open"))) {
-      await storage.$("summary").then((summary) => summary.click());
-    }
     console.error("E2E config diagnostics:");
     console.error(`  expected config: ${configPath}`);
     console.error(`  expected marker: ${portableMarkerPath}`);
     if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
       console.error(`  config providers: ${config.providers?.length ?? 0}`);
     }
     console.error(`  UI storage text: ${await storage.getText()}`);
@@ -165,7 +158,7 @@ function assertE2eConfigWritten() {
 }
 
 async function assertConfigCanBeSaved() {
-  await openSettings();
+  await openSettingsCategory("general");
   const input = await byTestId("refresh-interval-input");
   await input.setValue("120");
 
@@ -191,7 +184,7 @@ async function assertConfigCanBeSaved() {
 
 async function assertProviderSetupCanSaveTestAndEnable() {
   const fixtureValue = "fixture-value";
-  await openSettings();
+  await openSettingsCategory("providers");
   await clickByTestId("setup-provider-e2e-remote-setup");
 
   const setupPage = await byTestId("provider-setup-page");
@@ -311,7 +304,7 @@ async function assertTrayPopupInteractions() {
 }
 
 async function assertProviderRemovalCleansManagedSecrets() {
-  await openSettings();
+  await openSettingsCategory("providers");
   await clickByTestId("more-provider-e2e-remote-setup");
   await clickByTestId("remove-provider-e2e-remote-setup");
 
@@ -340,6 +333,13 @@ async function openSettings() {
   await settingsButton.waitForDisplayed({ timeout: 10000 });
   await app.execute((target) => target.click(), settingsButton);
   await settingsPage.waitForDisplayed({ timeout: 10000 });
+}
+
+// The settings page is category-based: only the active category's controls
+// exist in the DOM, so every flow must declare which category it touches.
+async function openSettingsCategory(category) {
+  await openSettings();
+  await clickByTestId(`settings-nav-${category}`);
 }
 
 async function openOverview() {
