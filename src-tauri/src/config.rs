@@ -3100,7 +3100,7 @@ mod tests {
 
         assert!(guide_path.exists());
         let contents = fs::read_to_string(&guide_path).expect("read guide");
-        assert!(contents.contains("远程 Provider 指南"));
+        assert!(contents.contains("远程提供方指南"));
         assert!(contents.contains("Remote Provider Guide"));
         assert!(contents.contains("Manifest 格式"));
         assert!(contents.contains("Manifest format"));

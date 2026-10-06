@@ -1,17 +1,17 @@
-# QuotaBarWin 远程 Provider 指南
+# QuotaBarWin 远程提供方指南
 
 默认语言：简体中文。English documentation:
 [`remote-provider-guide.en.md`](remote-provider-guide.en.md).
 
-远程 Provider 允许你通过一个托管的 `registry.json` / `provider.json` 安装额度
-Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合第三方 Provider、
-快速迭代 Provider 脚本，或在多台机器之间共享 Provider 配置。
+远程提供方允许你通过一个托管的 `registry.json` / `provider.json` 安装额度
+提供方，而不需要把提供方打包进 QuotaBarWin 主程序。这适合第三方提供方、
+快速迭代提供方脚本，或在多台机器之间共享提供方配置。
 
 ## 工作方式
 
 1. 在设置页提供 registry URL 或本地路径，例如 `registry.json`。支持 `https://`、
    `file://` 和普通本地路径。
-2. QuotaBarWin 读取 registry，拉取每个 Provider manifest，校验可选 checksum，
+2. QuotaBarWin 读取 registry，拉取每个提供方 manifest，校验可选 checksum，
    并下载 source script。
 3. Source script 会缓存到本机，并使用 manifest 声明的 runtime 执行。`builtin-js`
    使用应用内置的 QuickJS，不需要用户安装 Node.js；`node`、`python`、`pwsh`、`bash`
@@ -19,9 +19,9 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
    普通用户无需安装任何运行时。
 4. 每次刷新时，QuotaBarWin 运行缓存脚本，并归一化为标准额度窗口。
 
-同一个 manifest 可以安装多次，用于查询同一 Provider 的多个账号。QuotaBarWin 会为
-每个本地账号实例生成稳定的 Provider id，例如 `kimi-coding`、`kimi-coding-2`，
-每个实例可以配置不同的名称、环境变量、超时和窗口显示偏好。运行期代理通过 Provider
+同一个 manifest 可以安装多次，用于查询同一提供方的多个账号。QuotaBarWin 会为
+每个本地账号实例生成稳定的提供方 id，例如 `kimi-coding`、`kimi-coding-2`，
+每个实例可以配置不同的名称、环境变量、超时和窗口显示偏好。运行期代理通过提供方
 环境变量配置；项目全局代理只在该变量未配置时作为兜底。
 
 ## Manifest 格式（`provider.json`）
@@ -70,11 +70,11 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `schemaVersion` | 是 | `1` 是旧格式；当前应用仍可加载已缓存的 schema 1 `builtin-js` 脚本以完成升级，但远程安装或更新 `builtin-js` 必须使用 `2`，以便旧本体在下载脚本前安全拒绝不兼容更新。 |
-| `id` | 是 | 稳定 manifest id。重复安装同一 manifest 时，QuotaBarWin 会自动生成不冲突的本地 Provider id。 |
+| `id` | 是 | 稳定 manifest id。重复安装同一 manifest 时，QuotaBarWin 会自动生成不冲突的本地提供方 id。 |
 | `displayName` | 是 | UI 中显示的人类可读名称。 |
 | `version` | 否 | 人类可读版本号，会显示在设置页，建议使用 SemVer。缺省时 UI 会回退显示短 checksum。 |
 | `description` | 否 | 简短说明。 |
-| `minAppVersion` | schema 2 是 | 运行此 Provider 所需的最低 QuotaBarWin 版本，使用不带 `v` 前缀的 SemVer，例如 `1.1.0`。当前本体低于此版本时会拒绝更新且不改写缓存。 |
+| `minAppVersion` | schema 2 是 | 运行此提供方所需的最低 QuotaBarWin 版本，使用不带 `v` 前缀的 SemVer，例如 `1.1.0`。当前本体低于此版本时会拒绝更新且不改写缓存。 |
 | `runtime` | 是 | 执行 `entry` 的 runtime。`builtin-js` 使用内置 QuickJS；也可用 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
 | `entry` | 是 | Source 文件名。相对路径按 manifest 所在位置解析；也支持 HTTPS / file / 本地路径。 |
 | `requiredEnvVars` | 否 | 脚本需要的环境变量。刷新时会先查 provider `envVars`，再解析 `${secret:NAME}`。 |
@@ -90,16 +90,16 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
 
 `helpUrl` 是获取 API Key 或参数说明的外部帮助链接。设置 `"advanced": true` 会将可选、代理或诊断类字段默认收进“高级设置”；不要将正常首次配置所需的字段标为高级。
 
-新实例会以“待配置”、停用状态安装。用户点击“保存并测试”时，宿主会把 secret 写入该实例独立的本地文件，并把 `${secret:providers/<provider-instance-id>/<parameter-name>}` 写入主配置；解析仍由同一套 `${secret:...}` resolver 和正式 Provider runner 完成。Provider 作者不应要求用户手工创建文件或输入占位符。
+新实例会以“待配置”、停用状态安装。用户点击“保存并测试”时，宿主会把 secret 写入该实例独立的本地文件，并把 `${secret:providers/<provider-instance-id>/<parameter-name>}` 写入主配置；解析仍由同一套 `${secret:...}` resolver 和正式提供方 runner 完成。提供方作者不应要求用户手工创建文件或输入占位符。
 
 第三方 manifest 未提供 `parameters` 时仍可安装，用户可使用保留的原始 `envVars` 编辑器；这保持对旧 manifest 的兼容。
 
 ## 内置 JavaScript runtime（`builtin-js`）
 
-`builtin-js` 面向不想让普通用户额外安装 Node.js 的 Provider。它运行在应用内置的
+`builtin-js` 面向不想让普通用户额外安装 Node.js 的提供方。它运行在应用内置的
 QuickJS 沙箱中。新发布或远程更新的 manifest 必须使用 `schemaVersion: 2` 并声明 `minAppVersion`；入口必须是 `.js` 文件，`output` 必须为 `provider-snapshot-v1`，并导出
 一个同步的全局函数 `main(qb)`：函数直接返回快照对象，**不使用** `console.log`、stdout
-或 `process.exit`。官方 Provider 都使用此 runtime。
+或 `process.exit`。官方提供方都使用此 runtime。
 
 ```js
 function main(qb) {
@@ -139,7 +139,7 @@ function main(qb) {
 | `qb.env.get(name)` | `env:NAME` 或 `env-prefix:PREFIX_` | 读取已配置的值；未配置时抛错。`requiredEnvVars` 中的每项必须有匹配的 env permission。 |
 | `qb.env.getOptional(name)` | 同上 | 未配置时返回 `null`；未声明仍会抛错。适用于可选阈值或筛选项。 |
 | `qb.fs.readText(path)` | `fs:C:\exact\path`、`fs:~/.codex/auth.json` 或 `fs:env:NAME` | 只读 UTF-8 文本；宿主会规范化实际路径并拒绝未授权路径。`fs:env:NAME` 允许读取该环境变量指向的一个文件。 |
-| `qb.http.request(url, options)` | `net:http`、`net:https`，或精确 origin 如 `net:https://api.example.com` | 同步 HTTP 请求，返回 `{ status, ok, body }`。Provider 专用代理或项目全局代理由宿主使用；脚本看不到代理凭据。请求体最多 1 MiB，响应文本最多 2 MiB。 |
+| `qb.http.request(url, options)` | `net:http`、`net:https`，或精确 origin 如 `net:https://api.example.com` | 同步 HTTP 请求，返回 `{ status, ok, body }`。提供方专用代理或项目全局代理由宿主使用；脚本看不到代理凭据。请求体最多 1 MiB，响应文本最多 2 MiB。 |
 | `qb.now()` / `qb.timezone()` | 无 | 分别返回当前 UTC ISO 时间和本机 UTC 偏移（如 `UTC+08:00`）。 |
 | `qb.log(entry)` | 无 | 写入本地结构化应用日志。建议传 `{ level, stage, message }`，不要传 secret、token 或完整响应。 |
 | `qb.meta` | 无 | 只读通用元信息：`providerId`、`manifestId`、`name`、`version`、`sourceChecksum`、`timeoutSeconds`。 |
@@ -163,13 +163,13 @@ Node/Bun/Deno API、`process`、`console`、子进程、任意 socket、任意�
 `eval` 也不是受支持能力。运行时限制为 16 MiB 内存、512 KiB JS 栈，以及实例配置中的整体
 `timeoutSeconds`；每个 HTTP 请求还会受剩余总时间限制。
 
-这套边界是平台能力，不包含任何 Provider 专属 API、鉴权格式或响应解析。URL、Header、
-本地 auth 文件格式和 `windows[]` 映射都仍由 Provider 脚本维护。外部 runtime 继续可用，
+这套边界是平台能力，不包含任何提供方专属 API、鉴权格式或响应解析。URL、Header、
+本地 auth 文件格式和 `windows[]` 映射都仍由提供方脚本维护。外部 runtime 继续可用，
 但不获得这套强制沙箱。
 
 ## Registry 格式（`registry.json`）
 
-Registry 可以用一个 URL 安装多个 Provider：
+Registry 可以用一个 URL 安装多个提供方：
 
 ```json
 {
@@ -187,14 +187,14 @@ Registry 可以用一个 URL 安装多个 Provider：
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `schemaVersion` | 是 | 必须为 `1`。 |
-| `providers` | 是 | Provider 条目数组。 |
-| `providers[].id` | 是 | Provider id，必须与引用的 manifest 中的 id 一致。 |
+| `providers` | 是 | 提供方条目数组。 |
+| `providers[].id` | 是 | 提供方 id，必须与引用的 manifest 中的 id 一致。 |
 | `providers[].providerUrl` | 是 | `provider.json` 的 URL 或本地路径。相对路径按 registry 所在位置解析。 |
 | `providers[].checksum` | 否 | Manifest 文本 SHA-256；提供后安装前会校验。 |
 
-## 用 CLI 校验 Provider
+## 用 CLI 校验提供方
 
-编写或更新 Provider 后，建议在安装和发布前使用 `QuotaBarWin.Cli.exe validate`
+编写或更新提供方后，建议在安装和发布前使用 `QuotaBarWin.Cli.exe validate`
 校验 manifest、source、checksum 和 runtime。此命令的 stdout 始终是 JSON，适合在
 CI 或脚本中根据退出码处理。
 
@@ -205,21 +205,21 @@ CI 或脚本中根据退出码处理。
 # entry 为 HTTPS / file URL 时，明确指定本地待校验 source
 .\QuotaBarWin.Cli.exe validate --manifest .\provider.json --source .\provider.js
 
-# Provider 已安装后，校验实际配置、缓存 manifest、source checksum 和 runtime
+# 提供方已安装后，校验实际配置、缓存 manifest、source checksum 和 runtime
 .\QuotaBarWin.Cli.exe validate --provider my-provider
 
 # 额外执行一次已安装脚本，校验 provider-snapshot-v1 输出；可能访问账户 API
 .\QuotaBarWin.Cli.exe validate --provider my-provider --run
 ```
 
-默认校验不会运行脚本或发起 Provider API 请求。`--run` 只适用于已安装的 Provider，
+默认校验不会运行脚本或发起提供方 API 请求。`--run` 只适用于已安装的提供方，
 会沿用该实例配置的 runtime、secret 占位符和代理；不要在命令行中传入 token、Cookie、
 API key 或代理凭据。
 
 校验会检查 `schemaVersion`、非空 `displayName`、`output` 协议、runtime、source 是否
-存在、`checksums.source` 是否匹配，以及已安装 Provider 所需环境变量是否已配置。
+存在、`checksums.source` 是否匹配，以及已安装提供方所需环境变量是否已配置。
 `checksums.source` 在当前公共协议中仍是可选项：缺失会给出 warning，不会单独导致失败。
-`--run` 还会确认 stdout 能被当前的 `provider-snapshot-v1` 解析器接受；Provider stderr、
+`--run` 还会确认 stdout 能被当前的 `provider-snapshot-v1` 解析器接受；提供方 stderr、
 secret 和环境变量值不会写入报告。
 
 校验不通过时退出码为 `30`；manifest 或配置无法读取等命令级错误退出码为 `20`。详情请见
@@ -231,7 +231,7 @@ secret 和环境变量值不会写入报告。
 对象，且 stdout 只能包含这个最终对象；流程、调试和错误日志请写 stderr。`builtin-js`
 不使用 stdout/stderr：它的 `main(qb)` 直接返回同形状对象，并使用 `qb.log()` 写日志。
 `id`、`name` 和 `source` 可以省略；即使脚本提供，QuotaBarWin 也会优先使用本地安装
-配置中的 Provider id 和名称，以支持同一 manifest 的多账号实例。
+配置中的提供方 id 和名称，以支持同一 manifest 的多账号实例。
 
 ```json
 {
@@ -261,7 +261,7 @@ secret 和环境变量值不会写入报告。
 
 QuotaBarWin 会逐行读取脚本 stderr，并把日志转发到本地应用日志
 `quotabarwin.log`。脚本失败、返回非 0 退出码或被宿主超时终止时，最近约 16 KiB 的
-stderr 摘要会进入 Provider diagnostics 的 `stderr` 字段，方便区分 provider 内部
+stderr 摘要会进入提供方 diagnostics 的 `stderr` 字段，方便区分 provider 内部
 失败和宿主进程超时。普通文本会原样转发；更推荐每行写一个结构化 JSON 对象。
 
 推荐字段：
@@ -286,7 +286,7 @@ stderr 摘要会进入 Provider diagnostics 的 `stderr` 字段，方便区分 p
 | `QBWIN_PROVIDER_VERSION` | manifest `version`，缺省时不设置。 |
 | `QBWIN_PROVIDER_SOURCE_CHECKSUM` | manifest `checksums.source`，缺省时不设置。 |
 | `QBWIN_PROVIDER_TIMEOUT_SECONDS` | 当前宿主等待脚本退出的秒数。 |
-| `QBWIN_PROXY_URL` | 可选；优先使用 Provider 环境变量中的该值；未配置时宿主注入项目全局代理。安装源代理只用于下载 registry、manifest 和脚本。日志中只记录是否启用或协议，不要输出完整值。 |
+| `QBWIN_PROXY_URL` | 可选；优先使用提供方环境变量中的该值；未配置时宿主注入项目全局代理。安装源代理只用于下载 registry、manifest 和脚本。日志中只记录是否启用或协议，不要输出完整值。 |
 
 Node.js 示例：
 
@@ -327,7 +327,7 @@ console.log(JSON.stringify({
 | `id` | 是 | 稳定窗口 ID，会被用户配置引用。 |
 | `label` | 是 | UI 显示名称，可以更友好或本地化，但不能作为唯一稳定身份。 |
 | `used` | 否 | 已用数量。 |
-| `remaining` | 否 | 剩余数量，余额型 Provider 很常用。 |
+| `remaining` | 否 | 剩余数量，余额型提供方很常用。 |
 | `limit` | 否 | 总额度。 |
 | `unit` | 否 | 单位，例如 `requests`、`tokens`、`percent`、`CNY`。 |
 | `usedPercent` | 否 | 0-100。 |
@@ -339,7 +339,7 @@ console.log(JSON.stringify({
 
 ## 稳定窗口 ID 与用户自定义
 
-请把每个 `windows[].id` 当成 Provider 的兼容性契约。用户可以通过本地配置中的
+请把每个 `windows[].id` 当成提供方的兼容性契约。用户可以通过本地配置中的
 `visibleWindowIds` 和 `windowLabelOverrides` 控制显示顺序、可见性和名称；如果你随意
 改 ID，会破坏这些偏好。
 
@@ -366,14 +366,14 @@ console.log(JSON.stringify({
 - `label` 只是展示文案，可以变得更清晰或本地化；`id` 应来自稳定 API 语义，例如
   `weekly`、`300-minute`、`tokens-limit-6-1`、`total-quota`。
 
-## 解析 Provider 原始响应
+## 解析提供方原始响应
 
-远程 Provider 应把供应商 API 的解析逻辑留在脚本内部。QuotaBarWin 只需要脚本最终
+远程提供方应把供应商 API 的解析逻辑留在脚本内部。QuotaBarWin 只需要脚本最终
 输出标准 `provider-snapshot-v1`。
 
 推荐流程：
 
-1. 请求 Provider 原始 API，或在测试中读取 fixture。
+1. 请求提供方原始 API，或在测试中读取 fixture。
 2. 选择用户真正需要看到的 quota / balance 记录。
 3. 将供应商字段转换成稳定的 `windows[]` 字段。
 4. 将 plan、usageDetails、account metadata 等附加信息放进 `metadata`。
@@ -419,11 +419,11 @@ QuotaBarWin 只会解析和提供实例配置中的环境变量。
 <config-dir>/secrets/KIMI_API_KEY.txt
 ```
 
-多账号时，请在每个本地 Provider 实例的 **设置 → 提供方 → 编辑 → 环境变量** 中显式
+多账号时，请在每个本地提供方实例的 **设置 → 提供方 → 编辑 → 环境变量** 中显式
 填写映射。等号左侧仍然是脚本需要的环境变量名；等号右侧才是这个账号使用的本地
 secret 文件名。
 
-例如同一个 Kimi Provider 的两个账号：
+例如同一个 Kimi 提供方的两个账号：
 
 ```json
 {
@@ -461,7 +461,7 @@ secret 文件；配置文件中只保存占位符，不保存明文 token。
 
 以下示例调用 Zhipu / BigModel quota endpoint，并输出 `provider-snapshot-v1`。
 它们都从 `BIGMODEL_API_KEY` 读取 API key。官方维护的提供方均使用 `builtin-js`，
-推荐新 Provider 也走这条路（用户零依赖）；随后的外部 runtime 示例供兼容参考。
+推荐新提供方也走这条路（用户零依赖）；随后的外部 runtime 示例供兼容参考。
 
 ### 内置 JavaScript（`builtin-js`，推荐）
 
@@ -687,7 +687,7 @@ Bash 示例需要 `jq`。Windows 上 Git Bash 通常会随附它。
 
 ## 安全检查清单
 
-- **只安装使用可信任的远程 Provider。Provider 脚本可以直接读取你配置给它的各类
+- **只安装使用可信任的远程提供方。提供方脚本可以直接读取你配置给它的各类
   AI 鉴权信息，并发起网络通讯。**
 - 安装前检查 source URL、runtime 和 required env vars。
 - 优先使用带 `providers[].checksum` 的 registry。
@@ -707,21 +707,21 @@ Bash 示例需要 `jq`。Windows 上 Git Bash 通常会随附它。
 - `deepseek-balance`：DeepSeek pay-as-you-go balance，需要
   `DEEPSEEK_API_KEY`，支持余额参考值和低余额阈值配置。
 
-## 更新远程 Provider
+## 更新远程提供方
 
 如果 manifest 包含 `checksums.source`，QuotaBarWin 可以检测 source 变化。设置页会显示
 已安装版本、安装时间、更新时间和上次检查时间：
 
-- **自动更新**：安装时为 Provider 启用 auto-update 后，checksum 不同时会静默更新。
+- **自动更新**：安装时为提供方启用 auto-update 后，checksum 不同时会静默更新。
 - **手动更新**：在 Settings 中使用 “检查更新” / “应用更新”。
 
-如果缺少 `checksums.source`，需要移除并重新添加 Provider 才能更新。
+如果缺少 `checksums.source`，需要移除并重新添加提供方才能更新。
 
 ### 应用版本兼容性
 
-发布或远程更新 `builtin-js` Provider 时必须使用 manifest schema 2，并设置其实际所需的
+发布或远程更新 `builtin-js` 提供方时必须使用 manifest schema 2，并设置其实际所需的
 `minAppVersion`。更新前，宿主会先校验 schema 与最低版本；若本体版本不足，会保留当前
 缓存、配置和旧脚本不变，并提示用户先升级 QuotaBarWin。旧版应用只支持 schema 1，因此也会
-在下载新 source **之前**拒绝 schema 2 manifest；这避免了自动更新将还能工作的 Node Provider
+在下载新 source **之前**拒绝 schema 2 manifest；这避免了自动更新将还能工作的 Node 提供方
 覆盖为旧本体无法执行的 `builtin-js` 脚本。为平滑升级，当前版本仍可运行已缓存的 schema 1
-`builtin-js` Provider，但不会从远程安装或更新这类旧 manifest。
+`builtin-js` 提供方，但不会从远程安装或更新这类旧 manifest。

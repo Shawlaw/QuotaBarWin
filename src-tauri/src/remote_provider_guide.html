@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>QuotaBarWin 远程 Provider 指南 / Remote Provider Guide</title>
+    <title>QuotaBarWin 远程提供方指南 / Remote 提供方 Guide</title>
     <style>
       :root {
         color: #1f2937;
@@ -183,9 +183,9 @@
     <main>
       <article data-language="zh-CN">
         <header>
-          <h1>远程 Provider 指南</h1>
+          <h1>远程提供方指南</h1>
           <p class="lead">
-            通过托管的 manifest 和脚本安装额度 Provider，无需把 Provider 打包进主程序。
+            通过托管的 manifest 和脚本安装额度提供方，无需把提供方打包进主程序。
           </p>
           <nav class="language-switch" aria-label="文档语言">
             <a href="#zh-CN" data-language-link="zh-CN" aria-current="true">中文</a>
@@ -197,11 +197,11 @@
           <h2>工作方式</h2>
           <ol>
             <li>在设置页提供 registry URL 或本地路径，例如 <code>registry.json</code>。</li>
-            <li>QuotaBarWin 读取 registry，拉取每个 Provider manifest，校验可选 checksum，并下载 source script。</li>
+            <li>QuotaBarWin 读取 registry，拉取每个提供方 manifest，校验可选 checksum，并下载 source script。</li>
             <li>脚本会缓存到本机。<code>builtin-js</code> 用内置 QuickJS 执行，不需要 Node.js；其他 runtime 可为 <code>node</code>、<code>python</code>、<code>pwsh</code>、<code>bash</code> 或绝对路径。官方维护的提供方脚本全部使用 <code>builtin-js</code>，普通用户无需安装任何运行时。</li>
             <li>每次刷新时，QuotaBarWin 运行缓存脚本，并归一化为标准额度窗口。</li>
           </ol>
-          <p>同一个 manifest 可以安装多次，用于查询同一 Provider 的多个账号。QuotaBarWin 会生成 <code>kimi-coding</code>、<code>kimi-coding-2</code> 这类稳定的本地 Provider id。</p>
+          <p>同一个 manifest 可以安装多次，用于查询同一提供方的多个账号。QuotaBarWin 会生成 <code>kimi-coding</code>、<code>kimi-coding-2</code> 这类稳定的本地提供方 id。</p>
         </section>
 
         <section>
@@ -251,7 +251,7 @@
             </thead>
             <tbody>
               <tr><td><code>schemaVersion</code></td><td>是</td><td><code>1</code> 是旧格式；当前版本仍可加载已缓存的 schema 1 <code>builtin-js</code> 脚本完成升级，但远程安装或更新必须使用 <code>2</code>，让旧本体在下载脚本前安全拒绝更新。</td></tr>
-              <tr><td><code>id</code></td><td>是</td><td>稳定 manifest id。重复安装同一 manifest 时，QuotaBarWin 会生成不冲突的本地 Provider id。</td></tr>
+              <tr><td><code>id</code></td><td>是</td><td>稳定 manifest id。重复安装同一 manifest 时，QuotaBarWin 会生成不冲突的本地提供方 id。</td></tr>
               <tr><td><code>displayName</code></td><td>是</td><td>UI 中显示的人类可读名称。</td></tr>
               <tr><td><code>version</code></td><td>否</td><td>设置页显示的人类可读版本号；缺省时显示短 checksum。</td></tr>
               <tr><td><code>minAppVersion</code></td><td>schema 2 是</td><td>最低 QuotaBarWin SemVer 版本，不带 <code>v</code> 前缀，例如 <code>1.1.0</code>。</td></tr>
@@ -266,12 +266,12 @@
           </table>
           <h3>向导式配置字段</h3>
           <p><code>secret</code> 字段显示为密码框，<code>string</code>、<code>number</code> 和 <code>select</code> 分别显示对应输入控件。<code>helpUrl</code> 用于提供获取 API Key 或参数说明的外部链接；<code>advanced: true</code> 会把可选、代理或诊断字段默认收进高级设置。</p>
-          <p>新实例以“待配置”、停用状态安装。用户点击“保存并测试”后，宿主把 secret 写入实例隔离的本地文件，主配置只保存引用；测试复用正式 Provider runner，成功后自动启用。第三方旧 manifest 没有 <code>parameters</code> 时仍可使用原始 <code>envVars</code> 编辑器。</p>
+          <p>新实例以“待配置”、停用状态安装。用户点击“保存并测试”后，宿主把 secret 写入实例隔离的本地文件，主配置只保存引用；测试复用正式提供方 runner，成功后自动启用。第三方旧 manifest 没有 <code>parameters</code> 时仍可使用原始 <code>envVars</code> 编辑器。</p>
         </section>
 
         <section>
           <h2>Registry 格式</h2>
-          <p>Registry 可以用一个 URL 安装多个 Provider。</p>
+          <p>Registry 可以用一个 URL 安装多个提供方。</p>
           <pre>{
   "schemaVersion": 1,
   "providers": [
@@ -305,17 +305,17 @@
               <tr><td><code>qb.env.get</code> / <code>getOptional</code></td><td><code>env:NAME</code> 或 <code>env-prefix:PREFIX_</code></td><td>读取已配置变量；<code>getOptional</code> 未配置时返回 null。</td></tr>
               <tr><td><code>qb.fs.readText</code></td><td><code>fs:路径</code> 或 <code>fs:env:NAME</code></td><td>只读 UTF-8，规范化实际路径后拒绝未授权访问。</td></tr>
               <tr><td><code>qb.http.request</code></td><td><code>net:http</code>、<code>net:https</code> 或精确 origin</td><td>同步请求，返回 <code>{status, ok, body}</code>；代理与超时由宿主处理。</td></tr>
-              <tr><td><code>qb.now</code>、<code>qb.timezone</code>、<code>qb.log</code>、<code>qb.meta</code></td><td>无</td><td>通用时间、结构化日志和只读 Provider 元信息。</td></tr>
+              <tr><td><code>qb.now</code>、<code>qb.timezone</code>、<code>qb.log</code>、<code>qb.meta</code></td><td>无</td><td>通用时间、结构化日志和只读提供方元信息。</td></tr>
             </tbody>
           </table>
-          <p>可用同步 JavaScript、Date、JSON、RegExp、Map 和 Set。没有 Promise、import、require、Node/Bun/Deno API、process、console、子进程、任意 socket、任意文件访问或动态加载；内存 16 MiB、JS 栈 512 KiB，并受 Provider <code>timeoutSeconds</code> 限制。<code>QBWIN_</code> 是保留前缀，不能授予 env/file 访问；元信息用 <code>qb.meta</code>，代理由 <code>qb.http</code> 自动使用。URL、鉴权格式和响应解析仍属于 Provider 脚本，不属于平台。</p>
-          <p>更新前会校验 schema 与最低版本。本体版本不足时不会改写缓存、配置或旧脚本；只支持 schema 1 的旧版应用也会在下载新 source 前拒绝 schema 2 manifest，避免自动更新造成 Provider 不可运行。当前版本仍可运行已缓存的 schema 1 <code>builtin-js</code> Provider，但不会远程安装或更新这类旧 manifest。</p>
+          <p>可用同步 JavaScript、Date、JSON、RegExp、Map 和 Set。没有 Promise、import、require、Node/Bun/Deno API、process、console、子进程、任意 socket、任意文件访问或动态加载；内存 16 MiB、JS 栈 512 KiB，并受提供方 <code>timeoutSeconds</code> 限制。<code>QBWIN_</code> 是保留前缀，不能授予 env/file 访问；元信息用 <code>qb.meta</code>，代理由 <code>qb.http</code> 自动使用。URL、鉴权格式和响应解析仍属于提供方脚本，不属于平台。</p>
+          <p>更新前会校验 schema 与最低版本。本体版本不足时不会改写缓存、配置或旧脚本；只支持 schema 1 的旧版应用也会在下载新 source 前拒绝 schema 2 manifest，避免自动更新造成提供方不可运行。当前版本仍可运行已缓存的 schema 1 <code>builtin-js</code> 提供方，但不会远程安装或更新这类旧 manifest。</p>
         </section>
 
         <section>
           <h2>Source Script 输出协议</h2>
           <p>外部 runtime 脚本必须向 stdout 输出一个 JSON 对象，诊断写 stderr。<code>builtin-js</code> 从 <code>main(qb)</code> 直接返回同形状对象，并通过 <code>qb.log()</code> 写日志。</p>
-          <p><code>id</code>、<code>name</code> 和 <code>source</code> 可以省略；即使脚本提供，QuotaBarWin 也会优先使用本地安装配置中的 Provider id 和名称，以支持多账号实例。</p>
+          <p><code>id</code>、<code>name</code> 和 <code>source</code> 可以省略；即使脚本提供，QuotaBarWin 也会优先使用本地安装配置中的提供方 id 和名称，以支持多账号实例。</p>
           <pre>{
   "status": "ok",
   "updatedAt": "2026-06-12T10:00:00.000Z",
@@ -362,7 +362,7 @@
           <p>
             以下示例调用 Zhipu / BigModel quota endpoint，并输出 <code>provider-snapshot-v1</code>。
             它们都从 <code>BIGMODEL_API_KEY</code> 读取 API key。官方维护的提供方均使用 <code>builtin-js</code>，
-            推荐新 Provider 也走这条路（用户零依赖）；随后的外部 runtime 示例供兼容参考。
+            推荐新提供方也走这条路（用户零依赖）；随后的外部 runtime 示例供兼容参考。
           </p>
 
           <h3>内置 JavaScript（<code>builtin-js</code>，推荐）</h3>
@@ -576,7 +576,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
         <section>
           <h2>安全检查清单</h2>
           <ul>
-            <li><strong>只安装使用可信任的远程 Provider。Provider 脚本可以直接读取你配置给它的各类 AI 鉴权信息，并发起网络通讯。</strong></li>
+            <li><strong>只安装使用可信任的远程提供方。提供方脚本可以直接读取你配置给它的各类 AI 鉴权信息，并发起网络通讯。</strong></li>
             <li>安装前检查 source URL、runtime 和 required env vars。</li>
             <li>优先使用带 <code>providers[].checksum</code> 的 registry。</li>
             <li>优先使用带 <code>checksums.source</code> 的 manifest；否则无法安全自动更新。</li>
@@ -590,7 +590,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
             仓库中的 <code>examples/remote-providers/</code> 包含 Kimi、BigModel、Codex usage 和 DeepSeek balance 示例。
           </p>
           <p>
-            如果 manifest 包含 <code>checksums.source</code>，可在设置页使用自动更新或手动 “检查更新 / 应用更新”。设置页会显示版本、安装时间、更新时间和上次检查时间。缺少 checksum 时，需要移除后重新添加 Provider。
+            如果 manifest 包含 <code>checksums.source</code>，可在设置页使用自动更新或手动 “检查更新 / 应用更新”。设置页会显示版本、安装时间、更新时间和上次检查时间。缺少 checksum 时，需要移除后重新添加提供方。
           </p>
         </section>
       </article>
