@@ -325,6 +325,15 @@ export async function getAppVersion(): Promise<string> {
   return invoke<string>("get_app_version");
 }
 
+// Dev builds (identifier com.quotabarwin.app.dev from tauri.dev.conf.json)
+// disable release-only features such as autostart and app updates.
+export async function getIsDevBuild(): Promise<boolean> {
+  if (!hasTauriInternals()) {
+    return false;
+  }
+  return invoke<boolean>("get_is_dev_build");
+}
+
 export async function openProjectGithub(): Promise<void> {
   if (!hasTauriInternals()) {
     window.open("https://github.com/Shawlaw/QuotaBarWin", "_blank", "noopener,noreferrer");

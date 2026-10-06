@@ -167,6 +167,7 @@ export type I18nCatalog = {
     portableModeHint: string;
     openFolder: string;
     resetConfig: string;
+    devBuildLimitation: string;
     pathCopied: string;
     resetConfigConfirm: string;
     noChanges: string;
@@ -655,6 +656,7 @@ export const en: I18nCatalog = {
       "Portable mode stores config beside the app executable and uses quotabarwin.portable as the marker file.",
     openFolder: "Open config storage folder",
     resetConfig: "Reset config",
+    devBuildLimitation: "Not available in development builds.",
     pathCopied: "Path copied to the clipboard.",
     resetConfigConfirm: "Reset QuotaBarWin config to defaults? A backup will be created first.",
     noChanges: "No changes",
@@ -1209,6 +1211,7 @@ export const zhCN: I18nCatalog = {
       "便携模式会把配置存放在应用可执行文件旁，并使用 quotabarwin.portable 作为标记文件。",
     openFolder: "打开配置存储文件夹",
     resetConfig: "重置配置",
+    devBuildLimitation: "开发构建不支持此功能。",
     pathCopied: "路径已复制到剪贴板。",
     resetConfigConfirm: "将 QuotaBarWin 配置重置为默认值？会先创建备份。",
     noChanges: "无更改",

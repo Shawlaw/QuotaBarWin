@@ -3,6 +3,11 @@ pub fn get_app_version() -> Result<String, String> {
     Ok(app_display_version())
 }
 
+#[tauri::command]
+pub fn get_is_dev_build(app: tauri::AppHandle) -> bool {
+    crate::app_identity::is_dev_build(&app)
+}
+
 pub fn app_display_version() -> String {
     format_app_display_version(
         env!("CARGO_PKG_VERSION"),

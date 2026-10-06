@@ -220,6 +220,7 @@ pub fn run() {
             get_config,
             get_config_storage_info,
             get_app_version,
+            app_info::get_is_dev_build,
             get_app_update_navigation_request,
             get_app_update_status,
             check_app_update,

@@ -16,6 +16,7 @@ import {
   getCachedSnapshot,
   getAppUpdateStatus,
   getAppVersion,
+  getIsDevBuild,
   getConfig,
   getConfigStorageInfo,
   getManagedSecretsEncryptionStatus,
@@ -281,6 +282,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [configStorageInfo, setConfigStorageInfo] = useState<ConfigStorageInfo | null>(null);
   const [appVersion, setAppVersion] = useState<string>("unknown");
+  const [isDevBuild, setIsDevBuild] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -434,9 +436,10 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
 
     async function initialize() {
       try {
-        const [loadedConfig, loadedVersion, loadedStorageInfo] = await Promise.all([
+        const [loadedConfig, loadedVersion, loadedDevBuild, loadedStorageInfo] = await Promise.all([
           getConfig(),
           getAppVersion(),
+          getIsDevBuild(),
           getConfigStorageInfo()
         ]);
         if (!isMounted) {
@@ -447,6 +450,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
         setConfig(loadedConfig);
         setConfigStorageInfo(loadedStorageInfo);
         setAppVersion(loadedVersion);
+        setIsDevBuild(loadedDevBuild);
       } catch {
         // Cache loading and native refresh events still keep the overview usable.
       }
@@ -893,6 +897,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
         >
           <SettingsPanel
             appVersion={appVersion}
+            isDevBuild={isDevBuild}
             config={config}
             configStorageInfo={configStorageInfo}
             isConfigStorageBusy={isConfigStorageBusy}

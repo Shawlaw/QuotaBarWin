@@ -45,6 +45,9 @@ const DEFAULT_LOG_MAX_BYTES = 10 * LOG_BYTES_PER_MB;
 
 type SettingsPanelProps = {
   appVersion: string;
+  // Dev builds (identifier com.quotabarwin.app.dev) must not register
+  // autostart or talk to the update feed; the matching controls are locked.
+  isDevBuild?: boolean;
   config: AppConfig;
   configStorageInfo: ConfigStorageInfo | null;
   isConfigStorageBusy: boolean;
@@ -206,6 +209,7 @@ function shortChecksum(value: string | null | undefined): string | null {
 
 export function SettingsPanel({
   appVersion,
+  isDevBuild = false,
   config,
   configStorageInfo,
   isConfigStorageBusy,
@@ -1225,6 +1229,8 @@ export function SettingsPanel({
           <input
             type="checkbox"
             checked={config.launchAtStartup ?? false}
+            disabled={isDevBuild}
+            data-testid="launch-at-startup-toggle"
             onChange={(event) =>
               onChange({
                 ...config,
@@ -1234,6 +1240,9 @@ export function SettingsPanel({
           />
           {t.settings.launchAtStartup}
         </label>
+        {isDevBuild ? (
+          <span className="settings-hint">{t.settings.devBuildLimitation}</span>
+        ) : null}
         </div>
       </section>
       ) : null}
@@ -1264,6 +1273,7 @@ export function SettingsPanel({
               <input
                 type="checkbox"
                 checked={config.appUpdate?.autoCheck ?? true}
+                disabled={isDevBuild}
                 data-testid="app-update-auto-check"
                 onChange={(event) =>
                   onChange({
@@ -1275,6 +1285,11 @@ export function SettingsPanel({
               {t.appUpdate.autoCheck}
             </label>
             <span className="settings-hint">{t.appUpdate.autoCheckHint}</span>
+            {isDevBuild ? (
+              <span className="settings-hint" data-testid="app-update-dev-hint">
+                {t.settings.devBuildLimitation}
+              </span>
+            ) : null}
           </div>
           {appUpdateInfo?.available && appUpdateInfo.version ? (
             <div className="app-update-available-state" role="status">
@@ -1285,7 +1300,7 @@ export function SettingsPanel({
             <button
               type="button"
               className="button-secondary"
-              disabled={isAppUpdateBusy}
+              disabled={isAppUpdateBusy || isDevBuild}
               onClick={() => void handleAppUpdateCheck()}
             >
               {isAppUpdateBusy ? t.appUpdate.checking : t.appUpdate.check}
@@ -1294,7 +1309,7 @@ export function SettingsPanel({
               <button
                 type="button"
                 className="button-primary"
-                disabled={isAppUpdateBusy}
+                disabled={isAppUpdateBusy || isDevBuild}
                 onClick={() => void handleDownloadAndApplyAppUpdate()}
               >
                 {isAppUpdateBusy ? t.appUpdate.downloading : t.appUpdate.downloadAndRestart}

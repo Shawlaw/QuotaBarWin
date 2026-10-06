@@ -72,6 +72,8 @@ const mocks = vi.hoisted(() => {
       configured: true, currentVersion: "1.0.0", available: false, version: null, notesUrl: null, downloaded: false,
     })),
     getAppVersion: vi.fn(async () => "1.0.0(abc1234)"),
+
+    getIsDevBuild: vi.fn(async () => false),
     getConfig: vi.fn(async () => config),
     getConfigStorageInfo: vi.fn(async () => configStorageInfo),
     getLocalApiAccessToken: vi.fn(async () => ({ token: "x".repeat(32) })),

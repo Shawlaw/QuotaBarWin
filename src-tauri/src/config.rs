@@ -1608,6 +1608,15 @@ pub fn sync_launch_at_startup_for_app(app: &AppHandle, enabled: bool) -> Result<
     let autolaunch = app.autolaunch();
     let is_enabled = autolaunch.is_enabled().map_err(|error| error.to_string())?;
 
+    // A dev build must never register its own exe path for autostart; if a
+    // dev exe somehow inherited an enabled flag, make sure it is off.
+    if enabled && crate::app_identity::is_dev_build(app) {
+        if is_enabled {
+            return autolaunch.disable().map_err(|error| error.to_string());
+        }
+        return Ok(());
+    }
+
     if enabled && !is_enabled {
         return autolaunch.enable().map_err(|error| error.to_string());
     }

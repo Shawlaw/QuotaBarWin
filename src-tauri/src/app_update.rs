@@ -214,6 +214,13 @@ pub async fn check_app_update(
     app: AppHandle,
     state: State<'_, AppUpdateState>,
 ) -> Result<AppUpdateInfo, String> {
+    // Dev builds never talk to the update feed: a downloaded release zip
+    // must not overwrite a dev exe. The settings UI disables the entry
+    // points; this guard covers every other caller.
+    if crate::app_identity::is_dev_build(&app) {
+        return Err("Application updates are unavailable in development builds".to_string());
+    }
+
     #[cfg(any(debug_assertions, feature = "update-preview"))]
     if let Some(mode) = demo_update_preview_mode() {
         let info = match mode {
@@ -358,6 +365,9 @@ pub async fn download_app_update(
     app: AppHandle,
     state: State<'_, AppUpdateState>,
 ) -> Result<AppUpdateInfo, String> {
+    if crate::app_identity::is_dev_build(&app) {
+        return Err("Application updates are unavailable in development builds".to_string());
+    }
     let existing_candidate = {
         let state = state
             .inner
@@ -454,6 +464,9 @@ pub async fn apply_app_update(
     app: AppHandle,
     state: State<'_, AppUpdateState>,
 ) -> Result<(), String> {
+    if crate::app_identity::is_dev_build(&app) {
+        return Err("Application updates are unavailable in development builds".to_string());
+    }
     let downloaded = {
         let state = state
             .inner
@@ -830,6 +843,10 @@ fn begin_automatic_check(
     app: &AppHandle,
     state: &Arc<Mutex<AppUpdateStateInner>>,
 ) -> Result<bool, String> {
+    if crate::app_identity::is_dev_build(app) {
+        // Dev builds must not discover or download release updates.
+        return Ok(false);
+    }
     let config_path = crate::config::config_path_for_app(app)?;
     let config = crate::config::load_or_create_config(&config_path)?.config;
     let now = Local::now();

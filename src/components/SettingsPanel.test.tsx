@@ -859,3 +859,42 @@ test("copying_a_storage_path_shows_a_copied_hint", async () => {
   await waitFor(() => expect(screen.getByTestId("path-copied-hint")).toBeInTheDocument());
   expect(screen.getByTestId("path-copied-hint")).toHaveTextContent("Path copied to the clipboard.");
 });
+
+test("dev_builds_lock_autostart_and_app_update_controls", () => {
+  apiMocks.state.config = configWithProviders([remoteProvider]);
+  render(
+    <I18nProvider language="en">
+      <SettingsPanel
+        appVersion="1.0.5-test"
+        isDevBuild
+        config={configWithProviders([remoteProvider])}
+        configStorageInfo={configStorageInfo}
+        isConfigStorageBusy={false}
+        isSaving={false}
+        onChange={() => undefined}
+        onOpenConfigFolder={async () => undefined}
+        onResetConfig={async () => undefined}
+        onSave={() => undefined}
+        onSetPortableMode={() => undefined}
+        onPersistedConfigChanged={() => undefined}
+        onRequestClose={() => undefined}
+        closeRequest={0}
+        settingsHomeRequest={0}
+        appUpdateFocusRequest={0}
+        onAppUpdateFocusHandled={() => undefined}
+        onAppUpdateStatusChange={() => undefined}
+        initialProviderSettingsView="main"
+      />
+    </I18nProvider>,
+  );
+
+  switchSettingsCategory("general");
+  const startup = screen.getByTestId("launch-at-startup-toggle");
+  expect(startup).toBeDisabled();
+  expect(screen.getByText("Not available in development builds.")).toBeInTheDocument();
+
+  switchSettingsCategory("app-update");
+  expect(screen.getByTestId("app-update-auto-check")).toBeDisabled();
+  expect(screen.getByTestId("app-update-dev-hint")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Check for updates" })).toBeDisabled();
+});
