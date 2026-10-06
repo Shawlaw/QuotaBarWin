@@ -11,6 +11,8 @@ import type {
 } from "../types";
 import {
   applyAppUpdate,
+  devCloneReleaseConfig,
+  devRestartApp,
   applyRemoteUpdate,
   checkAppUpdate,
   checkRemoteUpdates,
@@ -251,6 +253,8 @@ export function SettingsPanel({
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("providers");
   const [isPathCopied, setIsPathCopied] = useState(false);
   const pathCopiedTimerRef = useRef<number | null>(null);
+  const [isCloningConfig, setIsCloningConfig] = useState(false);
+  const [cloneConfigMessage, setCloneConfigMessage] = useState<string | null>(null);
   const [setupProviderId, setSetupProviderId] = useState<string | null>(null);
   const [quotaDataConfirmOpen, setQuotaDataConfirmOpen] = useState(false);
   const [pendingUnsavedAction, setPendingUnsavedAction] = useState<PendingUnsavedAction | null>(null);
@@ -864,6 +868,24 @@ export function SettingsPanel({
     });
   }
 
+  // Dev build only: copy the installed release's config/secrets/caches into
+  // this exe's portable directory and restart, rehearsing a real upgrade.
+  async function handleCloneReleaseConfig() {
+    setIsCloningConfig(true);
+    setCloneConfigMessage(null);
+    try {
+      await devCloneReleaseConfig();
+      setCloneConfigMessage(t.settings.devCloneRestarting);
+      await new Promise((resolve) => window.setTimeout(resolve, 600));
+      await devRestartApp();
+    } catch (error) {
+      setCloneConfigMessage(
+        error instanceof Error ? error.message : t.settings.devCloneFailed,
+      );
+      setIsCloningConfig(false);
+    }
+  }
+
   function handleSettingsNavKeyDown(event: React.KeyboardEvent<HTMLElement>) {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
       return;
@@ -1391,16 +1413,43 @@ export function SettingsPanel({
                   <input
                     type="checkbox"
                     checked={isPortableMode}
-                    disabled={!configStorageInfo || isConfigStorageBusy}
+                    disabled={!configStorageInfo || isConfigStorageBusy || isDevBuild}
                     onChange={(event) => onSetPortableMode(event.currentTarget.checked)}
                   />
                   {t.settings.portableMode}
                 </label>
                 <div className="settings-hint">
-                  {t.settings.portableModeHint}
+                  {isDevBuild ? t.settings.devPortableFixedHint : t.settings.portableModeHint}
                 </div>
               </div>
             </div>
+          {isDevBuild ? (
+            <div className="settings-field" data-testid="dev-clone-config">
+              <span>{t.settings.devCloneTitle}</span>
+              <span className="settings-hint">{t.settings.devCloneHint}</span>
+              <div className="settings-actions settings-actions--inline">
+                <button
+                  type="button"
+                  className="button-secondary"
+                  data-testid="dev-clone-config-button"
+                  disabled={isCloningConfig}
+                  onClick={() => {
+                    if (!window.confirm(t.settings.devCloneConfirm)) {
+                      return;
+                    }
+                    void handleCloneReleaseConfig();
+                  }}
+                >
+                  {isCloningConfig ? t.settings.devCloneRestarting : t.settings.devCloneButton}
+                </button>
+              </div>
+              {cloneConfigMessage ? (
+                <div className="settings-message" role="status" data-testid="dev-clone-config-message">
+                  {cloneConfigMessage}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="settings-actions settings-actions--inline">
             {isPathCopied ? (
               <span className="settings-hint" role="status" data-testid="path-copied-hint">

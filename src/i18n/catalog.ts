@@ -167,6 +167,13 @@ export type I18nCatalog = {
     portableModeHint: string;
     openFolder: string;
     resetConfig: string;
+    devPortableFixedHint: string;
+    devCloneTitle: string;
+    devCloneHint: string;
+    devCloneButton: string;
+    devCloneConfirm: string;
+    devCloneRestarting: string;
+    devCloneFailed: string;
     devBuildLimitation: string;
     pathCopied: string;
     resetConfigConfirm: string;
@@ -656,6 +663,17 @@ export const en: I18nCatalog = {
       "Portable mode stores config beside the app executable and uses quotabarwin.portable as the marker file.",
     openFolder: "Open config storage folder",
     resetConfig: "Reset config",
+    devPortableFixedHint:
+      "Development builds always store their config beside the dev executable.",
+    devCloneTitle: "Development build tools",
+    devCloneHint:
+      "Copy the installed release's config, provider cache, and secrets (AppData mode) into this dev build, then restart to rehearse the upgrade experience. This overwrites the current dev config.",
+    devCloneButton: "Copy config from the installed release",
+    devCloneConfirm:
+      "Copy config and secrets from the installed release (AppData mode)? This overwrites the current dev config and restarts the app.",
+    devCloneRestarting: "Copy finished. Restarting…",
+    devCloneFailed: "Failed to copy the release config.",
+
     devBuildLimitation: "Not available in development builds.",
     pathCopied: "Path copied to the clipboard.",
     resetConfigConfirm: "Reset QuotaBarWin config to defaults? A backup will be created first.",
@@ -1211,6 +1229,16 @@ export const zhCN: I18nCatalog = {
       "便携模式会把配置存放在应用可执行文件旁，并使用 quotabarwin.portable 作为标记文件。",
     openFolder: "打开配置存储文件夹",
     resetConfig: "重置配置",
+    devPortableFixedHint: "开发构建的配置始终保存在开发版可执行文件旁。",
+    devCloneTitle: "开发构建工具",
+    devCloneHint:
+      "把本机正式版安装（AppData 模式）的配置、Provider 缓存与密钥复制到当前开发版并重启，用于复现升级后的首次交互。会覆盖当前开发版配置。",
+    devCloneButton: "从本机正式版复制配置与密钥",
+    devCloneConfirm:
+      "从本机正式版（AppData 模式）复制配置与密钥？将覆盖当前开发版配置，复制完成后应用会自动重启。",
+    devCloneRestarting: "复制完成，正在重启…",
+    devCloneFailed: "复制正式版配置失败。",
+
     devBuildLimitation: "开发构建不支持此功能。",
     pathCopied: "路径已复制到剪贴板。",
     resetConfigConfirm: "将 QuotaBarWin 配置重置为默认值？会先创建备份。",

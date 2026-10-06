@@ -597,8 +597,9 @@ fn config_path_from_candidates(
     app_data_path: PathBuf,
     portable_path: PathBuf,
     marker_path: PathBuf,
+    force_portable: bool,
 ) -> PathBuf {
-    if marker_path.exists() {
+    if force_portable || marker_path.exists() {
         portable_path
     } else {
         app_data_path
@@ -606,13 +607,24 @@ fn config_path_from_candidates(
 }
 
 pub fn config_path_for_app(app: &AppHandle) -> Result<PathBuf, String> {
+    // Dev builds are always portable: the AppData directory belongs to the
+    // installed release, and a stray dev exe must never read or write it.
+    let force_portable = crate::app_identity::is_dev_build(app);
     let app_data_path = app_data_config_path_for_app(app)?;
     let legacy_app_data_path = legacy_app_data_config_path_for_app(app)?;
     let (portable_path, legacy_portable_path, marker_path) = portable_paths_for_app(app)?;
-    let preferred_path =
-        config_path_from_candidates(app_data_path, portable_path, marker_path.clone());
-    let legacy_path =
-        config_path_from_candidates(legacy_app_data_path, legacy_portable_path, marker_path);
+    let preferred_path = config_path_from_candidates(
+        app_data_path,
+        portable_path,
+        marker_path.clone(),
+        force_portable,
+    );
+    let legacy_path = config_path_from_candidates(
+        legacy_app_data_path,
+        legacy_portable_path,
+        marker_path,
+        force_portable,
+    );
     migrate_legacy_config_path(&preferred_path, &legacy_path)?;
     Ok(preferred_path)
 }
@@ -631,10 +643,18 @@ pub fn config_path_for_executable(executable: &Path) -> Result<PathBuf, String> 
     let portable_path = portable_config_path_for_exe_dir(exe_dir);
     let legacy_portable_path = legacy_portable_config_path_for_exe_dir(exe_dir);
     let marker_path = portable_marker_path_for_exe_dir(exe_dir);
-    let preferred_path =
-        config_path_from_candidates(app_data_path, portable_path, marker_path.clone());
-    let legacy_path =
-        config_path_from_candidates(legacy_app_data_path, legacy_portable_path, marker_path);
+    let preferred_path = config_path_from_candidates(
+        app_data_path,
+        portable_path,
+        marker_path.clone(),
+        false,
+    );
+    let legacy_path = config_path_from_candidates(
+        legacy_app_data_path,
+        legacy_portable_path,
+        marker_path,
+        false,
+    );
     migrate_legacy_config_path(&preferred_path, &legacy_path)?;
     Ok(preferred_path)
 }
@@ -645,12 +665,14 @@ pub fn config_path_for_current_executable() -> Result<PathBuf, String> {
 }
 
 fn config_storage_info_for_app(app: &AppHandle) -> Result<ConfigStorageInfo, String> {
+    let force_portable = crate::app_identity::is_dev_build(app);
     let app_data_config_path = app_data_config_path_for_app(app)?;
     let (portable_config_path, _, portable_marker_path) = portable_paths_for_app(app)?;
     let config_path = config_path_from_candidates(
         app_data_config_path.clone(),
         portable_config_path.clone(),
         portable_marker_path.clone(),
+        force_portable,
     );
     let mode = if config_path == portable_config_path {
         "portable"
@@ -1633,8 +1655,98 @@ pub async fn get_config_storage_info(app: AppHandle) -> Result<ConfigStorageInfo
     config_storage_info_for_app(&app)
 }
 
+// Files copied from an installed release (AppData mode) into a dev build's
+// portable directory so a dev exe can rehearse the real upgrade experience.
+// Logs and exported guides are skipped: the dev build regenerates them.
+const DEV_CLONE_FILE_NAMES: [&str; 5] = [
+    CONFIG_FILE_NAME,
+    "last_snapshot.quotaBarWin.json",
+    "events.quotaBarWin.json",
+    "app_update_status.quotaBarWin.json",
+    "local-api-token.txt",
+];
+const DEV_CLONE_DIR_NAMES: [&str; 2] = ["providers", "secrets"];
+
+fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    let entries = fs::read_dir(source).map_err(|error| error.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let file_type = entry.file_type().map_err(|error| error.to_string())?;
+        let destination_path = destination.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_recursive(&entry.path(), &destination_path)?;
+        } else {
+            fs::copy(entry.path(), &destination_path).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Copies the release installation state (config, provider cache, secrets,
+/// snapshot/event caches, local API token) into the dev portable directory.
+/// The config is copied verbatim, schema and all, so the dev build walks the
+/// exact migration path a real upgrade would.
+fn clone_release_config_files(source_dir: &Path, target_dir: &Path) -> Result<(), String> {
+    for file_name in DEV_CLONE_FILE_NAMES {
+        let source = source_dir.join(file_name);
+        if source.exists() {
+            fs::create_dir_all(target_dir).map_err(|error| error.to_string())?;
+            fs::copy(&source, target_dir.join(file_name))
+                .map_err(|error| format!("failed to copy {file_name}: {error}"))?;
+        }
+    }
+    for dir_name in DEV_CLONE_DIR_NAMES {
+        let source = source_dir.join(dir_name);
+        if source.is_dir() {
+            copy_dir_recursive(&source, &target_dir.join(dir_name))
+                .map_err(|error| format!("failed to copy {dir_name}: {error}"))?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn dev_clone_release_config(app: AppHandle) -> Result<(), String> {
+    if !crate::app_identity::is_dev_build(&app) {
+        return Err("Config cloning is only available in development builds".to_string());
+    }
+    let release_config_path = app_data_config_path_for_app(&app)?;
+    let source_dir = release_config_path
+        .parent()
+        .ok_or_else(|| "Unable to resolve release config directory".to_string())?
+        .to_path_buf();
+    if !release_config_path.exists() {
+        return Err(format!(
+            "No AppData-mode release config found at {}",
+            release_config_path.display()
+        ));
+    }
+    let (_, _, marker_path) = portable_paths_for_app(&app)?;
+    let target_dir = marker_path
+        .parent()
+        .ok_or_else(|| "Unable to resolve dev config directory".to_string())?
+        .to_path_buf();
+    clone_release_config_files(&source_dir, &target_dir)?;
+    // Pin the marker too so CLI companions beside the dev exe resolve the
+    // same cloned config.
+    if !marker_path.exists() {
+        fs::write(&marker_path, "portable").map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn dev_restart_app(app: AppHandle) {
+    // restart() never returns; the command wrapper only sees the exit path.
+    app.restart()
+}
+
 #[tauri::command]
 pub async fn set_portable_mode(app: AppHandle, enabled: bool) -> Result<ConfigStorageInfo, String> {
+    if crate::app_identity::is_dev_build(&app) {
+        return Err("Portable mode is fixed for development builds".to_string());
+    }
     let current_path = config_path_for_app(&app)?;
     let app_data_path = app_data_config_path_for_app(&app)?;
     let (portable_path, _, marker_path) = portable_paths_for_app(&app)?;
@@ -3219,15 +3331,61 @@ mod tests {
             app_data_path.clone(),
             portable_path.clone(),
             marker_path.clone(),
+            false,
         );
         assert_eq!(selected_without_marker, app_data_path);
 
         fs::create_dir_all(marker_path.parent().expect("marker parent")).expect("create dir");
         fs::write(&marker_path, "portable").expect("write marker");
 
-        let selected_with_marker =
-            config_path_from_candidates(app_data_path, portable_path.clone(), marker_path);
+        let selected_with_marker = config_path_from_candidates(
+            app_data_path,
+            portable_path.clone(),
+            marker_path,
+            false,
+        );
         assert_eq!(selected_with_marker, portable_path);
+
+        // Dev builds ignore the marker entirely and stay portable so they can
+        // never land on the release AppData directory.
+        let app_data_path = temp.path().join("app-data").join(CONFIG_FILE_NAME);
+        let selected_when_forced =
+            config_path_from_candidates(app_data_path, portable_path, temp.path().join("gone"), true);
+        assert!(selected_when_forced.ends_with(CONFIG_FILE_NAME));
+        assert!(!selected_when_forced.to_string_lossy().contains("app-data"));
+    }
+
+    #[test]
+    fn dev_clone_copies_release_state_but_not_logs() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let source = temp.path().join("release");
+        let target = temp.path().join("dev");
+        fs::create_dir_all(source.join("secrets").join("providers").join("inst"))
+            .expect("create secrets dir");
+        fs::create_dir_all(source.join("providers").join("remote")).expect("create cache");
+        fs::write(source.join(CONFIG_FILE_NAME), "{}").expect("write config");
+        fs::write(
+            source.join("secrets").join("providers").join("inst").join("KEY.txt"),
+            "token",
+        )
+        .expect("write secret");
+        fs::write(source.join("providers").join("remote").join("provider.json"), "{}")
+            .expect("write cache");
+        fs::write(source.join("events.quotaBarWin.json"), "{}").expect("write events");
+        fs::write(source.join("quotabarwin.log"), "noise").expect("write log");
+
+        clone_release_config_files(&source, &target).expect("clone");
+
+        assert!(target.join(CONFIG_FILE_NAME).exists());
+        assert!(target
+            .join("secrets")
+            .join("providers")
+            .join("inst")
+            .join("KEY.txt")
+            .exists());
+        assert!(target.join("providers").join("remote").join("provider.json").exists());
+        assert!(target.join("events.quotaBarWin.json").exists());
+        assert!(!target.join("quotabarwin.log").exists());
     }
 
     #[test]

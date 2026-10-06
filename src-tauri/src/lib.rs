@@ -41,8 +41,9 @@ pub use app_update::{
 };
 pub use cli::run_cli;
 pub use config::{
-    get_config, get_config_storage_info, migrate_config_file, open_config_folder,
-    open_remote_provider_guide, reset_config, save_config, set_portable_mode, AppConfig,
+    dev_clone_release_config, dev_restart_app, get_config, get_config_storage_info,
+    migrate_config_file, open_config_folder, open_remote_provider_guide, reset_config, save_config,
+    set_portable_mode, AppConfig,
 };
 pub use diagnostics::export_diagnostics;
 pub use local_api::{
@@ -72,6 +73,12 @@ pub use tray::{
 
 fn window_title(version: &str) -> String {
     format!("QuotaBarWin V{version}")
+}
+
+// Dev builds keep the DEV marker even after the runtime title overwrite so
+// a dev window is always distinguishable from an installed release.
+fn dev_window_title(version: &str) -> String {
+    format!("QuotaBarWin DEV V{version}")
 }
 
 fn startup_log_message(version: &str, hidden: bool) -> String {
@@ -150,7 +157,11 @@ pub fn run() {
         .setup(|app| {
             let app_version = app_info::app_display_version();
             let start_hidden = should_start_hidden();
-            let title = window_title(&app_version);
+            let title = if app_identity::is_dev_build(app.handle()) {
+                dev_window_title(&app_version)
+            } else {
+                window_title(&app_version)
+            };
             if let Some(window) = app.get_webview_window("main") {
                 window.set_title(&title)?;
                 if start_hidden {
@@ -219,6 +230,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             get_config_storage_info,
+            dev_clone_release_config,
+            dev_restart_app,
             get_app_version,
             app_info::get_is_dev_build,
             get_app_update_navigation_request,
@@ -339,6 +352,11 @@ mod tests {
             window_title("1.2.3(abc1234)"),
             "QuotaBarWin V1.2.3(abc1234)"
         );
+    }
+
+    #[test]
+    fn dev_window_title_keeps_the_dev_marker() {
+        assert_eq!(dev_window_title("1.2.3"), "QuotaBarWin DEV V1.2.3");
     }
 
     #[test]

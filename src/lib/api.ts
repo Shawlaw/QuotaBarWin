@@ -334,6 +334,23 @@ export async function getIsDevBuild(): Promise<boolean> {
   return invoke<boolean>("get_is_dev_build");
 }
 
+// Dev-build only: copy the installed release's config, secrets, and caches
+// from the AppData directory into this dev exe's portable directory, then
+// restart so the dev build walks the real upgrade/migration path.
+export async function devCloneReleaseConfig(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+  return invoke<void>("dev_clone_release_config");
+}
+
+export async function devRestartApp(): Promise<void> {
+  if (!hasTauriInternals()) {
+    return;
+  }
+  return invoke<void>("dev_restart_app");
+}
+
 export async function openProjectGithub(): Promise<void> {
   if (!hasTauriInternals()) {
     window.open("https://github.com/Shawlaw/QuotaBarWin", "_blank", "noopener,noreferrer");
