@@ -1039,16 +1039,6 @@ button:disabled {
   font-weight: 500;
 }
 
-.config-path-field code {
-  background: var(--qb-surface-muted);
-  border: 1px solid var(--qb-border);
-  border-radius: 6px;
-  color: var(--qb-text-secondary);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-  padding: 4px 6px;
-}
-
 .config-storage-controls {
   align-content: start;
   display: grid;

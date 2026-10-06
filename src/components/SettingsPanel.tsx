@@ -1306,19 +1306,16 @@ export function SettingsPanel({
             proxy={config.networkProxy}
             onChange={(proxy) => onChange({ ...config, networkProxy: proxy })}
           />
-          <h4 className="settings-group-title">{t.settings.advancedGroupIntegrations}</h4>
           <LocalApiSettings
             settings={config.localApi}
             refreshKey={`${configStorageInfo?.configPath ?? ""}:${localApiStatusRevision}`}
             onChange={(localApi) => onChange({ ...config, localApi })}
             onTokenRequirementChange={setLocalApiTokenRequired}
           />
-          <h4 className="settings-group-title">{t.settings.advancedGroupSecurity}</h4>
           <SecretSecuritySettings />
-          <h4 className="settings-group-title">{t.settings.advancedGroupStorage}</h4>
           <section className="settings-section config-storage-section" aria-label={t.settings.configurationStorage}>
             <div className="settings-section-title">
-              <h3>{t.settings.configurationStorage}</h3>
+              <h4 className="settings-group-title">{t.settings.configurationStorage}</h4>
               <span>{storageModeLabel}</span>
             </div>
             <div className="settings-grid config-storage-grid">
@@ -1333,14 +1330,19 @@ export function SettingsPanel({
                   {configStorageInfo?.configPath ?? t.settings.loadingConfigPath}
                 </button>
               </div>
-              {isPortableMode ? (
-                <div className="config-path-field">
-                  <span className="config-path-label">{t.settings.portableMarker}</span>
-                  <code title={configStorageInfo?.portableMarkerPath}>
-                    {configStorageInfo?.portableMarkerPath ?? t.settings.loading}
-                  </code>
-                </div>
-              ) : null}
+            {isPortableMode ? (
+              <div className="config-path-field">
+                <span className="config-path-label">{t.settings.portableMarker}</span>
+                <button
+                  type="button"
+                  className="path-chip"
+                  title={configStorageInfo?.portableMarkerPath}
+                  onClick={() => void navigator.clipboard?.writeText(configStorageInfo?.portableMarkerPath ?? "")}
+                >
+                  {configStorageInfo?.portableMarkerPath ?? t.settings.loading}
+                </button>
+              </div>
+            ) : null}
               <div className="config-storage-controls">
                 <label className="checkbox-row">
                   <input

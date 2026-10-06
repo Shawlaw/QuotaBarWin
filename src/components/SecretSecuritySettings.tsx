@@ -55,7 +55,7 @@ export function SecretSecuritySettings() {
       data-testid="secret-security-section"
     >
       <div className="settings-section-title">
-        <h3>{t.secretSecurity.settingsTitle}</h3>
+        <h4 className="settings-group-title">{t.secretSecurity.settingsTitle}</h4>
         <span data-testid="secret-security-state">
           {encrypted ? t.secretSecurity.statusEncrypted : t.secretSecurity.statusPlaintext}
         </span>

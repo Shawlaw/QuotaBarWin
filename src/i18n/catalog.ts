@@ -70,9 +70,6 @@ export type I18nCatalog = {
     lowQuotaAlsoNotifications: string;
     goToNotificationSettings: string;
     advancedGroupNetwork: string;
-    advancedGroupIntegrations: string;
-    advancedGroupSecurity: string;
-    advancedGroupStorage: string;
     advancedGroupDiagnostics: string;
     refreshInterval: string;
     refreshIntervalError: string;
@@ -556,12 +553,9 @@ export const en: I18nCatalog = {
     generalGroupDisplay: "Display",
     generalGroupStartup: "Startup",
     lowQuotaSummaryValue: (value) => `Current ${value}%`,
-    lowQuotaAlsoNotifications: "Also used by the quota-low notification.",
+    lowQuotaAlsoNotifications: "Also used by the low quota notification.",
     goToNotificationSettings: "Open notification settings",
     advancedGroupNetwork: "Network",
-    advancedGroupIntegrations: "Integrations",
-    advancedGroupSecurity: "Security",
-    advancedGroupStorage: "Storage & maintenance",
     advancedGroupDiagnostics: "Diagnostics",
     refreshInterval: "Refresh interval (seconds)",
     refreshIntervalError: "Refresh interval must be greater than 0.",
@@ -928,7 +922,7 @@ export const en: I18nCatalog = {
     },
     lowQuotaThresholdLabel: "Low quota warning threshold (%)",
     lowQuotaThresholdHint:
-      "Also drives the tray and provider card low quota warning and the quota-low notification.",
+      "Also drives the tray and provider card low quota warning and the low quota notification.",
     toastEnabled: "Windows notifications",
     toastHint:
       "Shows a system toast for the selected events while QuotaBarWin is running.",
@@ -1117,12 +1111,9 @@ export const zhCN: I18nCatalog = {
     generalGroupDisplay: "显示",
     generalGroupStartup: "启动",
     lowQuotaSummaryValue: (value) => `当前 ${value}%`,
-    lowQuotaAlsoNotifications: "同时用于 quota-low 通知。",
+    lowQuotaAlsoNotifications: "同时作为额度偏低通知的触发阈值。",
     goToNotificationSettings: "前往通知设置",
     advancedGroupNetwork: "网络",
-    advancedGroupIntegrations: "集成",
-    advancedGroupSecurity: "安全",
-    advancedGroupStorage: "存储与维护",
     advancedGroupDiagnostics: "诊断",
     refreshInterval: "刷新间隔（秒）",
     refreshIntervalError: "刷新间隔必须大于 0。",
@@ -1485,7 +1476,7 @@ export const zhCN: I18nCatalog = {
     },
     lowQuotaThresholdLabel: "低额度警告阈值（%）",
     lowQuotaThresholdHint:
-      "同时影响托盘与提供方卡片的低额度警示，以及 quota-low 通知事件。",
+      "同时影响托盘与提供方卡片的低额度警示，以及额度偏低通知事件。",
     toastEnabled: "Windows 系统通知",
     toastHint: "QuotaBarWin 运行期间，所选事件会弹出系统通知。",
     webhookEnabled: "Webhook 通知",

@@ -259,7 +259,7 @@ export function LocalApiSettings({
   return (
     <section className="local-api-settings" aria-label={t.localApi.title}>
       <div className="settings-section-title">
-        <h3>{t.localApi.title}</h3>
+        <h4 className="settings-group-title">{t.localApi.title}</h4>
         <span>
           {status?.error
             ? t.localApi.unavailable
