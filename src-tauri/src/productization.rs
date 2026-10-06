@@ -16,6 +16,46 @@ fn tauri_config_is_portable_only() {
 }
 
 #[test]
+fn release_identifier_is_pinned() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let config = fs::read_to_string(root.join("tauri.conf.json")).expect("tauri config");
+    let value: serde_json::Value = serde_json::from_str(&config).expect("json config");
+
+    // The release build path never passes --config, so this file is the only
+    // identifier source for shipped builds; it must stay pinned to the
+    // constant the runtime release/dev feature gates rely on.
+    let identifier = value
+        .get("identifier")
+        .and_then(serde_json::Value::as_str)
+        .expect("identifier");
+    assert_eq!(identifier, crate::app_identity::RELEASE_APP_IDENTIFIER);
+}
+
+#[test]
+fn dev_config_swaps_identity_with_a_complete_window() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let dev_config = fs::read_to_string(root.join("tauri.dev.conf.json")).expect("dev config");
+    let value: serde_json::Value = serde_json::from_str(&dev_config).expect("json dev config");
+
+    let identifier = value
+        .get("identifier")
+        .and_then(serde_json::Value::as_str)
+        .expect("dev identifier");
+    assert_eq!(identifier, crate::app_identity::DEV_APP_IDENTIFIER);
+
+    // Tauri merges --config overrides by replacing arrays wholesale, so the
+    // dev window entry must stay complete; a partial copy would shrink the
+    // dev window settings.
+    let window = value
+        .pointer("/app/windows/0")
+        .and_then(serde_json::Value::as_object)
+        .expect("dev window");
+    for field in ["title", "label", "width", "height", "minWidth", "minHeight"] {
+        assert!(window.contains_key(field), "dev window is missing {field}");
+    }
+}
+
+#[test]
 fn tauri_csp_is_enabled() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let config = fs::read_to_string(root.join("tauri.conf.json")).expect("tauri config");

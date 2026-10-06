@@ -24,7 +24,9 @@
     "icons:check": "node scripts/generate-icons.mjs --check",
     "test": "vitest",
     "smoke": "vitest --run src/smoke.test.tsx",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
+    "tauri:preview": "tauri build --no-bundle --config src-tauri/tauri.dev.conf.json"
   },
   "overrides": {
     "esbuild": "0.27.2"

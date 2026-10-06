@@ -248,13 +248,29 @@ Tauri desktop dev app:
 npm run tauri dev
 ```
 
+Local preview builds with the dev identity:
+
+```powershell
+npm run tauri:dev
+npm run tauri:preview
+```
+
+These pass `src-tauri/tauri.dev.conf.json`, which swaps the identifier to
+`com.quotabarwin.app.dev`: the exe gets its own single-instance mutex (it runs
+alongside an installed release), and the runtime disables release-only
+features — autostart registration and application updates — through
+`app_identity::is_dev_build`. Never hand-edit `tauri.conf.json`'s identifier
+to build a local variant; `tauri.conf.json` stays pinned to the release
+identity and the release workflow verifies it.
+
 Frontend build:
 
 ```powershell
 npm run build
 ```
 
-Release-style app build without bundling:
+Release-style app build without bundling (production identity — this is also
+how you rehearse a release build locally):
 
 ```powershell
 npm run tauri -- build --no-bundle

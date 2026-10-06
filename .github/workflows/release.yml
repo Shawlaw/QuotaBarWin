@@ -48,6 +48,17 @@ jobs:
           QUOTABARWIN_UPDATE_PUBLIC_KEY: ${{ vars.QUOTABARWIN_UPDATE_PUBLIC_KEY }}
         run: npm run tauri -- build --no-bundle
 
+      - name: Verify release identity
+        shell: bash
+        run: |
+          # The release build path never passes --config, so the identifier
+          # can only come from tauri.conf.json. Fail fast if it drifted.
+          identifier=$(node -e "console.log(require('./src-tauri/tauri.conf.json').identifier)")
+          if [ "$identifier" != "com.quotabarwin.app" ]; then
+            echo "::error::tauri.conf.json identifier is '$identifier', expected com.quotabarwin.app"
+            exit 1
+          fi
+
       - name: Build CLI companion
         run: cargo build --manifest-path src-tauri/Cargo.toml --release --bin quotabarwin-cli
 

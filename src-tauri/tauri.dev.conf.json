@@ -1,0 +1,16 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "com.quotabarwin.app.dev",
+  "app": {
+    "windows": [
+      {
+        "title": "QuotaBarWin DEV",
+        "label": "main",
+        "width": 760,
+        "height": 620,
+        "minWidth": 640,
+        "minHeight": 500
+      }
+    ]
+  }
+}
