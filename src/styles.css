@@ -1763,7 +1763,7 @@ button:disabled {
   height: 100vh;
   min-height: 0;
   overflow: hidden;
-  padding: 14px 16px 18px 14px;
+  padding: 14px 6px 18px 4px;
   position: relative;
 }
 
@@ -1826,7 +1826,7 @@ button:disabled {
   gap: 12px;
   min-height: 0;
   overflow: auto;
-  padding: 0 2px 4px 0;
+  padding: 0 12px 4px 12px;
 }
 
 .tray-popup__header h1 {
