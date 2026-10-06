@@ -594,12 +594,32 @@ button:disabled {
   grid-template-columns: 148px minmax(0, 1fr);
 }
 
-.settings-nav {
+.settings-nav-rail {
   align-self: start;
   display: grid;
-  gap: 2px;
+  gap: 16px;
   position: sticky;
   top: 0;
+}
+
+.settings-nav {
+  display: grid;
+  gap: 2px;
+}
+
+.settings-nav__link {
+  background: none;
+  border: none;
+  color: var(--qb-text-subtle);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.settings-nav__link:hover {
+  color: var(--qb-link);
+  text-decoration: underline;
 }
 
 .settings-nav__button {

@@ -797,6 +797,12 @@ test("settings_opens_on_the_providers_category_with_category_navigation", () => 
   for (const label of ["Providers", "General", "Notifications", "Application update", "Advanced"]) {
     expect(navigation).toHaveTextContent(label);
   }
+  // The guide link lives on the rail below the category tabs and opens the
+  // same exported guide as the provider catalog entry.
+  expect(screen.getByTestId("settings-guide-link")).toHaveTextContent("Open guide");
+  expect(apiMocks.openRemoteProviderGuide).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByTestId("settings-guide-link"));
+  expect(apiMocks.openRemoteProviderGuide).toHaveBeenCalledTimes(1);
 });
 
 test("switching_categories_keeps_the_unsaved_draft", () => {

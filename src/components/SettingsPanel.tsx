@@ -1067,30 +1067,40 @@ export function SettingsPanel({
       aria-label={t.settings.title}
       data-testid="settings-page"
     >
-      <nav
-        className="settings-nav"
-        role="tablist"
-        aria-label={t.settings.categoryNav}
-        data-testid="settings-nav"
-        onKeyDown={handleSettingsNavKeyDown}
-      >
-        {SETTINGS_CATEGORY_ORDER.map((category) => (
-          <button
-            key={category}
-            type="button"
-            role="tab"
-            id={`settings-tab-${category}`}
-            className="settings-nav__button"
-            data-testid={`settings-nav-${category}`}
-            aria-selected={settingsCategory === category}
-            aria-controls="settings-category-content"
-            tabIndex={settingsCategory === category ? 0 : -1}
-            onClick={() => switchSettingsCategory(category)}
-          >
-            {settingsCategoryLabel(category)}
-          </button>
-        ))}
-      </nav>
+      <div className="settings-nav-rail">
+        <nav
+          className="settings-nav"
+          role="tablist"
+          aria-label={t.settings.categoryNav}
+          data-testid="settings-nav"
+          onKeyDown={handleSettingsNavKeyDown}
+        >
+          {SETTINGS_CATEGORY_ORDER.map((category) => (
+            <button
+              key={category}
+              type="button"
+              role="tab"
+              id={`settings-tab-${category}`}
+              className="settings-nav__button"
+              data-testid={`settings-nav-${category}`}
+              aria-selected={settingsCategory === category}
+              aria-controls="settings-category-content"
+              tabIndex={settingsCategory === category ? 0 : -1}
+              onClick={() => switchSettingsCategory(category)}
+            >
+              {settingsCategoryLabel(category)}
+            </button>
+          ))}
+        </nav>
+        <button
+          type="button"
+          className="settings-nav__link"
+          data-testid="settings-guide-link"
+          onClick={() => void openRemoteProviderGuide()}
+        >
+          {t.settings.openGuide}
+        </button>
+      </div>
       <div
         className="settings-content"
         role="tabpanel"

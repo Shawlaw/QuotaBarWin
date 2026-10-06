@@ -69,6 +69,7 @@ export type I18nCatalog = {
     lowQuotaSummaryValue: (value: number) => string;
     lowQuotaAlsoNotifications: string;
     goToNotificationSettings: string;
+    openGuide: string;
     advancedGroupNetwork: string;
     advancedGroupDiagnostics: string;
     refreshInterval: string;
@@ -555,6 +556,7 @@ export const en: I18nCatalog = {
     lowQuotaSummaryValue: (value) => `Current ${value}%`,
     lowQuotaAlsoNotifications: "Also used by the low quota notification.",
     goToNotificationSettings: "Open notification settings",
+    openGuide: "Open guide",
     advancedGroupNetwork: "Network",
     advancedGroupDiagnostics: "Diagnostics",
     refreshInterval: "Refresh interval (seconds)",
@@ -1113,6 +1115,7 @@ export const zhCN: I18nCatalog = {
     lowQuotaSummaryValue: (value) => `当前 ${value}%`,
     lowQuotaAlsoNotifications: "同时作为额度偏低通知的触发阈值。",
     goToNotificationSettings: "前往通知设置",
+    openGuide: "使用说明",
     advancedGroupNetwork: "网络",
     advancedGroupDiagnostics: "诊断",
     refreshInterval: "刷新间隔（秒）",
