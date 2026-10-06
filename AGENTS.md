@@ -34,6 +34,32 @@ they exist.
 - Keep the Chinese notes concise and group them as Added, Changed, Fixed, or
   Security only when that improves clarity.
 
+## Release Checklist
+
+These are the version facts and cross-references that actually got missed in
+past releases; verify them before pushing a release tag.
+
+- Code version fields move together: `src-tauri/tauri.conf.json`,
+  `package.json`, `src-tauri/Cargo.toml` (plus `Cargo.lock`), and the static
+  window `title` (`V<version>`) in `tauri.conf.json`, which should match the
+  tag being pushed.
+- Documented version facts lag code. The README release-shape blocks (both
+  languages) state the app version and the config schema version — compare
+  the schema number against `CURRENT_CONFIG_SCHEMA_VERSION` in
+  `src-tauri/src/config.rs`. The `/v1/health` examples in
+  `docs/local-integration-api*.md` embed an `appVersion` that must match.
+- Settings-path references live beyond the README. When the Settings
+  information architecture changes, grep the whole repo for `设置 →` and
+  `Settings →` path mentions (`README*` and `docs/*`), not just the file that
+  was edited.
+- E2E follows the rendered DOM. `e2e/tauri.e2e.mjs` drives the app via test
+  ids, and the categorized Settings page only renders the active category's
+  controls. After UI restructuring, audit its selectors even though the suite
+  needs `tauri-driver` and cannot run in every environment.
+- Screenshots age. `assets/screenshots/readme-zh-*.png` are referenced by both
+  READMEs; a release that reshapes the Settings page or tray popup needs fresh
+  screenshots. Tell the maintainer when they must be captured manually.
+
 ## Source Of Truth
 
 Start with these files:
