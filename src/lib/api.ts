@@ -222,23 +222,6 @@ export async function sendTestNotification(
   return invoke<TestNotificationResult>("send_test_notification", { settings });
 }
 
-// Temporary 1.6.0 self-test helpers; remove with the debug settings block.
-export async function debugShowTestToast(): Promise<TestChannelOutcome> {
-  if (!hasTauriInternals()) {
-    return { status: "skipped", detail: "desktop only" };
-  }
-
-  return invoke<TestChannelOutcome>("debug_show_test_toast");
-}
-
-export async function debugRemoveToastRegistration(): Promise<TestChannelOutcome> {
-  if (!hasTauriInternals()) {
-    return { status: "skipped", detail: "desktop only" };
-  }
-
-  return invoke<TestChannelOutcome>("debug_remove_toast_registration");
-}
-
 export async function getConfig(): Promise<AppConfig> {
   if (!hasTauriInternals()) {
     return fallbackConfig;

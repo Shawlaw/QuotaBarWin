@@ -535,28 +535,12 @@ pub async fn send_test_notification(
     Ok(TestNotificationResult { toast, webhook })
 }
 
-// --- Temporary self-test helpers for the 1.6.0 manual QA pass. Remove these
-// (plus their lib.rs registrations, api.ts bindings, and settings UI block)
-// after verification.
-
-#[tauri::command]
-pub async fn debug_show_test_toast(app: AppHandle) -> Result<ChannelOutcome, String> {
-    let path = config_path_for_app(&app)?;
-    let loaded = load_or_create_config(&path)?;
-    let event = test_event();
-    match show_toast_batch(&loaded.config.language, std::slice::from_ref(&event)) {
-        Ok(()) => Ok(ChannelOutcome::sent(None)),
-        Err(error) => Ok(ChannelOutcome::failed(error)),
-    }
-}
-
-#[tauri::command]
-pub async fn debug_remove_toast_registration() -> Result<ChannelOutcome, String> {
-    remove_app_identity_registration()
-}
-
+// Counterpart of ensure_app_identity_registration: removes the HKCU
+// AppUserModelID key and the extracted toast icon so a user who turns Windows
+// notifications off leaves no registration footprint behind. A missing key
+// counts as success; this never needs to fail the surrounding config save.
 #[cfg(windows)]
-fn remove_app_identity_registration() -> Result<ChannelOutcome, String> {
+pub fn remove_toast_registration() -> Result<(), String> {
     use crate::app_identity::APP_USER_MODEL_ID;
     use windows_sys::Win32::System::Registry::{RegDeleteTreeW, HKEY_CURRENT_USER};
 
@@ -572,25 +556,25 @@ fn remove_app_identity_registration() -> Result<ChannelOutcome, String> {
         let _ = std::fs::remove_file(icon_path);
     }
     match result {
-        0 => Ok(ChannelOutcome {
-            status: "sent".to_string(),
-            detail: Some("app user model id registry key removed".to_string()),
-            status_code: None,
-        }),
-        ERROR_FILE_NOT_FOUND => Ok(ChannelOutcome::skipped(
-            "app user model id registry key was not present",
-        )),
-        code => Ok(ChannelOutcome::failed(format!(
-            "RegDeleteTreeW failed: error {code}"
-        ))),
+        0 | ERROR_FILE_NOT_FOUND => Ok(()),
+        code => Err(format!("RegDeleteTreeW failed: error {code}")),
     }
 }
 
+// Nothing is registered outside Windows, so removal trivially succeeds.
 #[cfg(not(windows))]
-fn remove_app_identity_registration() -> Result<ChannelOutcome, String> {
-    Ok(ChannelOutcome::skipped(
-        "toast registration is only managed on Windows",
-    ))
+pub fn remove_toast_registration() -> Result<(), String> {
+    Ok(())
+}
+
+/// True when saving transitions Windows toast notifications from enabled to
+/// disabled and the local toast registration should therefore be removed.
+/// `None` (config predating the notifications field) counts as disabled.
+pub fn should_remove_toast_registration(
+    previous: Option<&NotificationSettings>,
+    next: &NotificationSettings,
+) -> bool {
+    previous.is_some_and(|settings| settings.toast_enabled) && !next.toast_enabled
 }
 
 #[cfg(test)]
@@ -627,6 +611,23 @@ mod tests {
         assert!(event_matches_filter(&settings, NOTIFICATION_EVENT_QUOTA_RESET));
         settings.events = Vec::new();
         assert!(!event_matches_filter(&settings, NOTIFICATION_EVENT_QUOTA_RESET));
+    }
+
+    #[test]
+    fn toast_registration_removal_is_only_required_when_toast_turns_off() {
+        let mut enabled = default_notification_settings();
+        enabled.toast_enabled = true;
+        let mut disabled = default_notification_settings();
+        disabled.toast_enabled = false;
+
+        assert!(should_remove_toast_registration(Some(&enabled), &disabled));
+        assert!(!should_remove_toast_registration(Some(&disabled), &disabled));
+        assert!(!should_remove_toast_registration(Some(&enabled), &enabled));
+        assert!(!should_remove_toast_registration(Some(&disabled), &enabled));
+        // Configs saved before the notifications field existed count as
+        // disabled, so they never require cleanup.
+        assert!(!should_remove_toast_registration(None, &disabled));
+        assert!(!should_remove_toast_registration(None, &enabled));
     }
 
     #[test]

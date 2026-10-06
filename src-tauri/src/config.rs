@@ -1529,14 +1529,69 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
     let path = config_path_for_app(&app)?;
     let launch_at_startup = config.launch_at_startup;
     let theme = config.theme;
-    tauri::async_runtime::spawn_blocking(move || save_config_to_path(&path, &config))
-        .await
-        .map_err(|error| error.to_string())??;
+    let next_notifications = config.notifications.clone();
+    let saved_path = path.clone();
+    let previous_notifications = tauri::async_runtime::spawn_blocking(move || {
+        // Capture the persisted notification settings before the file is
+        // overwritten so the cleanup below can compare pre-save and post-save
+        // toast state.
+        let previous = read_saved_notification_settings(&saved_path);
+        save_config_to_path(&saved_path, &config).map(|()| previous)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    remove_toast_registration_if_disabled(
+        &path,
+        previous_notifications.as_ref(),
+        &next_notifications,
+        crate::notifications::remove_toast_registration,
+    );
     apply_app_theme(&app, &theme);
     sync_launch_at_startup_for_app(&app, launch_at_startup)?;
     crate::local_api::reconfigure(&app);
     crate::refresh_scheduler::signal_config_changed();
     crate::tray::refresh_tray_menu(&app)
+}
+
+/// Reads the notification settings persisted at `path` without migrating or
+/// rewriting the file, so save_config can compare against the pre-save state.
+/// Returns None when the file or the `notifications` field is absent.
+fn read_saved_notification_settings(path: &Path) -> Option<NotificationSettings> {
+    let contents = fs::read_to_string(path).ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(&contents).ok()?;
+    serde_json::from_value(value.get("notifications")?.clone()).ok()
+}
+
+/// After a successful save, removes the local Windows toast registration when
+/// Windows notifications were just switched off, so the AppUserModelID key and
+/// extracted icon do not linger on the machine. Cleanup is best-effort: a
+/// failure is only logged and never fails the save. Returns true when the
+/// removal ran.
+fn remove_toast_registration_if_disabled(
+    config_path: &Path,
+    previous: Option<&NotificationSettings>,
+    next: &NotificationSettings,
+    remove_registration: impl FnOnce() -> Result<(), String>,
+) -> bool {
+    if !crate::notifications::should_remove_toast_registration(previous, next) {
+        return false;
+    }
+    if let Err(error) = remove_registration() {
+        match load_or_create_config(config_path) {
+            Ok(loaded) => {
+                let log = LogSink::from_config_path(config_path, &loaded.config);
+                let _ = log.write(
+                    LogLevel::Warn,
+                    "notifications",
+                    &format!(
+                        "failed to remove Windows toast registration after disabling notifications: {error}"
+                    ),
+                );
+            }
+            Err(_) => eprintln!("Failed to remove Windows toast registration: {error}"),
+        }
+    }
+    true
 }
 
 pub fn apply_app_theme(app: &AppHandle, theme: &AppTheme) {
@@ -1900,6 +1955,93 @@ mod tests {
         assert!(save_config_to_path(&path, &config).is_err());
         crate::local_api_token::write_token(&path, &"x".repeat(32)).expect("write token");
         save_config_to_path(&path, &config).expect("save config with token");
+    }
+
+    #[test]
+    fn saving_with_toast_turned_off_removes_the_toast_registration() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+
+        // Mirrors the save_config command flow: capture the persisted
+        // notification settings, save, then run the best-effort cleanup.
+        let mut enabled = default_config();
+        enabled.notifications.toast_enabled = true;
+        save_config_to_path(&path, &enabled).expect("save enabled config");
+        let previous = read_saved_notification_settings(&path);
+        assert_eq!(previous.as_ref(), Some(&enabled.notifications));
+
+        let mut disabled = enabled.clone();
+        disabled.notifications.toast_enabled = false;
+        save_config_to_path(&path, &disabled).expect("save disabled config");
+
+        let mut removals = 0usize;
+        let removed = remove_toast_registration_if_disabled(
+            &path,
+            previous.as_ref(),
+            &disabled.notifications,
+            || {
+                removals += 1;
+                Ok(())
+            },
+        );
+        assert!(removed);
+        assert_eq!(removals, 1);
+    }
+
+    #[test]
+    fn saving_without_the_toast_off_transition_skips_registration_removal() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+
+        // No config file yet: the previous state counts as disabled.
+        assert_eq!(read_saved_notification_settings(&path), None);
+
+        let mut config = default_config();
+        save_config_to_path(&path, &config).expect("save config");
+        let previous = read_saved_notification_settings(&path);
+
+        let removed = remove_toast_registration_if_disabled(
+            &path,
+            previous.as_ref(),
+            &config.notifications,
+            || panic!("registration removal must not run"),
+        );
+        assert!(!removed);
+
+        // Staying disabled across a save also never triggers cleanup.
+        config.refresh_interval_seconds = 60;
+        save_config_to_path(&path, &config).expect("save config again");
+        let previous = read_saved_notification_settings(&path);
+        let removed = remove_toast_registration_if_disabled(
+            &path,
+            previous.as_ref(),
+            &config.notifications,
+            || panic!("registration removal must not run"),
+        );
+        assert!(!removed);
+    }
+
+    #[test]
+    fn a_failing_registration_removal_does_not_break_the_save_flow() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+
+        let mut enabled = default_config();
+        enabled.notifications.toast_enabled = true;
+        save_config_to_path(&path, &enabled).expect("save enabled config");
+        let previous = read_saved_notification_settings(&path);
+
+        let mut disabled = enabled.clone();
+        disabled.notifications.toast_enabled = false;
+        let removed = remove_toast_registration_if_disabled(
+            &path,
+            previous.as_ref(),
+            &disabled.notifications,
+            || Err("RegDeleteTreeW failed: error 5".to_string()),
+        );
+        // The cleanup ran and reported the attempt; the error only reaches the
+        // local log and never fails the save itself.
+        assert!(removed);
     }
 
     #[test]

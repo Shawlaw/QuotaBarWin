@@ -241,8 +241,6 @@ pub fn run() {
             quota_events::get_quota_event_history,
             quota_events::clear_quota_event_history,
             notifications::send_test_notification,
-            notifications::debug_show_test_toast,
-            notifications::debug_remove_toast_registration,
             get_local_api_status,
             list_local_api_network_interfaces,
             get_local_api_access_token,

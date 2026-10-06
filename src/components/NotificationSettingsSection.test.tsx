@@ -10,8 +10,6 @@ const apiMocks = vi.hoisted(() => ({
     toast: { status: "sent", detail: null },
     webhook: { status: "sent", detail: null, statusCode: 200 },
   })),
-  debugShowTestToast: vi.fn(async () => ({ status: "sent", detail: null })),
-  debugRemoveToastRegistration: vi.fn(async () => ({ status: "sent", detail: null })),
 }));
 
 vi.mock("../lib/api", () => apiMocks);
@@ -153,13 +151,5 @@ describe("NotificationSettingsSection", () => {
 
     fireEvent.change(screen.getByTestId("low-quota-warning-input"), { target: { value: "35" } });
     expect(onLowQuotaWarningThresholdChange).toHaveBeenCalledWith(35);
-  });
-
-  test("the QA debug block stays collapsed by default", () => {
-    renderSection();
-
-    const debugBlock = screen.getByTestId("notification-debug-block");
-    expect(debugBlock).not.toHaveAttribute("open");
-    expect(debugBlock).toHaveTextContent("Self-test debug");
   });
 });

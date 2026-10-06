@@ -424,11 +424,6 @@ export type I18nCatalog = {
     testWebhookSent: (statusCode: number | null) => string;
     testWebhookDisabled: string;
     testWebhookFailed: (detail: string) => string;
-    debugTitle: string;
-    debugShowToast: string;
-    debugRemoveRegistration: string;
-    debugRemoved: string;
-    debugNotPresent: string;
   };
   providerSetup: {
     title: (name: string) => string;
@@ -956,12 +951,7 @@ export const en: I18nCatalog = {
     testToastFailed: (detail) => `Windows notification failed: ${detail}`,
     testWebhookSent: (statusCode) => `Webhook delivered (HTTP ${statusCode ?? "200"}).`,
     testWebhookDisabled: "Webhook is disabled.",
-    testWebhookFailed: (detail) => `Webhook failed: ${detail}`,
-    debugTitle: "Self-test debug (temporary, removed after verification)",
-    debugShowToast: "Fire a system toast now (ignores toggles)",
-    debugRemoveRegistration: "Undo system notification registration (delete registry key)",
-    debugRemoved: "AppUserModelID registry key deleted.",
-    debugNotPresent: "AppUserModelID registry key was not present."
+    testWebhookFailed: (detail) => `Webhook failed: ${detail}`
   },
   providerSetup: {
     title: (name) => `Set up ${name}`,
@@ -1509,12 +1499,7 @@ export const zhCN: I18nCatalog = {
     testToastFailed: (detail) => `Windows 通知发送失败：${detail}`,
     testWebhookSent: (statusCode) => `Webhook 已送达（HTTP ${statusCode ?? "200"}）。`,
     testWebhookDisabled: "Webhook 未启用。",
-    testWebhookFailed: (detail) => `Webhook 发送失败：${detail}`,
-    debugTitle: "自测调试（临时，验证后移除）",
-    debugShowToast: "直接弹出系统通知（忽略开关）",
-    debugRemoveRegistration: "撤销系统通知注册（删除注册表键）",
-    debugRemoved: "AUMID 注册表键已删除。",
-    debugNotPresent: "AUMID 注册表键不存在。"
+    testWebhookFailed: (detail) => `Webhook 发送失败：${detail}`
   },
   providerSetup: {
     title: (name) => `配置 ${name}`,

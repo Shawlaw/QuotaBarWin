@@ -149,7 +149,7 @@ Events are detected by diffing consecutive snapshots after each refresh; transie
 
 Under **Settings → Notifications** you can enable two delivery channels (both off by default):
 
-- **Windows notifications**: shows a toast for the selected events; the portable build registers the app's AppUserModelID in the current user's registry, so no installer is required.
+- **Windows notifications**: shows a toast for the selected events; the portable build registers the app's AppUserModelID in the current user's registry, so no installer is required, and turning the channel off automatically removes that local registration.
 - **Webhook**: POSTs the selected events as a JSON batch to your endpoint. The URL supports `${secret:NAME}`, `${env:NAME}`, and `${file:...}` placeholders (for example, keep token-bearing webhook addresses in your `secrets` folder), follows the global proxy settings, and has a configurable timeout; delivery failures are only written to redacted local logs.
 
 Notifications arrive on the **next refresh** after a change happens (default interval 300 seconds, adjustable in settings); nothing is sent retroactively while the app is not running. A webhook sends your quota event data to an external address you choose, so only point it at services you trust.

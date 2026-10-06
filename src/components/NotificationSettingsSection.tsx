@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { NotificationSettings, TestChannelOutcome } from "../types";
-import { debugRemoveToastRegistration, debugShowTestToast, sendTestNotification } from "../lib/api";
+import { sendTestNotification } from "../lib/api";
 import { useI18n } from "../i18n";
 import { QUOTA_EVENT_TYPES, type QuotaEventCategory } from "../lib/quotaEvents";
 
@@ -63,8 +63,6 @@ export function NotificationSettingsSection({
   const [timeoutText, setTimeoutText] = useState(String(settings.webhookTimeoutSeconds));
   const [isTesting, setIsTesting] = useState(false);
   const [testMessage, setTestMessage] = useState<string | null>(null);
-  const [isDebugBusy, setIsDebugBusy] = useState(false);
-  const [debugMessage, setDebugMessage] = useState<string | null>(null);
 
   const timeoutValue = Number.parseInt(timeoutText, 10);
   const isTimeoutValid = Number.isInteger(timeoutValue) && timeoutValue >= 1 && timeoutValue <= 60;
@@ -119,42 +117,6 @@ export function NotificationSettingsSection({
       );
     } finally {
       setIsTesting(false);
-    }
-  };
-
-  const handleDebugToast = async () => {
-    setIsDebugBusy(true);
-    setDebugMessage(null);
-    try {
-      const outcome = await debugShowTestToast();
-      setDebugMessage(
-        outcome.status === "sent"
-          ? t.notificationSettings.testToastSent
-          : t.notificationSettings.testToastFailed(outcome.detail ?? ""),
-      );
-    } catch (error) {
-      setDebugMessage(t.notificationSettings.testToastFailed(String(error)));
-    } finally {
-      setIsDebugBusy(false);
-    }
-  };
-
-  const handleDebugRemoveRegistration = async () => {
-    setIsDebugBusy(true);
-    setDebugMessage(null);
-    try {
-      const outcome = await debugRemoveToastRegistration();
-      setDebugMessage(
-        outcome.status === "sent"
-          ? t.notificationSettings.debugRemoved
-          : outcome.status === "skipped"
-            ? t.notificationSettings.debugNotPresent
-            : t.notificationSettings.testToastFailed(outcome.detail ?? ""),
-      );
-    } catch (error) {
-      setDebugMessage(t.notificationSettings.testToastFailed(String(error)));
-    } finally {
-      setIsDebugBusy(false);
     }
   };
 
@@ -283,36 +245,6 @@ export function NotificationSettingsSection({
           ))}
         </div>
       ) : null}
-      {/* Temporary self-test block; remove after the 1.6.0 manual QA pass.
-          Collapsed by default so release UI never shows these controls. */}
-      <details className="settings-debug-details" data-testid="notification-debug-block">
-        <summary>{t.notificationSettings.debugTitle}</summary>
-        <div className="settings-actions settings-actions--inline">
-          <button
-            type="button"
-            className="button-secondary"
-            data-testid="notification-debug-toast"
-            disabled={isDebugBusy}
-            onClick={() => void handleDebugToast()}
-          >
-            {t.notificationSettings.debugShowToast}
-          </button>
-          <button
-            type="button"
-            className="button-danger"
-            data-testid="notification-debug-remove-registration"
-            disabled={isDebugBusy}
-            onClick={() => void handleDebugRemoveRegistration()}
-          >
-            {t.notificationSettings.debugRemoveRegistration}
-          </button>
-        </div>
-        {debugMessage ? (
-          <div className="settings-message" data-testid="notification-debug-message">
-            {debugMessage}
-          </div>
-        ) : null}
-      </details>
     </section>
   );
 }
