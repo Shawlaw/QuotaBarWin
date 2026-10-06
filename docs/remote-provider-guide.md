@@ -3,8 +3,8 @@
 默认语言：简体中文。English documentation:
 [`remote-provider-guide.en.md`](remote-provider-guide.en.md).
 
-远程提供方允许你通过一个托管的 `registry.json` / `provider.json` 安装额度
-提供方，而不需要把提供方打包进 QuotaBarWin 主程序。这适合第三方提供方、
+远程提供方机制允许你通过托管的 `registry.json` / `provider.json` 安装额度提供方，
+而无需把提供方查询逻辑打包进 QuotaBarWin 主程序。这适合第三方提供方接入、
 快速迭代提供方脚本，或在多台机器之间共享提供方配置。
 
 ## 工作方式
@@ -96,7 +96,7 @@
 
 ## 内置 JavaScript runtime（`builtin-js`）
 
-`builtin-js` 面向不想让普通用户额外安装 Node.js 的提供方。它运行在应用内置的
+`builtin-js` 面向不想让普通用户额外安装 Node.js 的提供方作者。它运行在应用内置的
 QuickJS 沙箱中。新发布或远程更新的 manifest 必须使用 `schemaVersion: 2` 并声明 `minAppVersion`；入口必须是 `.js` 文件，`output` 必须为 `provider-snapshot-v1`，并导出
 一个同步的全局函数 `main(qb)`：函数直接返回快照对象，**不使用** `console.log`、stdout
 或 `process.exit`。官方提供方都使用此 runtime。
@@ -261,7 +261,7 @@ secret 和环境变量值不会写入报告。
 
 QuotaBarWin 会逐行读取脚本 stderr，并把日志转发到本地应用日志
 `quotabarwin.log`。脚本失败、返回非 0 退出码或被宿主超时终止时，最近约 16 KiB 的
-stderr 摘要会进入提供方 diagnostics 的 `stderr` 字段，方便区分 provider 内部
+stderr 摘要会进入提供方 diagnostics 的 `stderr` 字段，方便区分提供方内部
 失败和宿主进程超时。普通文本会原样转发；更推荐每行写一个结构化 JSON 对象。
 
 推荐字段：
@@ -366,14 +366,14 @@ console.log(JSON.stringify({
 - `label` 只是展示文案，可以变得更清晰或本地化；`id` 应来自稳定 API 语义，例如
   `weekly`、`300-minute`、`tokens-limit-6-1`、`total-quota`。
 
-## 解析提供方原始响应
+## 解析供应商原始响应
 
 远程提供方应把供应商 API 的解析逻辑留在脚本内部。QuotaBarWin 只需要脚本最终
 输出标准 `provider-snapshot-v1`。
 
 推荐流程：
 
-1. 请求提供方原始 API，或在测试中读取 fixture。
+1. 请求供应商原始 API，或在测试中读取 fixture。
 2. 选择用户真正需要看到的 quota / balance 记录。
 3. 将供应商字段转换成稳定的 `windows[]` 字段。
 4. 将 plan、usageDetails、account metadata 等附加信息放进 `metadata`。
@@ -713,7 +713,7 @@ Bash 示例需要 `jq`。Windows 上 Git Bash 通常会随附它。
 已安装版本、安装时间、更新时间和上次检查时间：
 
 - **自动更新**：安装时为提供方启用 auto-update 后，checksum 不同时会静默更新。
-- **手动更新**：在 Settings 中使用 “检查更新” / “应用更新”。
+- **手动更新**：在设置页使用「检查更新」/「应用更新」。
 
 如果缺少 `checksums.source`，需要移除并重新添加提供方才能更新。
 
