@@ -26,6 +26,7 @@ const baseSettings: NotificationSettings = {
 
 function renderSection(settings: NotificationSettings = baseSettings) {
   const onChange = vi.fn();
+  const onLowQuotaWarningThresholdChange = vi.fn();
   // Mirrors the real settings page: edits flow through the parent so the
   // section always sees the live unsaved draft.
   function Harness() {
@@ -38,12 +39,14 @@ function renderSection(settings: NotificationSettings = baseSettings) {
             onChange(next);
             setDraft(next);
           }}
+          lowQuotaWarningThreshold={20}
+          onLowQuotaWarningThresholdChange={onLowQuotaWarningThresholdChange}
         />
       </I18nProvider>
     );
   }
   render(<Harness />);
-  return { onChange };
+  return { onChange, onLowQuotaWarningThresholdChange };
 }
 
 beforeEach(() => {
@@ -124,5 +127,39 @@ describe("NotificationSettingsSection", () => {
         webhookUrl: "https://example.com/new-hook",
       });
     });
+  });
+
+  test("events render grouped by quota / provider / app categories", () => {
+    renderSection();
+
+    const quotaGroup = screen.getByTestId("notification-event-grid-quota");
+    expect(quotaGroup).toHaveTextContent("Quota reset");
+    expect(quotaGroup).toHaveTextContent("Unexpected quota recovery");
+    expect(quotaGroup).toHaveTextContent("Quota exhausted");
+    expect(quotaGroup).toHaveTextContent("Quota low");
+    expect(screen.getByText("Quota")).toBeInTheDocument();
+
+    const providerGroup = screen.getByTestId("notification-event-grid-provider");
+    expect(providerGroup).toHaveTextContent("Provider failure");
+    expect(providerGroup).toHaveTextContent("Provider recovered");
+
+    const appGroup = screen.getByTestId("notification-event-grid-app");
+    expect(appGroup).toHaveTextContent("Application updated");
+    expect(appGroup).toHaveTextContent("Application started");
+  });
+
+  test("the low quota threshold input is the single editing entry", () => {
+    const { onLowQuotaWarningThresholdChange } = renderSection();
+
+    fireEvent.change(screen.getByTestId("low-quota-warning-input"), { target: { value: "35" } });
+    expect(onLowQuotaWarningThresholdChange).toHaveBeenCalledWith(35);
+  });
+
+  test("the QA debug block stays collapsed by default", () => {
+    renderSection();
+
+    const debugBlock = screen.getByTestId("notification-debug-block");
+    expect(debugBlock).not.toHaveAttribute("open");
+    expect(debugBlock).toHaveTextContent("Self-test debug");
   });
 });

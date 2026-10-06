@@ -61,6 +61,19 @@ export type I18nCatalog = {
   settings: {
     title: string;
     general: string;
+    categoryNav: string;
+    categoryAdvanced: string;
+    generalGroupRefresh: string;
+    generalGroupDisplay: string;
+    generalGroupStartup: string;
+    lowQuotaSummaryValue: (value: number) => string;
+    lowQuotaAlsoNotifications: string;
+    goToNotificationSettings: string;
+    advancedGroupNetwork: string;
+    advancedGroupIntegrations: string;
+    advancedGroupSecurity: string;
+    advancedGroupStorage: string;
+    advancedGroupDiagnostics: string;
     refreshInterval: string;
     refreshIntervalError: string;
     displayMode: string;
@@ -388,6 +401,11 @@ export type I18nCatalog = {
   };
   notificationSettings: {
     title: string;
+    conditionsTitle: string;
+    channelsTitle: string;
+    eventGroupLabel: Record<string, string>;
+    lowQuotaThresholdLabel: string;
+    lowQuotaThresholdHint: string;
     toastEnabled: string;
     toastHint: string;
     webhookEnabled: string;
@@ -532,6 +550,19 @@ export const en: I18nCatalog = {
   settings: {
     title: "Settings",
     general: "General",
+    categoryNav: "Settings categories",
+    categoryAdvanced: "Advanced",
+    generalGroupRefresh: "Refresh",
+    generalGroupDisplay: "Display",
+    generalGroupStartup: "Startup",
+    lowQuotaSummaryValue: (value) => `Current ${value}%`,
+    lowQuotaAlsoNotifications: "Also used by the quota-low notification.",
+    goToNotificationSettings: "Open notification settings",
+    advancedGroupNetwork: "Network",
+    advancedGroupIntegrations: "Integrations",
+    advancedGroupSecurity: "Security",
+    advancedGroupStorage: "Storage & maintenance",
+    advancedGroupDiagnostics: "Diagnostics",
     refreshInterval: "Refresh interval (seconds)",
     refreshIntervalError: "Refresh interval must be greater than 0.",
     displayMode: "Display mode",
@@ -888,6 +919,16 @@ export const en: I18nCatalog = {
   },
   notificationSettings: {
     title: "Notifications",
+    conditionsTitle: "Notification conditions",
+    channelsTitle: "Notification channels",
+    eventGroupLabel: {
+      quota: "Quota",
+      provider: "Provider",
+      app: "Application"
+    },
+    lowQuotaThresholdLabel: "Low quota warning threshold (%)",
+    lowQuotaThresholdHint:
+      "Also drives the tray and provider card low quota warning and the quota-low notification.",
     toastEnabled: "Windows notifications",
     toastHint:
       "Shows a system toast for the selected events while QuotaBarWin is running.",
@@ -1070,6 +1111,19 @@ export const zhCN: I18nCatalog = {
   settings: {
     title: "设置",
     general: "通用",
+    categoryNav: "设置分类",
+    categoryAdvanced: "高级",
+    generalGroupRefresh: "刷新",
+    generalGroupDisplay: "显示",
+    generalGroupStartup: "启动",
+    lowQuotaSummaryValue: (value) => `当前 ${value}%`,
+    lowQuotaAlsoNotifications: "同时用于 quota-low 通知。",
+    goToNotificationSettings: "前往通知设置",
+    advancedGroupNetwork: "网络",
+    advancedGroupIntegrations: "集成",
+    advancedGroupSecurity: "安全",
+    advancedGroupStorage: "存储与维护",
+    advancedGroupDiagnostics: "诊断",
     refreshInterval: "刷新间隔（秒）",
     refreshIntervalError: "刷新间隔必须大于 0。",
     displayMode: "显示模式",
@@ -1421,6 +1475,16 @@ export const zhCN: I18nCatalog = {
   },
   notificationSettings: {
     title: "通知",
+    conditionsTitle: "通知条件",
+    channelsTitle: "通知渠道",
+    eventGroupLabel: {
+      quota: "额度",
+      provider: "Provider",
+      app: "应用"
+    },
+    lowQuotaThresholdLabel: "低额度警告阈值（%）",
+    lowQuotaThresholdHint:
+      "同时影响托盘与 Provider 卡片的低额度警示，以及 quota-low 通知事件。",
     toastEnabled: "Windows 系统通知",
     toastHint: "QuotaBarWin 运行期间，所选事件会弹出系统通知。",
     webhookEnabled: "Webhook 通知",

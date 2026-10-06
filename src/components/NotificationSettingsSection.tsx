@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { NotificationSettings, TestChannelOutcome } from "../types";
 import { debugRemoveToastRegistration, debugShowTestToast, sendTestNotification } from "../lib/api";
 import { useI18n } from "../i18n";
-import { QUOTA_EVENT_TYPES } from "../lib/quotaEvents";
+import { QUOTA_EVENT_TYPES, type QuotaEventCategory } from "../lib/quotaEvents";
 
 const DEFAULT_WEBHOOK_TIMEOUT_SECONDS = 10;
 
@@ -14,9 +14,16 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   events: QUOTA_EVENT_TYPES.filter((meta) => meta.type !== "app-started").map((meta) => meta.type),
 };
 
+// Presentation order for the event groups; the events themselves always come
+// from QUOTA_EVENT_TYPES so this stays in sync with the shared metadata.
+const EVENT_CATEGORY_ORDER: QuotaEventCategory[] = ["quota", "provider", "app"];
+
 type NotificationSettingsSectionProps = {
   settings: NotificationSettings | null | undefined;
   onChange: (settings: NotificationSettings) => void;
+  lowQuotaWarningThreshold: number;
+  onLowQuotaWarningThresholdChange: (value: number) => void;
+  lowQuotaWarningError?: string | null;
 };
 
 function normalizedSettings(
@@ -46,6 +53,9 @@ function channelMessage(
 export function NotificationSettingsSection({
   settings: savedSettings,
   onChange,
+  lowQuotaWarningThreshold,
+  onLowQuotaWarningThresholdChange,
+  lowQuotaWarningError = null,
 }: NotificationSettingsSectionProps) {
   const { t } = useI18n();
   const settings = normalizedSettings(savedSettings);
@@ -157,6 +167,47 @@ export function NotificationSettingsSection({
       <div className="settings-section-title">
         <h3>{t.notificationSettings.title}</h3>
       </div>
+      <h4 className="settings-group-title">{t.notificationSettings.conditionsTitle}</h4>
+      <div className="settings-field">
+        <span>{t.notificationSettings.eventsLabel}</span>
+        {EVENT_CATEGORY_ORDER.map((category) => (
+          <div className="notification-event-group" key={category}>
+            <span className="notification-event-group__label">
+              {t.notificationSettings.eventGroupLabel[category] ?? category}
+            </span>
+            <div className="notification-event-grid" data-testid={`notification-event-grid-${category}`}>
+              {QUOTA_EVENT_TYPES.filter((meta) => meta.category === category).map((meta) => (
+                <label key={meta.type} className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    data-testid={`notification-event-${meta.type}`}
+                    checked={selectedEvents.has(meta.type)}
+                    onChange={(event) => toggleEvent(meta.type, event.currentTarget.checked)}
+                  />
+                  {t.notificationSettings.eventTypeLabel[meta.type] ?? meta.type}
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+        <span className="settings-hint">{t.notificationSettings.eventsHint}</span>
+      </div>
+      <div className="settings-field">
+        <label>
+          {t.notificationSettings.lowQuotaThresholdLabel}
+          <input
+            type="number"
+            min={0}
+            max={100}
+            data-testid="low-quota-warning-input"
+            value={lowQuotaWarningThreshold}
+            onChange={(event) => onLowQuotaWarningThresholdChange(Number(event.currentTarget.value))}
+          />
+          {lowQuotaWarningError ? <span className="field-error">{lowQuotaWarningError}</span> : null}
+        </label>
+        <span className="settings-hint">{t.notificationSettings.lowQuotaThresholdHint}</span>
+      </div>
+      <h4 className="settings-group-title">{t.notificationSettings.channelsTitle}</h4>
       <div className="settings-field">
         <label className="checkbox-row settings-toggle-row">
           <input
@@ -213,23 +264,6 @@ export function NotificationSettingsSection({
           </label>
         </div>
       ) : null}
-      <div className="settings-field">
-        <span>{t.notificationSettings.eventsLabel}</span>
-        <div className="notification-event-grid" data-testid="notification-event-grid">
-          {QUOTA_EVENT_TYPES.map((meta) => (
-            <label key={meta.type} className="checkbox-row">
-              <input
-                type="checkbox"
-                data-testid={`notification-event-${meta.type}`}
-                checked={selectedEvents.has(meta.type)}
-                onChange={(event) => toggleEvent(meta.type, event.currentTarget.checked)}
-              />
-              {t.notificationSettings.eventTypeLabel[meta.type] ?? meta.type}
-            </label>
-          ))}
-        </div>
-        <span className="settings-hint">{t.notificationSettings.eventsHint}</span>
-      </div>
       <div className="settings-actions settings-actions--inline">
         <button
           type="button"
@@ -249,9 +283,10 @@ export function NotificationSettingsSection({
           ))}
         </div>
       ) : null}
-      {/* Temporary self-test block; remove after the 1.6.0 manual QA pass. */}
-      <div className="settings-field" data-testid="notification-debug-block">
-        <span>{t.notificationSettings.debugTitle}</span>
+      {/* Temporary self-test block; remove after the 1.6.0 manual QA pass.
+          Collapsed by default so release UI never shows these controls. */}
+      <details className="settings-debug-details" data-testid="notification-debug-block">
+        <summary>{t.notificationSettings.debugTitle}</summary>
         <div className="settings-actions settings-actions--inline">
           <button
             type="button"
@@ -277,7 +312,7 @@ export function NotificationSettingsSection({
             {debugMessage}
           </div>
         ) : null}
-      </div>
+      </details>
     </section>
   );
 }

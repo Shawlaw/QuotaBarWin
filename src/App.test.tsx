@@ -291,6 +291,7 @@ test("manual application update check immediately updates the main notice", asyn
 
   expect(await screen.findByText("Codex Mock")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByTestId("settings-nav-app-update"));
   expect(await screen.findByTestId("app-update-section")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
@@ -686,7 +687,7 @@ test("settings button returns from the provider catalog to the main settings pag
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
   await waitFor(() => expect(screen.queryByTestId("add-provider-page")).not.toBeInTheDocument());
-  expect(screen.getByTestId("general-settings-section")).toBeInTheDocument();
+  expect(screen.getByTestId("providers-settings-section")).toBeInTheDocument();
 });
 
 test("provider setup test result fills an otherwise empty overview snapshot", () => {
@@ -798,6 +799,7 @@ test("leaving_settings_requires_resolving_unsaved_changes", async () => {
 
   await screen.findByRole("button", { name: "Settings" });
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByTestId("settings-nav-general"));
   fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
   fireEvent.click(screen.getByRole("button", { name: "Overview" }));
 
@@ -817,6 +819,7 @@ test("switching_to_events_tab_from_dirty_settings_requires_resolving_changes", a
 
   await screen.findByRole("button", { name: "Settings" });
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByTestId("settings-nav-general"));
   fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
   fireEvent.click(screen.getByRole("button", { name: "Events" }));
 
@@ -832,6 +835,7 @@ test("closing_window_with_unsaved_changes_uses_close_specific_dialog", async () 
 
   await screen.findByRole("button", { name: "Settings" });
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByTestId("settings-nav-general"));
   fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
 
   act(() => {
@@ -1039,6 +1043,7 @@ test("saving_network_proxy_change_triggers_full_refresh", async () => {
 
   expect(await screen.findByText("Remote A")).toBeInTheDocument();
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByTestId("settings-nav-advanced"));
   fireEvent.change(screen.getByTestId("proxy-kind-select"), { target: { value: "http" } });
   fireEvent.change(screen.getByTestId("proxy-url-input"), {
     target: { value: "http://127.0.0.1:7890" },

@@ -314,6 +314,12 @@ function renderSettings(
   return render(<Harness />);
 }
 
+// The settings page lands on the Providers category; controls in other
+// categories need the left navigation clicked first, exactly like a user.
+function switchSettingsCategory(category: string) {
+  fireEvent.click(screen.getByTestId(`settings-nav-${category}`));
+}
+
 test("settings_renders_registry_and_remote_provider_metadata", async () => {
   renderSettings();
 
@@ -368,6 +374,7 @@ test("settings_does_not_replay_a_close_request_when_the_provider_catalog_mounts"
 
 test("settings_checks_and_applies_signed application updates", async () => {
   renderSettings();
+  switchSettingsCategory("app-update");
 
   expect(screen.getByText("Current version: 1.0.5-test")).toBeInTheDocument();
 
@@ -392,6 +399,7 @@ test("manual application update checks notify the owning main window directly", 
   renderSettings(configWithProviders([remoteProvider]), [], configStorageInfo, () => undefined, {
     onAppUpdateStatusChange,
   });
+  switchSettingsCategory("app-update");
 
   fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
 
@@ -404,6 +412,7 @@ test("manual application update checks notify the owning main window directly", 
 
 test("settings_saves_the_application_update_auto_check_toggle", async () => {
   renderSettings();
+  switchSettingsCategory("app-update");
 
   const toggle = screen.getByTestId("app-update-auto-check") as HTMLInputElement;
   expect(toggle.checked).toBe(true);
@@ -426,6 +435,7 @@ test("settings_toggles_provider_tray_visibility", async () => {
 
 test("settings_edits_local_log_limit_in_megabytes", () => {
   renderSettings();
+  switchSettingsCategory("advanced");
 
   const input = screen.getByTestId("log-max-size-input");
   expect(input).toHaveValue(10);
@@ -438,6 +448,7 @@ test("settings_edits_local_log_limit_in_megabytes", () => {
 test("settings_confirms_before_enabling_quota_data_logging", () => {
   const confirm = vi.spyOn(window, "confirm");
   renderSettings();
+  switchSettingsCategory("advanced");
 
   const checkbox = screen.getByRole("checkbox", { name: "Log refreshed quota data" });
   fireEvent.click(checkbox);
@@ -517,6 +528,7 @@ test("saving a provider source returns to the catalog and refreshes it with its 
 test("saved message stays visible until the next edit", async () => {
   const onSave = vi.fn(async () => undefined);
   renderSettings(configWithProviders([remoteProvider]), [], configStorageInfo, onSave);
+  switchSettingsCategory("general");
 
   fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
   fireEvent.click(screen.getByTestId("save-settings-button"));
@@ -531,6 +543,7 @@ test("saved message stays visible until the next edit", async () => {
 
 test("settings_edits_theme_preference", () => {
   renderSettings();
+  switchSettingsCategory("general");
 
   const theme = screen.getByTestId("theme-select");
   expect(theme).toHaveValue("system");
@@ -544,6 +557,7 @@ test("settings_edits_theme_preference", () => {
 test("ctrl+s saves when there are unsaved changes", async () => {
   const onSave = vi.fn(async () => undefined);
   renderSettings(configWithProviders([remoteProvider]), [], configStorageInfo, onSave);
+  switchSettingsCategory("general");
 
   expect(screen.getByTestId("save-settings-button")).toHaveAttribute("title", "Save (Ctrl+S)");
 
@@ -669,6 +683,7 @@ test("settings_reorders_and_removes_remote_providers", async () => {
 
 test("settings_save_bar_tracks_dirty_state_and_validation", () => {
   renderSettings();
+  switchSettingsCategory("general");
 
   expect(screen.getByTestId("fixed-save-bar")).toHaveTextContent("No changes");
   expect(screen.getByTestId("save-settings-button")).toBeDisabled();
@@ -703,6 +718,7 @@ test("settings blocks saving an external local API listener until a token is sav
       port: 41833,
     },
   });
+  switchSettingsCategory("advanced");
 
   fireEvent.change(screen.getByTestId("local-api-port"), { target: { value: "41834" } });
 
@@ -718,7 +734,11 @@ test("settings_protects_unsaved_changes_before_opening_provider_catalog", async 
   const onSave = vi.fn(async () => undefined);
   renderSettings(configWithProviders([]), [], configStorageInfo, onSave);
 
+  // Dirty the draft in General, then switch back to Providers: the draft
+  // must survive the category switch and still gate provider navigation.
+  switchSettingsCategory("general");
   fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+  switchSettingsCategory("providers");
   fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
 
   expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeInTheDocument();
@@ -738,7 +758,9 @@ test("settings_protects_unsaved_changes_before_opening_provider_catalog", async 
 test("settings_protects_unsaved_changes_before_provider_update_check", async () => {
   renderSettings();
 
+  switchSettingsCategory("general");
   fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+  switchSettingsCategory("providers");
   fireEvent.click(screen.getByRole("button", { name: "Check Updates" }));
 
   expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeInTheDocument();
@@ -760,4 +782,55 @@ test("settings_blocks_invalid_remote_provider_timeout", async () => {
 
   expect(screen.getByText("Timeout must be greater than 0.")).toBeInTheDocument();
   expect(screen.getByTestId("save-settings-button")).toBeDisabled();
+});
+
+test("settings_opens_on_the_providers_category_with_category_navigation", () => {
+  renderSettings();
+
+  expect(screen.getByTestId("providers-settings-section")).toBeInTheDocument();
+  expect(screen.queryByTestId("general-settings-section")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("notification-settings-section")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("app-update-section")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("advanced-settings-section")).not.toBeInTheDocument();
+
+  const navigation = screen.getByTestId("settings-nav");
+  for (const label of ["Providers", "General", "Notifications", "Application update", "Advanced"]) {
+    expect(navigation).toHaveTextContent(label);
+  }
+});
+
+test("switching_categories_keeps_the_unsaved_draft", () => {
+  renderSettings();
+
+  switchSettingsCategory("general");
+  fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+  switchSettingsCategory("notifications");
+  expect(screen.getByTestId("notification-settings-section")).toBeInTheDocument();
+
+  switchSettingsCategory("general");
+  expect(screen.getByTestId("refresh-interval-input")).toHaveValue(120);
+  expect(screen.getByTestId("fixed-save-bar")).toHaveTextContent("Unsaved changes");
+});
+
+test("general_low_quota_summary_links_to_the_notification_editor", () => {
+  renderSettings();
+
+  switchSettingsCategory("general");
+  expect(screen.getByTestId("low-quota-summary")).toHaveTextContent("Current 20%");
+  expect(screen.queryByTestId("low-quota-warning-input")).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Open notification settings" }));
+
+  expect(screen.getByTestId("notification-settings-section")).toBeInTheDocument();
+  expect(screen.getByTestId("low-quota-warning-input")).toHaveValue(20);
+});
+
+test("notifications_category_edits_the_shared_low_quota_threshold", () => {
+  renderSettings();
+
+  switchSettingsCategory("notifications");
+  fireEvent.change(screen.getByTestId("low-quota-warning-input"), { target: { value: "35" } });
+
+  expect(apiMocks.state.config?.lowQuotaWarningThreshold).toBe(35);
+  expect(screen.getByTestId("fixed-save-bar")).toHaveTextContent("Unsaved changes");
 });

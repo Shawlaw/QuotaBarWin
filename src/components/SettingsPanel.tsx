@@ -73,6 +73,19 @@ type SettingsPanelProps = {
 
 type ProviderManifestState = Record<string, RemoteProviderManifest | null>;
 
+// Top-level settings categories rendered by the left navigation. The state is
+// deliberately local to SettingsPanel: the config draft, validation, and save
+// flow stay owned by App.tsx / SettingsPanel as a whole.
+type SettingsCategory = "providers" | "general" | "notifications" | "app-update" | "advanced";
+
+const SETTINGS_CATEGORY_ORDER: SettingsCategory[] = [
+  "providers",
+  "general",
+  "notifications",
+  "app-update",
+  "advanced"
+];
+
 type PendingUnsavedAction = {
   action: () => Promise<void>;
   cancel: () => void;
@@ -231,6 +244,7 @@ export function SettingsPanel({
   const [providerSettingsView, setProviderSettingsView] = useState<"main" | "add" | "sources" | "setup">(
     initialProviderSettingsView
   );
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("providers");
   const [setupProviderId, setSetupProviderId] = useState<string | null>(null);
   const [quotaDataConfirmOpen, setQuotaDataConfirmOpen] = useState(false);
   const [pendingUnsavedAction, setPendingUnsavedAction] = useState<PendingUnsavedAction | null>(null);
@@ -248,6 +262,7 @@ export function SettingsPanel({
   const handledSettingsHomeRequestRef = useRef(0);
   const handledAppUpdateFocusRequestRef = useRef(0);
   const appUpdateSectionRef = useRef<HTMLElement>(null);
+  const settingsContentRef = useRef<HTMLDivElement>(null);
   const initialConfigRef = useRef(JSON.stringify(config));
   const configDraft = JSON.stringify(config);
   const hasChanges = configDraft !== initialConfigRef.current;
@@ -758,6 +773,7 @@ export function SettingsPanel({
     void runWithUnsavedChangesProtection(async () => {
       setSetupProviderId(null);
       setProviderSettingsView("main");
+      setSettingsCategory("providers");
     });
     // This numeric prop represents a one-time header navigation event.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -773,13 +789,18 @@ export function SettingsPanel({
     handledAppUpdateFocusRequestRef.current = appUpdateFocusRequest;
     setSetupProviderId(null);
     setProviderSettingsView("main");
+    // The update section lives in its own category now, so switching the view
+    // alone is not enough: the category must be active for the section (and
+    // its ref) to exist before the follow-up effect can scroll to it.
+    setSettingsCategory("app-update");
   }, [appUpdateFocusRequest]);
 
   useEffect(() => {
     if (
       appUpdateFocusRequest === 0 ||
       handledAppUpdateFocusRequestRef.current !== appUpdateFocusRequest ||
-      providerSettingsView !== "main"
+      providerSettingsView !== "main" ||
+      settingsCategory !== "app-update"
     ) {
       return;
     }
@@ -791,7 +812,52 @@ export function SettingsPanel({
       onAppUpdateFocusHandled();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [appUpdateFocusRequest, onAppUpdateFocusHandled, providerSettingsView]);
+  }, [appUpdateFocusRequest, onAppUpdateFocusHandled, providerSettingsView, settingsCategory]);
+
+  function settingsCategoryLabel(category: SettingsCategory): string {
+    switch (category) {
+      case "providers":
+        return t.settings.providers;
+      case "general":
+        return t.settings.general;
+      case "notifications":
+        return t.notificationSettings.title;
+      case "app-update":
+        return t.appUpdate.title;
+      case "advanced":
+        return t.settings.categoryAdvanced;
+    }
+  }
+
+  function switchSettingsCategory(category: SettingsCategory) {
+    if (category === settingsCategory) {
+      return;
+    }
+    setSettingsCategory(category);
+    // Category content starts at the top; the scroll container is owned by
+    // App.tsx, so reset it through the DOM instead of lifting state.
+    const scrollRegion = settingsContentRef.current?.closest(".app-view-scroll-region");
+    if (scrollRegion instanceof HTMLElement) {
+      scrollRegion.scrollTop = 0;
+    }
+  }
+
+  function handleSettingsNavKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+      return;
+    }
+    const buttons = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>(".settings-nav__button"),
+    );
+    const currentIndex = buttons.findIndex((button) => button === document.activeElement);
+    if (currentIndex === -1) {
+      return;
+    }
+    event.preventDefault();
+    const offset = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex = (currentIndex + offset + buttons.length) % buttons.length;
+    buttons[nextIndex]?.focus();
+  }
 
   function renderSaveBar() {
     return (
@@ -996,11 +1062,48 @@ export function SettingsPanel({
   }
 
   return (
-    <section className="settings-panel" aria-label={t.settings.title} data-testid="settings-page">
+    <section
+      className="settings-panel settings-panel--categorized"
+      aria-label={t.settings.title}
+      data-testid="settings-page"
+    >
+      <nav
+        className="settings-nav"
+        role="tablist"
+        aria-label={t.settings.categoryNav}
+        data-testid="settings-nav"
+        onKeyDown={handleSettingsNavKeyDown}
+      >
+        {SETTINGS_CATEGORY_ORDER.map((category) => (
+          <button
+            key={category}
+            type="button"
+            role="tab"
+            id={`settings-tab-${category}`}
+            className="settings-nav__button"
+            data-testid={`settings-nav-${category}`}
+            aria-selected={settingsCategory === category}
+            aria-controls="settings-category-content"
+            tabIndex={settingsCategory === category ? 0 : -1}
+            onClick={() => switchSettingsCategory(category)}
+          >
+            {settingsCategoryLabel(category)}
+          </button>
+        ))}
+      </nav>
+      <div
+        className="settings-content"
+        role="tabpanel"
+        id="settings-category-content"
+        aria-labelledby={`settings-tab-${settingsCategory}`}
+        ref={settingsContentRef}
+      >
+      {settingsCategory === "general" ? (
       <section className="settings-section" aria-label={t.settings.general} data-testid="general-settings-section">
         <div className="settings-section-title">
           <h3>{t.settings.general}</h3>
         </div>
+        <h4 className="settings-group-title">{t.settings.generalGroupRefresh}</h4>
         <div className="settings-grid general-settings-grid">
         <label>
           {t.settings.refreshInterval}
@@ -1018,6 +1121,9 @@ export function SettingsPanel({
           />
           {refreshIntervalError ? <span className="field-error">{refreshIntervalError}</span> : null}
         </label>
+        </div>
+        <h4 className="settings-group-title">{t.settings.generalGroupDisplay}</h4>
+        <div className="settings-grid general-settings-grid">
         <label>
           {t.settings.displayMode}
           <select
@@ -1034,68 +1140,21 @@ export function SettingsPanel({
             <option value="used">{t.settings.displayUsed}</option>
           </select>
         </label>
-        <label>
-          {t.settings.lowQuotaWarning}
-          <input
-            type="number"
-            min={0}
-            max={100}
-            data-testid="low-quota-warning-input"
-            value={config.lowQuotaWarningThreshold}
-            onChange={(event) =>
-              onChange({
-                ...config,
-                lowQuotaWarningThreshold: Number(event.currentTarget.value)
-              })
-            }
-          />
-          {lowQuotaWarningError ? <span className="field-error">{lowQuotaWarningError}</span> : null}
-        </label>
-        <label>
-          {t.settings.logLevel}
-          <select
-            value={config.logLevel ?? "info"}
-            onChange={(event) =>
-              onChange({
-                ...config,
-                logLevel: event.currentTarget.value
-              })
-            }
-          >
-            <option value="debug">{t.settings.logDebug}</option>
-            <option value="info">{t.settings.logInfo}</option>
-            <option value="warn">{t.settings.logWarn}</option>
-            <option value="error">{t.settings.logError}</option>
-          </select>
-        </label>
-        <label>
-          {t.settings.logMaxSize}
-          <input
-            type="number"
-            min={1}
-            step={1}
-            data-testid="log-max-size-input"
-            value={logMaxMegabytes}
-            onChange={(event) => {
-              const megabytes = Number(event.currentTarget.value);
-              onChange({
-                ...config,
-                logMaxBytes: Math.max(0, megabytes) * LOG_BYTES_PER_MB
-              });
-            }}
-          />
-          {logMaxSizeError ? <span className="field-error">{logMaxSizeError}</span> : null}
-        </label>
-        <div className="settings-field">
-          <label className="checkbox-row settings-toggle-row">
-            <input
-              type="checkbox"
-              checked={config.logQuotaData ?? false}
-              onChange={(event) => updateLogQuotaData(event.currentTarget.checked)}
-            />
-            {t.settings.logQuotaData}
-          </label>
-          <span className="settings-hint">{t.settings.logQuotaDataHint}</span>
+        <div className="settings-field" data-testid="low-quota-summary">
+          <span>{t.settings.lowQuotaWarning}</span>
+          <span className="settings-hint">
+            {t.settings.lowQuotaSummaryValue(config.lowQuotaWarningThreshold)}{" "}
+            {t.settings.lowQuotaAlsoNotifications}
+          </span>
+          <div className="settings-actions settings-actions--inline">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => switchSettingsCategory("notifications")}
+            >
+              {t.settings.goToNotificationSettings}
+            </button>
+          </div>
         </div>
         <label>
           {t.settings.language}
@@ -1131,10 +1190,9 @@ export function SettingsPanel({
             <option value="dark">{t.settings.themeDark}</option>
           </select>
         </label>
-        <NetworkProxySettings
-          proxy={config.networkProxy}
-          onChange={(proxy) => onChange({ ...config, networkProxy: proxy })}
-        />
+        </div>
+        <h4 className="settings-group-title">{t.settings.generalGroupStartup}</h4>
+        <div className="settings-grid general-settings-grid">
         <label className="checkbox-row settings-toggle-row">
           <input
             type="checkbox"
@@ -1149,76 +1207,20 @@ export function SettingsPanel({
           {t.settings.launchAtStartup}
         </label>
         </div>
-        <LocalApiSettings
-          settings={config.localApi}
-          refreshKey={`${configStorageInfo?.configPath ?? ""}:${localApiStatusRevision}`}
-          onChange={(localApi) => onChange({ ...config, localApi })}
-          onTokenRequirementChange={setLocalApiTokenRequired}
+      </section>
+      ) : null}
+      {settingsCategory === "notifications" ? (
+        <NotificationSettingsSection
+          settings={config.notifications}
+          onChange={(notifications) => onChange({ ...config, notifications })}
+          lowQuotaWarningThreshold={config.lowQuotaWarningThreshold}
+          onLowQuotaWarningThresholdChange={(lowQuotaWarningThreshold) =>
+            onChange({ ...config, lowQuotaWarningThreshold })
+          }
+          lowQuotaWarningError={lowQuotaWarningError}
         />
-        <SecretSecuritySettings />
-        <section className="settings-section config-storage-section" aria-label={t.settings.configurationStorage}>
-          <div className="settings-section-title">
-            <h3>{t.settings.configurationStorage}</h3>
-            <span>{storageModeLabel}</span>
-          </div>
-          <div className="settings-grid config-storage-grid">
-            <div className="config-path-field">
-              <span className="config-path-label">{t.settings.configFile}</span>
-              <button
-                type="button"
-                className="path-chip"
-                title={configStorageInfo?.configPath}
-                onClick={() => void navigator.clipboard?.writeText(configStorageInfo?.configPath ?? "")}
-              >
-                {configStorageInfo?.configPath ?? t.settings.loadingConfigPath}
-              </button>
-            </div>
-            {isPortableMode ? (
-              <div className="config-path-field">
-                <span className="config-path-label">{t.settings.portableMarker}</span>
-                <code title={configStorageInfo?.portableMarkerPath}>
-                  {configStorageInfo?.portableMarkerPath ?? t.settings.loading}
-                </code>
-              </div>
-            ) : null}
-            <div className="config-storage-controls">
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={isPortableMode}
-                  disabled={!configStorageInfo || isConfigStorageBusy}
-                  onChange={(event) => onSetPortableMode(event.currentTarget.checked)}
-                />
-                {t.settings.portableMode}
-              </label>
-              <div className="settings-hint">
-                {t.settings.portableModeHint}
-              </div>
-            </div>
-          </div>
-          <div className="settings-actions settings-actions--inline">
-            <button
-              type="button"
-              className="button-secondary"
-              disabled={!configStorageInfo || isConfigStorageBusy}
-              onClick={() => void onOpenConfigFolder()}
-            >
-              {t.settings.openFolder}
-            </button>
-            <button
-              type="button"
-              className="button-danger"
-              disabled={isConfigStorageBusy}
-              onClick={() => {
-                if (window.confirm(t.settings.resetConfigConfirm)) {
-                  void onResetConfig();
-                }
-              }}
-            >
-              {t.settings.resetConfig}
-            </button>
-          </div>
-        </section>
+      ) : null}
+      {settingsCategory === "app-update" ? (
         <section
           className={`settings-section${appUpdateInfo?.available ? " settings-section--app-update-available" : ""}`}
           aria-label={t.appUpdate.title}
@@ -1289,12 +1291,146 @@ export function SettingsPanel({
           {appUpdateInfo?.error ? <div className="settings-message">{t.appUpdate.checkFailed}</div> : null}
           {appUpdateMessage ? <div className="settings-message">{appUpdateMessage}</div> : null}
         </section>
-        <NotificationSettingsSection
-          settings={config.notifications}
-          onChange={(notifications) => onChange({ ...config, notifications })}
-        />
-      </section>
-
+      ) : null}
+      {settingsCategory === "advanced" ? (
+        <section
+          className="settings-section"
+          aria-label={t.settings.categoryAdvanced}
+          data-testid="advanced-settings-section"
+        >
+          <div className="settings-section-title">
+            <h3>{t.settings.categoryAdvanced}</h3>
+          </div>
+          <h4 className="settings-group-title">{t.settings.advancedGroupNetwork}</h4>
+          <NetworkProxySettings
+            proxy={config.networkProxy}
+            onChange={(proxy) => onChange({ ...config, networkProxy: proxy })}
+          />
+          <h4 className="settings-group-title">{t.settings.advancedGroupIntegrations}</h4>
+          <LocalApiSettings
+            settings={config.localApi}
+            refreshKey={`${configStorageInfo?.configPath ?? ""}:${localApiStatusRevision}`}
+            onChange={(localApi) => onChange({ ...config, localApi })}
+            onTokenRequirementChange={setLocalApiTokenRequired}
+          />
+          <h4 className="settings-group-title">{t.settings.advancedGroupSecurity}</h4>
+          <SecretSecuritySettings />
+          <h4 className="settings-group-title">{t.settings.advancedGroupStorage}</h4>
+          <section className="settings-section config-storage-section" aria-label={t.settings.configurationStorage}>
+            <div className="settings-section-title">
+              <h3>{t.settings.configurationStorage}</h3>
+              <span>{storageModeLabel}</span>
+            </div>
+            <div className="settings-grid config-storage-grid">
+              <div className="config-path-field">
+                <span className="config-path-label">{t.settings.configFile}</span>
+                <button
+                  type="button"
+                  className="path-chip"
+                  title={configStorageInfo?.configPath}
+                  onClick={() => void navigator.clipboard?.writeText(configStorageInfo?.configPath ?? "")}
+                >
+                  {configStorageInfo?.configPath ?? t.settings.loadingConfigPath}
+                </button>
+              </div>
+              {isPortableMode ? (
+                <div className="config-path-field">
+                  <span className="config-path-label">{t.settings.portableMarker}</span>
+                  <code title={configStorageInfo?.portableMarkerPath}>
+                    {configStorageInfo?.portableMarkerPath ?? t.settings.loading}
+                  </code>
+                </div>
+              ) : null}
+              <div className="config-storage-controls">
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={isPortableMode}
+                    disabled={!configStorageInfo || isConfigStorageBusy}
+                    onChange={(event) => onSetPortableMode(event.currentTarget.checked)}
+                  />
+                  {t.settings.portableMode}
+                </label>
+                <div className="settings-hint">
+                  {t.settings.portableModeHint}
+                </div>
+              </div>
+            </div>
+            <div className="settings-actions settings-actions--inline">
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={!configStorageInfo || isConfigStorageBusy}
+                onClick={() => void onOpenConfigFolder()}
+              >
+                {t.settings.openFolder}
+              </button>
+              <button
+                type="button"
+                className="button-danger"
+                disabled={isConfigStorageBusy}
+                onClick={() => {
+                  if (window.confirm(t.settings.resetConfigConfirm)) {
+                    void onResetConfig();
+                  }
+                }}
+              >
+                {t.settings.resetConfig}
+              </button>
+            </div>
+          </section>
+          <h4 className="settings-group-title">{t.settings.advancedGroupDiagnostics}</h4>
+          <div className="settings-grid general-settings-grid">
+            <label>
+              {t.settings.logLevel}
+              <select
+                value={config.logLevel ?? "info"}
+                onChange={(event) =>
+                  onChange({
+                    ...config,
+                    logLevel: event.currentTarget.value
+                  })
+                }
+              >
+                <option value="debug">{t.settings.logDebug}</option>
+                <option value="info">{t.settings.logInfo}</option>
+                <option value="warn">{t.settings.logWarn}</option>
+                <option value="error">{t.settings.logError}</option>
+              </select>
+            </label>
+            <label>
+              {t.settings.logMaxSize}
+              <input
+                type="number"
+                min={1}
+                step={1}
+                data-testid="log-max-size-input"
+                value={logMaxMegabytes}
+                onChange={(event) => {
+                  const megabytes = Number(event.currentTarget.value);
+                  onChange({
+                    ...config,
+                    logMaxBytes: Math.max(0, megabytes) * LOG_BYTES_PER_MB
+                  });
+                }}
+              />
+              {logMaxSizeError ? <span className="field-error">{logMaxSizeError}</span> : null}
+            </label>
+            <div className="settings-field">
+              <label className="checkbox-row settings-toggle-row">
+                <input
+                  type="checkbox"
+                  checked={config.logQuotaData ?? false}
+                  onChange={(event) => updateLogQuotaData(event.currentTarget.checked)}
+                />
+                {t.settings.logQuotaData}
+              </label>
+              <span className="settings-hint">{t.settings.logQuotaDataHint}</span>
+            </div>
+          </div>
+        </section>
+      ) : null}
+      {settingsCategory === "providers" ? (
       <section className="settings-section" aria-label={t.settings.providers} data-testid="providers-settings-section">
         <div className="settings-section-title">
           <h3>{t.settings.providers}</h3>
@@ -1560,6 +1696,8 @@ export function SettingsPanel({
         })}
         </div>
       </section>
+      ) : null}
+      </div>
 
       {renderSaveBar()}
       {renderQuotaDataConfirmDialog()}
