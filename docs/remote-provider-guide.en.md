@@ -12,6 +12,8 @@ Remote providers let you install quota providers from a hosted manifest + script
 3. Each script is cached locally and executed with its declared runtime. `builtin-js`
    uses the app's embedded QuickJS and needs no user-installed Node.js; `node`,
    `python`, `pwsh`, `bash`, and absolute paths still start an external process.
+   Every officially maintained provider script uses `builtin-js`, so regular
+   users never need to install a runtime.
 4. On every refresh QuotaBarWin runs the cached scripts and normalizes their results into quota windows.
 
 The same manifest can be installed more than once to query multiple accounts
@@ -577,9 +579,75 @@ Treat the remote script as shared code and keep user-specific tokens in local co
 
 These examples call the Zhipu/BigModel quota endpoint and print a
 `provider-snapshot-v1` response. They all read the API key from
-`BIGMODEL_API_KEY`.
+`BIGMODEL_API_KEY`. Every officially maintained provider uses `builtin-js`, and
+new providers are encouraged to do the same (zero user dependencies); the
+external-runtime examples below are kept for compatibility.
 
-### Node.js
+### Embedded JavaScript (`builtin-js`, recommended)
+
+The manifest must declare `schemaVersion: 2`, `minAppVersion`, and
+`permissions` (for example `env:BIGMODEL_API_KEY` and
+`net:https://open.bigmodel.cn`); see the manifest format above for the full
+field list. The entry is a `.js` file that defines a synchronous `main(qb)` and
+returns the snapshot object directly:
+
+```js
+function main(qb) {
+  const token = qb.env.get("BIGMODEL_API_KEY");
+  const response = qb.http.request(
+    "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+    { headers: { Authorization: "Bearer " + token } }
+  );
+  if (!response.ok) {
+    throw new Error("BigModel quota request failed with " + response.status);
+  }
+  const raw = JSON.parse(response.body);
+  if (raw.success === false) {
+    return {
+      status: "error",
+      updatedAt: qb.now(),
+      windows: [],
+      error: raw.msg || "BigModel quota request failed",
+      metadata: {}
+    };
+  }
+  const limits = raw.data && raw.data.limits || [];
+  qb.log({
+    level: "info",
+    stage: "snapshot.ready",
+    message: "BigModel snapshot ready",
+    windowCount: limits.length
+  });
+  return {
+    status: "ok",
+    updatedAt: qb.now(),
+    windows: limits.map(limitToWindow),
+    metadata: {}
+  };
+}
+
+function limitToWindow(limit) {
+  const usedPercent = numberOrNull(limit.percentage);
+  return {
+    id: (limit.type + "-" + limit.unit + "-" + limit.number).toLowerCase(),
+    label: limit.type,
+    used: numberOrNull(limit.currentValue),
+    limit: numberOrNull(limit.usage),
+    usedPercent: usedPercent,
+    remainingPercent: usedPercent === null ? null : Math.max(0, 100 - usedPercent),
+    resetAt: typeof limit.nextResetTime === "number"
+      ? new Date(limit.nextResetTime).toISOString()
+      : null,
+    confidence: "exact"
+  };
+}
+
+function numberOrNull(value) {
+  return typeof value === "number" ? value : null;
+}
+```
+
+### Node.js (external runtime)
 
 ```js
 const token = process.env.BIGMODEL_API_KEY;
@@ -625,7 +693,7 @@ fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
   });
 ```
 
-### Python
+### Python (external runtime)
 
 ```python
 import json, os, sys, urllib.request, datetime
@@ -669,7 +737,7 @@ print(json.dumps({
 }, ensure_ascii=False))
 ```
 
-### PowerShell
+### PowerShell (external runtime)
 
 ```powershell
 $token = $env:BIGMODEL_API_KEY
@@ -706,7 +774,7 @@ foreach ($l in $res.data.limits) {
 } | ConvertTo-Json -Depth 10
 ```
 
-### Bash (Git Bash)
+### Bash (Git Bash, external runtime)
 
 ```bash
 #!/usr/bin/env bash

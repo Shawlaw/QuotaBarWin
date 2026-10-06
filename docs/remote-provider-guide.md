@@ -15,7 +15,8 @@ Provider，而不需要把 Provider 打包进 QuotaBarWin 主程序。这适合�
    并下载 source script。
 3. Source script 会缓存到本机，并使用 manifest 声明的 runtime 执行。`builtin-js`
    使用应用内置的 QuickJS，不需要用户安装 Node.js；`node`、`python`、`pwsh`、`bash`
-   和绝对路径仍会启动对应的外部进程。
+   和绝对路径仍会启动对应的外部进程。官方维护的提供方脚本全部使用 `builtin-js`，
+   普通用户无需安装任何运行时。
 4. 每次刷新时，QuotaBarWin 运行缓存脚本，并归一化为标准额度窗口。
 
 同一个 manifest 可以安装多次，用于查询同一 Provider 的多个账号。QuotaBarWin 会为
@@ -459,9 +460,72 @@ secret 文件；配置文件中只保存占位符，不保存明文 token。
 ## 实现示例：Zhipu / BigModel
 
 以下示例调用 Zhipu / BigModel quota endpoint，并输出 `provider-snapshot-v1`。
-它们都从 `BIGMODEL_API_KEY` 读取 API key。
+它们都从 `BIGMODEL_API_KEY` 读取 API key。官方维护的提供方均使用 `builtin-js`，
+推荐新 Provider 也走这条路（用户零依赖）；随后的外部 runtime 示例供兼容参考。
 
-### Node.js
+### 内置 JavaScript（`builtin-js`，推荐）
+
+manifest 需声明 `schemaVersion: 2`、`minAppVersion`、`permissions`（如
+`env:BIGMODEL_API_KEY`、`net:https://open.bigmodel.cn`），完整字段见上文 manifest
+格式。脚本入口是 `.js`，定义同步 `main(qb)` 并直接返回快照对象：
+
+```js
+function main(qb) {
+  const token = qb.env.get("BIGMODEL_API_KEY");
+  const response = qb.http.request(
+    "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+    { headers: { Authorization: "Bearer " + token } }
+  );
+  if (!response.ok) {
+    throw new Error("BigModel quota request failed with " + response.status);
+  }
+  const raw = JSON.parse(response.body);
+  if (raw.success === false) {
+    return {
+      status: "error",
+      updatedAt: qb.now(),
+      windows: [],
+      error: raw.msg || "BigModel quota request failed",
+      metadata: {}
+    };
+  }
+  const limits = raw.data && raw.data.limits || [];
+  qb.log({
+    level: "info",
+    stage: "snapshot.ready",
+    message: "BigModel snapshot ready",
+    windowCount: limits.length
+  });
+  return {
+    status: "ok",
+    updatedAt: qb.now(),
+    windows: limits.map(limitToWindow),
+    metadata: {}
+  };
+}
+
+function limitToWindow(limit) {
+  const usedPercent = numberOrNull(limit.percentage);
+  return {
+    id: (limit.type + "-" + limit.unit + "-" + limit.number).toLowerCase(),
+    label: limit.type,
+    used: numberOrNull(limit.currentValue),
+    limit: numberOrNull(limit.usage),
+    usedPercent: usedPercent,
+    remainingPercent: usedPercent === null ? null : Math.max(0, 100 - usedPercent),
+    resetAt: typeof limit.nextResetTime === "number"
+      ? new Date(limit.nextResetTime).toISOString()
+      : null,
+    confidence: "exact"
+  };
+}
+
+function numberOrNull(value) {
+  return typeof value === "number" ? value : null;
+}
+```
+
+### Node.js（外部 runtime）
 
 ```js
 const token = process.env.BIGMODEL_API_KEY;
@@ -507,7 +571,7 @@ fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
   });
 ```
 
-### Python
+### Python（外部 runtime）
 
 ```python
 import json, os, sys, urllib.request, datetime
@@ -551,7 +615,7 @@ print(json.dumps({
 }, ensure_ascii=False))
 ```
 
-### PowerShell
+### PowerShell（外部 runtime）
 
 ```powershell
 $token = $env:BIGMODEL_API_KEY
@@ -588,7 +652,7 @@ foreach ($l in $res.data.limits) {
 } | ConvertTo-Json -Depth 10
 ```
 
-### Bash（Git Bash）
+### Bash（Git Bash，外部 runtime）
 
 ```bash
 #!/usr/bin/env bash

@@ -198,7 +198,7 @@
           <ol>
             <li>在设置页提供 registry URL 或本地路径，例如 <code>registry.json</code>。</li>
             <li>QuotaBarWin 读取 registry，拉取每个 Provider manifest，校验可选 checksum，并下载 source script。</li>
-            <li>脚本会缓存到本机。<code>builtin-js</code> 用内置 QuickJS 执行，不需要 Node.js；其他 runtime 可为 <code>node</code>、<code>python</code>、<code>pwsh</code>、<code>bash</code> 或绝对路径。</li>
+            <li>脚本会缓存到本机。<code>builtin-js</code> 用内置 QuickJS 执行，不需要 Node.js；其他 runtime 可为 <code>node</code>、<code>python</code>、<code>pwsh</code>、<code>bash</code> 或绝对路径。官方维护的提供方脚本全部使用 <code>builtin-js</code>，普通用户无需安装任何运行时。</li>
             <li>每次刷新时，QuotaBarWin 运行缓存脚本，并归一化为标准额度窗口。</li>
           </ol>
           <p>同一个 manifest 可以安装多次，用于查询同一 Provider 的多个账号。QuotaBarWin 会生成 <code>kimi-coding</code>、<code>kimi-coding-2</code> 这类稳定的本地 Provider id。</p>
@@ -361,10 +361,71 @@
           <h2>实现示例：Zhipu / BigModel</h2>
           <p>
             以下示例调用 Zhipu / BigModel quota endpoint，并输出 <code>provider-snapshot-v1</code>。
-            它们都从 <code>BIGMODEL_API_KEY</code> 读取 API key。
+            它们都从 <code>BIGMODEL_API_KEY</code> 读取 API key。官方维护的提供方均使用 <code>builtin-js</code>，
+            推荐新 Provider 也走这条路（用户零依赖）；随后的外部 runtime 示例供兼容参考。
           </p>
 
-          <h3>Node.js</h3>
+          <h3>内置 JavaScript（<code>builtin-js</code>，推荐）</h3>
+          <p>
+            manifest 需声明 <code>schemaVersion: 2</code>、<code>minAppVersion</code>、<code>permissions</code>
+            （如 <code>env:BIGMODEL_API_KEY</code>、<code>net:https://open.bigmodel.cn</code>），完整字段见上文 manifest 格式。
+            脚本入口是 <code>.js</code>，定义同步 <code>main(qb)</code> 并直接返回快照对象：
+          </p>
+          <pre>function main(qb) {
+  const token = qb.env.get("BIGMODEL_API_KEY");
+  const response = qb.http.request(
+    "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+    { headers: { Authorization: "Bearer " + token } }
+  );
+  if (!response.ok) {
+    throw new Error("BigModel quota request failed with " + response.status);
+  }
+  const raw = JSON.parse(response.body);
+  if (raw.success === false) {
+    return {
+      status: "error",
+      updatedAt: qb.now(),
+      windows: [],
+      error: raw.msg || "BigModel quota request failed",
+      metadata: {}
+    };
+  }
+  const limits = raw.data && raw.data.limits || [];
+  qb.log({
+    level: "info",
+    stage: "snapshot.ready",
+    message: "BigModel snapshot ready",
+    windowCount: limits.length
+  });
+  return {
+    status: "ok",
+    updatedAt: qb.now(),
+    windows: limits.map(limitToWindow),
+    metadata: {}
+  };
+}
+
+function limitToWindow(limit) {
+  const usedPercent = numberOrNull(limit.percentage);
+  return {
+    id: (limit.type + "-" + limit.unit + "-" + limit.number).toLowerCase(),
+    label: limit.type,
+    used: numberOrNull(limit.currentValue),
+    limit: numberOrNull(limit.usage),
+    usedPercent: usedPercent,
+    remainingPercent: usedPercent === null ? null : Math.max(0, 100 - usedPercent),
+    resetAt: typeof limit.nextResetTime === "number"
+      ? new Date(limit.nextResetTime).toISOString()
+      : null,
+    confidence: "exact"
+  };
+}
+
+function numberOrNull(value) {
+  return typeof value === "number" ? value : null;
+}</pre>
+
+          <h3>Node.js（外部 runtime）</h3>
           <pre>const token = process.env.BIGMODEL_API_KEY;
 if (!token) {
   console.error("BIGMODEL_API_KEY is required");
@@ -404,7 +465,7 @@ fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
     process.exit(1);
   });</pre>
 
-          <h3>Python</h3>
+          <h3>Python（外部 runtime）</h3>
           <pre>import json, os, sys, urllib.request, datetime
 
 token = os.environ.get("BIGMODEL_API_KEY")
@@ -445,7 +506,7 @@ print(json.dumps({
     "metadata": {}
 }, ensure_ascii=False))</pre>
 
-          <h3>PowerShell</h3>
+          <h3>PowerShell（外部 runtime）</h3>
           <pre>$token = $env:BIGMODEL_API_KEY
 if (-not $token) { throw "BIGMODEL_API_KEY is required" }
 
@@ -479,7 +540,7 @@ foreach ($l in $res.data.limits) {
   metadata = @{}
 } | ConvertTo-Json -Depth 10</pre>
 
-          <h3>Bash（Git Bash）</h3>
+          <h3>Bash（Git Bash，外部 runtime）</h3>
           <pre>#!/usr/bin/env bash
 set -euo pipefail
 
@@ -551,7 +612,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
           <ol>
             <li>You provide a registry URL or local file path such as <code>registry.json</code>.</li>
             <li>QuotaBarWin reads the registry, fetches each provider manifest, verifies optional checksums, and downloads source scripts.</li>
-            <li>Each script is cached locally. <code>builtin-js</code> uses embedded QuickJS and needs no Node.js; other runtimes can be <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path.</li>
+            <li>Each script is cached locally. <code>builtin-js</code> uses embedded QuickJS and needs no Node.js; other runtimes can be <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path. Every officially maintained provider script uses <code>builtin-js</code>, so regular users never need to install a runtime.</li>
             <li>On every refresh, QuotaBarWin runs the cached scripts and normalizes their results into quota windows.</li>
           </ol>
           <p>The same manifest can be installed more than once for multiple accounts. QuotaBarWin generates stable local provider ids such as <code>kimi-coding</code> and <code>kimi-coding-2</code>.</p>
@@ -715,10 +776,74 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
           <p>
             These examples call the Zhipu/BigModel quota endpoint and print a
             <code>provider-snapshot-v1</code> response. They all read the API key from
-            <code>BIGMODEL_API_KEY</code>.
+            <code>BIGMODEL_API_KEY</code>. Every officially maintained provider uses
+            <code>builtin-js</code>, and new providers are encouraged to do the same (zero
+            user dependencies); the external-runtime examples below are kept for compatibility.
           </p>
 
-          <h3>Node.js</h3>
+          <h3>Embedded JavaScript (<code>builtin-js</code>, recommended)</h3>
+          <p>
+            The manifest must declare <code>schemaVersion: 2</code>, <code>minAppVersion</code>,
+            and <code>permissions</code> (for example <code>env:BIGMODEL_API_KEY</code> and
+            <code>net:https://open.bigmodel.cn</code>); see the manifest format above for the
+            full field list. The entry is a <code>.js</code> file that defines a synchronous
+            <code>main(qb)</code> and returns the snapshot object directly:
+          </p>
+          <pre>function main(qb) {
+  const token = qb.env.get("BIGMODEL_API_KEY");
+  const response = qb.http.request(
+    "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+    { headers: { Authorization: "Bearer " + token } }
+  );
+  if (!response.ok) {
+    throw new Error("BigModel quota request failed with " + response.status);
+  }
+  const raw = JSON.parse(response.body);
+  if (raw.success === false) {
+    return {
+      status: "error",
+      updatedAt: qb.now(),
+      windows: [],
+      error: raw.msg || "BigModel quota request failed",
+      metadata: {}
+    };
+  }
+  const limits = raw.data && raw.data.limits || [];
+  qb.log({
+    level: "info",
+    stage: "snapshot.ready",
+    message: "BigModel snapshot ready",
+    windowCount: limits.length
+  });
+  return {
+    status: "ok",
+    updatedAt: qb.now(),
+    windows: limits.map(limitToWindow),
+    metadata: {}
+  };
+}
+
+function limitToWindow(limit) {
+  const usedPercent = numberOrNull(limit.percentage);
+  return {
+    id: (limit.type + "-" + limit.unit + "-" + limit.number).toLowerCase(),
+    label: limit.type,
+    used: numberOrNull(limit.currentValue),
+    limit: numberOrNull(limit.usage),
+    usedPercent: usedPercent,
+    remainingPercent: usedPercent === null ? null : Math.max(0, 100 - usedPercent),
+    resetAt: typeof limit.nextResetTime === "number"
+      ? new Date(limit.nextResetTime).toISOString()
+      : null,
+    confidence: "exact"
+  };
+}
+
+function numberOrNull(value) {
+  return typeof value === "number" ? value : null;
+}</pre>
+
+          <h3>Node.js (external runtime)</h3>
           <pre>const token = process.env.BIGMODEL_API_KEY;
 if (!token) {
   console.error("BIGMODEL_API_KEY is required");
@@ -758,7 +883,7 @@ fetch("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
     process.exit(1);
   });</pre>
 
-          <h3>Python</h3>
+          <h3>Python (external runtime)</h3>
           <pre>import json, os, sys, urllib.request, datetime
 
 token = os.environ.get("BIGMODEL_API_KEY")
@@ -799,7 +924,7 @@ print(json.dumps({
     "metadata": {}
 }, ensure_ascii=False))</pre>
 
-          <h3>PowerShell</h3>
+          <h3>PowerShell (external runtime)</h3>
           <pre>$token = $env:BIGMODEL_API_KEY
 if (-not $token) { throw "BIGMODEL_API_KEY is required" }
 
@@ -833,7 +958,7 @@ foreach ($l in $res.data.limits) {
   metadata = @{}
 } | ConvertTo-Json -Depth 10</pre>
 
-          <h3>Bash (Git Bash)</h3>
+          <h3>Bash (Git Bash, external runtime)</h3>
           <pre>#!/usr/bin/env bash
 set -euo pipefail
 
