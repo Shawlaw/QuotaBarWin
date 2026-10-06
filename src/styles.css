@@ -1770,6 +1770,10 @@ button:disabled {
 .tray-popup__header {
   align-items: start;
   display: block;
+  /* The popup's own horizontal padding was partly handed to the scrolling
+     content so card shadows stop clipping; give the header back the same
+     10px per side so the title, actions, and status row keep their inset. */
+  padding: 0 10px;
   min-width: 0;
   user-select: none;
 }
