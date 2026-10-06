@@ -245,6 +245,8 @@ export function SettingsPanel({
     initialProviderSettingsView
   );
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("providers");
+  const [isPathCopied, setIsPathCopied] = useState(false);
+  const pathCopiedTimerRef = useRef<number | null>(null);
   const [setupProviderId, setSetupProviderId] = useState<string | null>(null);
   const [quotaDataConfirmOpen, setQuotaDataConfirmOpen] = useState(false);
   const [pendingUnsavedAction, setPendingUnsavedAction] = useState<PendingUnsavedAction | null>(null);
@@ -842,6 +844,22 @@ export function SettingsPanel({
     }
   }
 
+  function copyConfigPath(path: string) {
+    if (!path || !navigator.clipboard?.writeText) {
+      return;
+    }
+    void navigator.clipboard.writeText(path).then(() => {
+      setIsPathCopied(true);
+      if (pathCopiedTimerRef.current !== null) {
+        window.clearTimeout(pathCopiedTimerRef.current);
+      }
+      pathCopiedTimerRef.current = window.setTimeout(() => {
+        pathCopiedTimerRef.current = null;
+        setIsPathCopied(false);
+      }, 2000);
+    });
+  }
+
   function handleSettingsNavKeyDown(event: React.KeyboardEvent<HTMLElement>) {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
       return;
@@ -1335,7 +1353,7 @@ export function SettingsPanel({
                   type="button"
                   className="path-chip"
                   title={configStorageInfo?.configPath}
-                  onClick={() => void navigator.clipboard?.writeText(configStorageInfo?.configPath ?? "")}
+                  onClick={() => copyConfigPath(configStorageInfo?.configPath ?? "")}
                 >
                   {configStorageInfo?.configPath ?? t.settings.loadingConfigPath}
                 </button>
@@ -1347,7 +1365,7 @@ export function SettingsPanel({
                   type="button"
                   className="path-chip"
                   title={configStorageInfo?.portableMarkerPath}
-                  onClick={() => void navigator.clipboard?.writeText(configStorageInfo?.portableMarkerPath ?? "")}
+                  onClick={() => copyConfigPath(configStorageInfo?.portableMarkerPath ?? "")}
                 >
                   {configStorageInfo?.portableMarkerPath ?? t.settings.loading}
                 </button>
@@ -1368,15 +1386,20 @@ export function SettingsPanel({
                 </div>
               </div>
             </div>
-            <div className="settings-actions settings-actions--inline">
-              <button
-                type="button"
-                className="button-secondary"
-                disabled={!configStorageInfo || isConfigStorageBusy}
-                onClick={() => void onOpenConfigFolder()}
-              >
-                {t.settings.openFolder}
-              </button>
+          <div className="settings-actions settings-actions--inline">
+            {isPathCopied ? (
+              <span className="settings-hint" role="status" data-testid="path-copied-hint">
+                {t.settings.pathCopied}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={!configStorageInfo || isConfigStorageBusy}
+              onClick={() => void onOpenConfigFolder()}
+            >
+              {t.settings.openFolder}
+            </button>
               <button
                 type="button"
                 className="button-danger"

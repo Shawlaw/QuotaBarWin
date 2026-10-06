@@ -840,3 +840,22 @@ test("notifications_category_edits_the_shared_low_quota_threshold", () => {
   expect(apiMocks.state.config?.lowQuotaWarningThreshold).toBe(35);
   expect(screen.getByTestId("fixed-save-bar")).toHaveTextContent("Unsaved changes");
 });
+
+test("copying_a_storage_path_shows_a_copied_hint", async () => {
+  const writeText = vi.fn(async () => undefined);
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+
+  renderSettings();
+  switchSettingsCategory("advanced");
+
+  expect(screen.queryByTestId("path-copied-hint")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTitle(configStorageInfo.configPath));
+
+  expect(writeText).toHaveBeenCalledWith(configStorageInfo.configPath);
+  // The hint appears after the clipboard promise resolves.
+  await waitFor(() => expect(screen.getByTestId("path-copied-hint")).toBeInTheDocument());
+  expect(screen.getByTestId("path-copied-hint")).toHaveTextContent("Path copied to the clipboard.");
+});
