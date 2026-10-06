@@ -590,7 +590,7 @@ button:disabled {
    content column. One navigation definition; narrow viewports only shrink
    the rail (no second navigation implementation). */
 .settings-panel--categorized {
-  column-gap: 22px;
+  column-gap: 18px;
   grid-template-columns: 148px minmax(0, 1fr);
 }
 
@@ -632,6 +632,9 @@ button:disabled {
 
 .settings-content {
   border-left: 1px solid var(--qb-border-soft);
+  /* Mirrors the column gap so the divider sits centered between the
+     navigation rail and the content pane. */
+  padding-left: 18px;
   min-width: 0;
 }
 
@@ -2216,6 +2219,10 @@ button:disabled {
   .settings-panel--categorized {
     column-gap: 12px;
     grid-template-columns: 106px minmax(0, 1fr);
+  }
+
+  .settings-content {
+    padding-left: 12px;
   }
 
   .settings-nav__button {
