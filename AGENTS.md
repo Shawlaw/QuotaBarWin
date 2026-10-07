@@ -260,7 +260,10 @@ These pass `src-tauri/tauri.dev.conf.json`, which swaps the identifier to
 alongside an installed release), its config directory is always resolved
 beside the dev exe (never the release AppData directory), and the runtime
 disables release-only features — autostart registration and application
-updates — through `app_identity::is_dev_build`. Never hand-edit
+updates — through `app_identity::is_dev_build`. A dev build also never
+removes the shared `QuotaBarWin` autostart Run entry when it points at the
+release exe (see `sync_launch_at_startup_for_app`); it only cleans up an
+entry that references the dev exe itself. Never hand-edit
 `tauri.conf.json`'s identifier to build a local variant; `tauri.conf.json`
 stays pinned to the release identity and the release workflow verifies it.
 

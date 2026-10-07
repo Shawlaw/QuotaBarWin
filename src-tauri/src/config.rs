@@ -1630,10 +1630,13 @@ pub fn sync_launch_at_startup_for_app(app: &AppHandle, enabled: bool) -> Result<
     let autolaunch = app.autolaunch();
     let is_enabled = autolaunch.is_enabled().map_err(|error| error.to_string())?;
 
-    // A dev build must never register its own exe path for autostart; if a
-    // dev exe somehow inherited an enabled flag, make sure it is off.
+    // A dev build must never register its own exe path for autostart. The
+    // registry entry name is shared with the installed release build, so a
+    // dev build must only remove the entry when it actually points at this
+    // dev exe; an entry pointing at the release exe belongs to the user's
+    // installation and must survive dev runs.
     if enabled && crate::app_identity::is_dev_build(app) {
-        if is_enabled {
+        if is_enabled && autostart_entry_points_at_current_exe() {
             return autolaunch.disable().map_err(|error| error.to_string());
         }
         return Ok(());
@@ -1648,6 +1651,64 @@ pub fn sync_launch_at_startup_for_app(app: &AppHandle, enabled: bool) -> Result<
     }
 
     Ok(())
+}
+
+/// Case-insensitive containment check of the exe path inside the Run entry
+/// value, which looks like `"C:\path\to\app.exe" --hidden`.
+fn autostart_entry_matches_exe(entry: &str, exe: &Path) -> bool {
+    let exe_text = exe.display().to_string().to_lowercase();
+    !exe_text.is_empty() && entry.to_lowercase().contains(&exe_text)
+}
+
+/// True when the shared "QuotaBarWin" autostart Run value references the
+/// currently running (dev) executable.
+#[cfg(windows)]
+fn autostart_entry_points_at_current_exe() -> bool {
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_CURRENT_USER, KEY_QUERY_VALUE,
+    };
+
+    let subkey: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    let value_name: Vec<u16> = "QuotaBarWin".encode_utf16().chain([0]).collect();
+
+    let mut hkey = std::ptr::null_mut();
+    if unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_QUERY_VALUE, &mut hkey) }
+        != 0
+    {
+        return false;
+    }
+    let mut buffer = [0u16; 1024];
+    let mut byte_size = (buffer.len() * 2) as u32;
+    let result = unsafe {
+        RegQueryValueExW(
+            hkey,
+            value_name.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            buffer.as_mut_ptr().cast(),
+            &mut byte_size,
+        )
+    };
+    unsafe { RegCloseKey(hkey) };
+    if result != 0 {
+        return false;
+    }
+    let chars = (byte_size as usize / 2).min(buffer.len());
+    let entry = String::from_utf16_lossy(&buffer[..chars]);
+    match std::env::current_exe() {
+        Ok(exe) => autostart_entry_matches_exe(&entry, &exe),
+        Err(_) => false,
+    }
+}
+
+// The app is Windows-only; other platforms keep the previous conservative
+// behaviour of removing whatever entry exists.
+#[cfg(not(windows))]
+fn autostart_entry_points_at_current_exe() -> bool {
+    true
 }
 
 #[tauri::command]
@@ -3426,6 +3487,41 @@ mod tests {
         assert!(contents.contains("PowerShell"));
         assert!(contents.contains("Bash"));
         assert!(contents.contains("display = section.hidden ? \"none\" : \"block\""));
+    }
+
+    #[test]
+    fn write_webhook_template_guide_creates_bilingual_html_file() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let guide_path = temp.path().join("webhook-template-guide.html");
+        write_webhook_template_guide(&guide_path).expect("write guide");
+
+        assert!(guide_path.exists());
+        let contents = fs::read_to_string(&guide_path).expect("read guide");
+        assert!(contents.contains("Webhook 通知指南"));
+        assert!(contents.contains("Webhook Guide"));
+        // Both articles document the full placeholder set (table + note +
+        // example each).
+        assert!(contents.matches("{{eventJson}}").count() >= 4);
+        assert!(contents.contains("quota-reset-time-changed"));
+        assert!(contents.contains("默认 JSON 批量格式"));
+        assert!(contents.contains("Default JSON batch format"));
+        assert!(contents.contains("display = section.hidden ? \"none\" : \"block\""));
+    }
+
+    #[test]
+    fn autostart_entry_match_detects_the_referenced_exe_only() {
+        let release_entry = "\"D:\\Softwares\\QuotaBarWin\\QuotaBarWin.exe\" --hidden";
+        let dev_entry = "\"D:\\Work\\target\\release\\quotabarwin.exe\" --hidden";
+
+        let release_exe = Path::new("D:\\Softwares\\QuotaBarWin\\QuotaBarWin.exe");
+        let dev_exe = Path::new("D:\\Work\\target\\release\\quotabarwin.exe");
+
+        // A dev build only owns an entry that points at its own exe; the
+        // release-owned entry must not match, whatever the case or quoting.
+        assert!(autostart_entry_matches_exe(dev_entry, dev_exe));
+        assert!(!autostart_entry_matches_exe(release_entry, dev_exe));
+        assert!(autostart_entry_matches_exe(release_entry, release_exe));
+        assert!(!autostart_entry_matches_exe("", dev_exe));
     }
 
     #[test]
