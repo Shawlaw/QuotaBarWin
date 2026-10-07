@@ -850,6 +850,56 @@ test("notifications_category_edits_the_shared_low_quota_threshold", () => {
   expect(screen.getByTestId("fixed-save-bar")).toHaveTextContent("Unsaved changes");
 });
 
+function ResetEpochHarness() {
+  const [config, setConfig] = useState(configWithProviders([remoteProvider]));
+  const [epoch, setEpoch] = useState(0);
+  const reset = async () => {
+    // Mirrors App: the backend resets the file and pushes the defaults.
+    const defaults = { ...configWithProviders([]), refreshIntervalSeconds: 300 };
+    setConfig(defaults);
+    setEpoch((current) => current + 1);
+  };
+  return (
+    <I18nProvider language="en">
+      <SettingsPanel
+        appVersion="1.0.5-test"
+        persistedConfigEpoch={epoch}
+        config={config}
+        configStorageInfo={configStorageInfo}
+        isConfigStorageBusy={false}
+        isSaving={false}
+        onChange={setConfig}
+        onOpenConfigFolder={async () => undefined}
+        onResetConfig={reset}
+        onSave={() => undefined}
+        onSetPortableMode={() => undefined}
+        onPersistedConfigChanged={() => undefined}
+        onRequestClose={() => undefined}
+        closeRequest={0}
+        settingsHomeRequest={0}
+        appUpdateFocusRequest={0}
+        onAppUpdateFocusHandled={() => undefined}
+        onAppUpdateStatusChange={() => undefined}
+        initialProviderSettingsView="main"
+      />
+    </I18nProvider>
+  );
+}
+
+test("resetting_config_to_defaults_does_not_require_a_manual_save", async () => {
+  render(<ResetEpochHarness />);
+  switchSettingsCategory("advanced");
+
+  fireEvent.click(screen.getByRole("button", { name: "Reset config" }));
+  fireEvent.click(screen.getByTestId("confirm-reset-config"));
+
+  // The draft is rebased onto the persisted defaults: no unsaved state.
+  await waitFor(() => {
+    expect(screen.getByTestId("fixed-save-bar")).toHaveTextContent("Saved");
+  });
+  expect(screen.getByTestId("save-settings-button")).toBeDisabled();
+});
+
 test("copying_a_storage_path_shows_a_copied_hint", async () => {
   const writeText = vi.fn(async () => undefined);
   Object.defineProperty(window.navigator, "clipboard", {

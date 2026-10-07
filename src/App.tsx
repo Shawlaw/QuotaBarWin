@@ -283,6 +283,9 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const [configStorageInfo, setConfigStorageInfo] = useState<ConfigStorageInfo | null>(null);
   const [appVersion, setAppVersion] = useState<string>("unknown");
   const [singleInstanceNotice, setSingleInstanceNotice] = useState<string | null>(null);
+  // Bumped whenever the persisted config changes outside the settings draft
+  // (reset, secret migration) so SettingsPanel rebases its dirty baseline.
+  const [persistedConfigEpoch, setPersistedConfigEpoch] = useState(0);
   const [isDevBuild, setIsDevBuild] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
@@ -680,6 +683,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
     const refreshTarget = configRefreshTargets(persistedConfigRef.current, updatedConfig);
     persistedConfigRef.current = updatedConfig;
     setConfig(updatedConfig);
+    setPersistedConfigEpoch((epoch) => epoch + 1);
     setSnapshot((current) =>
       mergeProviderSetupSnapshot(current, updatedConfig, testResult?.provider)
     );
@@ -733,6 +737,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
       const defaultConfig = await resetConfig();
       persistedConfigRef.current = defaultConfig;
       setConfig(defaultConfig);
+      setPersistedConfigEpoch((epoch) => epoch + 1);
       setConfigStorageInfo(await getConfigStorageInfo());
       await loadSnapshot();
     } finally {
@@ -909,6 +914,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
           <SettingsPanel
             appVersion={appVersion}
             isDevBuild={isDevBuild}
+            persistedConfigEpoch={persistedConfigEpoch}
             config={config}
             configStorageInfo={configStorageInfo}
             isConfigStorageBusy={isConfigStorageBusy}

@@ -51,6 +51,10 @@ type SettingsPanelProps = {
   // Dev builds (identifier com.quotabarwin.app.dev) must not register
   // autostart or talk to the update feed; the matching controls are locked.
   isDevBuild?: boolean;
+  // Bumped by App whenever the config was persisted outside the settings
+  // draft (reset to defaults, secret migration); the panel rebases its
+  // dirty baseline so no save is required after those actions.
+  persistedConfigEpoch?: number;
   config: AppConfig;
   configStorageInfo: ConfigStorageInfo | null;
   isConfigStorageBusy: boolean;
@@ -213,6 +217,7 @@ function shortChecksum(value: string | null | undefined): string | null {
 export function SettingsPanel({
   appVersion,
   isDevBuild = false,
+  persistedConfigEpoch = 0,
   config,
   configStorageInfo,
   isConfigStorageBusy,
@@ -278,6 +283,10 @@ export function SettingsPanel({
   const settingsContentRef = useRef<HTMLDivElement>(null);
   const initialConfigRef = useRef(JSON.stringify(config));
   const configDraft = JSON.stringify(config);
+  // The epoch effect must read the latest config without depending on it;
+  // depending on the draft would rebase while the user is editing.
+  const configDraftRef = useRef(configDraft);
+  configDraftRef.current = configDraft;
   const hasChanges = configDraft !== initialConfigRef.current;
   const refreshIntervalError =
     config.refreshIntervalSeconds > 0 ? null : t.settings.refreshIntervalError;
@@ -753,6 +762,16 @@ export function SettingsPanel({
       return result;
     });
   }
+
+  useEffect(() => {
+    if (persistedConfigEpoch === 0) {
+      return;
+    }
+    initialConfigRef.current = configDraftRef.current;
+    setSaveMessage(t.settings.saved);
+    // Runs only on external persistence events, not on every draft change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persistedConfigEpoch]);
 
   useEffect(() => {
     if (closeRequest === 0 || closeRequest <= handledCloseRequestRef.current) {
