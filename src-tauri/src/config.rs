@@ -630,6 +630,52 @@ fn portable_paths_for_app(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf)
     ))
 }
 
+/// Matches the flat backup names older versions wrote beside the config:
+/// <config-file>.<reason>.<timestamp>.bak and config.corrupt.<timestamp>.json.
+fn is_flat_backup_file_name(name: &str, config_file_name: &str) -> bool {
+    (name.starts_with(&format!("{config_file_name}.")) && name.ends_with(".bak"))
+        || (name.starts_with("config.corrupt.") && name.ends_with(".json"))
+}
+
+/// Moves legacy flat backups into the bak subdirectory so repeated migrations
+/// and resets stop littering the directory users open in Explorer. Idempotent:
+/// absent files are skipped and a naming collision keeps the file in place.
+fn tidy_legacy_backups_into_bak(path: &Path) {
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    let Some(backup_dir) = backup_dir_for_config_path(path) else {
+        return;
+    };
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if file_name.is_empty() {
+        return;
+    }
+    let entries = match fs::read_dir(parent) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !is_flat_backup_file_name(&name, &file_name)
+            && !is_flat_backup_file_name(&name, LEGACY_CONFIG_FILE_NAME)
+        {
+            continue;
+        }
+        if fs::create_dir_all(&backup_dir).is_err() {
+            continue;
+        }
+        let destination = backup_dir.join(&name);
+        if destination.exists() {
+            continue;
+        }
+        let _ = fs::rename(entry.path(), &destination);
+    }
+}
+
 fn migrate_legacy_config_path(preferred_path: &Path, legacy_path: &Path) -> Result<(), String> {
     if preferred_path.exists() || !legacy_path.exists() {
         return Ok(());
@@ -752,6 +798,8 @@ pub fn secret_storage_mode_for_config_path(config_path: &Path) -> SecretStorageM
 }
 
 pub fn load_or_create_config(path: &Path) -> Result<LoadedConfig, String> {
+    // One-shot tidy: legacy flat backups move into bak/ on the first load.
+    tidy_legacy_backups_into_bak(path);
     if !path.exists() {
         let config = default_config();
         save_config_to_path(path, &config)?;
@@ -766,7 +814,10 @@ pub fn load_or_create_config(path: &Path) -> Result<LoadedConfig, String> {
         Ok(loaded) => loaded,
         Err(error) => {
             let timestamp = Utc::now().format("%Y%m%d%H%M%S");
-            let backup_path = path.with_file_name(format!("config.corrupt.{timestamp}.json"));
+            let backup_dir = backup_dir_for_config_path(path)
+                .ok_or_else(|| "Unable to resolve backup directory".to_string())?;
+            fs::create_dir_all(&backup_dir).map_err(|error| error.to_string())?;
+            let backup_path = backup_dir.join(format!("config.corrupt.{timestamp}.json"));
             fs::rename(path, &backup_path).map_err(|rename_error| rename_error.to_string())?;
             let config = default_config();
             save_config_to_path(path, &config)?;
@@ -1236,13 +1287,24 @@ pub fn migrate_config_file(path: &Path) -> Result<AppConfig, String> {
     }
 }
 
+// Backups live under <config-dir>/bak so repeated migrations and resets do
+// not litter the directory users open in Explorer.
+const BACKUP_DIR_NAME: &str = "bak";
+
+fn backup_dir_for_config_path(path: &Path) -> Option<PathBuf> {
+    path.parent().map(|parent| parent.join(BACKUP_DIR_NAME))
+}
+
 fn backup_config(path: &Path, reason: &str) -> Result<PathBuf, String> {
     let timestamp = Utc::now().format("%Y%m%d%H%M%S");
     let file_name = path
         .file_name()
         .map(|name| name.to_string_lossy())
         .unwrap_or_else(|| CONFIG_FILE_NAME.into());
-    let backup_path = path.with_file_name(format!("{file_name}.{reason}.{timestamp}.bak"));
+    let backup_dir = backup_dir_for_config_path(path)
+        .ok_or_else(|| "Unable to resolve backup directory".to_string())?;
+    fs::create_dir_all(&backup_dir).map_err(|error| error.to_string())?;
+    let backup_path = backup_dir.join(format!("{file_name}.{reason}.{timestamp}.bak"));
     fs::copy(path, &backup_path).map_err(|error| error.to_string())?;
     Ok(backup_path)
 }
@@ -3594,6 +3656,51 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn backups_are_written_into_the_bak_directory() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join(CONFIG_FILE_NAME);
+        save_config_to_path(&path, &default_config()).expect("save");
+
+        let backup = backup_config(&path, "test").expect("backup");
+
+        assert!(backup.starts_with(temp.path().join("bak")));
+        assert!(!temp
+            .path()
+            .join(format!("{}.test.00000000000000.bak", CONFIG_FILE_NAME))
+            .exists());
+    }
+
+    #[test]
+    fn legacy_flat_backups_are_tidied_into_bak() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join(CONFIG_FILE_NAME);
+        fs::write(&path, "{}").expect("write config");
+        let legacy_current =
+            temp.path()
+                .join(format!("{CONFIG_FILE_NAME}.pre-migration.20260101000000.bak"));
+        let legacy_old_config =
+            temp.path().join("config.json.pre-migration.20260101000001.bak");
+        let legacy_corrupt = temp.path().join("config.corrupt.20260101000002.json");
+        for file in [&legacy_current, &legacy_old_config, &legacy_corrupt] {
+            fs::write(file, "backup").expect("write backup");
+        }
+        let keep = temp.path().join("provider-guide.html");
+        fs::write(&keep, "guide").expect("write guide");
+
+        load_or_create_config(&path).expect("load");
+
+        let bak = temp.path().join("bak");
+        assert!(bak.join(legacy_current.file_name().expect("name")).exists());
+        assert!(bak.join(legacy_old_config.file_name().expect("name")).exists());
+        assert!(bak.join(legacy_corrupt.file_name().expect("name")).exists());
+        assert!(!legacy_current.exists());
+        assert!(!legacy_old_config.exists());
+        assert!(!legacy_corrupt.exists());
+        // Non-backup files stay in place.
+        assert!(keep.exists());
+    }
+
     fn config_migration_backup_created() {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
@@ -3604,8 +3711,8 @@ mod tests {
         .expect("write config");
 
         let loaded = load_or_create_config(&path).expect("config loads");
-        let backups = fs::read_dir(temp.path())
-            .expect("read dir")
+        let backups = fs::read_dir(temp.path().join("bak"))
+            .expect("read bak dir")
             .filter_map(Result::ok)
             .filter(|entry| {
                 entry
@@ -3648,8 +3755,8 @@ mod tests {
         fs::write(&path, "{not valid json").expect("write corrupt config");
 
         let loaded = load_or_create_config(&path).expect("config recovers");
-        let backups = fs::read_dir(temp.path())
-            .expect("read dir")
+        let backups = fs::read_dir(temp.path().join("bak"))
+            .expect("read bak dir")
             .filter_map(Result::ok)
             .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt."))
             .count();
