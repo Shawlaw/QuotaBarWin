@@ -2089,8 +2089,35 @@ pub fn dev_clone_release_config(app: AppHandle) -> Result<DevCloneConfigResult, 
 
 #[tauri::command]
 pub fn dev_restart_app(app: AppHandle) {
-    // restart() never returns; the command wrapper only sees the exit path.
-    app.restart()
+    // AppHandle::restart spawns the successor before this process exits, and
+    // the successor immediately loses the single-instance race for the dev
+    // mutex: it gets redirected into the still-running old instance and
+    // exits, then the old instance exits too — nothing survives. Restart
+    // through a detached shell that outlives this process, waits for it to
+    // fully exit, and only then starts the exe again.
+    let exe_path = std::env::current_exe().ok();
+    #[cfg(windows)]
+    if let Some(exe_path) = exe_path {
+        use std::os::windows::process::CommandExt;
+        use std::process::Command;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        // Execute the exe directly instead of 'start': ShellExecute can be
+        // policy-blocked, while CreateProcess via cmd works everywhere. The
+        // detached shell then waits for the relaunched app, which is fine.
+        let script = format!(
+            "/C timeout /t 2 /nobreak >nul & \"{}\"",
+            exe_path.display()
+        );
+        let _ = Command::new("cmd")
+            .raw_arg(script)
+            .creation_flags(DETACHED_PROCESS)
+            .spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = exe_path;
+    }
+    app.exit(0);
 }
 
 #[tauri::command]
@@ -3830,6 +3857,36 @@ mod tests {
             config_path_from_candidates(app_data_path, portable_path, temp.path().join("gone"), true);
         assert!(selected_when_forced.ends_with(CONFIG_FILE_NAME));
         assert!(!selected_when_forced.to_string_lossy().contains("app-data"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn detached_shell_relaunch_pattern_works() {
+        // Same pattern dev_restart_app uses: a detached cmd that waits, then
+        // executes a command. Verifies raw_arg + DETACHED_PROCESS + timeout
+        // actually run the trailing command from a Rust spawn.
+        use std::os::windows::process::CommandExt;
+        let temp = tempfile::tempdir().expect("temp dir");
+        let marker = temp.path().join("relaunched.marker");
+        let script = format!(
+            "/C timeout /t 1 /nobreak >nul & type nul > \"{}\"",
+            marker.display()
+        );
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        std::process::Command::new("cmd")
+            .raw_arg(script)
+            .creation_flags(DETACHED_PROCESS)
+            .spawn()
+            .expect("spawn detached shell");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        while std::time::Instant::now() < deadline {
+            if marker.exists() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        panic!("detached shell never ran its trailing command");
     }
 
     #[test]
