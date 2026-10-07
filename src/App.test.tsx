@@ -76,7 +76,8 @@ const mocks = vi.hoisted(() => {
     getIsDevBuild: vi.fn(async () => false),
 
 
-    devCloneReleaseConfig: vi.fn(async () => undefined),
+    devPreviewCloneSource: vi.fn(async () => ({ sourceDir: "C:\Release", fromPortableProcess: false })),
+    devCloneReleaseConfig: vi.fn(async () => ({ sourceDir: "C:\Release", fromPortableProcess: false })),
 
 
     devRestartApp: vi.fn(async () => undefined),

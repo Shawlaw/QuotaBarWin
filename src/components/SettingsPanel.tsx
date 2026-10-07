@@ -12,6 +12,7 @@ import type {
 import {
   applyAppUpdate,
   devCloneReleaseConfig,
+  devPreviewCloneSource,
   devRestartApp,
   applyRemoteUpdate,
   checkAppUpdate,
@@ -28,7 +29,7 @@ import {
   removeRemoteProvider,
   listenForAppUpdateStatus
 } from "../lib/api";
-import type { AppUpdateInfo, UpdateInfo } from "../lib/api";
+import type { AppUpdateInfo, DevConfigCloneResult, UpdateInfo } from "../lib/api";
 import { DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS } from "../lib/defaults";
 import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
@@ -255,6 +256,7 @@ export function SettingsPanel({
   const pathCopiedTimerRef = useRef<number | null>(null);
   const [isCloningConfig, setIsCloningConfig] = useState(false);
   const [cloneConfigMessage, setCloneConfigMessage] = useState<string | null>(null);
+  const [cloneConfirmSource, setCloneConfirmSource] = useState<DevConfigCloneResult | null>(null);
   const [setupProviderId, setSetupProviderId] = useState<string | null>(null);
   const [quotaDataConfirmOpen, setQuotaDataConfirmOpen] = useState(false);
   const [pendingUnsavedAction, setPendingUnsavedAction] = useState<PendingUnsavedAction | null>(null);
@@ -868,6 +870,20 @@ export function SettingsPanel({
     });
   }
 
+  // Resolve the clone source first so the confirm dialog can show exactly
+  // where the config will be copied from before anything is touched.
+  async function handleOpenCloneConfirm() {
+    setCloneConfigMessage(null);
+    try {
+      const source = await devPreviewCloneSource();
+      setCloneConfirmSource(source);
+    } catch (error) {
+      setCloneConfigMessage(
+        error instanceof Error ? error.message : t.settings.devCloneFailed,
+      );
+    }
+  }
+
   // Dev build only: copy the installed release's config/secrets/caches into
   // this exe's portable directory and restart, rehearsing a real upgrade.
   async function handleCloneReleaseConfig() {
@@ -962,7 +978,55 @@ export function SettingsPanel({
     );
   }
 
-  function renderUnsavedChangesDialog() {
+  function renderDevCloneConfirmDialog() {
+    if (!cloneConfirmSource) {
+      return null;
+    }
+
+    return (
+      <div className="dialog-overlay" role="presentation">
+        <section
+          className="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dev-clone-confirm-title"
+        >
+          <h3 id="dev-clone-confirm-title">{t.settings.devCloneConfirmTitle}</h3>
+          <p>{t.settings.devCloneConfirm}</p>
+          <div className="local-api-settings__saved-token" data-testid="dev-clone-source">
+            <code>{cloneConfirmSource.sourceDir}</code>
+            <span>
+              {cloneConfirmSource.fromPortableProcess
+                ? t.settings.devCloneSourceKindPortable
+                : t.settings.devCloneSourceKindAppData}
+            </span>
+          </div>
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setCloneConfirmSource(null)}
+            >
+              {t.settings.cancel}
+            </button>
+            <button
+              type="button"
+              data-testid="confirm-dev-clone"
+              disabled={isCloningConfig}
+              onClick={() => {
+                setCloneConfirmSource(null);
+                void handleCloneReleaseConfig();
+              }}
+            >
+              {isCloningConfig ? t.settings.devCloneRestarting : t.settings.devCloneButton}
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+function renderUnsavedChangesDialog() {
     if (!pendingUnsavedAction) {
       return null;
     }
@@ -1438,12 +1502,7 @@ export function SettingsPanel({
                   className="button-secondary"
                   data-testid="dev-clone-config-button"
                   disabled={isCloningConfig}
-                  onClick={() => {
-                    if (!window.confirm(t.settings.devCloneConfirm)) {
-                      return;
-                    }
-                    void handleCloneReleaseConfig();
-                  }}
+                  onClick={() => void handleOpenCloneConfirm()}
                 >
                   {isCloningConfig ? t.settings.devCloneRestarting : t.settings.devCloneButton}
                 </button>
@@ -1805,6 +1864,7 @@ export function SettingsPanel({
 
       {renderSaveBar()}
       {renderQuotaDataConfirmDialog()}
+      {renderDevCloneConfirmDialog()}
       {renderUnsavedChangesDialog()}
       {renderRemoveProviderDialog()}
     </section>

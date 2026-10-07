@@ -172,6 +172,9 @@ export type I18nCatalog = {
     devCloneHint: string;
     devCloneButton: string;
     devCloneConfirm: string;
+    devCloneConfirmTitle: string;
+    devCloneSourceKindPortable: string;
+    devCloneSourceKindAppData: string;
     devCloneRestarting: string;
     devCloneSource: (sourceDir: string) => string;
     devCloneFailed: string;
@@ -684,6 +687,9 @@ export const en: I18nCatalog = {
     devCloneButton: "Copy config from the installed release",
     devCloneConfirm:
       "Copy config and secrets from the release installation? This overwrites the current dev config and restarts the app.",
+    devCloneConfirmTitle: "Copy release config",
+    devCloneSourceKindPortable: "portable release (running process directory)",
+    devCloneSourceKindAppData: "AppData installation",
     devCloneRestarting: "Copy finished. Restarting…",
     devCloneSource: (sourceDir) => `Copied from ${sourceDir}.`,
     devCloneFailed: "Failed to copy the release config.",
@@ -1268,6 +1274,9 @@ export const zhCN: I18nCatalog = {
     devCloneButton: "从本机正式版复制配置与密钥",
     devCloneConfirm:
       "从正式版复制配置与密钥？将覆盖当前开发版配置，复制完成后应用会自动重启。",
+    devCloneConfirmTitle: "复制正式版配置",
+    devCloneSourceKindPortable: "便携版正式版（运行进程所在目录）",
+    devCloneSourceKindAppData: "AppData 安装目录",
     devCloneRestarting: "复制完成，正在重启…",
     devCloneSource: (sourceDir) => `已从 ${sourceDir} 复制。`,
     devCloneFailed: "复制正式版配置失败。",

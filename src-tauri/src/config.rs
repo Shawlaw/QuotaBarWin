@@ -1974,17 +1974,19 @@ pub struct DevCloneConfigResult {
     pub from_portable_process: bool,
 }
 
-#[tauri::command]
-pub fn dev_clone_release_config(app: AppHandle) -> Result<DevCloneConfigResult, String> {
-    if !crate::app_identity::is_dev_build(&app) {
+/// Resolves where a dev config clone would copy from, without copying.
+/// Shared by the preview command (shown in the confirm dialog) and the
+/// actual clone command.
+fn resolve_dev_clone_source(app: &AppHandle) -> Result<DevCloneConfigResult, String> {
+    if !crate::app_identity::is_dev_build(app) {
         return Err("Config cloning is only available in development builds".to_string());
     }
-    let (_, _, marker_path) = portable_paths_for_app(&app)?;
+    let (_, _, marker_path) = portable_paths_for_app(app)?;
     let dev_dir = marker_path
         .parent()
         .ok_or_else(|| "Unable to resolve dev config directory".to_string())?
         .to_path_buf();
-    let app_data_config_path = app_data_config_path_for_app(&app)?;
+    let app_data_config_path = app_data_config_path_for_app(app)?;
     let app_data_dir = app_data_config_path
         .parent()
         .ok_or_else(|| "Unable to resolve release config directory".to_string())?
@@ -1994,16 +1996,33 @@ pub fn dev_clone_release_config(app: AppHandle) -> Result<DevCloneConfigResult, 
         resolve_clone_source_dir(&running_dirs, &dev_dir, &app_data_dir).ok_or_else(|| {
             "No release config found: start the portable release first, or use an AppData-mode installation".to_string()
         })?;
+    Ok(DevCloneConfigResult {
+        source_dir: source_dir.display().to_string(),
+        from_portable_process,
+    })
+}
+
+#[tauri::command]
+pub fn dev_preview_clone_source(app: AppHandle) -> Result<DevCloneConfigResult, String> {
+    resolve_dev_clone_source(&app)
+}
+
+#[tauri::command]
+pub fn dev_clone_release_config(app: AppHandle) -> Result<DevCloneConfigResult, String> {
+    let previewed = resolve_dev_clone_source(&app)?;
+    let source_dir = PathBuf::from(&previewed.source_dir);
+    let (_, _, marker_path) = portable_paths_for_app(&app)?;
+    let dev_dir = marker_path
+        .parent()
+        .ok_or_else(|| "Unable to resolve dev config directory".to_string())?
+        .to_path_buf();
     clone_release_config_files(&source_dir, &dev_dir)?;
     // Pin the marker too so CLI companions beside the dev exe resolve the
     // same cloned config.
     if !marker_path.exists() {
         fs::write(&marker_path, "portable").map_err(|error| error.to_string())?;
     }
-    Ok(DevCloneConfigResult {
-        source_dir: source_dir.display().to_string(),
-        from_portable_process,
-    })
+    Ok(previewed)
 }
 
 #[tauri::command]

@@ -76,6 +76,15 @@ const apiMocks = vi.hoisted(() => {
     disableManagedSecretsEncryption: vi.fn(async () => 0),
     dismissManagedSecretsEncryptionPrompt: vi.fn(async () => undefined),
     getConfig: vi.fn(async () => state.config),
+    devPreviewCloneSource: vi.fn(async () => ({
+      sourceDir: "C:\Users\tester\AppData\Roaming\QuotaBarWin",
+      fromPortableProcess: false,
+    })),
+    devCloneReleaseConfig: vi.fn(async () => ({
+      sourceDir: "C:\Users\tester\AppData\Roaming\QuotaBarWin",
+      fromPortableProcess: false,
+    })),
+    devRestartApp: vi.fn(async () => undefined),
     sendTestNotification: vi.fn(async () => ({
       toast: { status: "skipped", detail: "disabled" },
       webhook: { status: "skipped", detail: "disabled" },
@@ -858,6 +867,47 @@ test("copying_a_storage_path_shows_a_copied_hint", async () => {
   // The hint appears after the clipboard promise resolves.
   await waitFor(() => expect(screen.getByTestId("path-copied-hint")).toBeInTheDocument());
   expect(screen.getByTestId("path-copied-hint")).toHaveTextContent("Path copied to the clipboard.");
+});
+
+test("dev_clone_shows_the_resolved_source_before_copying", async () => {
+  apiMocks.state.config = configWithProviders([remoteProvider]);
+  render(
+    <I18nProvider language="en">
+      <SettingsPanel
+        appVersion="1.0.5-test"
+        isDevBuild
+        config={configWithProviders([remoteProvider])}
+        configStorageInfo={configStorageInfo}
+        isConfigStorageBusy={false}
+        isSaving={false}
+        onChange={() => undefined}
+        onOpenConfigFolder={async () => undefined}
+        onResetConfig={async () => undefined}
+        onSave={() => undefined}
+        onSetPortableMode={() => undefined}
+        onPersistedConfigChanged={() => undefined}
+        onRequestClose={() => undefined}
+        closeRequest={0}
+        settingsHomeRequest={0}
+        appUpdateFocusRequest={0}
+        onAppUpdateFocusHandled={() => undefined}
+        onAppUpdateStatusChange={() => undefined}
+        initialProviderSettingsView="main"
+      />
+    </I18nProvider>,
+  );
+
+  switchSettingsCategory("advanced");
+  fireEvent.click(screen.getByTestId("dev-clone-config-button"));
+
+  // The confirm dialog resolves and shows the exact source first.
+  const dialog = await screen.findByRole("dialog", { name: "Copy release config" });
+  expect(dialog).toBeInTheDocument();
+  expect(screen.getByTestId("dev-clone-source")).toHaveTextContent("AppData installation");
+  expect(apiMocks.devCloneReleaseConfig).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByTestId("confirm-dev-clone"));
+  await waitFor(() => expect(apiMocks.devCloneReleaseConfig).toHaveBeenCalledTimes(1));
 });
 
 test("dev_builds_lock_autostart_and_app_update_controls", () => {

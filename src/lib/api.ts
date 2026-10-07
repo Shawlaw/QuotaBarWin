@@ -342,6 +342,13 @@ export type DevConfigCloneResult = {
   fromPortableProcess: boolean;
 };
 
+export async function devPreviewCloneSource(): Promise<DevConfigCloneResult> {
+  if (!hasTauriInternals()) {
+    return { sourceDir: "", fromPortableProcess: false };
+  }
+  return invoke<DevConfigCloneResult>("dev_preview_clone_source");
+}
+
 export async function devCloneReleaseConfig(): Promise<DevConfigCloneResult> {
   if (!hasTauriInternals()) {
     return { sourceDir: "", fromPortableProcess: false };
