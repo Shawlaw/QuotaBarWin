@@ -28,6 +28,7 @@ function severityClass(severity: string): string {
 export function HistoryPanel({ events, loadFailed, onRefresh, onClear }: HistoryPanelProps) {
   const { t } = useI18n();
   const [filter, setFilter] = useState<EventFilter>("all");
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
 
   const filters: { key: EventFilter; label: string }[] = [
     { key: "all", label: t.events.filterAll },
@@ -60,11 +61,7 @@ export function HistoryPanel({ events, loadFailed, onRefresh, onClear }: History
             className="button-danger"
             data-testid="history-clear"
             disabled={!events || events.length === 0}
-            onClick={() => {
-              if (window.confirm(t.events.clearConfirm)) {
-                onClear();
-              }
-            }}
+            onClick={() => setClearConfirmOpen(true)}
           >
             {t.events.clear}
           </button>
@@ -114,6 +111,36 @@ export function HistoryPanel({ events, loadFailed, onRefresh, onClear }: History
           ))}
         </ul>
       )}
+      {clearConfirmOpen ? (
+        <div className="dialog-overlay" role="presentation">
+          <section
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="history-clear-confirm-title"
+          >
+            <h3 id="history-clear-confirm-title">{t.events.clearConfirmTitle}</h3>
+            <p>{t.events.clearConfirm}</p>
+            <div className="dialog-actions">
+              <button type="button" className="button-secondary" onClick={() => setClearConfirmOpen(false)}>
+                {t.settings.cancel}
+              </button>
+              <button
+                type="button"
+                className="button-danger"
+                data-testid="confirm-clear-history"
+                onClick={() => {
+                  setClearConfirmOpen(false);
+                  onClear();
+                }}
+              >
+                {t.events.clear}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
+
 }

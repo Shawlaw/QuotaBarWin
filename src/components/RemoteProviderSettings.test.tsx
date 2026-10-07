@@ -235,13 +235,14 @@ describe("RemoteProviderSettings", () => {
 
   test("source_page_migrates_installed_providers_only_after_confirmation", async () => {
     const onMigrateSource = vi.fn(async () => migratedSource);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     renderRemoteProviderSettings({
       view: "sources",
       onMigrateSource,
     });
 
     fireEvent.click(screen.getByTestId("migrate-provider-source-official"));
+    expect(onMigrateSource).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId("confirm-migrate-source"));
 
     await waitFor(() =>
       expect(onMigrateSource).toHaveBeenCalledWith(

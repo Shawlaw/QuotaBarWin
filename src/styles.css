@@ -2265,3 +2265,20 @@ button:disabled {
   }
 }
 
+
+/* Transient banner shown when a second instance is rejected and this window
+   is brought to the foreground instead of a native alert dialog. */
+.single-instance-notice {
+  background: var(--qb-info-bg);
+  border: 1px solid var(--qb-info-border);
+  border-radius: 8px;
+  box-shadow: var(--qb-card-shadow);
+  color: var(--qb-info-text);
+  font-size: 13px;
+  left: 50%;
+  padding: 8px 14px;
+  position: fixed;
+  top: 14px;
+  transform: translateX(-50%);
+  z-index: 40;
+}

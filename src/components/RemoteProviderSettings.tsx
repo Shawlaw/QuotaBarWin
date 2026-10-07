@@ -118,6 +118,7 @@ export function RemoteProviderSettings({
   const [manifestUrl, setManifestUrl] = useState("");
   const [manifestChecksum, setManifestChecksum] = useState("");
   const [directInstallLoading, setDirectInstallLoading] = useState(false);
+  const [pendingMigration, setPendingMigration] = useState<RemoteProviderRegistrySource | null>(null);
   const [migratingSourceId, setMigratingSourceId] = useState<string | null>(null);
   const [installMessage, setInstallMessage] = useState<string | null>(null);
   const catalogRequestId = useRef(0);
@@ -354,9 +355,6 @@ export function RemoteProviderSettings({
     if (!source.url.trim()) {
       return;
     }
-    if (!window.confirm(t.remoteProviders.migrateSourceConfirm(source.name || source.url))) {
-      return;
-    }
 
     setInstallMessage(null);
     setMigratingSourceId(source.id);
@@ -506,7 +504,7 @@ export function RemoteProviderSettings({
                     type="button"
                     className="button-secondary button-compact"
                     disabled={!source.url.trim() || migratingSourceId === source.id}
-                    onClick={() => void migrateSource(source)}
+                    onClick={() => setPendingMigration(source)}
                     data-testid={`migrate-provider-source-${source.id}`}
                   >
                     {migratingSourceId === source.id
@@ -527,6 +525,42 @@ export function RemoteProviderSettings({
           </div>
         </section>
         {installMessage ? <div className="settings-message">{installMessage}</div> : null}
+      {pendingMigration ? (
+        <div className="dialog-overlay" role="presentation">
+          <section
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="migrate-source-confirm-title"
+          >
+            <h3 id="migrate-source-confirm-title">{t.remoteProviders.migrateSourceConfirmTitle}</h3>
+            <p>{t.remoteProviders.migrateSourceConfirm(pendingMigration.name || pendingMigration.url)}</p>
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => setPendingMigration(null)}
+              >
+                {t.settings.cancel}
+              </button>
+              <button
+                type="button"
+                className="button-primary"
+                data-testid="confirm-migrate-source"
+                onClick={() => {
+                  const source = pendingMigration;
+                  setPendingMigration(null);
+                  if (source) {
+                    void migrateSource(source);
+                  }
+                }}
+              >
+                {t.remoteProviders.migrateSource}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       </section>
     );
   }

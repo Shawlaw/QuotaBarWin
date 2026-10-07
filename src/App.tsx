@@ -282,6 +282,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [configStorageInfo, setConfigStorageInfo] = useState<ConfigStorageInfo | null>(null);
   const [appVersion, setAppVersion] = useState<string>("unknown");
+  const [singleInstanceNotice, setSingleInstanceNotice] = useState<string | null>(null);
   const [isDevBuild, setIsDevBuild] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
@@ -607,7 +608,12 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void listenForSingleInstance((message) => window.alert(message)).then((cleanup) => {
+    void listenForSingleInstance((message) => {
+      setSingleInstanceNotice(message);
+      window.setTimeout(() => {
+        setSingleInstanceNotice((current) => (current === message ? null : current));
+      }, 4000);
+    }).then((cleanup) => {
       unlisten = cleanup;
     });
 
@@ -841,6 +847,11 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
 
   return (
     <main className="app-shell">
+      {singleInstanceNotice ? (
+        <div className="single-instance-notice" role="status" data-testid="single-instance-notice">
+          {singleInstanceNotice}
+        </div>
+      ) : null}
       <Header
         activeView={isShowingEvents ? "events" : settingsOpen ? "settings" : "overview"}
         appVersion={appVersion}

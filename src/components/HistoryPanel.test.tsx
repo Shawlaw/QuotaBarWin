@@ -117,14 +117,17 @@ describe("HistoryPanel", () => {
     expect(screen.getByTestId("history-load-failed")).toBeInTheDocument();
   });
 
-  test("clear asks for confirmation before clearing", () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  test("clear asks for confirmation before clearing", async () => {
     const { onClear } = renderPanel({ events: [event()] });
 
     fireEvent.click(screen.getByTestId("history-clear"));
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(onClear).not.toHaveBeenCalled();
+    expect(
+      await screen.findByRole("dialog", { name: "Clear event history?" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("confirm-clear-history"));
     expect(onClear).toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   test("clear is disabled when the history is empty", () => {

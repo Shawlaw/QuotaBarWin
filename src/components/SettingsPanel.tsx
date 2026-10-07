@@ -257,6 +257,7 @@ export function SettingsPanel({
   const [isCloningConfig, setIsCloningConfig] = useState(false);
   const [cloneConfigMessage, setCloneConfigMessage] = useState<string | null>(null);
   const [cloneConfirmSource, setCloneConfirmSource] = useState<DevConfigCloneResult | null>(null);
+  const [resetConfigConfirmOpen, setResetConfigConfirmOpen] = useState(false);
   const [setupProviderId, setSetupProviderId] = useState<string | null>(null);
   const [quotaDataConfirmOpen, setQuotaDataConfirmOpen] = useState(false);
   const [pendingUnsavedAction, setPendingUnsavedAction] = useState<PendingUnsavedAction | null>(null);
@@ -978,6 +979,46 @@ export function SettingsPanel({
     );
   }
 
+  function renderResetConfigConfirmDialog() {
+    if (!resetConfigConfirmOpen) {
+      return null;
+    }
+
+    return (
+      <div className="dialog-overlay" role="presentation">
+        <section
+          className="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reset-config-confirm-title"
+        >
+          <h3 id="reset-config-confirm-title">{t.settings.resetConfigConfirmTitle}</h3>
+          <p>{t.settings.resetConfigConfirm}</p>
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setResetConfigConfirmOpen(false)}
+            >
+              {t.settings.cancel}
+            </button>
+            <button
+              type="button"
+              className="button-danger"
+              data-testid="confirm-reset-config"
+              onClick={() => {
+                setResetConfigConfirmOpen(false);
+                void onResetConfig();
+              }}
+            >
+              {t.settings.resetConfig}
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   function renderDevCloneConfirmDialog() {
     if (!cloneConfirmSource) {
       return null;
@@ -1532,11 +1573,7 @@ function renderUnsavedChangesDialog() {
                 type="button"
                 className="button-danger"
                 disabled={isConfigStorageBusy}
-                onClick={() => {
-                  if (window.confirm(t.settings.resetConfigConfirm)) {
-                    void onResetConfig();
-                  }
-                }}
+                onClick={() => setResetConfigConfirmOpen(true)}
               >
                 {t.settings.resetConfig}
               </button>
@@ -1865,6 +1902,7 @@ function renderUnsavedChangesDialog() {
       {renderSaveBar()}
       {renderQuotaDataConfirmDialog()}
       {renderDevCloneConfirmDialog()}
+      {renderResetConfigConfirmDialog()}
       {renderUnsavedChangesDialog()}
       {renderRemoveProviderDialog()}
     </section>

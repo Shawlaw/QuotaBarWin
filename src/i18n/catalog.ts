@@ -181,6 +181,7 @@ export type I18nCatalog = {
     devBuildLimitation: string;
     pathCopied: string;
     resetConfigConfirm: string;
+    resetConfigConfirmTitle: string;
     noChanges: string;
     saving: string;
     saved: string;
@@ -317,6 +318,7 @@ export type I18nCatalog = {
     migrateSource: string;
     migratingSource: string;
     migrateSourceConfirm: (sourceName: string) => string;
+    migrateSourceConfirmTitle: string;
     migrateSourceResult: (migrated: number, skipped: number, failed: number) => string;
     failedToMigrateSource: string;
     enabledSourcesCount: (count: number) => string;
@@ -393,6 +395,7 @@ export type I18nCatalog = {
     loadFailed: string;
     clear: string;
     clearConfirm: string;
+    clearConfirmTitle: string;
     filterAll: string;
     filterQuota: string;
     filterProvider: string;
@@ -697,6 +700,7 @@ export const en: I18nCatalog = {
     devBuildLimitation: "Not available in development builds.",
     pathCopied: "Path copied to the clipboard.",
     resetConfigConfirm: "Reset QuotaBarWin config to defaults? A backup will be created first.",
+    resetConfigConfirmTitle: "Reset config",
     noChanges: "No changes",
     saving: "Saving",
     saved: "Saved",
@@ -846,6 +850,7 @@ export const en: I18nCatalog = {
     migratingSource: "Migrating...",
     migrateSourceConfirm: (sourceName) =>
       `Move matching installed Providers to ${sourceName}? Their account settings stay unchanged, but their manifest and script will be replaced from this source.`,
+    migrateSourceConfirmTitle: "Migrate provider source",
     migrateSourceResult: (migrated, skipped, failed) =>
       `Migration complete: ${migrated} migrated, ${skipped} skipped, ${failed} failed.`,
     failedToMigrateSource: "Failed to migrate installed Providers",
@@ -925,6 +930,7 @@ export const en: I18nCatalog = {
     loadFailed: "Unable to load the event history.",
     clear: "Clear history",
     clearConfirm: "Clear all recorded events? This cannot be undone.",
+    clearConfirmTitle: "Clear event history?",
     filterAll: "All",
     filterQuota: "Quota",
     filterProvider: "Providers",
@@ -1284,6 +1290,7 @@ export const zhCN: I18nCatalog = {
     devBuildLimitation: "开发构建不支持此功能。",
     pathCopied: "路径已复制到剪贴板。",
     resetConfigConfirm: "将 QuotaBarWin 配置重置为默认值？会先创建备份。",
+    resetConfigConfirmTitle: "重置配置",
     noChanges: "无更改",
     saving: "保存中",
     saved: "已保存",
@@ -1430,6 +1437,7 @@ export const zhCN: I18nCatalog = {
     migratingSource: "正在迁移...",
     migrateSourceConfirm: (sourceName) =>
       `将匹配的已安装提供方迁移到“${sourceName}”？会保留账号设置，但将从此来源替换 manifest 与脚本。`,
+    migrateSourceConfirmTitle: "迁移提供方来源",
     migrateSourceResult: (migrated, skipped, failed) =>
       `迁移完成：已迁移 ${migrated} 个，跳过 ${skipped} 个，失败 ${failed} 个。`,
     failedToMigrateSource: "迁移已安装提供方失败",
@@ -1509,6 +1517,7 @@ export const zhCN: I18nCatalog = {
     loadFailed: "无法加载事件历史。",
     clear: "清空历史",
     clearConfirm: "确定清空所有已记录的事件？此操作不可撤销。",
+    clearConfirmTitle: "清空事件历史",
     filterAll: "全部",
     filterQuota: "额度",
     filterProvider: "提供方",
