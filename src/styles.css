@@ -2188,7 +2188,27 @@ button:disabled {
 
 /* Notification settings */
 .notification-webhook-grid {
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.notification-webhook-endpoint {
+  border: 1px solid var(--qb-border, #d9e2ec);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px;
+}
+
+.notification-webhook-endpoint__header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.notification-webhook-endpoint__header .settings-toggle-row {
+  font-weight: 650;
 }
 
 .notification-event-grid {

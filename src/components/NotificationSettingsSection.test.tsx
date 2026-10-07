@@ -3,22 +3,37 @@ import { useState } from "react";
 import { beforeEach, vi } from "vitest";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { I18nProvider } from "../i18n";
-import type { NotificationSettings } from "../types";
+import type { NotificationSettings, WebhookEndpoint } from "../types";
 
 const apiMocks = vi.hoisted(() => ({
   sendTestNotification: vi.fn(async () => ({
     toast: { status: "sent", detail: null },
-    webhook: { status: "sent", detail: null, statusCode: 200 },
+    webhooks: [
+      { id: "webhook-1", label: "#1", status: "sent", detail: null, statusCode: 200 },
+      { id: "webhook-2", label: "DingTalk", status: "failed", detail: "boom", statusCode: null },
+    ],
   })),
+  openWebhookTemplateGuide: vi.fn(async () => {}),
 }));
 
 vi.mock("../lib/api", () => apiMocks);
 
+function endpoint(overrides: Partial<WebhookEndpoint> = {}): WebhookEndpoint {
+  return {
+    id: "webhook-1",
+    name: null,
+    url: "https://example.com/hook",
+    timeoutSeconds: 10,
+    template: null,
+    enabled: true,
+    ...overrides,
+  };
+}
+
 const baseSettings: NotificationSettings = {
   toastEnabled: false,
   webhookEnabled: false,
-  webhookUrl: null,
-  webhookTimeoutSeconds: 10,
+  webhooks: [],
   events: ["quota-reset", "quota-exhausted", "provider-error"],
 };
 
@@ -81,49 +96,142 @@ describe("NotificationSettingsSection", () => {
     });
   });
 
-  test("webhook url and timeout inputs only appear when webhook is enabled", () => {
+  test("webhook endpoint controls only appear when webhook is enabled", () => {
     const { onChange } = renderSection();
-    expect(screen.queryByTestId("notification-webhook-url")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("notification-webhook-url-0")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("notification-webhook-add")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("notification-webhook-enabled"));
     expect(onChange).toHaveBeenLastCalledWith({ ...baseSettings, webhookEnabled: true });
   });
 
-  test("invalid timeout values are rejected with an error message", () => {
-    renderSection({ ...baseSettings, webhookEnabled: true, webhookUrl: "https://example.com/hook" });
+  test("adding and removing webhook endpoints updates the draft", () => {
+    const { onChange } = renderSection({
+      ...baseSettings,
+      webhookEnabled: true,
+      webhooks: [endpoint()],
+    });
 
-    const timeoutInput = screen.getByTestId("notification-webhook-timeout");
-    fireEvent.change(timeoutInput, { target: { value: "500" } });
+    fireEvent.click(screen.getByTestId("notification-webhook-remove-0"));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ webhooks: [] }),
+    );
+
+    fireEvent.click(screen.getByTestId("notification-webhook-add"));
+    const added = (onChange.mock.lastCall?.[0] as NotificationSettings).webhooks;
+    expect(added).toHaveLength(1);
+    expect(added[0].url).toBe("");
+    expect(added[0].enabled).toBe(true);
+    expect(added[0].timeoutSeconds).toBe(10);
+  });
+
+  test("endpoint field edits update the matching endpoint only", () => {
+    const { onChange } = renderSection({
+      ...baseSettings,
+      webhookEnabled: true,
+      webhooks: [
+        endpoint(),
+        endpoint({ id: "webhook-2", url: "https://example.com/other" }),
+      ],
+    });
+
+    fireEvent.change(screen.getByTestId("notification-webhook-url-0"), {
+      target: { value: "https://example.com/first " },
+    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        webhooks: [
+          expect.objectContaining({ id: "webhook-1", url: "https://example.com/first" }),
+          expect.objectContaining({ id: "webhook-2", url: "https://example.com/other" }),
+        ],
+      }),
+    );
+
+    fireEvent.change(screen.getByTestId("notification-webhook-template-1"), {
+      target: { value: ' {"text":"{{message}}"} ' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        webhooks: [
+          expect.objectContaining({ id: "webhook-1", template: null }),
+          expect.objectContaining({ id: "webhook-2", template: '{"text":"{{message}}"}' }),
+        ],
+      }),
+    );
+
+    fireEvent.change(screen.getByTestId("notification-webhook-name-1"), {
+      target: { value: "DingTalk" },
+    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        webhooks: [
+          expect.objectContaining({ id: "webhook-1", name: null }),
+          expect.objectContaining({ id: "webhook-2", name: "DingTalk" }),
+        ],
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("notification-webhook-endpoint-enabled-0"));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        webhooks: [
+          expect.objectContaining({ id: "webhook-1", enabled: false }),
+          expect.objectContaining({ id: "webhook-2", enabled: true }),
+        ],
+      }),
+    );
+  });
+
+  test("invalid timeout values are rejected with an error message", () => {
+    renderSection({
+      ...baseSettings,
+      webhookEnabled: true,
+      webhooks: [endpoint()],
+    });
+
+    fireEvent.change(screen.getByTestId("notification-webhook-timeout-0"), {
+      target: { value: "500" },
+    });
     expect(screen.getByText(/between 1 and 60/i)).toBeInTheDocument();
   });
 
-  test("the test button reports both channel outcomes", async () => {
-    renderSection();
+  test("the test button reports one line per webhook endpoint", async () => {
+    renderSection({
+      ...baseSettings,
+      webhookEnabled: true,
+      webhooks: [endpoint()],
+    });
 
     fireEvent.click(screen.getByTestId("notification-test-button"));
 
     await waitFor(() => {
-      expect(apiMocks.sendTestNotification).toHaveBeenCalledWith(baseSettings);
+      expect(screen.getByTestId("notification-test-message")).toHaveTextContent(
+        /#1: Webhook delivered \(HTTP 200\)/,
+      );
     });
-    await waitFor(() => {
-      expect(screen.getByTestId("notification-test-message")).toHaveTextContent(/HTTP 200/);
-    });
+    expect(screen.getByTestId("notification-test-message")).toHaveTextContent(
+      /DingTalk: Webhook failed: boom/,
+    );
   });
 
   test("the test button uses the unsaved form draft", async () => {
-    renderSection({ ...baseSettings, webhookEnabled: true, webhookUrl: "https://example.com/old-hook" });
+    renderSection({
+      ...baseSettings,
+      webhookEnabled: true,
+      webhooks: [endpoint({ url: "https://example.com/old-hook" })],
+    });
 
-    fireEvent.change(screen.getByTestId("notification-webhook-url"), {
+    fireEvent.change(screen.getByTestId("notification-webhook-url-0"), {
       target: { value: "https://example.com/new-hook" },
     });
     fireEvent.click(screen.getByTestId("notification-test-button"));
 
     await waitFor(() => {
-      expect(apiMocks.sendTestNotification).toHaveBeenCalledWith({
-        ...baseSettings,
-        webhookEnabled: true,
-        webhookUrl: "https://example.com/new-hook",
-      });
+      expect(apiMocks.sendTestNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          webhooks: [expect.objectContaining({ url: "https://example.com/new-hook" })],
+        }),
+      );
     });
   });
 
@@ -132,6 +240,7 @@ describe("NotificationSettingsSection", () => {
 
     const quotaGroup = screen.getByTestId("notification-event-grid-quota");
     expect(quotaGroup).toHaveTextContent("Quota reset");
+    expect(quotaGroup).toHaveTextContent("Quota expiry time changed");
     expect(quotaGroup).toHaveTextContent("Unexpected quota recovery");
     expect(quotaGroup).toHaveTextContent("Quota exhausted");
     expect(quotaGroup).toHaveTextContent("Quota low");
@@ -151,5 +260,16 @@ describe("NotificationSettingsSection", () => {
 
     fireEvent.change(screen.getByTestId("low-quota-warning-input"), { target: { value: "35" } });
     expect(onLowQuotaWarningThresholdChange).toHaveBeenCalledWith(35);
+  });
+
+  test("the webhook template guide button opens the built-in guide", () => {
+    renderSection({
+      ...baseSettings,
+      webhookEnabled: true,
+      webhooks: [endpoint()],
+    });
+
+    fireEvent.click(screen.getByTestId("notification-webhook-template-guide"));
+    expect(apiMocks.openWebhookTemplateGuide).toHaveBeenCalledTimes(1);
   });
 });

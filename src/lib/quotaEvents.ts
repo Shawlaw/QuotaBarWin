@@ -11,6 +11,7 @@ export type QuotaEventTypeMeta = {
 // Keep in sync with the notification event constants in src-tauri/src/config.rs.
 export const QUOTA_EVENT_TYPES: QuotaEventTypeMeta[] = [
   { type: "quota-reset", category: "quota" },
+  { type: "quota-reset-time-changed", category: "quota" },
   { type: "quota-recovered-unexpected", category: "quota" },
   { type: "quota-exhausted", category: "quota" },
   { type: "quota-low", category: "quota" },
@@ -63,6 +64,11 @@ export function eventMessage(t: I18nCatalog, event: QuotaEvent): string {
         remaining === null ? null : formatEventPercent(remaining),
       );
     }
+    case "quota-reset-time-changed":
+      return t.events.messages.quotaResetTimeChanged(
+        subject,
+        formatEventShortTime(detailString(details, "resetAt")),
+      );
     case "quota-recovered-unexpected": {
       const before = detailNumber(details, "usedPercentBefore");
       const after = detailNumber(details, "usedPercentAfter");
@@ -93,4 +99,18 @@ export function formatEventTime(occurredAt: string): string {
     return occurredAt;
   }
   return date.toLocaleString();
+}
+
+// Short local "MM-DD HH:mm" used inside event texts such as the next expiry
+// time of a quota-reset-time-changed event.
+export function formatEventShortTime(iso: string | null | undefined): string | null {
+  if (!iso) {
+    return null;
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

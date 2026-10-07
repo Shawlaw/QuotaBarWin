@@ -33,7 +33,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 - Distribution: **portable zip + single exe**
 - Current version: **v1.6.0**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
-- Current config schema version: **23**
+- Current config schema version: **24**
 
 ---
 
@@ -144,15 +144,15 @@ See the [Local Integration API guide](docs/local-integration-api.en.md) for requ
 The **Events** tab in the main window is an in-app event history that records:
 
 - application starts and applied application updates;
-- quota resets, unexpected mid-cycle quota recoveries, quota exhaustion, and quota dropping below the warning threshold;
+- quota resets, quota expiry-time changes (a rolling window that consumed nothing), unexpected mid-cycle quota recoveries, quota exhaustion, and quota dropping below the warning threshold;
 - Provider refresh failures and recoveries.
 
-Events are detected by diffing consecutive snapshots after each refresh; transient spikes go through a confirmation pass first, so only confirmed transitions are recorded. The history supports category filters, manual refresh, and one-click clearing. It is stored locally next to the active configuration (`events.quotaBarWin.json`, capped at 200 entries) and never contains Provider metadata or credentials.
+Events are detected by diffing consecutive snapshots after each refresh; transient spikes go through a confirmation pass first, so only confirmed transitions are recorded. Quota resets are only recorded for windows that actually consumed quota in the previous cycle; an idle rolling window at 0% is instead recorded as a low-severity "quota expiry time changed" event (info level, excluded from notification defaults, but selectable in the notification settings), a provider that temporarily stops reporting its reset time right after a boundary does not lose the reset event, a window that rolls earlier than previously announced (reset time moved and quota emptied) still counts as a reset, and "unexpected recovery" is reserved for quota returning mid-cycle while the reset time is unchanged. The history supports category filters, manual refresh, and one-click clearing. It is stored locally next to the active configuration (`events.quotaBarWin.json`, capped at 200 entries) and never contains Provider metadata or credentials.
 
 Under **Settings → Notifications** you can enable two delivery channels (both off by default):
 
-- **Windows notifications**: shows a toast for the selected events; the portable build registers the app's AppUserModelID in the current user's registry, so no installer is required, and turning the channel off automatically removes that local registration.
-- **Webhook**: POSTs the selected events as a JSON batch to your endpoint. The URL supports `${secret:NAME}`, `${env:NAME}`, and `${file:...}` placeholders (for example, keep token-bearing webhook addresses in your `secrets` folder), follows the global proxy settings, and has a configurable timeout; delivery failures are only written to redacted local logs.
+- **Windows notifications**: shows a toast for the selected events, with the local event time (`MM-DD HH:mm`) appended to the body; the portable build registers the app's AppUserModelID in the current user's registry, so no installer is required, and turning the channel off automatically removes that local registration.
+- **Webhook**: supports multiple endpoints (each with its own URL, body template, and timeout); events fan out to every enabled endpoint and one failing endpoint never blocks the others. By default, POSTs the selected events as a JSON batch to your endpoint. The URL supports `${secret:NAME}`, `${env:NAME}`, and `${file:...}` placeholders (for example, keep token-bearing webhook addresses in your `secrets` folder), follows the global proxy settings, and has a configurable timeout; delivery failures are only written to redacted local logs. You can also configure a custom body template: each selected event is then rendered and delivered as its own request, with placeholders such as `{{message}}` (the localized notification text including the event time), `{{eventType}}`, `{{providerName}}`, `{{windowLabel}}`, `{{occurredAt}}`, and `{{eventJson}}`; a rendered body that parses as JSON is sent as JSON, otherwise as plain text. Leave the template empty to keep the JSON batch format. The full placeholder list, the default JSON batch schema, and per-platform template examples are documented in the built-in guide (offline HTML, Chinese and English) opened via the button next to the template field in Settings.
 
 Notifications arrive on the **next refresh** after a change happens (default interval 300 seconds, adjustable in settings); nothing is sent retroactively while the app is not running. A webhook sends your quota event data to an external address you choose, so only point it at services you trust.
 
@@ -182,7 +182,7 @@ The CLI can also validate Provider configuration, manifest, source checksum, and
 - Includes a local HTTP API and a JSON CLI for agents and scripts, with refresh, cached reads, and remaining-percent threshold decisions.
 - Supports per-Provider manual refresh and global interval-based auto refresh.
 - In-app event history records app starts/updates, quota resets/unexpected recoveries/exhaustion/low quota, and Provider failures/recoveries; stored locally, filterable, and clearable.
-- Supports event notifications via Windows toasts and webhooks (JSON POST), with per-event-type selection and a test-notification button.
+- Supports event notifications via Windows toasts (body includes the event time) and webhooks (JSON POST, with an optional custom body template), with per-event-type selection and a test-notification button.
 - Includes Windows tray integration, hidden startup, single-instance behavior, and a resizable tray popup.
 - The Settings page is organized into Provider / General / Notifications / Application update / Advanced categories: General keeps the refresh interval, display mode, language, theme, and launch-at-startup; the low-quota warning threshold is edited under Notifications, with a summary and shortcut in General; the network proxy, local integration API, secret security, config storage, and logging live under Advanced. The theme follows Windows by default and can be fixed to light or dark.
 - Supports AppData storage and portable mode. Portable mode keeps config, logs, secrets, and cached remote providers beside the exe.

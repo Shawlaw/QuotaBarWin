@@ -13,6 +13,7 @@ use crate::config::{
     NOTIFICATION_EVENT_PROVIDER_ERROR, NOTIFICATION_EVENT_PROVIDER_RECOVERED,
     NOTIFICATION_EVENT_QUOTA_EXHAUSTED, NOTIFICATION_EVENT_QUOTA_LOW,
     NOTIFICATION_EVENT_QUOTA_RECOVERED_UNEXPECTED, NOTIFICATION_EVENT_QUOTA_RESET,
+    NOTIFICATION_EVENT_QUOTA_RESET_TIME_CHANGED,
 };
 use crate::quota::{ProviderSnapshot, QuotaWindow};
 
@@ -212,15 +213,17 @@ fn detect_window_events(
     let current_used = current_window.used_percent;
     let current_remaining = current_window.remaining_percent;
 
-    if let (Some(previous_reset), Some(current_reset)) = (
-        previous_window.reset_at.as_deref().and_then(parse_rfc3339),
-        current_window.reset_at.as_deref().and_then(parse_rfc3339),
-    ) {
+    let previous_reset = previous_window.reset_at.as_deref().and_then(parse_rfc3339);
+    let current_reset = current_window.reset_at.as_deref().and_then(parse_rfc3339);
+    // A window whose previous cycle consumed nothing has no quota to give
+    // back, so its cycle roll is only an expiry-time change, not a reset.
+    let previous_cycle_unused = matches!(previous_used, Some(used) if used <= 0.0);
+    if let (Some(previous_reset), Some(current_reset)) = (previous_reset, current_reset) {
         let advanced = current_reset.timestamp()
             > previous_reset.timestamp() + RESET_ADVANCE_TOLERANCE_SECONDS;
         if advanced && previous_reset <= now {
-            // The previous cycle's boundary has passed, so this is a
-            // regular reset into a new cycle.
+            // The previous cycle's boundary has passed, so the window rolled
+            // into a new cycle.
             let mut details = serde_json::json!({
                 "resetAt": current_window.reset_at,
             });
@@ -231,34 +234,99 @@ fn detect_window_events(
             if let Some(current_remaining) = current_remaining {
                 details["remainingPercent"] = serde_json::json!(current_remaining);
             }
+            let (event_type, severity) = if previous_cycle_unused {
+                details["resetAtBefore"] = serde_json::json!(previous_window.reset_at);
+                (
+                    NOTIFICATION_EVENT_QUOTA_RESET_TIME_CHANGED,
+                    SEVERITY_INFO,
+                )
+            } else {
+                (NOTIFICATION_EVENT_QUOTA_RESET, SEVERITY_POSITIVE)
+            };
             events.push(pending_event(
-                NOTIFICATION_EVENT_QUOTA_RESET,
-                SEVERITY_POSITIVE,
+                event_type,
+                severity,
                 current_provider,
                 Some(current_window),
                 details,
             ));
         } else if let (Some(previous_used), Some(current_used)) = (previous_used, current_used) {
-            // The old window had not ended (or the provider has not rolled its
-            // reset time yet), so a rebound this large is quota the provider
-            // granted back mid-cycle. The snapshot stabilization pipeline has
-            // already confirmed the jump before it can reach this diff.
+            // A rebound this large has already been confirmed by the snapshot
+            // stabilization pipeline before it can reach this diff. Whether it
+            // is a reset or an unexpected recovery depends on the window
+            // identity: a reset time that moved to a new cycle (or an old
+            // boundary that already passed while the provider lags the field)
+            // means the window rolled — possibly earlier than previously
+            // announced. Only quota coming back while the provider still
+            // promises the very same cycle is an unexpected recovery.
             if previous_used.is_finite()
                 && current_used.is_finite()
                 && previous_used - current_used >= UNEXPECTED_RECOVERY_DROP_PERCENT
             {
-                events.push(pending_event(
-                    NOTIFICATION_EVENT_QUOTA_RECOVERED_UNEXPECTED,
-                    SEVERITY_WARNING,
-                    current_provider,
-                    Some(current_window),
-                    serde_json::json!({
-                        "usedPercentBefore": previous_used,
-                        "usedPercentAfter": current_used,
-                        "resetAt": current_window.reset_at,
-                    }),
-                ));
+                let mut details = serde_json::json!({
+                    "usedPercentBefore": previous_used,
+                    "usedPercentAfter": current_used,
+                    "resetAt": current_window.reset_at,
+                });
+                if let Some(current_remaining) = current_remaining {
+                    details["remainingPercent"] = serde_json::json!(current_remaining);
+                }
+                if advanced || previous_reset <= now {
+                    events.push(pending_event(
+                        NOTIFICATION_EVENT_QUOTA_RESET,
+                        SEVERITY_POSITIVE,
+                        current_provider,
+                        Some(current_window),
+                        details,
+                    ));
+                } else {
+                    events.push(pending_event(
+                        NOTIFICATION_EVENT_QUOTA_RECOVERED_UNEXPECTED,
+                        SEVERITY_WARNING,
+                        current_provider,
+                        Some(current_window),
+                        details,
+                    ));
+                }
             }
+        }
+    } else if previous_reset.is_some_and(|previous_reset| previous_reset <= now)
+        && current_reset.is_none()
+    {
+        // Some providers report no reset time right after the boundary passes
+        // and only populate the next one once the new window is used. The
+        // passed boundary is still a cycle roll: usage dropping to a fresh
+        // cycle is a reset, and an unused window is an expiry-time change;
+        // without this branch the edge would be lost while the field is null.
+        let usage_dropped_to_fresh_cycle =
+            matches!((previous_used, current_used), (Some(previous_used), Some(current_used)) if current_used < previous_used);
+        if previous_cycle_unused || usage_dropped_to_fresh_cycle {
+            let mut details = serde_json::json!({
+                "resetAt": current_window.reset_at,
+            });
+            if let (Some(previous_used), Some(current_used)) = (previous_used, current_used) {
+                details["usedPercentBefore"] = serde_json::json!(previous_used);
+                details["usedPercentAfter"] = serde_json::json!(current_used);
+            }
+            if let Some(current_remaining) = current_remaining {
+                details["remainingPercent"] = serde_json::json!(current_remaining);
+            }
+            let (event_type, severity) = if previous_cycle_unused {
+                details["resetAtBefore"] = serde_json::json!(previous_window.reset_at);
+                (
+                    NOTIFICATION_EVENT_QUOTA_RESET_TIME_CHANGED,
+                    SEVERITY_INFO,
+                )
+            } else {
+                (NOTIFICATION_EVENT_QUOTA_RESET, SEVERITY_POSITIVE)
+            };
+            events.push(pending_event(
+                event_type,
+                severity,
+                current_provider,
+                Some(current_window),
+                details,
+            ));
         }
     }
 
@@ -543,12 +611,113 @@ mod tests {
     }
 
     #[test]
+    fn early_window_roll_records_quota_reset() {
+        // The provider rolls the window before the boundary it previously
+        // announced (e.g. an idle rolling window reporting used=0 with the
+        // next boundary now+N): that is a reset, not an unexpected recovery.
+        let previous = provider("a", "ok", vec![window("weekly", 95.0, Some("2026-10-09T16:00:00Z"))]);
+        let current = provider("a", "ok", vec![window("weekly", 0.0, Some("2026-10-12T16:00:00Z"))]);
+        let events = detect_simple(&previous, &current);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, NOTIFICATION_EVENT_QUOTA_RESET);
+        assert_eq!(events[0].severity, SEVERITY_POSITIVE);
+        let details = events[0].details.as_ref().unwrap();
+        assert_eq!(details["usedPercentBefore"], serde_json::json!(95.0));
+        assert_eq!(details["usedPercentAfter"], serde_json::json!(0.0));
+    }
+
+    #[test]
+    fn lagging_reset_time_after_boundary_records_quota_reset() {
+        // The old boundary has passed and the quota came back, but the
+        // provider has not moved its reset time yet: still a reset, not an
+        // unexpected recovery.
+        let previous = provider("a", "ok", vec![window("5h", 80.0, Some("2026-10-05T11:00:00Z"))]);
+        let current = provider("a", "ok", vec![window("5h", 5.0, Some("2026-10-05T11:00:30Z"))]);
+        let events = detect_simple(&previous, &current);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, NOTIFICATION_EVENT_QUOTA_RESET);
+    }
+
+    #[test]
     fn boundary_passed_with_unmoved_reset_time_is_not_a_reset_yet() {
         // The old boundary has passed but the provider has not rolled its
         // reset time yet and usage barely moved: no event until either the
         // reset time advances or the quota actually rebounds.
         let previous = provider("a", "ok", vec![window("5h", 80.0, Some("2026-10-05T11:00:00Z"))]);
         let current = provider("a", "ok", vec![window("5h", 82.0, Some("2026-10-05T11:00:30Z"))]);
+        assert!(detect_simple(&previous, &current).is_empty());
+    }
+
+    #[test]
+    fn boundary_roll_without_usage_records_reset_time_change() {
+        // A rolling window that never consumed anything is not a quota reset,
+        // but the expiry time still moved to a new cycle: record it as a
+        // low-severity time-change event instead of staying silent.
+        let previous = provider("a", "ok", vec![window("5h", 0.0, Some("2026-10-05T11:00:00Z"))]);
+        let current = provider("a", "ok", vec![window("5h", 0.0, Some("2026-10-05T16:00:00Z"))]);
+        let events = detect_simple(&previous, &current);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].event_type,
+            NOTIFICATION_EVENT_QUOTA_RESET_TIME_CHANGED
+        );
+        assert_eq!(events[0].severity, SEVERITY_INFO);
+        let details = events[0].details.as_ref().unwrap();
+        assert_eq!(
+            details["resetAtBefore"],
+            serde_json::json!("2026-10-05T11:00:00Z")
+        );
+        assert_eq!(
+            details["resetAt"],
+            serde_json::json!("2026-10-05T16:00:00Z")
+        );
+    }
+
+    #[test]
+    fn vanished_reset_time_for_unused_window_records_reset_time_change() {
+        // The vanished-boundary path classifies the same way: an unused
+        // window rolling over is a time change, not a reset.
+        let previous = provider("a", "ok", vec![window("5h", 0.0, Some("2026-10-05T11:00:00Z"))]);
+        let current = provider("a", "ok", vec![window("5h", 0.0, None)]);
+        let events = detect_simple(&previous, &current);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].event_type,
+            NOTIFICATION_EVENT_QUOTA_RESET_TIME_CHANGED
+        );
+    }
+
+    #[test]
+    fn boundary_passed_with_vanished_reset_time_records_quota_reset() {
+        // Some providers report resetAt=null right after the boundary passes
+        // and usage drops; the reset edge must not be lost while the field is
+        // missing.
+        let previous = provider("a", "ok", vec![window("5h", 37.0, Some("2026-10-05T11:00:00Z"))]);
+        let current = provider("a", "ok", vec![window("5h", 0.0, None)]);
+        let events = detect_simple(&previous, &current);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, NOTIFICATION_EVENT_QUOTA_RESET);
+        let details = events[0].details.as_ref().unwrap();
+        assert_eq!(details["usedPercentBefore"], serde_json::json!(37.0));
+        assert_eq!(details["usedPercentAfter"], serde_json::json!(0.0));
+    }
+
+    #[test]
+    fn vanished_reset_time_with_unchanged_usage_records_nothing() {
+        // A provider that merely stops reporting its reset time (data loss,
+        // not a cycle roll) must not produce a reset event.
+        let previous = provider("a", "ok", vec![window("5h", 37.0, Some("2026-10-05T11:00:00Z"))]);
+        let current = provider("a", "ok", vec![window("5h", 37.0, None)]);
+        assert!(detect_simple(&previous, &current).is_empty());
+    }
+
+    #[test]
+    fn repopulated_reset_time_after_vanished_boundary_records_nothing() {
+        // After the vanished-boundary reset fired, the provider later reports
+        // the next reset time; that repopulation must not fire a second
+        // event for the same cycle roll.
+        let previous = provider("a", "ok", vec![window("5h", 0.0, None)]);
+        let current = provider("a", "ok", vec![window("5h", 1.0, Some("2026-10-05T16:00:00Z"))]);
         assert!(detect_simple(&previous, &current).is_empty());
     }
 

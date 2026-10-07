@@ -42,8 +42,8 @@ pub use app_update::{
 pub use cli::run_cli;
 pub use config::{
     dev_clone_release_config, dev_restart_app, get_config, get_config_storage_info,
-    migrate_config_file, open_config_folder, open_remote_provider_guide, reset_config, save_config,
-    set_portable_mode, AppConfig,
+    migrate_config_file, open_config_folder, open_remote_provider_guide,
+    open_webhook_template_guide, reset_config, save_config, set_portable_mode, AppConfig,
 };
 pub use diagnostics::export_diagnostics;
 pub use local_api::{
@@ -246,6 +246,7 @@ pub fn run() {
             export_diagnostics,
             open_config_folder,
             open_remote_provider_guide,
+            open_webhook_template_guide,
             reset_config,
             save_config,
             set_portable_mode,

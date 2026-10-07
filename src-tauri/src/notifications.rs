@@ -5,10 +5,11 @@ use tauri::AppHandle;
 
 use crate::config::{
     config_path_for_app, load_or_create_config, resolve_secret_value, AppLanguage,
-    NotificationSettings, NOTIFICATION_EVENT_APP_STARTED, NOTIFICATION_EVENT_APP_UPDATE_APPLIED,
-    NOTIFICATION_EVENT_PROVIDER_ERROR, NOTIFICATION_EVENT_PROVIDER_RECOVERED,
-    NOTIFICATION_EVENT_QUOTA_EXHAUSTED, NOTIFICATION_EVENT_QUOTA_LOW,
-    NOTIFICATION_EVENT_QUOTA_RECOVERED_UNEXPECTED, NOTIFICATION_EVENT_QUOTA_RESET,
+    NotificationSettings, WebhookEndpointSettings, NOTIFICATION_EVENT_APP_STARTED,
+    NOTIFICATION_EVENT_APP_UPDATE_APPLIED, NOTIFICATION_EVENT_PROVIDER_ERROR,
+    NOTIFICATION_EVENT_PROVIDER_RECOVERED, NOTIFICATION_EVENT_QUOTA_EXHAUSTED,
+    NOTIFICATION_EVENT_QUOTA_LOW, NOTIFICATION_EVENT_QUOTA_RECOVERED_UNEXPECTED,
+    NOTIFICATION_EVENT_QUOTA_RESET, NOTIFICATION_EVENT_QUOTA_RESET_TIME_CHANGED,
 };
 use crate::logger::{LogLevel, LogSink};
 use crate::proxy::{self, ProxyConfig};
@@ -89,7 +90,23 @@ impl ChannelOutcome {
 #[serde(rename_all = "camelCase")]
 pub struct TestNotificationResult {
     pub toast: ChannelOutcome,
-    pub webhook: ChannelOutcome,
+    // One entry per configured webhook endpoint, in configuration order, so
+    // the test report shows exactly which target succeeded or failed.
+    pub webhooks: Vec<WebhookEndpointTestOutcome>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookEndpointTestOutcome {
+    pub id: String,
+    // Configured name, or "#<index>" when unnamed; shown to the user.
+    pub label: String,
+    // "sent" | "skipped" | "failed" — same vocabulary as ChannelOutcome.
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_code: Option<u16>,
 }
 
 #[derive(Serialize)]
@@ -106,6 +123,28 @@ struct WebhookPayload<'a> {
 /// An empty list selects nothing, so clearing the list silences notifications.
 pub fn event_matches_filter(settings: &NotificationSettings, event_type: &str) -> bool {
     settings.events.iter().any(|allowed| allowed == event_type)
+}
+
+/// The endpoints delivery fans out to: enabled and carrying a URL.
+pub fn enabled_webhook_endpoints(
+    settings: &NotificationSettings,
+) -> Vec<&WebhookEndpointSettings> {
+    settings
+        .webhooks
+        .iter()
+        .filter(|endpoint| endpoint.enabled && !endpoint.url.trim().is_empty())
+        .collect()
+}
+
+/// Display name for one endpoint in logs and test results.
+fn webhook_endpoint_label(endpoint: &WebhookEndpointSettings, index: usize) -> String {
+    endpoint
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("#{}", index + 1))
 }
 
 /// Spawns delivery for events recorded by a refresh. Delivery must never block
@@ -138,13 +177,25 @@ pub fn dispatch_events(
                 }
             }
             if settings.webhook_enabled {
-                let outcome = send_webhook(&config_path, &settings, global_proxy.as_ref(), &selected);
-                if outcome.status == "failed" {
-                    log_notification_failure(
+                for (index, endpoint) in settings.webhooks.iter().enumerate() {
+                    if !endpoint.enabled || endpoint.url.trim().is_empty() {
+                        continue;
+                    }
+                    // One endpoint failing never blocks the others.
+                    let outcome = send_webhook(
                         &config_path,
-                        "webhook",
-                        outcome.detail.as_deref().unwrap_or("unknown error"),
+                        endpoint,
+                        global_proxy.as_ref(),
+                        &language,
+                        &selected,
                     );
+                    if outcome.status == "failed" {
+                        log_notification_failure(
+                            &config_path,
+                            &format!("webhook[{}]", webhook_endpoint_label(endpoint, index)),
+                            outcome.detail.as_deref().unwrap_or("unknown error"),
+                        );
+                    }
                 }
             }
         });
@@ -170,16 +221,41 @@ fn log_notification_failure(config_path: &Path, channel: &str, detail: &str) {
     );
 }
 
+/// Renders a user-configured webhook body template for one event. Unknown
+/// placeholders are left untouched so templates stay predictable; values are
+/// event data only (no secret resolution happens in the body).
+pub fn render_webhook_template(template: &str, event: &QuotaEvent, language: &AppLanguage) -> String {
+    template
+        .replace("{{message}}", &describe_event(language, event))
+        .replace("{{eventType}}", &event.event_type)
+        .replace("{{severity}}", &event.severity)
+        .replace("{{providerId}}", event.provider_id.as_deref().unwrap_or(""))
+        .replace("{{providerName}}", event.provider_name.as_deref().unwrap_or(""))
+        .replace("{{windowId}}", event.window_id.as_deref().unwrap_or(""))
+        .replace("{{windowLabel}}", event.window_label.as_deref().unwrap_or(""))
+        .replace("{{occurredAt}}", &event.occurred_at)
+        .replace("{{app}}", "QuotaBarWin")
+        .replace(
+            "{{appVersion}}",
+            &crate::app_info::app_display_version(),
+        )
+        .replace(
+            "{{eventJson}}",
+            &serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string()),
+        )
+}
+
 pub fn send_webhook(
     config_path: &Path,
-    settings: &NotificationSettings,
+    endpoint: &WebhookEndpointSettings,
     global_proxy: Option<&ProxyConfig>,
+    language: &AppLanguage,
     events: &[QuotaEvent],
 ) -> ChannelOutcome {
     if events.is_empty() {
         return ChannelOutcome::skipped("no events");
     }
-    let raw_url = settings.webhook_url.as_deref().unwrap_or("").trim();
+    let raw_url = endpoint.url.trim();
     if raw_url.is_empty() {
         return ChannelOutcome::skipped("webhook URL is not configured");
     }
@@ -192,8 +268,8 @@ pub fn send_webhook(
         return ChannelOutcome::failed("webhook URL must start with http:// or https://".to_string());
     }
 
-    let timeout_seconds = settings
-        .webhook_timeout_seconds
+    let timeout_seconds = endpoint
+        .timeout_seconds
         .clamp(WEBHOOK_MIN_TIMEOUT_SECONDS, WEBHOOK_MAX_TIMEOUT_SECONDS);
     let client = match proxy::build_http_client(
         None,
@@ -204,26 +280,84 @@ pub fn send_webhook(
         Err(error) => return ChannelOutcome::failed(crate::redact::redact_sensitive(&error)),
     };
 
-    let payload = WebhookPayload {
-        schema_version: 1,
-        app: "QuotaBarWin",
-        app_version: crate::app_info::app_display_version(),
-        sent_at: chrono::Utc::now().to_rfc3339(),
-        events,
-    };
-    match client.post(&resolved_url).json(&payload).send() {
-        Ok(response) => {
-            let status_code = response.status().as_u16();
-            if response.status().is_success() {
-                ChannelOutcome::sent(Some(status_code))
-            } else {
-                ChannelOutcome::failed(format!("webhook returned HTTP {status_code}"))
+    let template = endpoint
+        .template
+        .as_deref()
+        .map(str::trim)
+        .filter(|template| !template.is_empty());
+    match template {
+        // Without a template the delivery stays the documented JSON batch.
+        None => {
+            let payload = WebhookPayload {
+                schema_version: 1,
+                app: "QuotaBarWin",
+                app_version: crate::app_info::app_display_version(),
+                sent_at: chrono::Utc::now().to_rfc3339(),
+                events,
+            };
+            match client.post(&resolved_url).json(&payload).send() {
+                Ok(response) => {
+                    let status_code = response.status().as_u16();
+                    if response.status().is_success() {
+                        ChannelOutcome::sent(Some(status_code))
+                    } else {
+                        ChannelOutcome::failed(format!("webhook returned HTTP {status_code}"))
+                    }
+                }
+                Err(error) => {
+                    // The resolved URL can embed secrets from ${secret:} references;
+                    // only the redacted error leaves this function.
+                    ChannelOutcome::failed(crate::redact::redact_sensitive(&error.to_string()))
+                }
             }
         }
-        Err(error) => {
-            // The resolved URL can embed secrets from ${secret:} references;
-            // only the redacted error leaves this function.
-            ChannelOutcome::failed(crate::redact::redact_sensitive(&error.to_string()))
+        // A template describes a single event, so every selected event is
+        // rendered and delivered as its own request. The rendered body is
+        // sent as JSON when it parses, plain text otherwise.
+        Some(template) => {
+            let mut delivered = 0usize;
+            let mut last_status_code = None;
+            let mut failures: Vec<String> = Vec::new();
+            for event in events {
+                let body = render_webhook_template(template, event, language);
+                let content_type = if serde_json::from_str::<serde_json::Value>(&body).is_ok() {
+                    "application/json"
+                } else {
+                    "text/plain; charset=utf-8"
+                };
+                match client
+                    .post(&resolved_url)
+                    .header("Content-Type", content_type)
+                    .body(body)
+                    .send()
+                {
+                    Ok(response) if response.status().is_success() => {
+                        delivered += 1;
+                        last_status_code = Some(response.status().as_u16());
+                    }
+                    Ok(response) => {
+                        failures.push(format!("webhook returned HTTP {}", response.status().as_u16()))
+                    }
+                    Err(error) => {
+                        failures.push(crate::redact::redact_sensitive(&error.to_string()))
+                    }
+                }
+            }
+            if failures.is_empty() {
+                ChannelOutcome::sent(last_status_code)
+            } else {
+                let detail = if delivered == 0 {
+                    failures.join("; ")
+                } else {
+                    format!(
+                        "{}/{} deliveries failed: {}",
+                        failures.len(),
+                        events.len(),
+                        failures.join("; ")
+                    )
+                };
+                ChannelOutcome::failed(detail)
+            }
         }
     }
 }
@@ -251,7 +385,29 @@ fn detail_string(details: &serde_json::Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+fn format_local_time(rfc3339: &str) -> Option<String> {
+    chrono::DateTime::parse_from_rfc3339(rfc3339)
+        .ok()
+        .map(|time| time.with_timezone(&chrono::Local).format("%m-%d %H:%M").to_string())
+}
+
+fn local_event_time_suffix(event: &QuotaEvent) -> String {
+    format_local_time(&event.occurred_at)
+        .map(|time| format!(" · {time}"))
+        .unwrap_or_default()
+}
+
+/// The localized, single-line description of an event, ending with the local
+/// time the event occurred so toast and webhook texts carry a concrete time.
 pub fn describe_event(language: &AppLanguage, event: &QuotaEvent) -> String {
+    format!(
+        "{}{}",
+        describe_event_text(language, event),
+        local_event_time_suffix(event)
+    )
+}
+
+fn describe_event_text(language: &AppLanguage, event: &QuotaEvent) -> String {
     let chinese = language_is_chinese(language);
     let details = event.details.clone().unwrap_or_default();
     let provider = event.provider_name.as_deref().unwrap_or("");
@@ -274,6 +430,17 @@ pub fn describe_event(language: &AppLanguage, event: &QuotaEvent) -> String {
                 format!("{subject} 额度已重置")
             } else {
                 format!("{subject} quota reset")
+            }
+        }
+        NOTIFICATION_EVENT_QUOTA_RESET_TIME_CHANGED => {
+            let next = detail_string(&details, "resetAt")
+                .as_deref()
+                .and_then(format_local_time);
+            match (chinese, next) {
+                (true, Some(next)) => format!("{subject} 额度到期时间变更（下次 {next}）"),
+                (true, None) => format!("{subject} 额度到期时间变更"),
+                (false, Some(next)) => format!("{subject} quota expiry time changed (next {next})"),
+                (false, None) => format!("{subject} quota expiry time changed"),
             }
         }
         NOTIFICATION_EVENT_QUOTA_RECOVERED_UNEXPECTED => {
@@ -526,13 +693,26 @@ pub async fn send_test_notification(
         ChannelOutcome::skipped("toast notifications are disabled")
     };
 
-    let webhook = if settings.webhook_enabled {
-        send_webhook(&path, &settings, global_proxy.as_ref(), &[event])
-    } else {
-        ChannelOutcome::skipped("webhook is disabled")
-    };
+    let mut webhooks = Vec::new();
+    if settings.webhook_enabled {
+        for (index, endpoint) in settings.webhooks.iter().enumerate() {
+            let label = webhook_endpoint_label(endpoint, index);
+            let outcome = if endpoint.enabled {
+                send_webhook(&path, endpoint, global_proxy.as_ref(), &language, &[event.clone()])
+            } else {
+                ChannelOutcome::skipped("webhook endpoint is disabled")
+            };
+            webhooks.push(WebhookEndpointTestOutcome {
+                id: endpoint.id.clone(),
+                label,
+                status: outcome.status,
+                detail: outcome.detail,
+                status_code: outcome.status_code,
+            });
+        }
+    }
 
-    Ok(TestNotificationResult { toast, webhook })
+    Ok(TestNotificationResult { toast, webhooks })
 }
 
 // Counterpart of ensure_app_identity_registration: removes the HKCU
@@ -580,11 +760,22 @@ pub fn should_remove_toast_registration(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::default_notification_settings;
+    use crate::config::{default_notification_settings, DEFAULT_WEBHOOK_TIMEOUT_SECONDS};
     use crate::quota_events::{
         pending_app_started, pending_app_update_applied, SEVERITY_POSITIVE,
     };
     use std::io::Read;
+
+    fn endpoint(url: &str) -> WebhookEndpointSettings {
+        WebhookEndpointSettings {
+            id: "webhook-1".to_string(),
+            name: None,
+            url: url.to_string(),
+            timeout_seconds: DEFAULT_WEBHOOK_TIMEOUT_SECONDS,
+            template: None,
+            enabled: true,
+        }
+    }
 
     fn recorded_event(event_type: &str) -> QuotaEvent {
         QuotaEvent {
@@ -645,16 +836,186 @@ mod tests {
     }
 
     #[test]
+    fn describe_event_appends_the_local_event_time() {
+        let event = recorded_event(NOTIFICATION_EVENT_QUOTA_RESET);
+        let described = describe_event(&AppLanguage::ZhCn, &event);
+        // The concrete local time is machine-dependent; assert the MM-DD HH:MM
+        // shape rather than a fixed value.
+        let time_suffix = described.rsplit(" · ").next().unwrap_or_default();
+        let mut parts = time_suffix.split(' ');
+        let date = parts.next().unwrap_or_default();
+        let time = parts.next().unwrap_or_default();
+        assert_eq!(date.split('-').count(), 2, "date part looks like MM-DD: {date}");
+        assert_eq!(time.len(), 5, "time part looks like HH:MM: {time}");
+        let time_digits: String = time.chars().filter(|c| *c != ':').collect();
+        assert!(time_digits.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    #[test]
+    fn describe_reset_time_change_event_renders_next_expiry() {
+        let mut event = recorded_event(NOTIFICATION_EVENT_QUOTA_RESET_TIME_CHANGED);
+        event.details = Some(serde_json::json!({
+            "resetAtBefore": "2026-10-05T11:00:00Z",
+            "resetAt": "2026-10-05T16:00:00Z",
+            "usedPercentBefore": 0.0,
+            "usedPercentAfter": 0.0
+        }));
+
+        let chinese = describe_event(&AppLanguage::ZhCn, &event);
+        assert!(chinese.contains("额度到期时间变更（下次 "), "zh: {chinese}");
+
+        let english = describe_event(&AppLanguage::En, &event);
+        assert!(english.contains("quota expiry time changed (next "), "en: {english}");
+
+        // Without a parseable next reset time the text still describes the
+        // change; the vanished-boundary variant records resetAt as null.
+        event.details = Some(serde_json::json!({ "resetAt": null }));
+        assert!(describe_event(&AppLanguage::ZhCn, &event).contains("额度到期时间变更"));
+        assert!(describe_event(&AppLanguage::En, &event).contains("quota expiry time changed"));
+    }
+
+    #[test]
+    fn render_webhook_template_replaces_known_placeholders() {
+        let event = recorded_event(NOTIFICATION_EVENT_QUOTA_RESET);
+        let rendered = render_webhook_template(
+            "{{message}} | {{eventType}} | {{providerName}} | {{windowLabel}} | {{occurredAt}} | {{unknown}}",
+            &event,
+            &AppLanguage::ZhCn,
+        );
+        assert!(rendered.contains("额度已重置"));
+        assert!(rendered.contains("quota-reset"));
+        assert!(rendered.contains("Remote A"));
+        assert!(rendered.contains("5h window"));
+        assert!(rendered.contains("2026-10-05T12:00:00Z"));
+        assert!(rendered.contains("{{unknown}}"), "unknown placeholders stay untouched");
+    }
+
+    #[test]
+    fn webhook_template_posts_one_rendered_request_per_event() {
+        let server = tiny_http::Server::http("127.0.0.1:0").expect("test server");
+        let addr = server.server_addr();
+        let url = format!("http://{addr}/hook");
+
+        let handler = thread::spawn(move || {
+            let mut received = Vec::new();
+            for _ in 0..2 {
+                let mut request = server.recv().expect("request");
+                let mut body = String::new();
+                request.as_reader().read_to_string(&mut body).expect("body");
+                let content_type = request
+                    .headers()
+                    .iter()
+                    .find(|header| header.field.equiv("Content-Type"))
+                    .map(|header| header.value.as_str().to_string());
+                let _ = request.respond(tiny_http::Response::from_string("ok").with_status_code(200));
+                received.push((body, content_type));
+            }
+            received
+        });
+
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let endpoint = WebhookEndpointSettings {
+            template: Some("{\"text\":\"{{message}}\"}".to_string()),
+            ..endpoint(&url)
+        };
+        let events = vec![
+            recorded_event(NOTIFICATION_EVENT_QUOTA_RESET),
+            recorded_event(NOTIFICATION_EVENT_QUOTA_LOW),
+        ];
+        let outcome = send_webhook(&path, &endpoint, None, &AppLanguage::En, &events);
+
+        assert_eq!(outcome.status, "sent");
+        let received = handler.join().expect("handler");
+        assert_eq!(received.len(), 2, "one request per event");
+        for (body, content_type) in received {
+            assert!(content_type.unwrap().starts_with("application/json"));
+            let payload: serde_json::Value = serde_json::from_str(&body).expect("rendered json");
+            assert!(payload["text"].as_str().unwrap().contains("quota"));
+        }
+    }
+
+    #[test]
+    fn webhook_template_non_json_body_is_sent_as_plain_text() {
+        let server = tiny_http::Server::http("127.0.0.1:0").expect("test server");
+        let addr = server.server_addr();
+        let url = format!("http://{addr}/hook");
+
+        let handler = thread::spawn(move || {
+            let mut request = server.recv().expect("request");
+            let mut body = String::new();
+            request.as_reader().read_to_string(&mut body).expect("body");
+            let content_type = request
+                .headers()
+                .iter()
+                .find(|header| header.field.equiv("Content-Type"))
+                .map(|header| header.value.as_str().to_string());
+            let _ = request.respond(tiny_http::Response::from_string("ok").with_status_code(200));
+            (body, content_type)
+        });
+
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+        let endpoint = WebhookEndpointSettings {
+            template: Some("[QuotaBarWin] {{message}}".to_string()),
+            ..endpoint(&url)
+        };
+        let outcome = send_webhook(
+            &path,
+            &endpoint,
+            None,
+            &AppLanguage::En,
+            &[recorded_event(NOTIFICATION_EVENT_QUOTA_RESET)],
+        );
+
+        assert_eq!(outcome.status, "sent");
+        let (body, content_type) = handler.join().expect("handler");
+        assert!(content_type.unwrap().starts_with("text/plain"));
+        assert!(body.starts_with("[QuotaBarWin] "));
+    }
+
+    #[test]
+    fn enabled_webhook_endpoints_filters_disabled_and_unconfigured() {
+        let mut settings = default_notification_settings();
+        settings.webhooks = vec![
+            WebhookEndpointSettings {
+                name: Some("DingTalk".to_string()),
+                url: "https://example.com/a".to_string(),
+                ..endpoint("")
+            },
+            endpoint("   "),
+            WebhookEndpointSettings {
+                enabled: false,
+                url: "https://example.com/b".to_string(),
+                ..endpoint("")
+            },
+        ];
+
+        let endpoints = enabled_webhook_endpoints(&settings);
+        assert_eq!(endpoints.len(), 1);
+        assert_eq!(endpoints[0].name.as_deref(), Some("DingTalk"));
+    }
+
+    #[test]
+    fn webhook_endpoint_label_prefers_the_name_then_falls_back_to_index() {
+        let named = WebhookEndpointSettings {
+            name: Some(" 日志 ".to_string()),
+            ..endpoint("")
+        };
+        assert_eq!(webhook_endpoint_label(&named, 3), "日志");
+
+        assert_eq!(webhook_endpoint_label(&endpoint(""), 1), "#2");
+    }
+
+    #[test]
     fn webhook_skips_without_url_and_rejects_non_http_schemes() {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
-        let mut settings = default_notification_settings();
-        settings.webhook_url = None;
-        let outcome = send_webhook(&path, &settings, None, &[recorded_event(NOTIFICATION_EVENT_QUOTA_RESET)]);
+        let outcome = send_webhook(&path, &endpoint(""), None, &AppLanguage::En, &[recorded_event(NOTIFICATION_EVENT_QUOTA_RESET)]);
         assert_eq!(outcome.status, "skipped");
 
-        settings.webhook_url = Some("ftp://example.com/hook".to_string());
-        let outcome = send_webhook(&path, &settings, None, &[recorded_event(NOTIFICATION_EVENT_QUOTA_RESET)]);
+        let endpoint = endpoint("ftp://example.com/hook");
+        let outcome = send_webhook(&path, &endpoint, None, &AppLanguage::En, &[recorded_event(NOTIFICATION_EVENT_QUOTA_RESET)]);
         assert_eq!(outcome.status, "failed");
         assert!(outcome.detail.unwrap().contains("http"));
     }
@@ -681,10 +1042,8 @@ mod tests {
 
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
-        let mut settings = default_notification_settings();
-        settings.webhook_url = Some(url);
         let events = vec![recorded_event(NOTIFICATION_EVENT_QUOTA_RESET)];
-        let outcome = send_webhook(&path, &settings, None, &events);
+        let outcome = send_webhook(&path, &endpoint(&url), None, &AppLanguage::En, &events);
 
         assert_eq!(outcome.status, "sent");
         assert_eq!(outcome.status_code, Some(200));
@@ -711,13 +1070,12 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");
         std::fs::write(temp.path().join("webhook-url.txt"), &direct_url).expect("write url file");
-        let mut settings = default_notification_settings();
-        settings.webhook_url = Some(format!(
+        let endpoint = endpoint(&format!(
             "${{file:{}}}",
             temp.path().join("webhook-url.txt").display()
         ));
 
-        let outcome = send_webhook(&path, &settings, None, &[recorded_event(NOTIFICATION_EVENT_QUOTA_RESET)]);
+        let outcome = send_webhook(&path, &endpoint, None, &AppLanguage::En, &[recorded_event(NOTIFICATION_EVENT_QUOTA_RESET)]);
         assert_eq!(outcome.status, "sent");
         handler.join().expect("handler");
     }

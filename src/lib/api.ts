@@ -52,8 +52,7 @@ const fallbackConfig: AppConfig = {
   notifications: {
     toastEnabled: false,
     webhookEnabled: false,
-    webhookUrl: null,
-    webhookTimeoutSeconds: 10,
+    webhooks: [],
     events: [
       "app-update-applied",
       "quota-reset",
@@ -215,7 +214,7 @@ export async function sendTestNotification(
     void settings;
     return {
       toast: { status: "skipped", detail: "desktop only" },
-      webhook: { status: "skipped", detail: "desktop only" },
+      webhooks: [],
     };
   }
 
@@ -403,6 +402,15 @@ export async function openRemoteProviderGuide(): Promise<void> {
   }
 
   return invoke<void>("open_remote_provider_guide");
+}
+
+export async function openWebhookTemplateGuide(): Promise<void> {
+  if (!hasTauriInternals()) {
+    window.open("/webhook-template-guide.html", "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  return invoke<void>("open_webhook_template_guide");
 }
 
 export type UpdateInfo = {

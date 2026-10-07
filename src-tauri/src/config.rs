@@ -15,7 +15,7 @@ use crate::{
     proxy::ProxyConfig,
 };
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 23;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 25;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_LOCAL_API_PORT: u16 = 41833;
@@ -23,13 +23,16 @@ pub const DEFAULT_WEBHOOK_TIMEOUT_SECONDS: u64 = 10;
 pub const NOTIFICATION_EVENT_APP_STARTED: &str = "app-started";
 pub const NOTIFICATION_EVENT_APP_UPDATE_APPLIED: &str = "app-update-applied";
 pub const NOTIFICATION_EVENT_QUOTA_RESET: &str = "quota-reset";
+pub const NOTIFICATION_EVENT_QUOTA_RESET_TIME_CHANGED: &str = "quota-reset-time-changed";
 pub const NOTIFICATION_EVENT_QUOTA_RECOVERED_UNEXPECTED: &str = "quota-recovered-unexpected";
 pub const NOTIFICATION_EVENT_QUOTA_EXHAUSTED: &str = "quota-exhausted";
 pub const NOTIFICATION_EVENT_QUOTA_LOW: &str = "quota-low";
 pub const NOTIFICATION_EVENT_PROVIDER_ERROR: &str = "provider-error";
 pub const NOTIFICATION_EVENT_PROVIDER_RECOVERED: &str = "provider-recovered";
-// app-started is recorded in the event history but stays out of notification
-// defaults so enabling a channel does not start pinging on every launch.
+// app-started and quota-reset-time-changed are recorded in the event history
+// but stay out of notification defaults: launching pings on every start, and
+// an unused rolling window would ping on every cycle without consuming
+// anything. Both can still be selected for notifications in Settings.
 pub const DEFAULT_NOTIFICATION_EVENTS: &[&str] = &[
     NOTIFICATION_EVENT_APP_UPDATE_APPLIED,
     NOTIFICATION_EVENT_QUOTA_RESET,
@@ -46,6 +49,8 @@ const LEGACY_CONFIG_FILE_NAME: &str = "config.json";
 const PORTABLE_MARKER_FILE_NAME: &str = "quotabarwin.portable";
 const REMOTE_PROVIDER_GUIDE_FILE_NAME: &str = "remote-provider-guide.html";
 const REMOTE_PROVIDER_GUIDE_HTML: &str = include_str!("remote_provider_guide.html");
+const WEBHOOK_TEMPLATE_GUIDE_FILE_NAME: &str = "webhook-template-guide.html";
+const WEBHOOK_TEMPLATE_GUIDE_HTML: &str = include_str!("webhook_template_guide.html");
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -126,10 +131,11 @@ pub struct NotificationSettings {
     pub toast_enabled: bool,
     #[serde(default)]
     pub webhook_enabled: bool,
+    // All configured webhook endpoints. Delivery fans out to every endpoint
+    // that is both enabled and has a non-empty URL; each endpoint carries its
+    // own template and timeout.
     #[serde(default)]
-    pub webhook_url: Option<String>,
-    #[serde(default = "default_webhook_timeout_seconds")]
-    pub webhook_timeout_seconds: u64,
+    pub webhooks: Vec<WebhookEndpointSettings>,
     #[serde(default = "default_notification_events")]
     pub events: Vec<String>,
 }
@@ -140,8 +146,48 @@ impl Default for NotificationSettings {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookEndpointSettings {
+    /// Stable id used by the settings UI to key list rows; never sent
+    /// anywhere.
+    pub id: String,
+    /// Optional display name shown in the settings list and test results.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Empty string means the endpoint is not configured yet.
+    #[serde(default)]
+    pub url: String,
+    #[serde(default = "default_webhook_timeout_seconds")]
+    pub timeout_seconds: u64,
+    // Optional custom webhook body template. When empty, notifications POST
+    // the documented JSON batch payload; when set, each selected event is
+    // rendered through the template and delivered as its own request.
+    #[serde(default)]
+    pub template: Option<String>,
+    #[serde(default = "default_webhook_endpoint_enabled")]
+    pub enabled: bool,
+}
+
+impl Default for WebhookEndpointSettings {
+    fn default() -> Self {
+        WebhookEndpointSettings {
+            id: "webhook-1".to_string(),
+            name: None,
+            url: String::new(),
+            timeout_seconds: DEFAULT_WEBHOOK_TIMEOUT_SECONDS,
+            template: None,
+            enabled: true,
+        }
+    }
+}
+
 fn default_webhook_timeout_seconds() -> u64 {
     DEFAULT_WEBHOOK_TIMEOUT_SECONDS
+}
+
+fn default_webhook_endpoint_enabled() -> bool {
+    true
 }
 
 fn default_notification_events() -> Vec<String> {
@@ -155,8 +201,7 @@ pub fn default_notification_settings() -> NotificationSettings {
     NotificationSettings {
         toast_enabled: false,
         webhook_enabled: false,
-        webhook_url: None,
-        webhook_timeout_seconds: DEFAULT_WEBHOOK_TIMEOUT_SECONDS,
+        webhooks: Vec::new(),
         events: default_notification_events(),
     }
 }
@@ -1110,6 +1155,63 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(23);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(23);
+    if version < 24 {
+        // Optional custom webhook body template; null keeps the default JSON
+        // batch payload, so migrated configurations keep their behaviour.
+        value["notifications"]["webhookTemplate"] = serde_json::Value::Null;
+        value["schemaVersion"] = serde_json::json!(24);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(24);
+    if version < 25 {
+        // Webhook notifications fan out to a list of endpoints, each with its
+        // own template and timeout. The single webhook configured by schema
+        // 24 becomes the first endpoint; a missing or empty URL migrates to
+        // an empty list.
+        if let Some(notifications) = value.get_mut("notifications") {
+            if let Some(object) = notifications.as_object_mut() {
+                let url = object
+                    .get("webhookUrl")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                let timeout = object
+                    .get("webhookTimeoutSeconds")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(DEFAULT_WEBHOOK_TIMEOUT_SECONDS);
+                let template = object
+                    .get("webhookTemplate")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                let webhooks = if url.is_empty() {
+                    serde_json::json!([])
+                } else {
+                    serde_json::json!([{
+                        "id": "webhook-1",
+                        "name": null,
+                        "url": url,
+                        "timeoutSeconds": timeout,
+                        "template": template,
+                        "enabled": true
+                    }])
+                };
+                object.remove("webhookUrl");
+                object.remove("webhookTimeoutSeconds");
+                object.remove("webhookTemplate");
+                object.insert("webhooks".to_string(), webhooks);
+            }
+        }
+        value["schemaVersion"] = serde_json::json!(25);
+    }
+
     Ok(value)
 }
 
@@ -1978,6 +2080,25 @@ fn write_remote_provider_guide(path: &Path) -> Result<(), String> {
     }
 
     fs::write(path, REMOTE_PROVIDER_GUIDE_HTML).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn open_webhook_template_guide(app: AppHandle) -> Result<(), String> {
+    let guide_path = config_path_for_app(&app)?.with_file_name(WEBHOOK_TEMPLATE_GUIDE_FILE_NAME);
+    tauri::async_runtime::spawn_blocking(move || {
+        write_webhook_template_guide(&guide_path)?;
+        open_path_external(&guide_path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn write_webhook_template_guide(path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    fs::write(path, WEBHOOK_TEMPLATE_GUIDE_HTML).map_err(|error| error.to_string())
 }
 
 fn reveal_path(path: &Path) -> Result<(), String> {
@@ -2978,11 +3099,9 @@ mod tests {
             migrated["notifications"]["webhookEnabled"],
             serde_json::json!(false)
         );
-        assert_eq!(migrated["notifications"]["webhookUrl"], serde_json::Value::Null);
-        assert_eq!(
-            migrated["notifications"]["webhookTimeoutSeconds"],
-            serde_json::json!(DEFAULT_WEBHOOK_TIMEOUT_SECONDS)
-        );
+        // No webhook was configured, so the endpoint list migrates empty.
+        assert_eq!(migrated["notifications"]["webhooks"], serde_json::json!([]));
+        assert!(migrated["notifications"].get("webhookUrl").is_none());
         assert_eq!(
             migrated["notifications"]["events"],
             serde_json::json!(DEFAULT_NOTIFICATION_EVENTS)
@@ -2992,14 +3111,78 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v23_converts_the_single_webhook_into_an_endpoint() {
+        let value = serde_json::json!({
+            "schemaVersion": 23,
+            "notifications": {
+                "toastEnabled": true,
+                "webhookEnabled": true,
+                "webhookUrl": "https://example.com/hook",
+                "webhookTimeoutSeconds": 15,
+                "events": ["quota-reset"]
+            },
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(migrated["notifications"]["toastEnabled"], serde_json::json!(true));
+        assert_eq!(migrated["notifications"]["events"], serde_json::json!(["quota-reset"]));
+        let webhooks = migrated["notifications"]["webhooks"].as_array().expect("webhooks");
+        assert_eq!(webhooks.len(), 1, "the configured webhook becomes one endpoint");
+        assert_eq!(webhooks[0]["url"], serde_json::json!("https://example.com/hook"));
+        assert_eq!(webhooks[0]["timeoutSeconds"], serde_json::json!(15));
+        assert_eq!(webhooks[0]["template"], serde_json::Value::Null);
+        assert_eq!(webhooks[0]["enabled"], serde_json::json!(true));
+        assert!(migrated["notifications"].get("webhookUrl").is_none());
+        assert!(migrated["notifications"].get("webhookTimeoutSeconds").is_none());
+        assert!(migrated["notifications"].get("webhookTemplate").is_none());
+        assert_eq!(default_config().notifications.webhooks, Vec::new());
+    }
+
+    #[test]
+    fn config_migration_v24_moves_the_template_into_the_endpoint() {
+        let value = serde_json::json!({
+            "schemaVersion": 24,
+            "notifications": {
+                "toastEnabled": true,
+                "webhookEnabled": true,
+                "webhookUrl": "${secret:HOOK_URL}",
+                "webhookTimeoutSeconds": 20,
+                "webhookTemplate": "{\"text\":\"{{message}}\"}",
+                "events": ["quota-reset"]
+            },
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        let webhooks = migrated["notifications"]["webhooks"].as_array().expect("webhooks");
+        assert_eq!(webhooks.len(), 1);
+        assert_eq!(webhooks[0]["url"], serde_json::json!("${secret:HOOK_URL}"));
+        assert_eq!(webhooks[0]["timeoutSeconds"], serde_json::json!(20));
+        assert_eq!(
+            webhooks[0]["template"],
+            serde_json::json!("{\"text\":\"{{message}}\"}")
+        );
+    }
+
+    #[test]
     fn notification_settings_deserialize_with_defaults_for_partial_input() {
         let settings: NotificationSettings =
             serde_json::from_value(serde_json::json!({})).expect("partial settings parse");
 
         assert!(!settings.toast_enabled);
         assert!(!settings.webhook_enabled);
-        assert_eq!(settings.webhook_url, None);
-        assert_eq!(settings.webhook_timeout_seconds, DEFAULT_WEBHOOK_TIMEOUT_SECONDS);
+        assert_eq!(settings.webhooks, Vec::new());
         assert_eq!(
             settings.events,
             DEFAULT_NOTIFICATION_EVENTS

@@ -70,11 +70,19 @@ export type AppConfig = {
   providers: RemoteProviderConfig[];
 };
 
+export type WebhookEndpoint = {
+  id: string;
+  name?: string | null;
+  url: string;
+  timeoutSeconds: number;
+  template?: string | null;
+  enabled: boolean;
+};
+
 export type NotificationSettings = {
   toastEnabled: boolean;
   webhookEnabled: boolean;
-  webhookUrl?: string | null;
-  webhookTimeoutSeconds: number;
+  webhooks: WebhookEndpoint[];
   events: string[];
 };
 
@@ -94,7 +102,15 @@ export type QuotaEvent = {
 
 export type TestNotificationResult = {
   toast: TestChannelOutcome;
-  webhook: TestChannelOutcome;
+  webhooks: WebhookEndpointTestOutcome[];
+};
+
+export type WebhookEndpointTestOutcome = {
+  id: string;
+  label: string;
+  status: "sent" | "skipped" | "failed" | string;
+  detail?: string | null;
+  statusCode?: number | null;
 };
 
 export type TestChannelOutcome = {

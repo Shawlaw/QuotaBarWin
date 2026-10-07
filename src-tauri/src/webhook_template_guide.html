@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuotaBarWin Webhook 通知指南 / Webhook Guide</title>
+    <style>
+      :root {
+        color: #1f2937;
+        background: #f6f8fb;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "Microsoft YaHei", sans-serif;
+        line-height: 1.58;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      main {
+        margin: 0 auto;
+        max-width: 920px;
+        padding: 32px 24px 56px;
+      }
+
+      article > header {
+        border-bottom: 1px solid #d9e2ec;
+        margin-bottom: 24px;
+        padding-bottom: 20px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        color: #0f172a;
+        line-height: 1.2;
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 30px;
+        font-weight: 720;
+      }
+
+      h2 {
+        font-size: 20px;
+        margin-top: 30px;
+      }
+
+      h3 {
+        font-size: 16px;
+        margin-top: 18px;
+      }
+
+      p {
+        margin: 10px 0 0;
+      }
+
+      ol,
+      ul {
+        margin: 10px 0 0;
+        padding-left: 22px;
+      }
+
+      li + li {
+        margin-top: 6px;
+      }
+
+      code,
+      pre {
+        font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+
+      code {
+        background: #eef2f7;
+        border-radius: 4px;
+        padding: 1px 4px;
+      }
+
+      pre {
+        background: #111827;
+        border-radius: 8px;
+        color: #e5e7eb;
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 12px 0 0;
+        overflow: auto;
+        padding: 16px;
+      }
+
+      section {
+        background: #ffffff;
+        border: 1px solid #d9e2ec;
+        border-radius: 8px;
+        margin-top: 16px;
+        padding: 18px;
+      }
+
+      table {
+        border-collapse: collapse;
+        margin-top: 12px;
+        width: 100%;
+      }
+
+      th,
+      td {
+        border: 1px solid #d9e2ec;
+        padding: 8px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: #f1f5f9;
+        font-weight: 700;
+      }
+
+      .lead {
+        color: #475569;
+        font-size: 16px;
+      }
+
+      .language-switch {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .language-switch a {
+        border: 1px solid #0f766e;
+        border-radius: 6px;
+        color: #0f766e;
+        font-weight: 650;
+        padding: 7px 12px;
+        text-decoration: none;
+      }
+
+      .language-switch a[aria-current="true"] {
+        background: #0f766e;
+        color: #ffffff;
+      }
+
+      .note {
+        background: #eff6ff;
+        border-left: 4px solid #3b82f6;
+        border-radius: 0 8px 8px 0;
+        color: #1e3a8a;
+        margin-top: 12px;
+        padding: 12px 16px;
+      }
+
+      .lang-en {
+        display: none;
+      }
+    </style>
+    <script>
+      function applyLanguage() {
+        const language = location.hash === "#en" ? "en" : "zh-CN";
+        document.documentElement.lang = language;
+        for (const section of document.querySelectorAll("[data-language]")) {
+          section.hidden = section.dataset.language !== language;
+          section.style.display = section.hidden ? "none" : "block";
+        }
+        for (const link of document.querySelectorAll("[data-language-link]")) {
+          link.setAttribute(
+            "aria-current",
+            link.dataset.languageLink === language ? "true" : "false",
+          );
+        }
+      }
+
+      window.addEventListener("hashchange", applyLanguage);
+      window.addEventListener("DOMContentLoaded", applyLanguage);
+    </script>
+  </head>
+  <body>
+    <main>
+      <article data-language="zh-CN">
+        <header>
+          <h1>Webhook 通知指南</h1>
+          <p class="lead">
+            说明「设置 → 通知 → Webhook」的两种发送格式，以及自定义消息模板支持的占位符。
+          </p>
+          <nav class="language-switch" aria-label="文档语言">
+            <a href="#zh-CN" data-language-link="zh-CN" aria-current="true">中文</a>
+            <a href="#en" data-language-link="en" aria-current="false">English</a>
+          </nav>
+        </header>
+
+        <section>
+          <h2>两种发送格式</h2>
+          <ul>
+            <li>
+              <strong>默认（模板留空）</strong>：每次刷新产生的所选事件打包为<strong>一个 JSON 批量请求</strong>，以
+              <code>application/json</code> POST 到你填写的地址。
+            </li>
+            <li>
+              <strong>自定义模板</strong>：填写模板后，<strong>每条所选事件单独渲染并发送一次请求</strong>。渲染结果是合法
+              JSON 时以 <code>application/json</code> 发送（适合钉钉、飞书、企业微信等机器人接口），否则以
+              <code>text/plain; charset=utf-8</code> 发送（适合通用接收端、日志收集）。
+            </li>
+          </ul>
+          <p>
+            模板只做占位符替换，不解析其它语法；不认识的占位符会<strong>原样保留</strong>。模板正文不支持
+            <code>${secret:}</code> 等密钥引用（只有 Webhook URL 支持），避免把密钥写进发往外部服务的内容里。
+          </p>
+          <p>
+            可以配置<strong>多个 Webhook 端点</strong>：事件会同时发送到所有已启用的端点，每个端点独立配置名称、URL、模板、超时与启用开关，任一端点失败不影响其它端点。
+          </p>
+        </section>
+
+        <section>
+          <h2>默认 JSON 批量格式</h2>
+          <p>留空模板时，请求体结构如下（字段均为 camelCase）：</p>
+          <pre>{
+  "schemaVersion": 1,
+  "app": "QuotaBarWin",
+  "appVersion": "1.6.0(a1b2c3d)",
+  "sentAt": "2026-10-07T01:35:28.107592100+00:00",
+  "events": [
+    {
+      "id": 7,
+      "occurredAt": "2026-10-06T22:35:28.107592100+00:00",
+      "eventType": "quota-reset",
+      "severity": "positive",
+      "providerId": "kimi-coding-2",
+      "providerName": "Kimi",
+      "windowId": "300-minute",
+      "windowLabel": "5小时限",
+      "details": {
+        "remainingPercent": 100.0,
+        "resetAt": "2026-10-07T03:35:14.207781Z",
+        "usedPercentBefore": 37.0,
+        "usedPercentAfter": 0.0
+      }
+    }
+  ]
+}</pre>
+          <p>
+            与应用无关的事件（如应用启动）中，<code>providerId</code> / <code>windowId</code> /
+            <code>windowLabel</code> / <code>details</code> 可能缺省。<code>details</code>
+            的具体键随事件类型不同，见下文事件类型表。
+          </p>
+        </section>
+
+        <section>
+          <h2>模板占位符</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>占位符</th>
+                <th>替换为</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>{{message}}</code></td>
+                <td>本地化的通知正文（与 Windows 通知相同，末尾已附带事件发生的本地时间 <code>MM-DD HH:mm</code>）</td>
+              </tr>
+              <tr>
+                <td><code>{{eventType}}</code></td>
+                <td>事件类型标识，如 <code>quota-reset</code></td>
+              </tr>
+              <tr>
+                <td><code>{{severity}}</code></td>
+                <td>级别：<code>info</code> / <code>positive</code> / <code>warning</code> / <code>error</code></td>
+              </tr>
+              <tr>
+                <td><code>{{providerId}}</code></td>
+                <td>提供方实例 ID（与应用无关的事件为空字符串）</td>
+              </tr>
+              <tr>
+                <td><code>{{providerName}}</code></td>
+                <td>提供方显示名（如 <code>Kimi</code>）</td>
+              </tr>
+              <tr>
+                <td><code>{{windowId}}</code></td>
+                <td>额度窗口 ID（如 <code>300-minute</code>）</td>
+              </tr>
+              <tr>
+                <td><code>{{windowLabel}}</code></td>
+                <td>额度窗口显示名（如 <code>5小时限</code>）</td>
+              </tr>
+              <tr>
+                <td><code>{{occurredAt}}</code></td>
+                <td>事件发生时刻（RFC 3339 / UTC）</td>
+              </tr>
+              <tr>
+                <td><code>{{app}}</code></td>
+                <td>固定值 <code>QuotaBarWin</code></td>
+              </tr>
+              <tr>
+                <td><code>{{appVersion}}</code></td>
+                <td>应用版本（含短 commit，如 <code>1.6.0(a1b2c3d)</code>）</td>
+              </tr>
+              <tr>
+                <td><code>{{eventJson}}</code></td>
+                <td>该事件的完整 JSON 对象（紧凑序列化），想在自定义 JSON 结构里内嵌原始数据时使用</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="note">
+            想拿 <code>details</code> 里的具体数值（如剩余百分比）？用 <code>{{eventJson}}</code>
+            内嵌整份事件数据，或由接收端解析 <code>{{message}}</code> 文本。
+          </div>
+        </section>
+
+        <section>
+          <h2>模板示例</h2>
+
+          <h3>钉钉自定义机器人</h3>
+          <pre>{"msgtype":"text","text":{"content":"[QuotaBarWin] {{message}}"}}</pre>
+
+          <h3>飞书自定义机器人（text 消息）</h3>
+          <pre>{"msg_type":"text","content":{"text":"[QuotaBarWin] {{providerName}} {{windowLabel}}：{{message}}"}}</pre>
+
+          <h3>通用 JSON 转发（保留原始事件数据）</h3>
+          <pre>{"source":"{{app}} {{appVersion}}","occurredAt":"{{occurredAt}}","event":{{eventJson}}}</pre>
+
+          <h3>纯文本（渲染结果不是合法 JSON，会按 text/plain 发送）</h3>
+          <pre>[QuotaBarWin] {{message}}（类型：{{eventType}}，级别：{{severity}}）</pre>
+        </section>
+
+        <section>
+          <h2>事件类型</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>eventType</th>
+                <th>含义</th>
+                <th>级别</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>quota-reset</code></td>
+                <td>额度重置：上一周期有消耗的窗口滚动，额度恢复——包括窗口比之前宣布的时间提前滚动、或边界已过但提供方尚未更新重置时间的情况（details 含 <code>remainingPercent</code>、<code>usedPercentBefore</code>/<code>After</code>、新周期 <code>resetAt</code>）</td>
+                <td><code>positive</code></td>
+              </tr>
+              <tr>
+                <td><code>quota-reset-time-changed</code></td>
+                <td>额度到期时间变更：上一周期没有任何消耗的窗口滚动（details 含 <code>resetAtBefore</code> 与新 <code>resetAt</code>）。默认不发通知，需在设置中单独勾选</td>
+                <td><code>info</code></td>
+              </tr>
+              <tr>
+                <td><code>quota-recovered-unexpected</code></td>
+                <td>额度异常回升：重置时间完全未变（提供方仍承诺同一周期）时已用额度大幅回落（≥20%），例如周期中途额度被部分归还</td>
+                <td><code>warning</code></td>
+              </tr>
+              <tr>
+                <td><code>quota-exhausted</code></td>
+                <td>额度已用尽（剩余 ≤ 0.5%）</td>
+                <td><code>error</code></td>
+              </tr>
+              <tr>
+                <td><code>quota-low</code></td>
+                <td>额度低于通知设置中的警告阈值</td>
+                <td><code>warning</code></td>
+              </tr>
+              <tr>
+                <td><code>provider-error</code></td>
+                <td>提供方刷新失败（details 含脱敏后的 <code>error</code>）</td>
+                <td><code>error</code></td>
+              </tr>
+              <tr>
+                <td><code>provider-recovered</code></td>
+                <td>提供方刷新恢复正常</td>
+                <td><code>info</code></td>
+              </tr>
+              <tr>
+                <td><code>app-update-applied</code></td>
+                <td>应用升级完成（details 含 <code>version</code>）</td>
+                <td><code>positive</code></td>
+              </tr>
+              <tr>
+                <td><code>app-started</code></td>
+                <td>应用启动。默认不发通知</td>
+                <td><code>info</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section>
+          <h2>其它行为说明</h2>
+          <ul>
+            <li>
+              Webhook URL 支持 <code>${secret:NAME}</code>、<code>${env:NAME}</code>、<code>${file:C:\path\secret.txt}</code>
+              密钥引用，避免把带 token 的地址明文写进配置文件。
+            </li>
+            <li>请求遵循应用的网络代理设置；超时时间可在设置中调整（1–60 秒）。</li>
+            <li>通知在变化得到确认后的<strong>下一次刷新</strong>时送达（默认间隔 300 秒，可在设置中调小）；应用未运行时不补发。</li>
+            <li>「发送测试通知」使用当前界面填写的配置（包括模板草稿），无需先保存；测试事件类型为 <code>test-notification</code>，不会写入事件历史。</li>
+            <li>发送失败只记录脱敏后的本地日志（<code>quotabarwin.log</code>），不会重试。</li>
+            <li>Webhook 会把额度事件数据发送到你指定的外部地址，请只填写自己信任的服务。</li>
+          </ul>
+        </section>
+      </article>
+
+      <article class="lang-en" data-language="en" hidden>
+        <header>
+          <h1>Webhook Guide</h1>
+          <p class="lead">
+            The two delivery formats of Settings → Notifications → Webhook, and the placeholders
+            supported by the custom body template.
+          </p>
+          <nav class="language-switch" aria-label="Document language">
+            <a href="#zh-CN" data-language-link="zh-CN" aria-current="false">中文</a>
+            <a href="#en" data-language-link="en" aria-current="true">English</a>
+          </nav>
+        </header>
+
+        <section>
+          <h2>Two delivery formats</h2>
+          <ul>
+            <li>
+              <strong>Default (empty template)</strong>: the selected events of one refresh are
+              delivered as a <strong>single JSON batch request</strong>, POSTed with
+              <code>application/json</code> to your endpoint.
+            </li>
+            <li>
+              <strong>Custom template</strong>: with a template configured, <strong>each selected
+              event is rendered and delivered as its own request</strong>. A rendered body that
+              parses as JSON is sent as <code>application/json</code> (DingTalk, Feishu/Lark,
+              WeCom bots, …); anything else is sent as <code>text/plain; charset=utf-8</code>
+              (generic receivers, log collectors).
+            </li>
+          </ul>
+          <p>
+            The template is plain placeholder substitution with no other syntax; unknown
+            placeholders are <strong>left untouched</strong>. Secret references such as
+            <code>${secret:}</code> are resolved in the webhook URL only, never inside the body,
+            so credentials never end up in the content you send to an external service.
+          </p>
+          <p>
+            You can configure <strong>multiple webhook endpoints</strong>: events fan out to every
+            enabled endpoint, and each endpoint carries its own name, URL, template, timeout, and
+            enable switch. One endpoint failing never blocks the others.
+          </p>
+        </section>
+
+        <section>
+          <h2>Default JSON batch format</h2>
+          <p>With an empty template the request body looks like this (all camelCase):</p>
+          <pre>{
+  "schemaVersion": 1,
+  "app": "QuotaBarWin",
+  "appVersion": "1.6.0(a1b2c3d)",
+  "sentAt": "2026-10-07T01:35:28.107592100+00:00",
+  "events": [
+    {
+      "id": 7,
+      "occurredAt": "2026-10-06T22:35:28.107592100+00:00",
+      "eventType": "quota-reset",
+      "severity": "positive",
+      "providerId": "kimi-coding-2",
+      "providerName": "Kimi",
+      "windowId": "300-minute",
+      "windowLabel": "5h limit",
+      "details": {
+        "remainingPercent": 100.0,
+        "resetAt": "2026-10-07T03:35:14.207781Z",
+        "usedPercentBefore": 37.0,
+        "usedPercentAfter": 0.0
+      }
+    }
+  ]
+}</pre>
+          <p>
+            For app-level events (such as app started), <code>providerId</code> / <code>windowId</code> /
+            <code>windowLabel</code> / <code>details</code> may be absent. The keys inside
+            <code>details</code> depend on the event type — see the event type table below.
+          </p>
+        </section>
+
+        <section>
+          <h2>Template placeholders</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Placeholder</th>
+                <th>Replaced with</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>{{message}}</code></td>
+                <td>the localized notification text (same as the Windows toast; ends with the local event time <code>MM-DD HH:mm</code>)</td>
+              </tr>
+              <tr>
+                <td><code>{{eventType}}</code></td>
+                <td>event type identifier, e.g. <code>quota-reset</code></td>
+              </tr>
+              <tr>
+                <td><code>{{severity}}</code></td>
+                <td>severity: <code>info</code> / <code>positive</code> / <code>warning</code> / <code>error</code></td>
+              </tr>
+              <tr>
+                <td><code>{{providerId}}</code></td>
+                <td>Provider instance id (empty string for app-level events)</td>
+              </tr>
+              <tr>
+                <td><code>{{providerName}}</code></td>
+                <td>Provider display name (e.g. <code>Kimi</code>)</td>
+              </tr>
+              <tr>
+                <td><code>{{windowId}}</code></td>
+                <td>quota window id (e.g. <code>300-minute</code>)</td>
+              </tr>
+              <tr>
+                <td><code>{{windowLabel}}</code></td>
+                <td>quota window display name (e.g. <code>5h limit</code>)</td>
+              </tr>
+              <tr>
+                <td><code>{{occurredAt}}</code></td>
+                <td>when the event occurred (RFC 3339 / UTC)</td>
+              </tr>
+              <tr>
+                <td><code>{{app}}</code></td>
+                <td>the constant <code>QuotaBarWin</code></td>
+              </tr>
+              <tr>
+                <td><code>{{appVersion}}</code></td>
+                <td>app version with short commit, e.g. <code>1.6.0(a1b2c3d)</code></td>
+              </tr>
+              <tr>
+                <td><code>{{eventJson}}</code></td>
+                <td>the full JSON object of the event (compact serialization) for embedding raw data in a custom JSON structure</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="note">
+            Need concrete values from <code>details</code> (like the remaining percent)? Embed the
+            whole event with <code>{{eventJson}}</code>, or parse the <code>{{message}}</code>
+            text on the receiving side.
+          </div>
+        </section>
+
+        <section>
+          <h2>Template examples</h2>
+
+          <h3>DingTalk custom bot</h3>
+          <pre>{"msgtype":"text","text":{"content":"[QuotaBarWin] {{message}}"}}</pre>
+
+          <h3>Feishu/Lark custom bot (text message)</h3>
+          <pre>{"msg_type":"text","content":{"text":"[QuotaBarWin] {{providerName}} {{windowLabel}}: {{message}}"}}</pre>
+
+          <h3>Generic JSON relay (keeps the raw event)</h3>
+          <pre>{"source":"{{app}} {{appVersion}}","occurredAt":"{{occurredAt}}","event":{{eventJson}}}</pre>
+
+          <h3>Plain text (not valid JSON, so it is sent as text/plain)</h3>
+          <pre>[QuotaBarWin] {{message}} (type: {{eventType}}, severity: {{severity}})</pre>
+        </section>
+
+        <section>
+          <h2>Event types</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>eventType</th>
+                <th>Meaning</th>
+                <th>Severity</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>quota-reset</code></td>
+                <td>a window that consumed quota in the previous cycle rolled over and the quota is back — including windows that roll earlier than previously announced, or whose boundary already passed while the provider lags the reset time (details include <code>remainingPercent</code>, <code>usedPercentBefore</code>/<code>After</code>, and the new cycle's <code>resetAt</code>)</td>
+                <td><code>positive</code></td>
+              </tr>
+              <tr>
+                <td><code>quota-reset-time-changed</code></td>
+                <td>a window that consumed nothing rolled over (details include <code>resetAtBefore</code> and the new <code>resetAt</code>). Excluded from notification defaults; select it in Settings to notify</td>
+                <td><code>info</code></td>
+              </tr>
+              <tr>
+                <td><code>quota-recovered-unexpected</code></td>
+                <td>used quota dropped sharply (≥20%) while the reset time is unchanged (the provider still promises the very same cycle), e.g. quota granted back mid-cycle</td>
+                <td><code>warning</code></td>
+              </tr>
+              <tr>
+                <td><code>quota-exhausted</code></td>
+                <td>quota exhausted (remaining ≤ 0.5%)</td>
+                <td><code>error</code></td>
+              </tr>
+              <tr>
+                <td><code>quota-low</code></td>
+                <td>quota dropped below the warning threshold configured in the notification settings</td>
+                <td><code>warning</code></td>
+              </tr>
+              <tr>
+                <td><code>provider-error</code></td>
+                <td>Provider refresh failed (details include the redacted <code>error</code>)</td>
+                <td><code>error</code></td>
+              </tr>
+              <tr>
+                <td><code>provider-recovered</code></td>
+                <td>Provider refresh recovered</td>
+                <td><code>info</code></td>
+              </tr>
+              <tr>
+                <td><code>app-update-applied</code></td>
+                <td>application update applied (details include <code>version</code>)</td>
+                <td><code>positive</code></td>
+              </tr>
+              <tr>
+                <td><code>app-started</code></td>
+                <td>application started. Excluded from notification defaults</td>
+                <td><code>info</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section>
+          <h2>Other behavior notes</h2>
+          <ul>
+            <li>
+              The webhook URL supports <code>${secret:NAME}</code>, <code>${env:NAME}</code>, and
+              <code>${file:C:\path\secret.txt}</code> references, so token-bearing addresses stay
+              out of the plain-text config file.
+            </li>
+            <li>Requests follow the app proxy settings; the timeout is configurable (1–60 seconds).</li>
+            <li>Notifications are delivered on the <strong>next refresh</strong> after a change is confirmed (default interval 300 seconds, adjustable); nothing is sent retroactively while the app is not running.</li>
+            <li>"Send test notification" uses the current form values (including the template draft) without saving first; the test event type is <code>test-notification</code> and is not written to the event history.</li>
+            <li>Delivery failures are only written to the redacted local log (<code>quotabarwin.log</code>); there are no retries.</li>
+            <li>A webhook sends your quota event data to an external address you choose, so only point it at services you trust.</li>
+          </ul>
+        </section>
+      </article>
+    </main>
+  </body>
+</html>

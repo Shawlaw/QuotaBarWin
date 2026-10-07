@@ -57,6 +57,25 @@ describe("HistoryPanel", () => {
     expect(screen.getAllByTestId("history-item")).toHaveLength(2);
   });
 
+  test("renders quota-reset-time-changed with the next expiry time", () => {
+    renderPanel({
+      events: [
+        event({
+          eventType: "quota-reset-time-changed",
+          severity: "info",
+          details: { resetAtBefore: "2026-10-05T11:00:00Z", resetAt: "2026-10-05T16:00:00Z" },
+        }),
+      ],
+    });
+
+    expect(
+      screen.getByText(/Remote A 5h window quota expiry time changed \(next .*\)/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("history-filter-quota"));
+    expect(screen.getAllByTestId("history-item")).toHaveLength(1);
+  });
+
   test("filters events by category", () => {
     renderPanel({
       events: [

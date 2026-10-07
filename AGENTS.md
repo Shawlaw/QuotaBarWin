@@ -85,8 +85,9 @@ Start with these files:
   quota event history (edge-triggered detection from stabilized snapshots,
   `events.quotaBarWin.json` persistence capped at 200 entries) and notification
   delivery (Windows toast via `winrt-notification` with an HKCU
-  AppUserModelID registration for the portable build; webhook POST with
-  secret-placeholder URLs, global proxy, timeout, and redacted failures).
+  AppUserModelID registration for the portable build; webhook fan-out to
+  multiple endpoints with secret-placeholder URLs, global proxy, per-endpoint
+  timeout and optional per-event body template, and redacted failures).
 - `src-tauri/src/remote_provider.rs`,
   `src-tauri/src/remote_provider_commands.rs`, and
   `src-tauri/src/remote_provider_runner.rs` for remote provider install/update,
@@ -107,7 +108,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `23`.
+Current config schema version: `25`.
 
 Supported persisted provider config kind:
 
@@ -154,6 +155,15 @@ Remote provider public contract:
   `webhookEnabled`, `webhookUrl`, `webhookTimeoutSeconds`, `events`). Both new
   and migrated configurations default to both channels disabled; the local
   event history is recorded regardless of the channels.
+- Schema `23 -> 24` added the optional single-webhook body template
+  (`notifications.webhookTemplate`).
+- Schema `24 -> 25` turns webhook notifications into a list of endpoints
+  (`notifications.webhooks`: `id`, `name`, `url`, `timeoutSeconds`,
+  `template`, `enabled`). The schema-24 single webhook migrates into the first
+  endpoint. Delivery fans out to every enabled endpoint with a non-empty URL;
+  each endpoint's template renders one request per event
+  (`{{message}}`, `{{eventJson}}`, ...), sent as JSON when the rendered body
+  parses, otherwise as plain text.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.

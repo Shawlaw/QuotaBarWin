@@ -397,6 +397,7 @@ export type I18nCatalog = {
       appStarted: (startedHidden: boolean, version: string | null) => string;
       appUpdateApplied: (version: string) => string;
       quotaReset: (subject: string, remainingPercent: string | null) => string;
+      quotaResetTimeChanged: (subject: string, nextTime: string | null) => string;
       quotaRecoveredUnexpected: (subject: string, usedBefore: string, usedAfter: string) => string;
       quotaExhausted: (subject: string) => string;
       quotaLow: (subject: string, remainingPercent: string) => string;
@@ -416,10 +417,20 @@ export type I18nCatalog = {
     toastHint: string;
     webhookEnabled: string;
     webhookHint: string;
+    webhookEndpointsLabel: string;
+    webhookEmptyHint: string;
+    webhookAddButton: string;
+    webhookRemoveButton: string;
+    webhookName: string;
+    webhookNamePlaceholder: string;
     webhookUrl: string;
     webhookUrlPlaceholder: string;
     webhookTimeout: string;
     webhookTimeoutError: string;
+    webhookTemplate: string;
+    webhookTemplatePlaceholder: string;
+    webhookTemplateHint: string;
+    webhookTemplateGuideButton: string;
     eventsLabel: string;
     eventsHint: string;
     eventTypeLabel: Record<string, string>;
@@ -431,6 +442,7 @@ export type I18nCatalog = {
     testToastFailed: (detail: string) => string;
     testWebhookSent: (statusCode: number | null) => string;
     testWebhookDisabled: string;
+    testWebhookNone: string;
     testWebhookFailed: (detail: string) => string;
   };
   providerSetup: {
@@ -917,6 +929,10 @@ export const en: I18nCatalog = {
         remainingPercent === null
           ? `${subject} quota reset`
           : `${subject} quota reset (${remainingPercent}% remaining)`,
+      quotaResetTimeChanged: (subject, nextTime) =>
+        nextTime === null
+          ? `${subject} quota expiry time changed`
+          : `${subject} quota expiry time changed (next ${nextTime})`,
       quotaRecoveredUnexpected: (subject, usedBefore, usedAfter) =>
         `${subject} quota recovered unexpectedly (used ${usedBefore}% → ${usedAfter}%)`,
       quotaExhausted: (subject) => `${subject} quota exhausted`,
@@ -945,16 +961,29 @@ export const en: I18nCatalog = {
       "Shows a system toast for the selected events while QuotaBarWin is running.",
     webhookEnabled: "Webhook notifications",
     webhookHint:
-      "POSTs selected events as JSON to your webhook. The URL supports ${secret:NAME}, ${env:NAME}, and ${file:...} references, and follows the app proxy settings.",
+      "Events fan out to every enabled webhook endpoint; add as many as you need (for example a DingTalk bot and a log collector at the same time). Each endpoint has its own URL, body template, and timeout; URLs support ${secret:NAME}, ${env:NAME}, and ${file:...} references and follow the app proxy settings.",
+    webhookEndpointsLabel: "Webhook endpoints",
+    webhookEmptyHint: "No webhook endpoints yet; add one below.",
+    webhookAddButton: "Add webhook",
+    webhookRemoveButton: "Remove",
+    webhookName: "Name (optional)",
+    webhookNamePlaceholder: "e.g. DingTalk group / log collector",
     webhookUrl: "Webhook URL",
     webhookUrlPlaceholder: "https://example.com/hook or ${secret:QUOTA_WEBHOOK_URL}",
     webhookTimeout: "Webhook timeout (seconds)",
     webhookTimeoutError: "Webhook timeout must be between 1 and 60 seconds.",
+    webhookTemplate: "Webhook body template (optional)",
+    webhookTemplatePlaceholder:
+      '{"msgtype":"text","text":{"content":"[QuotaBarWin] {{message}}"}}',
+    webhookTemplateHint:
+      "Leave empty to keep the default JSON batch payload. Supports placeholders such as {{message}}, {{eventType}}, {{providerName}}, {{windowLabel}}, {{occurredAt}}, and {{eventJson}}. Each selected event is delivered as its own request; the rendered body is sent as JSON when it parses, otherwise as plain text.",
+    webhookTemplateGuideButton: "Open the webhook template guide",
     eventsLabel: "Notified event types",
     eventsHint:
       "All events are always recorded in the event history; this list only controls notifications.",
     eventTypeLabel: {
       "quota-reset": "Quota reset",
+      "quota-reset-time-changed": "Quota expiry time changed",
       "quota-recovered-unexpected": "Unexpected quota recovery",
       "quota-exhausted": "Quota exhausted",
       "quota-low": "Quota low",
@@ -971,6 +1000,7 @@ export const en: I18nCatalog = {
     testToastFailed: (detail) => `Windows notification failed: ${detail}`,
     testWebhookSent: (statusCode) => `Webhook delivered (HTTP ${statusCode ?? "200"}).`,
     testWebhookDisabled: "Webhook is disabled.",
+    testWebhookNone: "No webhook endpoints configured yet.",
     testWebhookFailed: (detail) => `Webhook failed: ${detail}`
   },
   providerSetup: {
@@ -1479,6 +1509,10 @@ export const zhCN: I18nCatalog = {
         remainingPercent === null
           ? `${subject} 额度已重置`
           : `${subject} 额度已重置（剩余 ${remainingPercent}%）`,
+      quotaResetTimeChanged: (subject, nextTime) =>
+        nextTime === null
+          ? `${subject} 额度到期时间变更`
+          : `${subject} 额度到期时间变更（下次 ${nextTime}）`,
       quotaRecoveredUnexpected: (subject, usedBefore, usedAfter) =>
         `${subject} 额度异常回升（已用 ${usedBefore}% → ${usedAfter}%）`,
       quotaExhausted: (subject) => `${subject} 额度已用尽`,
@@ -1505,15 +1539,28 @@ export const zhCN: I18nCatalog = {
     toastHint: "QuotaBarWin 运行期间，所选事件会弹出系统通知。",
     webhookEnabled: "Webhook 通知",
     webhookHint:
-      "将所选事件以 JSON POST 发送到你的 Webhook。URL 支持 ${secret:NAME}、${env:NAME}、${file:...} 引用，并遵循应用的网络代理设置。",
+      "事件会同时发送到所有已启用的 Webhook 端点，可添加多个（例如同时通知钉钉机器人和日志收集）。每个端点独立配置 URL、消息模板与超时；URL 支持 ${secret:NAME}、${env:NAME}、${file:...} 引用，并遵循应用的网络代理设置。",
+    webhookEndpointsLabel: "Webhook 端点",
+    webhookEmptyHint: "还没有 Webhook 端点，点击下方按钮添加。",
+    webhookAddButton: "添加 Webhook",
+    webhookRemoveButton: "删除",
+    webhookName: "名称（可选）",
+    webhookNamePlaceholder: "如：钉钉群 / 日志收集",
     webhookUrl: "Webhook URL",
     webhookUrlPlaceholder: "https://example.com/hook 或 ${secret:QUOTA_WEBHOOK_URL}",
     webhookTimeout: "Webhook 超时（秒）",
     webhookTimeoutError: "Webhook 超时必须介于 1 到 60 秒。",
+    webhookTemplate: "Webhook 消息模板（可选）",
+    webhookTemplatePlaceholder:
+      '{"msgtype":"text","text":{"content":"[QuotaBarWin] {{message}}"}}',
+    webhookTemplateHint:
+      "留空时保持默认的 JSON 批量格式。支持 {{message}}、{{eventType}}、{{providerName}}、{{windowLabel}}、{{occurredAt}}、{{eventJson}} 等占位符。每条所选事件会单独发送一次请求；渲染结果为合法 JSON 时按 JSON 发送，否则按纯文本发送。",
+    webhookTemplateGuideButton: "查看 Webhook 模板写法说明",
     eventsLabel: "通知的事件类型",
     eventsHint: "所有事件始终记录在事件历史中；此列表只控制是否发送通知。",
     eventTypeLabel: {
       "quota-reset": "额度重置",
+      "quota-reset-time-changed": "额度到期时间变更",
       "quota-recovered-unexpected": "额度异常回升",
       "quota-exhausted": "额度用尽",
       "quota-low": "额度偏低",
@@ -1530,6 +1577,7 @@ export const zhCN: I18nCatalog = {
     testToastFailed: (detail) => `Windows 通知发送失败：${detail}`,
     testWebhookSent: (statusCode) => `Webhook 已送达（HTTP ${statusCode ?? "200"}）。`,
     testWebhookDisabled: "Webhook 未启用。",
+    testWebhookNone: "尚未配置任何 Webhook 端点。",
     testWebhookFailed: (detail) => `Webhook 发送失败：${detail}`
   },
   providerSetup: {
