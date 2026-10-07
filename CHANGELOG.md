@@ -1,6 +1,6 @@
 # 变更记录
 
-本文记录 QuotaBarWin 的用户可见变化。默认以简体中文维护；如果未来需要英文 release notes，可从本文件同步整理。
+本文记录 QuotaBarWin 的用户可见变化。默认以简体中文维护；英文对照版见 [CHANGELOG.en.md](CHANGELOG.en.md)。
 
 ## [1.6.1] - 2026-10-07
 

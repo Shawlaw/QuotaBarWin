@@ -15,6 +15,7 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 ## 文档入口
 
 - [English README](README.en.md)
+- [变更记录](CHANGELOG.md)（[English](CHANGELOG.en.md)）
 - [远程提供方作者指南](docs/remote-provider-guide.md)
 - [本地集成 API](docs/local-integration-api.md)
 - [Agent / CLI 使用指南](docs/cli.md)
@@ -39,14 +40,20 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 
 ## 运行截图
 
-主窗口提供概览页和设置页；托盘弹窗用于快速查看关键额度。
+主窗口提供概览、事件历史和分类设置页；托盘弹窗用于快速查看关键额度。
 
 <p align="center">
   <img src="assets/screenshots/readme-zh-overview.png" alt="QuotaBarWin 中文版概览页截图" width="49%">
-  <img src="assets/screenshots/readme-zh-settings.png" alt="QuotaBarWin 中文版设置页截图" width="49%">
+  <img src="assets/screenshots/readme-zh-settings-providers.png" alt="QuotaBarWin 中文版设置页提供方分类截图" width="49%">
 </p>
 
 <p align="center">
+  <img src="assets/screenshots/readme-zh-settings-general.png" alt="QuotaBarWin 中文版设置页通用分类截图" width="49%">
+  <img src="assets/screenshots/readme-zh-settings-notification.png" alt="QuotaBarWin 中文版设置页通知分类截图" width="49%">
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/readme-zh-events.png" alt="QuotaBarWin 中文版事件历史页截图" width="49%">
   <img src="assets/screenshots/readme-zh-tray-popup.png" alt="QuotaBarWin 中文版托盘弹窗截图" width="42%">
 </p>
 

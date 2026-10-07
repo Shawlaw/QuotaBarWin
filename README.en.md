@@ -15,6 +15,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 ## Documentation
 
 - [Simplified Chinese README](README.md)
+- [Changelog](CHANGELOG.en.md) ([Simplified Chinese](CHANGELOG.md))
 - [Remote Provider Guide](docs/remote-provider-guide.en.md)
 - [Local Integration API](docs/local-integration-api.en.md)
 - [Agent / CLI Guide](docs/cli.en.md)
@@ -39,14 +40,20 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 
 ## Screenshots
 
-The main window includes an overview page and a settings page. The tray popup is optimized for quick quota checks.
+The main window includes the overview, event history, and categorized settings pages. The tray popup is optimized for quick quota checks.
 
 <p align="center">
   <img src="assets/screenshots/readme-zh-overview.png" alt="QuotaBarWin overview screenshot" width="49%">
-  <img src="assets/screenshots/readme-zh-settings.png" alt="QuotaBarWin settings screenshot" width="49%">
+  <img src="assets/screenshots/readme-zh-settings-providers.png" alt="QuotaBarWin settings Providers category screenshot" width="49%">
 </p>
 
 <p align="center">
+  <img src="assets/screenshots/readme-zh-settings-general.png" alt="QuotaBarWin settings General category screenshot" width="49%">
+  <img src="assets/screenshots/readme-zh-settings-notification.png" alt="QuotaBarWin settings Notifications category screenshot" width="49%">
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/readme-zh-events.png" alt="QuotaBarWin event history screenshot" width="49%">
   <img src="assets/screenshots/readme-zh-tray-popup.png" alt="QuotaBarWin tray popup screenshot" width="42%">
 </p>
 

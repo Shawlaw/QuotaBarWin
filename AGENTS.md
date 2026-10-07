@@ -25,7 +25,8 @@ they exist.
 
 ## Release Notes
 
-- `CHANGELOG.md` is the source of GitHub Release notes.
+- `CHANGELOG.md` is the source of GitHub Release notes; keep
+  `CHANGELOG.en.md` (the English counterpart) in sync when adding entries.
 - Release notes describe only user-visible differences from the immediately
   preceding released version. They are not an internal iteration log.
 - Exclude implementation details, preview/demo switches, test or build steps,
