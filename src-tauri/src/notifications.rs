@@ -125,7 +125,10 @@ pub fn event_matches_filter(settings: &NotificationSettings, event_type: &str) -
     settings.events.iter().any(|allowed| allowed == event_type)
 }
 
-/// The endpoints delivery fans out to: enabled and carrying a URL.
+/// The endpoints delivery fans out to: enabled and carrying a URL. Delivery
+/// itself inlines the same predicate (it also needs each endpoint index),
+/// so this lives as the tested contract of that filter.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn enabled_webhook_endpoints(
     settings: &NotificationSettings,
 ) -> Vec<&WebhookEndpointSettings> {

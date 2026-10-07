@@ -173,6 +173,7 @@ export type I18nCatalog = {
     devCloneButton: string;
     devCloneConfirm: string;
     devCloneRestarting: string;
+    devCloneSource: (sourceDir: string) => string;
     devCloneFailed: string;
     devBuildLimitation: string;
     pathCopied: string;
@@ -679,11 +680,12 @@ export const en: I18nCatalog = {
       "Development builds always store their config beside the dev executable.",
     devCloneTitle: "Development build tools",
     devCloneHint:
-      "Copy the installed release's config, provider cache, and secrets (AppData mode) into this dev build, then restart to rehearse the upgrade experience. This overwrites the current dev config.",
+      "Copy a release's config, provider cache, and secrets into this dev build, then restart to rehearse the upgrade experience. The source prefers a running portable release's directory and falls back to the AppData installation. This overwrites the current dev config.",
     devCloneButton: "Copy config from the installed release",
     devCloneConfirm:
-      "Copy config and secrets from the installed release (AppData mode)? This overwrites the current dev config and restarts the app.",
+      "Copy config and secrets from the release installation? This overwrites the current dev config and restarts the app.",
     devCloneRestarting: "Copy finished. Restarting…",
+    devCloneSource: (sourceDir) => `Copied from ${sourceDir}.`,
     devCloneFailed: "Failed to copy the release config.",
 
     devBuildLimitation: "Not available in development builds.",
@@ -1262,11 +1264,12 @@ export const zhCN: I18nCatalog = {
     devPortableFixedHint: "开发构建的配置始终保存在开发版可执行文件旁。",
     devCloneTitle: "开发构建工具",
     devCloneHint:
-      "把本机正式版安装（AppData 模式）的配置、Provider 缓存与密钥复制到当前开发版并重启，用于复现升级后的首次交互。会覆盖当前开发版配置。",
+      "把正式版的配置、Provider 缓存与密钥复制到当前开发版并重启，用于复现升级后的首次交互。来源优先取正在运行的便携版正式版所在目录，找不到时回退 AppData 安装目录。会覆盖当前开发版配置。",
     devCloneButton: "从本机正式版复制配置与密钥",
     devCloneConfirm:
-      "从本机正式版（AppData 模式）复制配置与密钥？将覆盖当前开发版配置，复制完成后应用会自动重启。",
+      "从正式版复制配置与密钥？将覆盖当前开发版配置，复制完成后应用会自动重启。",
     devCloneRestarting: "复制完成，正在重启…",
+    devCloneSource: (sourceDir) => `已从 ${sourceDir} 复制。`,
     devCloneFailed: "复制正式版配置失败。",
 
     devBuildLimitation: "开发构建不支持此功能。",

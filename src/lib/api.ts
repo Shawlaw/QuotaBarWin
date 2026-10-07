@@ -333,14 +333,20 @@ export async function getIsDevBuild(): Promise<boolean> {
   return invoke<boolean>("get_is_dev_build");
 }
 
-// Dev-build only: copy the installed release's config, secrets, and caches
-// from the AppData directory into this dev exe's portable directory, then
-// restart so the dev build walks the real upgrade/migration path.
-export async function devCloneReleaseConfig(): Promise<void> {
+// Dev-build only: copy a running release's config, secrets, and caches into
+// this dev exe's portable directory, then restart so the dev build walks the
+// real upgrade/migration path. The source prefers a running portable release's
+// directory and falls back to the AppData installation.
+export type DevConfigCloneResult = {
+  sourceDir: string;
+  fromPortableProcess: boolean;
+};
+
+export async function devCloneReleaseConfig(): Promise<DevConfigCloneResult> {
   if (!hasTauriInternals()) {
-    return;
+    return { sourceDir: "", fromPortableProcess: false };
   }
-  return invoke<void>("dev_clone_release_config");
+  return invoke<DevConfigCloneResult>("dev_clone_release_config");
 }
 
 export async function devRestartApp(): Promise<void> {

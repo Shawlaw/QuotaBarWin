@@ -874,9 +874,14 @@ export function SettingsPanel({
     setIsCloningConfig(true);
     setCloneConfigMessage(null);
     try {
-      await devCloneReleaseConfig();
-      setCloneConfigMessage(t.settings.devCloneRestarting);
-      await new Promise((resolve) => window.setTimeout(resolve, 600));
+      const result = await devCloneReleaseConfig();
+      // Show where the config came from for a moment before the restart.
+      setCloneConfigMessage(
+        result.sourceDir
+          ? `${t.settings.devCloneSource(result.sourceDir)} · ${t.settings.devCloneRestarting}`
+          : t.settings.devCloneRestarting,
+      );
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
       await devRestartApp();
     } catch (error) {
       setCloneConfigMessage(

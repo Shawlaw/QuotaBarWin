@@ -278,10 +278,13 @@ entry that references the dev exe itself. Never hand-edit
 stays pinned to the release identity and the release workflow verifies it.
 
 A dev build also exposes a Settings → Advanced → Configuration storage action
-that copies the installed release's config, provider cache, and secrets from
-the AppData directory into the dev exe's directory and restarts, rehearsing
-the real upgrade/migration path with production data. The command
-(`dev_clone_release_config`) refuses to run outside a dev build.
+that copies a release's config, provider cache, and secrets into the dev
+exe's directory and restarts, rehearsing the real upgrade/migration path with
+production data. The source prefers the directory of a running
+`QuotaBarWin.exe` process that stores a portable config beside it (case-
+insensitive name match, this process excluded), and falls back to the AppData
+installation. The command (`dev_clone_release_config`) refuses to run
+outside a dev build.
 
 Frontend build:
 

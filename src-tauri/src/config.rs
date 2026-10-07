@@ -1869,34 +1869,141 @@ fn clone_release_config_files(source_dir: &Path, target_dir: &Path) -> Result<()
     Ok(())
 }
 
+/// A candidate directory qualifies as a portable release source when it
+/// actually stores a config (or marker) beside the exe; an AppData-mode
+/// release exe directory has neither and must not be used.
+fn dir_qualifies_as_portable_config_source(dir: &Path) -> bool {
+    dir.join(CONFIG_FILE_NAME).exists() || dir.join(PORTABLE_MARKER_FILE_NAME).exists()
+}
+
+/// Prefer the directory of a running QuotaBarWin.exe (a portable release),
+/// falling back to the AppData installation. Excluded: the dev directory
+/// itself, which may also show up in the process list.
+fn resolve_clone_source_dir(
+    running_dirs: &[PathBuf],
+    dev_dir: &Path,
+    app_data_dir: &Path,
+) -> Option<(PathBuf, bool)> {
+    for dir in running_dirs {
+        if dir == dev_dir {
+            continue;
+        }
+        if dir_qualifies_as_portable_config_source(dir) {
+            return Some((dir.clone(), true));
+        }
+    }
+    if dir_qualifies_as_portable_config_source(app_data_dir) {
+        return Some((app_data_dir.to_path_buf(), false));
+    }
+    None
+}
+
+#[cfg(windows)]
+fn running_quotabarwin_exe_dirs(self_pid: u32) -> Vec<PathBuf> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
+    let mut dirs = Vec::new();
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return dirs;
+    }
+    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    let mut has_entry = unsafe { Process32FirstW(snapshot, &mut entry) };
+    while has_entry != 0 {
+        let name_length = entry
+            .szExeFile
+            .iter()
+            .position(|&character| character == 0)
+            .unwrap_or(entry.szExeFile.len());
+        let process_name = String::from_utf16_lossy(&entry.szExeFile[..name_length]);
+        if entry.th32ProcessID != self_pid && process_name.eq_ignore_ascii_case("QuotaBarWin.exe")
+        {
+            if let Some(dir) = process_image_dir(entry.th32ProcessID) {
+                if !dirs.contains(&dir) {
+                    dirs.push(dir);
+                }
+            }
+        }
+        has_entry = unsafe { Process32NextW(snapshot, &mut entry) };
+    }
+    unsafe { CloseHandle(snapshot) };
+    dirs
+}
+
+#[cfg(windows)]
+fn process_image_dir(pid: u32) -> Option<PathBuf> {
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) } as HANDLE;
+    if handle.is_null() {
+        return None;
+    }
+    let mut buffer = [0u16; 1024];
+    let mut length = buffer.len() as u32;
+    let queried = unsafe {
+        QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, buffer.as_mut_ptr(), &mut length)
+    };
+    unsafe { CloseHandle(handle) };
+    if queried == 0 {
+        return None;
+    }
+    let image_path = String::from_utf16_lossy(&buffer[..length as usize]);
+    PathBuf::from(image_path)
+        .parent()
+        .map(Path::to_path_buf)
+}
+
+#[cfg(not(windows))]
+fn running_quotabarwin_exe_dirs(_self_pid: u32) -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevCloneConfigResult {
+    pub source_dir: String,
+    pub from_portable_process: bool,
+}
+
 #[tauri::command]
-pub fn dev_clone_release_config(app: AppHandle) -> Result<(), String> {
+pub fn dev_clone_release_config(app: AppHandle) -> Result<DevCloneConfigResult, String> {
     if !crate::app_identity::is_dev_build(&app) {
         return Err("Config cloning is only available in development builds".to_string());
     }
-    let release_config_path = app_data_config_path_for_app(&app)?;
-    let source_dir = release_config_path
-        .parent()
-        .ok_or_else(|| "Unable to resolve release config directory".to_string())?
-        .to_path_buf();
-    if !release_config_path.exists() {
-        return Err(format!(
-            "No AppData-mode release config found at {}",
-            release_config_path.display()
-        ));
-    }
     let (_, _, marker_path) = portable_paths_for_app(&app)?;
-    let target_dir = marker_path
+    let dev_dir = marker_path
         .parent()
         .ok_or_else(|| "Unable to resolve dev config directory".to_string())?
         .to_path_buf();
-    clone_release_config_files(&source_dir, &target_dir)?;
+    let app_data_config_path = app_data_config_path_for_app(&app)?;
+    let app_data_dir = app_data_config_path
+        .parent()
+        .ok_or_else(|| "Unable to resolve release config directory".to_string())?
+        .to_path_buf();
+    let running_dirs = running_quotabarwin_exe_dirs(std::process::id());
+    let (source_dir, from_portable_process) =
+        resolve_clone_source_dir(&running_dirs, &dev_dir, &app_data_dir).ok_or_else(|| {
+            "No release config found: start the portable release first, or use an AppData-mode installation".to_string()
+        })?;
+    clone_release_config_files(&source_dir, &dev_dir)?;
     // Pin the marker too so CLI companions beside the dev exe resolve the
     // same cloned config.
     if !marker_path.exists() {
         fs::write(&marker_path, "portable").map_err(|error| error.to_string())?;
     }
-    Ok(())
+    Ok(DevCloneConfigResult {
+        source_dir: source_dir.display().to_string(),
+        from_portable_process,
+    })
 }
 
 #[tauri::command]
@@ -3597,6 +3704,44 @@ mod tests {
             config_path_from_candidates(app_data_path, portable_path, temp.path().join("gone"), true);
         assert!(selected_when_forced.ends_with(CONFIG_FILE_NAME));
         assert!(!selected_when_forced.to_string_lossy().contains("app-data"));
+    }
+
+    #[test]
+    fn clone_source_prefers_a_running_portable_release() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let portable_release = temp.path().join("release-portable");
+        let app_data_dir = temp.path().join("app-data");
+        let dev_dir = temp.path().join("dev");
+        for dir in [&portable_release, &app_data_dir] {
+            fs::create_dir_all(dir).expect("create dir");
+            fs::write(dir.join(CONFIG_FILE_NAME), "{}").expect("write config");
+        }
+        fs::create_dir_all(&dev_dir).expect("create dev dir");
+        let app_data_release_exe_dir = temp.path().join("release-appdata-exe");
+        fs::create_dir_all(&app_data_release_exe_dir).expect("create exe dir");
+
+        // A running AppData-mode release exe has no config beside it and must
+        // be skipped in favor of the AppData directory; a portable release's
+        // directory wins over AppData.
+        let source = resolve_clone_source_dir(
+            &[app_data_release_exe_dir.clone(), portable_release.clone()],
+            &dev_dir,
+            &app_data_dir,
+        );
+        assert_eq!(source, Some((portable_release, true)));
+
+        let source = resolve_clone_source_dir(&[app_data_release_exe_dir], &dev_dir, &app_data_dir);
+        assert_eq!(source, Some((app_data_dir.clone(), false)));
+
+        // The dev directory itself is never a source, and without any
+        // qualifying directory there is no clone source at all.
+        let source = resolve_clone_source_dir(&[dev_dir.clone()], &dev_dir, &app_data_dir);
+        assert_eq!(source, Some((app_data_dir, false)));
+
+        let empty = temp.path().join("empty");
+        fs::create_dir_all(&empty).expect("create empty");
+        let source = resolve_clone_source_dir(&[], &dev_dir, &empty);
+        assert_eq!(source, None);
     }
 
     #[test]
