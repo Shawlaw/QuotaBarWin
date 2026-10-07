@@ -282,6 +282,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
     let global_proxy = loaded.config.network_proxy.clone();
     let low_quota_warning_threshold = loaded.config.low_quota_warning_threshold;
     let notification_settings = loaded.config.notifications.clone();
+    let muted_provider_ids = crate::config::muted_notification_provider_ids(&loaded.config);
     let language = loaded.config.language.clone();
     let should_log_quota_data = loaded.config.log_quota_data;
     let cached = cached_snapshot_for_refresh(path, &loaded.config)?;
@@ -388,6 +389,7 @@ pub fn build_app_snapshot_from_config_path(path: &Path) -> Result<AppSnapshot, S
         &snapshot,
         low_quota_warning_threshold,
         &notification_settings,
+        &muted_provider_ids,
         global_proxy.as_ref(),
         language,
         &log,
@@ -406,6 +408,7 @@ fn record_detected_events(
     snapshot: &AppSnapshot,
     low_quota_threshold: f64,
     notification_settings: &NotificationSettings,
+    muted_provider_ids: &std::collections::HashSet<String>,
     global_proxy: Option<&crate::proxy::ProxyConfig>,
     language: AppLanguage,
     log: &LogSink,
@@ -437,6 +440,7 @@ fn record_detected_events(
             crate::notifications::dispatch_events(
                 path,
                 notification_settings.clone(),
+                muted_provider_ids.clone(),
                 global_proxy.cloned(),
                 language,
                 recorded,
@@ -1011,6 +1015,7 @@ pub fn refresh_provider_from_config_path(
     let global_proxy = loaded.config.network_proxy.clone();
     let low_quota_warning_threshold = loaded.config.low_quota_warning_threshold;
     let notification_settings = loaded.config.notifications.clone();
+    let muted_provider_ids = crate::config::muted_notification_provider_ids(&loaded.config);
     let language = loaded.config.language.clone();
     let should_log_quota_data = loaded.config.log_quota_data;
     let _ = log.write(
@@ -1137,6 +1142,7 @@ pub fn refresh_provider_from_config_path(
         &snapshot,
         low_quota_warning_threshold,
         &notification_settings,
+        &muted_provider_ids,
         global_proxy.as_ref(),
         language,
         &log,
@@ -1271,6 +1277,7 @@ mod tests {
             window_label_overrides: std::collections::HashMap::new(),
             visible_window_ids: Vec::new(),
             show_in_tray: true,
+            notifications_enabled: true,
             env_vars: std::collections::HashMap::new(),
             setup_state: crate::config::ProviderSetupState::Ready,
             setup_last_tested_at: None,
@@ -1307,6 +1314,7 @@ mod tests {
             window_label_overrides: std::collections::HashMap::new(),
             visible_window_ids: Vec::new(),
             show_in_tray: true,
+            notifications_enabled: true,
             env_vars: std::collections::HashMap::new(),
             setup_state: crate::config::ProviderSetupState::Ready,
             setup_last_tested_at: None,

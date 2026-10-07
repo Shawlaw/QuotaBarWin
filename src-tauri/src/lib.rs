@@ -114,6 +114,7 @@ fn record_app_event(app: &tauri::AppHandle, pending: quota_events::PendingQuotaE
             notifications::dispatch_events(
                 &path,
                 loaded.config.notifications.clone(),
+                config::muted_notification_provider_ids(&loaded.config),
                 loaded.config.network_proxy.clone(),
                 loaded.config.language.clone(),
                 recorded,
@@ -205,6 +206,7 @@ pub fn run() {
                         notifications::dispatch_events(
                             &path,
                             loaded.config.notifications.clone(),
+                            config::muted_notification_provider_ids(&loaded.config),
                             loaded.config.network_proxy.clone(),
                             loaded.config.language.clone(),
                             recorded,

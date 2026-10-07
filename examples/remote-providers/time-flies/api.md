@@ -4,6 +4,8 @@ English version: [`api.en.md`](api.en.md).
 
 `time-flies/provider.js` 使用 `builtin-js`，不访问网络、文件或账号凭据；它只根据运行机器的本机时区和当前时间，以分钟为单位输出「光阴似箭」的剩余时间窗口。
 
+它是纯展示类提供方，`defaultConfig` 里声明了 `notificationsEnabled: false`，因此安装后默认不参与事件通知（事件仍会记录进事件历史）；用户可在「设置 → 提供方」中自行改回。
+
 ## 运行要求
 
 | 项目 | 值 |

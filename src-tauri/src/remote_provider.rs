@@ -71,6 +71,13 @@ pub struct ManifestDefaultConfig {
     pub timeout_seconds: Option<u64>,
     #[serde(
         default,
+        rename = "notificationsEnabled",
+        alias = "notifications_enabled",
+        alias = "notifications-enabled"
+    )]
+    pub notifications_enabled: Option<bool>,
+    #[serde(
+        default,
         rename = "windowLabelOverrides",
         alias = "window_label_overrides",
         alias = "window-label-overrides"
@@ -91,6 +98,7 @@ impl ManifestDefaultConfig {
     fn is_empty(&self) -> bool {
         self.name.as_deref().unwrap_or_default().trim().is_empty()
             && self.timeout_seconds.is_none()
+            && self.notifications_enabled.is_none()
             && self.window_label_overrides.is_empty()
             && self.visible_window_ids.is_empty()
             && self.env_vars.is_empty()

@@ -1873,6 +1873,19 @@ function renderUnsavedChangesDialog() {
                       />
                       {t.settings.showInTray}
                     </label>
+                    <label className="checkbox-row settings-toggle-row">
+                      <input
+                        type="checkbox"
+                        data-testid={`provider-notifications-enabled-${provider.id}`}
+                        checked={provider.notificationsEnabled !== false}
+                        onChange={(event) =>
+                          updateRemoteProvider(provider, {
+                            notificationsEnabled: event.currentTarget.checked
+                          })
+                        }
+                      />
+                      {t.settings.providerNotifications}
+                    </label>
                     {renderProviderParameters(provider)}
                     <div className="args-field settings-field">
                       <label htmlFor={`provider-env-vars-${provider.id}`}>

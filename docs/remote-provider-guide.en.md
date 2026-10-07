@@ -81,7 +81,7 @@ Field descriptions:
 | `requiredEnvVars` | no | Environment variables that the script needs. On refresh, QuotaBarWin resolves each name from provider `envVars`, then `${secret:NAME}`. |
 | `output` | yes | Output contract. Only `provider-snapshot-v1` is supported for remote providers at the moment. |
 | `permissions` | no | Informational for external runtimes; an enforced capability boundary for `builtin-js`. See the next section for its syntax. |
-| `defaultConfig` | no | Default local provider config written during first install, such as `name`, `timeoutSeconds`, `visibleWindowIds`, `windowLabelOverrides`, and `envVars`. Provider updates do not overwrite user edits. |
+| `defaultConfig` | no | Default local provider config written during first install, such as `name`, `timeoutSeconds`, `notificationsEnabled` (the event-notification opt-out, default `true`; display-only providers may declare `false`, and the user can still change it after install), `visibleWindowIds`, `windowLabelOverrides`, and `envVars`. Provider updates do not overwrite user edits. |
 | `parameters` | no | Structured parameters shown in Settings. Each item may include `name`, `label`, `kind`, `required`, `defaultValue`, `placeholder`, `description`, `options`, `helpUrl`, and `advanced`. Do not include real credentials. |
 | `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. Update detection is checksum-first; a higher `version` also marks an update as available when the source is unchanged, but it never replaces checksum verification. |
 

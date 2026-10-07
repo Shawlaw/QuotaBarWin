@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "time-flies",
   "displayName": "光阴似箭 (Time Flies)",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "minAppVersion": "1.1.0",
   "description": "Shows the minutes remaining today, this week, this month, and this year in the local timezone.",
   "runtime": "builtin-js",
@@ -12,6 +12,7 @@
   "permissions": [],
   "defaultConfig": {
     "name": "光阴似箭",
+    "notificationsEnabled": false,
     "visibleWindowIds": ["today", "week-monday", "week-sunday", "month", "year"],
     "windowLabelOverrides": {
       "today": "本日余时",

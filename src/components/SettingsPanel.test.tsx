@@ -442,6 +442,20 @@ test("settings_toggles_provider_tray_visibility", async () => {
   expect(apiMocks.state.config?.providers[0].showInTray).toBe(false);
 });
 
+test("settings_toggles_provider_notifications", async () => {
+  renderSettings();
+
+  fireEvent.click(screen.getByTestId("edit-provider-remote-kimi"));
+  const notificationsToggle = await screen.findByTestId(
+    "provider-notifications-enabled-remote-kimi",
+  );
+  expect(notificationsToggle).toBeChecked();
+
+  fireEvent.click(notificationsToggle);
+
+  expect(apiMocks.state.config?.providers[0].notificationsEnabled).toBe(false);
+});
+
 test("settings_edits_local_log_limit_in_megabytes", () => {
   renderSettings();
   switchSettingsCategory("advanced");

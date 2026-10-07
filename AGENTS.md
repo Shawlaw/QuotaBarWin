@@ -109,7 +109,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `25`.
+Current config schema version: `26`.
 
 Supported persisted provider config kind:
 
@@ -165,6 +165,13 @@ Remote provider public contract:
   each endpoint's template renders one request per event
   (`{{message}}`, `{{eventJson}}`, ...), sent as JSON when the rendered body
   parses, otherwise as plain text.
+- Schema `25 -> 26` adds the per-provider notification opt-out
+  (`notificationsEnabled` on each remote provider, default `true`). The remote
+  provider manifest `defaultConfig` may declare `notificationsEnabled` to seed
+  the flag when the provider is installed; updates never re-apply it. Events
+  from opted-out providers are still recorded in the local event history but
+  are filtered out of toast and webhook delivery
+  (`notifications::dispatch_events`).
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.

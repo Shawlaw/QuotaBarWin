@@ -2,6 +2,12 @@
 
 This file records user-visible changes in QuotaBarWin. Simplified Chinese counterpart: [CHANGELOG.md](CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+
+- Notifications can now be turned off per provider: expand a provider under Settings → Providers and toggle "Send notifications for this provider's events"; every provider participates by default. Turning it off only affects delivery — that provider's events are still recorded in the local event history, they just no longer trigger Windows notifications or webhooks. A provider's manifest may carry a different initial default at install time (for example, "光阴似箭 (Time Flies)" opts out by default); afterwards the choice is entirely the user's and updates never overwrite it.
+
 ## [1.6.1] - 2026-10-07
 
 ### Added

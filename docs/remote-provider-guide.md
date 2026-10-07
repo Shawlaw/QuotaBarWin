@@ -80,7 +80,7 @@
 | `requiredEnvVars` | 否 | 脚本需要的环境变量。刷新时会先查 provider `envVars`，再解析 `${secret:NAME}`。 |
 | `output` | 是 | 当前仅支持 `provider-snapshot-v1`。 |
 | `permissions` | 否 | 对外部 runtime 是说明字段；对 `builtin-js` 是强制能力边界，格式和用法见下一节。 |
-| `defaultConfig` | 否 | 首次安装时写入本地 provider 配置的默认值，例如 `name`、`timeoutSeconds`、`visibleWindowIds`、`windowLabelOverrides`、`envVars`。后续 provider 更新不会覆盖用户本地修改。 |
+| `defaultConfig` | 否 | 首次安装时写入本地 provider 配置的默认值，例如 `name`、`timeoutSeconds`、`notificationsEnabled`（事件通知参与开关，默认 `true`；纯展示类提供方可声明 `false`，安装后用户仍可自行修改）、`visibleWindowIds`、`windowLabelOverrides`、`envVars`。后续 provider 更新不会覆盖用户本地修改。 |
 | `parameters` | 否 | 设置页展示的结构化参数。每项可包含 `name`、`label`、`kind`、`required`、`defaultValue`、`placeholder`、`description`、`options`、`helpUrl`、`advanced`。不要放真实凭据。 |
 | `checksums.source` | 否 | Source 文件 SHA-256。启用安全 auto-update 时需要，格式为 `sha256:<hex>`。更新检测以 checksum 为准；`version` 升高时即使 source 未变化也会视为有可用更新，但不会替代 checksum 校验。 |
 

@@ -701,6 +701,7 @@ mod tests {
             window_label_overrides: HashMap::new(),
             visible_window_ids: Vec::new(),
             show_in_tray: true,
+            notifications_enabled: true,
             env_vars: if with_required_secret {
                 HashMap::from([
                     (

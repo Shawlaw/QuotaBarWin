@@ -34,7 +34,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 - Distribution: **portable zip + single exe**
 - Current version: **v1.6.1**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
-- Current config schema version: **25**
+- Current config schema version: **26**
 
 ---
 
@@ -162,6 +162,8 @@ Under **Settings → Notifications** you can enable two delivery channels (both 
 - **Webhook**: supports multiple endpoints (each with its own URL, body template, and timeout); events fan out to every enabled endpoint and one failing endpoint never blocks the others. By default, POSTs the selected events as a JSON batch to your endpoint. The URL supports `${secret:NAME}`, `${env:NAME}`, and `${file:...}` placeholders (for example, keep token-bearing webhook addresses in your `secrets` folder), follows the global proxy settings, and has a configurable timeout; delivery failures are only written to redacted local logs. You can also configure a custom body template: each selected event is then rendered and delivered as its own request, with placeholders such as `{{message}}` (the localized notification text including the event time), `{{eventType}}`, `{{providerName}}`, `{{windowLabel}}`, `{{occurredAt}}`, and `{{eventJson}}`; a rendered body that parses as JSON is sent as JSON, otherwise as plain text. Leave the template empty to keep the JSON batch format. The full placeholder list, the default JSON batch schema, and per-platform template examples are documented in the built-in guide (offline HTML, Chinese and English) opened via the button next to the template field in Settings.
 
 Notifications arrive on the **next refresh** after a change happens (default interval 300 seconds, adjustable in settings); nothing is sent retroactively while the app is not running. A webhook sends your quota event data to an external address you choose, so only point it at services you trust.
+
+Notifications can also be turned off per provider: expand a provider under **Settings → Providers** and toggle "Send notifications for this provider's events" (participating by default; a provider's manifest may carry a different initial default at install time, after which the choice is yours and updates never overwrite it). Turning it off only affects delivery — that provider's events are still recorded in the local event history.
 
 ---
 

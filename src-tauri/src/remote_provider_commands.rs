@@ -689,6 +689,12 @@ fn install_remote_provider_from_manifest(
         window_label_overrides: manifest.default_config.window_label_overrides.clone(),
         visible_window_ids: manifest.default_config.visible_window_ids.clone(),
         show_in_tray: true,
+        // The manifest default only seeds the first install; later changes are
+        // the user's, so updates never re-apply it.
+        notifications_enabled: manifest
+            .default_config
+            .notifications_enabled
+            .unwrap_or(true),
         env_vars: manifest.default_config.env_vars.clone(),
         setup_state: crate::config::ProviderSetupState::Pending,
         setup_last_tested_at: None,
@@ -1868,6 +1874,7 @@ mod tests {
             window_label_overrides: HashMap::new(),
             visible_window_ids: Vec::new(),
             show_in_tray: true,
+            notifications_enabled: true,
             env_vars: HashMap::new(),
             setup_state: crate::config::ProviderSetupState::Ready,
             setup_last_tested_at: None,
@@ -1932,6 +1939,55 @@ mod tests {
             ),
             2
         );
+    }
+
+    #[test]
+    fn provider_install_applies_the_manifest_notification_default() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let upstream = temp.path().join("upstream");
+        fs::create_dir_all(&upstream).expect("create upstream dir");
+        let source = "function main() { return { status: 'ok', windows: [] }; }";
+        fs::write(upstream.join("provider.js"), source).expect("write source");
+        let manifest = serde_json::json!({
+            "schemaVersion": 2,
+            "id": "time-flies",
+            "displayName": "光阴似箭",
+            "version": "1.2.1",
+            "minAppVersion": "1.0.0",
+            "runtime": "builtin-js",
+            "entry": "provider.js",
+            "requiredEnvVars": [],
+            "output": "provider-snapshot-v1",
+            "permissions": [],
+            "defaultConfig": {
+                "name": "光阴似箭",
+                "notificationsEnabled": false
+            },
+            "checksums": { "source": compute_checksum(source) }
+        });
+        let manifest: ProviderManifest =
+            serde_json::from_value(manifest).expect("parse manifest");
+
+        let config_path = temp.path().join("config.json");
+        let loaded = load_or_create_config(&config_path).expect("load config");
+        let log = LogSink::from_config_path(&config_path, &loaded.config);
+        let installed = install_remote_provider_from_manifest(
+            &config_path,
+            &upstream.join("provider.json").to_string_lossy(),
+            None,
+            false,
+            manifest,
+            &log,
+        )
+        .expect("install");
+
+        // The manifest default seeds the flag; a manifest without it installs
+        // participating (checked by the default unwrap in the install path).
+        let ProviderConfig::Remote {
+            notifications_enabled,
+            ..
+        } = &installed;
+        assert!(!notifications_enabled);
     }
 
     #[test]

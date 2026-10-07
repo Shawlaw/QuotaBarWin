@@ -4,6 +4,8 @@ Default documentation is Simplified Chinese: [`api.md`](api.md).
 
 `time-flies/provider.js` uses `builtin-js` and does not access the network, files, or account credentials. It uses only the local timezone and current time of the machine that runs it to emit Time Flies windows in minutes.
 
+As a display-only provider, its `defaultConfig` declares `notificationsEnabled: false`, so it opts out of event notifications by default after install (events are still recorded in the local event history); users can turn it back on under Settings → Providers.
+
 ## Runtime Requirements
 
 | Item | Value |

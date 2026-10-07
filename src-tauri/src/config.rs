@@ -15,7 +15,7 @@ use crate::{
     proxy::ProxyConfig,
 };
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 25;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 26;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_LOCAL_API_PORT: u16 = 41833;
@@ -430,6 +430,13 @@ pub enum ProviderConfig {
             alias = "show-in-tray"
         )]
         show_in_tray: bool,
+        #[serde(
+            default = "default_provider_notifications_enabled",
+            rename = "notificationsEnabled",
+            alias = "notifications_enabled",
+            alias = "notifications-enabled"
+        )]
+        notifications_enabled: bool,
         #[serde(default, rename = "envVars", alias = "env_vars", alias = "env-vars")]
         env_vars: HashMap<String, String>,
         #[serde(
@@ -535,6 +542,28 @@ fn default_remote_provider_source_enabled() -> bool {
 
 fn default_show_in_tray() -> bool {
     true
+}
+
+fn default_provider_notifications_enabled() -> bool {
+    true
+}
+
+/// Provider ids whose quota events must not reach the notification channels
+/// (the local event history still records them). App-level events have no
+/// provider and are never muted.
+pub fn muted_notification_provider_ids(config: &AppConfig) -> std::collections::HashSet<String> {
+    config
+        .providers
+        .iter()
+        .filter_map(|provider| match provider {
+            ProviderConfig::Remote {
+                id,
+                notifications_enabled: false,
+                ..
+            } => Some(id.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn default_provider_setup_state() -> ProviderSetupState {
@@ -1261,6 +1290,29 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
             }
         }
         value["schemaVersion"] = serde_json::json!(25);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(25);
+    if version < 26 {
+        // Providers gain a per-provider notification opt-out. Existing
+        // installations keep their current behaviour: every provider
+        // participates until the user turns it off.
+        if let Some(providers) = value
+            .get_mut("providers")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for provider in providers {
+                if provider.get("kind").and_then(serde_json::Value::as_str) == Some("remote")
+                    && provider.get("notificationsEnabled").is_none()
+                {
+                    provider["notificationsEnabled"] = serde_json::Value::Bool(true);
+                }
+            }
+        }
+        value["schemaVersion"] = serde_json::json!(26);
     }
 
     Ok(value)
@@ -2403,6 +2455,7 @@ mod tests {
             window_label_overrides: HashMap::new(),
             visible_window_ids: Vec::new(),
             show_in_tray: true,
+            notifications_enabled: true,
             env_vars: HashMap::new(),
             setup_state: ProviderSetupState::Ready,
             setup_last_tested_at: None,
@@ -3391,6 +3444,68 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v25_enables_provider_notifications_by_default() {
+        let value = serde_json::json!({
+            "schemaVersion": 25,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "providers": [
+                {
+                    "kind": "remote",
+                    "id": "remote-kimi",
+                    "name": "Remote Kimi",
+                    "enabled": true,
+                    "manifestUrl": "https://example.com/provider.json",
+                    "sourceUrl": "https://example.com/provider.cjs",
+                    "runtime": "node"
+                },
+                {
+                    "kind": "remote",
+                    "id": "remote-time",
+                    "name": "光阴似箭",
+                    "enabled": true,
+                    "manifestUrl": "https://example.com/time-flies.json",
+                    "sourceUrl": "https://example.com/provider.js",
+                    "runtime": "builtin-js"
+                }
+            ]
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        for provider in migrated["providers"].as_array().expect("providers") {
+            assert_eq!(provider["notificationsEnabled"], serde_json::json!(true));
+        }
+        // Deserializing the migrated config exposes the same opt-out set the
+        // notification dispatcher filters by.
+        let config: AppConfig =
+            serde_json::from_value(migrated).expect("migrated config deserializes");
+        assert!(muted_notification_provider_ids(&config).is_empty());
+    }
+
+    #[test]
+    fn muted_notification_provider_ids_list_only_opted_out_providers() {
+        let mut config = default_config();
+        let mut muted_provider = remote_provider_config("remote-time");
+        let ProviderConfig::Remote {
+            notifications_enabled,
+            ..
+        } = &mut muted_provider;
+        *notifications_enabled = false;
+        config.providers = vec![remote_provider_config("remote-kimi"), muted_provider];
+
+        let muted = muted_notification_provider_ids(&config);
+
+        assert_eq!(muted.len(), 1);
+        assert!(muted.contains("remote-time"));
+    }
+
+    #[test]
     fn notification_settings_deserialize_with_defaults_for_partial_input() {
         let settings: NotificationSettings =
             serde_json::from_value(serde_json::json!({})).expect("partial settings parse");
@@ -3571,6 +3686,7 @@ mod tests {
                 )]),
                 visible_window_ids: vec!["5h".to_string()],
                 show_in_tray: true,
+                notifications_enabled: true,
                 env_vars: HashMap::from([(
                     "KIMI_API_KEY".to_string(),
                     "${secret:KIMI_API_KEY}".to_string(),

@@ -138,6 +138,7 @@ export type I18nCatalog = {
     windowLabelOverridesPlaceholder: string;
     displayedWindows: string;
     showInTray: string;
+    providerNotifications: string;
     displayedWindowsPlaceholder: string;
     windowDisplay: string;
     windowDisplayNoSnapshot: string;
@@ -652,6 +653,7 @@ export const en: I18nCatalog = {
     windowLabelOverridesPlaceholder: "window-id=Display name\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "Displayed windows",
     showInTray: "Show in tray popup",
+    providerNotifications: "Send notifications for this provider's events",
     displayedWindowsPlaceholder: "Leave empty to show all\n5h\nweekly\nWeekly limit",
     windowDisplay: "Window display",
     windowDisplayNoSnapshot: "No recent snapshot windows yet.",
@@ -1243,6 +1245,7 @@ export const zhCN: I18nCatalog = {
     windowLabelOverridesPlaceholder: "window-id=显示名称\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "显示的窗口",
     showInTray: "在托盘小窗中显示",
+    providerNotifications: "发送此提供方的事件通知",
     displayedWindowsPlaceholder: "留空显示全部\n5h\nweekly\nWeekly limit",
     windowDisplay: "窗口显示",
     windowDisplayNoSnapshot: "暂无最近快照窗口。",

@@ -313,6 +313,7 @@ export type RemoteProviderConfig = {
   windowLabelOverrides?: Record<string, string>;
   visibleWindowIds?: string[];
   showInTray?: boolean;
+  notificationsEnabled?: boolean;
   envVars?: Record<string, string>;
   setupState?: ProviderSetupState;
   setupLastTestedAt?: string | null;

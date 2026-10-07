@@ -125,6 +125,19 @@ pub fn event_matches_filter(settings: &NotificationSettings, event_type: &str) -
     settings.events.iter().any(|allowed| allowed == event_type)
 }
 
+/// True when the event's provider participates in notifications. Events with
+/// no provider (app-level events, the test notification) always pass; the
+/// local event history is unaffected by this opt-out.
+pub fn event_provider_notifies(
+    event: &QuotaEvent,
+    muted_provider_ids: &std::collections::HashSet<String>,
+) -> bool {
+    event
+        .provider_id
+        .as_deref()
+        .map_or(true, |id| !muted_provider_ids.contains(id))
+}
+
 /// The endpoints delivery fans out to: enabled and carrying a URL. Delivery
 /// itself inlines the same predicate (it also needs each endpoint index),
 /// so this lives as the tested contract of that filter.
@@ -152,10 +165,13 @@ fn webhook_endpoint_label(endpoint: &WebhookEndpointSettings, index: usize) -> S
 
 /// Spawns delivery for events recorded by a refresh. Delivery must never block
 /// or fail the refresh itself, so everything happens on a worker thread and
-/// failures only reach the structured log.
+/// failures only reach the structured log. `muted_provider_ids` carries the
+/// providers that opted out of notifications; their events are dropped here
+/// and never reach toast or webhook delivery.
 pub fn dispatch_events(
     config_path: &Path,
     settings: NotificationSettings,
+    muted_provider_ids: std::collections::HashSet<String>,
     global_proxy: Option<ProxyConfig>,
     language: AppLanguage,
     events: Vec<QuotaEvent>,
@@ -170,6 +186,7 @@ pub fn dispatch_events(
             let selected: Vec<QuotaEvent> = events
                 .into_iter()
                 .filter(|event| event_matches_filter(&settings, &event.event_type))
+                .filter(|event| event_provider_notifies(event, &muted_provider_ids))
                 .collect();
             if selected.is_empty() {
                 return;
@@ -805,6 +822,25 @@ mod tests {
         assert!(event_matches_filter(&settings, NOTIFICATION_EVENT_QUOTA_RESET));
         settings.events = Vec::new();
         assert!(!event_matches_filter(&settings, NOTIFICATION_EVENT_QUOTA_RESET));
+    }
+
+    #[test]
+    fn provider_opt_out_mutes_only_that_providers_events() {
+        let muted = std::collections::HashSet::from(["remote-time".to_string()]);
+        let mut muted_event = recorded_event(NOTIFICATION_EVENT_QUOTA_RESET);
+        muted_event.provider_id = Some("remote-time".to_string());
+        assert!(!event_provider_notifies(&muted_event, &muted));
+
+        let mut other_event = recorded_event(NOTIFICATION_EVENT_QUOTA_RESET);
+        other_event.provider_id = Some("remote-kimi".to_string());
+        assert!(event_provider_notifies(&other_event, &muted));
+
+        // App-level events (startup, applied update, test notifications) have
+        // no provider and always pass.
+        let mut app_event = recorded_event(NOTIFICATION_EVENT_APP_STARTED);
+        app_event.provider_id = None;
+        assert!(event_provider_notifies(&app_event, &muted));
+        assert!(event_provider_notifies(&app_event, &std::collections::HashSet::new()));
     }
 
     #[test]
