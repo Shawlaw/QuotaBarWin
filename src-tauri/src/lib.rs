@@ -135,7 +135,8 @@ fn should_start_hidden() -> bool {
 }
 
 pub fn run() {
-    if let Err(error) = app_identity::configure_process_identity() {
+    let context = tauri::generate_context!();
+    if let Err(error) = app_identity::configure_process_identity(&context.config().identifier) {
         eprintln!("{error}");
     }
 
@@ -342,7 +343,7 @@ pub fn run() {
             }
             _ => {}
         })
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running QuotaBarWin");
 }
 

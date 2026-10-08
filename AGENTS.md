@@ -276,7 +276,12 @@ npm run tauri:preview
 These pass `src-tauri/tauri.dev.conf.json`, which swaps the identifier to
 `com.quotabarwin.app.dev`: the exe gets its own single-instance mutex (it runs
 alongside an installed release), its config directory is always resolved
-beside the dev exe (never the release AppData directory), and the runtime
+beside the dev exe (never the release AppData directory), its Windows toast
+notifications are sent under the dev AppUserModelID
+(`com.quotabarwin.app.dev`, display name `QuotaBarWin Dev`) so they group
+separately from the release app and can be muted independently in Windows
+notification settings (see `app_identity::configure_process_identity`; the
+release AUMID `com.quotabarwin.app` must never change), and the runtime
 disables release-only features — autostart registration and application
 updates — through `app_identity::is_dev_build`. A dev build also never
 removes the shared `QuotaBarWin` autostart Run entry when it points at the

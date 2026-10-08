@@ -561,7 +561,7 @@ pub fn show_toast_batch(
     if events.is_empty() {
         return Ok(());
     }
-    use crate::app_identity::APP_USER_MODEL_ID;
+    use crate::app_identity::{active_app_display_name, active_app_user_model_id};
     use windows_sys::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 
     // RPC_E_CHANGED_MODE as an unsigned HRESULT: the thread already joined a
@@ -578,13 +578,18 @@ pub fn show_toast_batch(
     }
 
     let result = (|| {
+        // The active identity follows the running build: a dev exe toasts as
+        // "QuotaBarWin Dev" under its own AppUserModelID so its notifications
+        // group separately from the release app.
+        let app_user_model_id = active_app_user_model_id();
+        let display_name = active_app_display_name();
         // The icon is only registered for the notification center's app
         // header (IconUri); the toast body itself stays text-only.
         let icon_path = ensure_toast_icon_file();
-        ensure_app_identity_registration(icon_path.as_deref())?;
+        ensure_app_identity_registration(icon_path.as_deref(), app_user_model_id, display_name)?;
         let chinese = language_is_chinese(language);
         let first = describe_event(language, &events[0]);
-        let mut toast = winrt_notification::Toast::new(APP_USER_MODEL_ID).title("QuotaBarWin");
+        let mut toast = winrt_notification::Toast::new(app_user_model_id).title(display_name);
         if events.len() > 1 {
             let more = if chinese {
                 format!("以及另外 {} 个事件", events.len() - 1)
@@ -609,14 +614,30 @@ pub fn show_toast_batch(_language: &AppLanguage, _events: &[QuotaEvent]) -> Resu
     Err("toast notifications are only supported on Windows".to_string())
 }
 
+// The HKCU subkey holding one build's AppUserModelID registration. Null-
+// terminated UTF-16 as the registry APIs expect.
+#[cfg(windows)]
+fn app_user_model_id_registry_subkey(app_user_model_id: &str) -> Vec<u16> {
+    "Software\\Classes\\AppUserModelId\\"
+        .encode_utf16()
+        .chain(app_user_model_id.encode_utf16())
+        .chain([0])
+        .collect()
+}
+
 // A WinRT toast is only displayed when its AppUserModelID is known to the
 // shell. Bundled installers create a Start Menu shortcut for this; the
 // portable build instead registers the AppUserModelID key in HKCU (the same
 // mechanism Firefox/Chrome and PowerShell's BurntToast use), including an
-// IconUri pointing at the extracted brand icon so toasts are branded.
+// IconUri pointing at the extracted brand icon so toasts are branded. The dev
+// build registers under its own AppUserModelID with its own display name, so
+// its toasts never merge into the release app's group.
 #[cfg(windows)]
-fn ensure_app_identity_registration(icon_path: Option<&Path>) -> Result<(), String> {
-    use crate::app_identity::APP_USER_MODEL_ID;
+fn ensure_app_identity_registration(
+    icon_path: Option<&Path>,
+    app_user_model_id: &str,
+    display_name: &str,
+) -> Result<(), String> {
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY_CURRENT_USER, KEY_SET_VALUE,
         REG_OPTION_NON_VOLATILE, REG_EXPAND_SZ,
@@ -646,11 +667,7 @@ fn ensure_app_identity_registration(icon_path: Option<&Path>) -> Result<(), Stri
         }
     }
 
-    let subkey: Vec<u16> = "Software\\Classes\\AppUserModelId\\"
-        .encode_utf16()
-        .chain(APP_USER_MODEL_ID.encode_utf16())
-        .chain([0])
-        .collect();
+    let subkey = app_user_model_id_registry_subkey(app_user_model_id);
 
     let mut hkey = std::ptr::null_mut();
     let create_result = unsafe {
@@ -672,7 +689,7 @@ fn ensure_app_identity_registration(icon_path: Option<&Path>) -> Result<(), Stri
         ));
     }
     let set_results = [
-        set_registry_value(hkey, "DisplayName", "QuotaBarWin"),
+        set_registry_value(hkey, "DisplayName", display_name),
         match icon_path {
             Some(icon_path) => set_registry_value(
                 hkey,
@@ -741,14 +758,10 @@ pub async fn send_test_notification(
 // counts as success; this never needs to fail the surrounding config save.
 #[cfg(windows)]
 pub fn remove_toast_registration() -> Result<(), String> {
-    use crate::app_identity::APP_USER_MODEL_ID;
+    use crate::app_identity::active_app_user_model_id;
     use windows_sys::Win32::System::Registry::{RegDeleteTreeW, HKEY_CURRENT_USER};
 
-    let subkey: Vec<u16> = "Software\\Classes\\AppUserModelId\\"
-        .encode_utf16()
-        .chain(APP_USER_MODEL_ID.encode_utf16())
-        .chain([0])
-        .collect();
+    let subkey = app_user_model_id_registry_subkey(active_app_user_model_id());
     const ERROR_FILE_NOT_FOUND: u32 = 2;
     let result = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, subkey.as_ptr()) };
     // The extracted icon is part of the same registration footprint.
@@ -841,6 +854,23 @@ mod tests {
         app_event.provider_id = None;
         assert!(event_provider_notifies(&app_event, &muted));
         assert!(event_provider_notifies(&app_event, &std::collections::HashSet::new()));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn app_user_model_id_registry_subkey_separates_dev_from_release() {
+        let release = app_user_model_id_registry_subkey(crate::app_identity::APP_USER_MODEL_ID);
+        let dev = app_user_model_id_registry_subkey(crate::app_identity::DEV_APP_USER_MODEL_ID);
+        assert_ne!(release, dev, "dev and release must not share a registration key");
+        let as_path = |value: &[u16]| String::from_utf16_lossy(&value[..value.len() - 1]);
+        assert_eq!(
+            as_path(&release),
+            r"Software\Classes\AppUserModelId\com.quotabarwin.app"
+        );
+        assert_eq!(
+            as_path(&dev),
+            r"Software\Classes\AppUserModelId\com.quotabarwin.app.dev"
+        );
     }
 
     #[test]
