@@ -499,10 +499,16 @@ pub fn clear_events(path: &Path) -> Result<(), String> {
     let mut guard = event_history_cache()
         .lock()
         .map_err(|_| "Event history lock poisoned".to_string())?;
-    let next_id = match guard.as_ref() {
+    let mut next_id = match guard.as_ref() {
         Some((cached_path, history)) if cached_path == path => history.next_id,
-        _ => 1,
+        // The cache belongs to another location; continue the target file's
+        // id sequence instead of restarting from 1 after a portable-mode
+        // toggle cleared this location.
+        _ => load_history_from_disk(path).next_id,
     };
+    if next_id == 0 {
+        next_id = 1;
+    }
     let history = EventHistoryFile {
         schema_version: EVENT_HISTORY_SCHEMA_VERSION,
         next_id,
@@ -846,6 +852,12 @@ mod tests {
         clear_events(&app_data_path).expect("clear appdata");
         assert!(read_events(&app_data_path).expect("read cleared").is_empty());
         assert_eq!(read_events(&portable_path).expect("read portable").len(), 1);
+
+        // The cleared location's id sequence continues (its file held
+        // next_id 2 before the clear) instead of restarting from 1.
+        let resumed =
+            append_events(&app_data_path, vec![pending_app_started(false)]).expect("append after clear");
+        assert_eq!(resumed[0].id, 2, "ids continue the cleared location's sequence");
     }
 
     #[test]

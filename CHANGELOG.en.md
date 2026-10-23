@@ -6,7 +6,7 @@ This file records user-visible changes in QuotaBarWin. Simplified Chinese counte
 
 ### Fixed
 
-- Fixed the event history leaking across storage locations after toggling portable mode: previously, switching between portable and AppData storage within the same running app carried the old location's event history into the new location; each location now keeps its own independent history. History writes also became a direct atomic replace, removing the crash window that could lose the history file mid-write.
+- Fixed the event history leaking across storage locations after toggling portable mode: previously, switching between portable and AppData storage within the same running app carried the old location's event history into the new location; each location now keeps its own independent history. History saving is also more robust, reducing the risk of losing the history file if the app crashes mid-save.
 
 ## [1.6.2] - 2026-10-08
 
