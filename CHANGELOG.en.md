@@ -2,6 +2,12 @@
 
 This file records user-visible changes in QuotaBarWin. Simplified Chinese counterpart: [CHANGELOG.md](CHANGELOG.md).
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed the event history leaking across storage locations after toggling portable mode: previously, switching between portable and AppData storage within the same running app carried the old location's event history into the new location; each location now keeps its own independent history. History writes also became a direct atomic replace, removing the crash window that could lose the history file mid-write.
+
 ## [1.6.2] - 2026-10-08
 
 ### Added

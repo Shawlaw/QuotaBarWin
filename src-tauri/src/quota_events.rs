@@ -77,9 +77,13 @@ struct EventHistoryFile {
     events: Vec<QuotaEvent>,
 }
 
-static EVENT_HISTORY_CACHE: OnceLock<Mutex<Option<EventHistoryFile>>> = OnceLock::new();
+// The cached history remembers the config path it belongs to: toggling
+// portable mode switches the active path within the same process (the app
+// does not restart), and history cached from the previous location must
+// never be served from or written to the new one.
+static EVENT_HISTORY_CACHE: OnceLock<Mutex<Option<(PathBuf, EventHistoryFile)>>> = OnceLock::new();
 
-fn event_history_cache() -> &'static Mutex<Option<EventHistoryFile>> {
+fn event_history_cache() -> &'static Mutex<Option<(PathBuf, EventHistoryFile)>> {
     EVENT_HISTORY_CACHE.get_or_init(|| Mutex::new(None))
 }
 
@@ -414,9 +418,9 @@ fn persist_history(path: &Path, history: &EventHistoryFile) -> Result<(), String
     let temporary_path = history_path.with_file_name(format!(".{EVENT_HISTORY_FILE_NAME}.tmp"));
     let contents = serde_json::to_string_pretty(history).map_err(|error| error.to_string())?;
     fs::write(&temporary_path, contents).map_err(|error| error.to_string())?;
-    if history_path.exists() {
-        fs::remove_file(&history_path).map_err(|error| error.to_string())?;
-    }
+    // rename replaces an existing destination on both Unix and Windows (std
+    // uses MOVEFILE_REPLACE_EXISTING there); deleting the destination first
+    // would only open a crash window in which the whole history is lost.
     fs::rename(&temporary_path, &history_path).map_err(|error| {
         let _ = fs::remove_file(&temporary_path);
         error.to_string()
@@ -435,9 +439,13 @@ pub fn append_events(
     let mut guard = event_history_cache()
         .lock()
         .map_err(|_| "Event history lock poisoned".to_string())?;
-    let mut history = guard
-        .clone()
-        .unwrap_or_else(|| load_history_from_disk(path));
+    let mut history = match guard.as_ref() {
+        Some((cached_path, history)) if cached_path == path => history.clone(),
+        // No cache for this location yet (fresh process, or the active config
+        // path switched in-session via the portable-mode toggle): the disk
+        // file at this path is the only source of truth.
+        _ => load_history_from_disk(path),
+    };
     if history.next_id == 0 {
         history.next_id = 1;
     }
@@ -467,7 +475,7 @@ pub fn append_events(
         history.events.drain(0..overflow);
     }
     persist_history(path, &history)?;
-    *guard = Some(history);
+    *guard = Some((path.to_path_buf(), history));
     Ok(recorded)
 }
 
@@ -476,8 +484,10 @@ pub fn read_events(path: &Path) -> Result<Vec<QuotaEvent>, String> {
     let guard = event_history_cache()
         .lock()
         .map_err(|_| "Event history lock poisoned".to_string())?;
-    if let Some(history) = guard.as_ref() {
-        return Ok(history.events.iter().rev().cloned().collect());
+    if let Some((cached_path, history)) = guard.as_ref() {
+        if cached_path == path {
+            return Ok(history.events.iter().rev().cloned().collect());
+        }
     }
     drop(guard);
     let history = load_history_from_disk(path);
@@ -489,14 +499,17 @@ pub fn clear_events(path: &Path) -> Result<(), String> {
     let mut guard = event_history_cache()
         .lock()
         .map_err(|_| "Event history lock poisoned".to_string())?;
-    let next_id = guard.as_ref().map(|history| history.next_id).unwrap_or(1);
+    let next_id = match guard.as_ref() {
+        Some((cached_path, history)) if cached_path == path => history.next_id,
+        _ => 1,
+    };
     let history = EventHistoryFile {
         schema_version: EVENT_HISTORY_SCHEMA_VERSION,
         next_id,
         events: Vec::new(),
     };
     persist_history(path, &history)?;
-    *guard = Some(history);
+    *guard = Some((path.to_path_buf(), history));
     Ok(())
 }
 
@@ -805,6 +818,50 @@ mod tests {
 
         clear_events(&path).expect("clear");
         assert!(read_events(&path).expect("read after clear").is_empty());
+    }
+
+    #[test]
+    fn history_does_not_leak_across_config_paths() {
+        // Toggling portable mode switches the active config path without a
+        // restart; the cache from the old location must never surface in or
+        // be written to the new location's history.
+        let _guard = isolate_history();
+        let temp = tempfile::tempdir().expect("temp dir");
+        let app_data_path = temp.path().join("appdata").join("config.json");
+        let portable_path = temp.path().join("portable").join("config.json");
+
+        append_events(&app_data_path, vec![pending_app_started(false)]).expect("append appdata");
+
+        let recorded =
+            append_events(&portable_path, vec![pending_app_started(true)]).expect("append portable");
+        assert_eq!(recorded[0].id, 1, "ids restart for the new location");
+        assert_eq!(read_events(&portable_path).expect("read portable").len(), 1);
+        assert_eq!(
+            read_events(&app_data_path).expect("read appdata").len(),
+            1,
+            "old location keeps only its own events"
+        );
+
+        // Clearing one location leaves the other's file untouched.
+        clear_events(&app_data_path).expect("clear appdata");
+        assert!(read_events(&app_data_path).expect("read cleared").is_empty());
+        assert_eq!(read_events(&portable_path).expect("read portable").len(), 1);
+    }
+
+    #[test]
+    fn persist_replaces_an_existing_history_file_without_temporary_residue() {
+        let _guard = isolate_history();
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("config.json");
+
+        append_events(&path, vec![pending_app_started(false)]).expect("first append");
+        append_events(&path, vec![pending_app_started(true)])
+            .expect("second append replaces the existing file");
+
+        assert_eq!(read_events(&path).expect("read").len(), 2);
+        let temporary_path = history_path_for_config_path(&path)
+            .with_file_name(format!(".{EVENT_HISTORY_FILE_NAME}.tmp"));
+        assert!(!temporary_path.exists(), "no temporary file residue");
     }
 
     #[test]
