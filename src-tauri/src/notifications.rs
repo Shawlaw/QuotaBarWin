@@ -18,35 +18,28 @@ use crate::quota_events::QuotaEvent;
 const NOTIFICATION_EVENT_TEST: &str = "test-notification";
 const WEBHOOK_MIN_TIMEOUT_SECONDS: u64 = 1;
 const WEBHOOK_MAX_TIMEOUT_SECONDS: u64 = 60;
-// The toast brand icon; extracted to a per-user location so both the toast XML
-// image and the AUMID registry IconUri can reference a stable file.
-#[cfg(windows)]
+// The toast brand icon; passed to desktop-notify, which materializes it into
+// a per-user cache directory so the AUMID registry IconUri and the toast can
+// reference a stable file.
 const TOAST_ICON_PNG: &[u8] = include_bytes!("../icons/128x128.png");
 
-#[cfg(windows)]
-fn toast_icon_path() -> Option<std::path::PathBuf> {
-    let local_app_data = std::env::var_os("LOCALAPPDATA")?;
-    Some(
-        std::path::PathBuf::from(local_app_data)
-            .join("QuotaBarWin")
-            .join("toast-icon.png"),
-    )
-}
-
-/// Materializes the embedded brand icon for toast display. Machine-local by
-/// design, like the AppUserModelID registry key itself. Returns None on any
-/// failure; toasts then fall back to the generic Windows icon.
-#[cfg(windows)]
-fn ensure_toast_icon_file() -> Option<std::path::PathBuf> {
-    let path = toast_icon_path()?;
-    let is_current = std::fs::metadata(&path)
-        .ok()
-        .is_some_and(|metadata| metadata.len() == TOAST_ICON_PNG.len() as u64);
-    if !is_current {
-        std::fs::create_dir_all(path.parent()?).ok()?;
-        std::fs::write(&path, TOAST_ICON_PNG).ok()?;
+// The toast identity follows the running build: a dev exe toasts as
+// "QuotaBarWin Dev" under its own AppUserModelID so its notifications group
+// separately from the release app. The icon cache stays under
+// %LOCALAPPDATA%\QuotaBarWin, unchanged from the previous built-in
+// implementation, so existing installs pick up byte-diff icon updates
+// in place.
+fn toast_app() -> desktop_notify::ToastApp {
+    use crate::app_identity::{active_app_display_name, active_app_user_model_id};
+    let icon = std::env::var_os("LOCALAPPDATA").map(|dir| desktop_notify::ToastIcon {
+        png: TOAST_ICON_PNG,
+        cache_dir: std::path::PathBuf::from(dir).join("QuotaBarWin"),
+    });
+    desktop_notify::ToastApp {
+        app_user_model_id: active_app_user_model_id().to_string(),
+        display_name: active_app_display_name().to_string(),
+        icon,
     }
-    Some(path)
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -553,7 +546,10 @@ fn test_event() -> QuotaEvent {
     }
 }
 
-#[cfg(windows)]
+// The toast mechanism itself (AUMID registration, brand icon, COM apartment
+// handling, WinRT send) lives in the desktop-notify crate. Multiple events
+// fold into one toast: the first line is the first event, the second line
+// reports how many more events followed.
 pub fn show_toast_batch(
     language: &AppLanguage,
     events: &[QuotaEvent],
@@ -561,151 +557,22 @@ pub fn show_toast_batch(
     if events.is_empty() {
         return Ok(());
     }
-    use crate::app_identity::{active_app_display_name, active_app_user_model_id};
-    use windows_sys::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
-
-    // RPC_E_CHANGED_MODE as an unsigned HRESULT: the thread already joined a
-    // different apartment model, which WinRT tolerates for toasts.
-    const RPC_E_CHANGED_MODE: u32 = 0x8001_0106;
-
-    // WinRT toast calls need an apartment on the calling thread. S_FALSE means
-    // the apartment already existed.
-    let coinit = unsafe { CoInitializeEx(std::ptr::null(), COINIT_MULTITHREADED as u32) };
-    let need_uninitialize = coinit == 0 || coinit == 1;
-    if coinit < 0 && (coinit as u32) != RPC_E_CHANGED_MODE {
-        let hresult = coinit as u32;
-        return Err(format!("CoInitializeEx failed: HRESULT 0x{hresult:08X}"));
-    }
-
-    let result = (|| {
-        // The active identity follows the running build: a dev exe toasts as
-        // "QuotaBarWin Dev" under its own AppUserModelID so its notifications
-        // group separately from the release app.
-        let app_user_model_id = active_app_user_model_id();
-        let display_name = active_app_display_name();
-        // The icon is only registered for the notification center's app
-        // header (IconUri); the toast body itself stays text-only.
-        let icon_path = ensure_toast_icon_file();
-        ensure_app_identity_registration(icon_path.as_deref(), app_user_model_id, display_name)?;
-        let chinese = language_is_chinese(language);
-        let first = describe_event(language, &events[0]);
-        let mut toast = winrt_notification::Toast::new(app_user_model_id).title(display_name);
-        if events.len() > 1 {
-            let more = if chinese {
-                format!("以及另外 {} 个事件", events.len() - 1)
-            } else {
-                format!("+ {} more events", events.len() - 1)
-            };
-            toast = toast.text1(&first).text2(&more);
+    let app = toast_app();
+    let chinese = language_is_chinese(language);
+    let first = describe_event(language, &events[0]);
+    let more = events.len().checked_sub(1).map(|remaining| {
+        if chinese {
+            format!("以及另外 {remaining} 个事件")
         } else {
-            toast = toast.text1(&first);
+            format!("+ {remaining} more events")
         }
-        toast.show().map_err(|error| format!("toast failed: {error}"))
-    })();
-
-    if need_uninitialize {
-        unsafe { CoUninitialize() };
-    }
-    result
-}
-
-#[cfg(not(windows))]
-pub fn show_toast_batch(_language: &AppLanguage, _events: &[QuotaEvent]) -> Result<(), String> {
-    Err("toast notifications are only supported on Windows".to_string())
-}
-
-// The HKCU subkey holding one build's AppUserModelID registration. Null-
-// terminated UTF-16 as the registry APIs expect.
-#[cfg(windows)]
-fn app_user_model_id_registry_subkey(app_user_model_id: &str) -> Vec<u16> {
-    "Software\\Classes\\AppUserModelId\\"
-        .encode_utf16()
-        .chain(app_user_model_id.encode_utf16())
-        .chain([0])
-        .collect()
-}
-
-// A WinRT toast is only displayed when its AppUserModelID is known to the
-// shell. Bundled installers create a Start Menu shortcut for this; the
-// portable build instead registers the AppUserModelID key in HKCU (the same
-// mechanism Firefox/Chrome and PowerShell's BurntToast use), including an
-// IconUri pointing at the extracted brand icon so toasts are branded. The dev
-// build registers under its own AppUserModelID with its own display name, so
-// its toasts never merge into the release app's group.
-#[cfg(windows)]
-fn ensure_app_identity_registration(
-    icon_path: Option<&Path>,
-    app_user_model_id: &str,
-    display_name: &str,
-) -> Result<(), String> {
-    use windows_sys::Win32::System::Registry::{
-        RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY_CURRENT_USER, KEY_SET_VALUE,
-        REG_OPTION_NON_VOLATILE, REG_EXPAND_SZ,
+    });
+    let message = desktop_notify::ToastMessage {
+        title: &app.display_name,
+        text: &first,
+        secondary: more.as_deref(),
     };
-
-    fn set_registry_value(
-        hkey: windows_sys::Win32::Foundation::HANDLE,
-        name: &str,
-        value: &str,
-    ) -> Result<(), u32> {
-        let name: Vec<u16> = name.encode_utf16().chain([0]).collect();
-        let value: Vec<u16> = value.encode_utf16().chain([0]).collect();
-        let result = unsafe {
-            RegSetValueExW(
-                hkey,
-                name.as_ptr(),
-                0,
-                REG_EXPAND_SZ,
-                value.as_ptr().cast(),
-                (value.len() * 2) as u32,
-            )
-        };
-        if result == 0 {
-            Ok(())
-        } else {
-            Err(result)
-        }
-    }
-
-    let subkey = app_user_model_id_registry_subkey(app_user_model_id);
-
-    let mut hkey = std::ptr::null_mut();
-    let create_result = unsafe {
-        RegCreateKeyExW(
-            HKEY_CURRENT_USER,
-            subkey.as_ptr(),
-            0,
-            std::ptr::null(),
-            REG_OPTION_NON_VOLATILE,
-            KEY_SET_VALUE,
-            std::ptr::null(),
-            &mut hkey,
-            std::ptr::null_mut(),
-        )
-    };
-    if create_result != 0 {
-        return Err(format!(
-            "failed to register AppUserModelID key: error {create_result}"
-        ));
-    }
-    let set_results = [
-        set_registry_value(hkey, "DisplayName", display_name),
-        match icon_path {
-            Some(icon_path) => set_registry_value(
-                hkey,
-                "IconUri",
-                &icon_path.to_string_lossy(),
-            ),
-            None => Ok(()),
-        },
-    ];
-    unsafe { RegCloseKey(hkey) };
-    for result in set_results {
-        if let Err(error) = result {
-            return Err(format!("failed to set AppUserModelID value: error {error}"));
-        }
-    }
-    Ok(())
+    desktop_notify::show(&app, &message)
 }
 
 #[tauri::command]
@@ -752,32 +619,13 @@ pub async fn send_test_notification(
     Ok(TestNotificationResult { toast, webhooks })
 }
 
-// Counterpart of ensure_app_identity_registration: removes the HKCU
+// Counterpart of the crate-internal registration: removes the HKCU
 // AppUserModelID key and the extracted toast icon so a user who turns Windows
 // notifications off leaves no registration footprint behind. A missing key
 // counts as success; this never needs to fail the surrounding config save.
-#[cfg(windows)]
+// Outside Windows nothing is registered, so removal trivially succeeds.
 pub fn remove_toast_registration() -> Result<(), String> {
-    use crate::app_identity::active_app_user_model_id;
-    use windows_sys::Win32::System::Registry::{RegDeleteTreeW, HKEY_CURRENT_USER};
-
-    let subkey = app_user_model_id_registry_subkey(active_app_user_model_id());
-    const ERROR_FILE_NOT_FOUND: u32 = 2;
-    let result = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, subkey.as_ptr()) };
-    // The extracted icon is part of the same registration footprint.
-    if let Some(icon_path) = toast_icon_path() {
-        let _ = std::fs::remove_file(icon_path);
-    }
-    match result {
-        0 | ERROR_FILE_NOT_FOUND => Ok(()),
-        code => Err(format!("RegDeleteTreeW failed: error {code}")),
-    }
-}
-
-// Nothing is registered outside Windows, so removal trivially succeeds.
-#[cfg(not(windows))]
-pub fn remove_toast_registration() -> Result<(), String> {
-    Ok(())
+    desktop_notify::remove_registration(&toast_app())
 }
 
 /// True when saving transitions Windows toast notifications from enabled to
@@ -856,21 +704,23 @@ mod tests {
         assert!(event_provider_notifies(&app_event, &std::collections::HashSet::new()));
     }
 
-    #[cfg(windows)]
     #[test]
-    fn app_user_model_id_registry_subkey_separates_dev_from_release() {
-        let release = app_user_model_id_registry_subkey(crate::app_identity::APP_USER_MODEL_ID);
-        let dev = app_user_model_id_registry_subkey(crate::app_identity::DEV_APP_USER_MODEL_ID);
-        assert_ne!(release, dev, "dev and release must not share a registration key");
-        let as_path = |value: &[u16]| String::from_utf16_lossy(&value[..value.len() - 1]);
-        assert_eq!(
-            as_path(&release),
-            r"Software\Classes\AppUserModelId\com.quotabarwin.app"
-        );
-        assert_eq!(
-            as_path(&dev),
-            r"Software\Classes\AppUserModelId\com.quotabarwin.app.dev"
-        );
+    fn toast_identity_stays_valid_for_desktop_notify() {
+        use crate::app_identity::{
+            active_app_display_name, active_app_user_model_id, APP_USER_MODEL_ID,
+            DEV_APP_USER_MODEL_ID,
+        };
+        // Dev and release must never share an AppUserModelID registration.
+        assert_ne!(APP_USER_MODEL_ID, DEV_APP_USER_MODEL_ID);
+        // desktop-notify rejects empty, spaced, or over-128-character ids, so
+        // the pinned constants must keep satisfying those constraints.
+        desktop_notify::validate_app_user_model_id(APP_USER_MODEL_ID)
+            .expect("release AppUserModelID must stay valid");
+        desktop_notify::validate_app_user_model_id(DEV_APP_USER_MODEL_ID)
+            .expect("dev AppUserModelID must stay valid");
+        let app = toast_app();
+        assert_eq!(app.app_user_model_id, active_app_user_model_id());
+        assert_eq!(app.display_name, active_app_display_name());
     }
 
     #[test]

@@ -85,10 +85,11 @@ Start with these files:
 - `src-tauri/src/quota_events.rs` and `src-tauri/src/notifications.rs` for the
   quota event history (edge-triggered detection from stabilized snapshots,
   `events.quotaBarWin.json` persistence capped at 200 entries) and notification
-  delivery (Windows toast via `winrt-notification` with an HKCU
-  AppUserModelID registration for the portable build; webhook fan-out to
-  multiple endpoints with secret-placeholder URLs, global proxy, per-endpoint
-  timeout and optional per-event body template, and redacted failures).
+  delivery (Windows toast via the `desktop-notify` DeskFoundry crate, which
+  owns the HKCU AppUserModelID registration for the portable build; webhook
+  fan-out to multiple endpoints with secret-placeholder URLs, global proxy,
+  per-endpoint timeout and optional per-event body template, and redacted
+  failures).
 - `src-tauri/src/remote_provider.rs`,
   `src-tauri/src/remote_provider_commands.rs`, and
   `src-tauri/src/remote_provider_runner.rs` for remote provider install/update,
