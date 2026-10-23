@@ -546,6 +546,23 @@ fn test_event() -> QuotaEvent {
     }
 }
 
+// The toast's second line when one refresh produced multiple events:
+// reports how many events follow the first one. Single-event toasts (and
+// the empty defensive case) carry no second line at all.
+fn toast_secondary_line(event_count: usize, language: &AppLanguage) -> Option<String> {
+    let Some(remaining) = event_count.checked_sub(1) else {
+        return None;
+    };
+    if remaining == 0 {
+        return None;
+    }
+    Some(if language_is_chinese(language) {
+        format!("以及另外 {remaining} 个事件")
+    } else {
+        format!("+ {remaining} more events")
+    })
+}
+
 // The toast mechanism itself (AUMID registration, brand icon, COM apartment
 // handling, WinRT send) lives in the desktop-notify crate. Multiple events
 // fold into one toast: the first line is the first event, the second line
@@ -558,19 +575,12 @@ pub fn show_toast_batch(
         return Ok(());
     }
     let app = toast_app();
-    let chinese = language_is_chinese(language);
     let first = describe_event(language, &events[0]);
-    let more = events.len().checked_sub(1).map(|remaining| {
-        if chinese {
-            format!("以及另外 {remaining} 个事件")
-        } else {
-            format!("+ {remaining} more events")
-        }
-    });
+    let secondary = toast_secondary_line(events.len(), language);
     let message = desktop_notify::ToastMessage {
         title: &app.display_name,
         text: &first,
-        secondary: more.as_deref(),
+        secondary: secondary.as_deref(),
     };
     desktop_notify::show(&app, &message)
 }
@@ -645,7 +655,6 @@ mod tests {
     use crate::quota_events::{
         pending_app_started, pending_app_update_applied, SEVERITY_POSITIVE,
     };
-    use std::io::Read;
 
     fn endpoint(url: &str) -> WebhookEndpointSettings {
         WebhookEndpointSettings {
@@ -702,6 +711,28 @@ mod tests {
         app_event.provider_id = None;
         assert!(event_provider_notifies(&app_event, &muted));
         assert!(event_provider_notifies(&app_event, &std::collections::HashSet::new()));
+    }
+
+    #[test]
+    fn toast_secondary_line_covers_single_and_multiple_events() {
+        assert_eq!(toast_secondary_line(0, &AppLanguage::ZhCn), None);
+        assert_eq!(
+            toast_secondary_line(1, &AppLanguage::En),
+            None,
+            "single-event toasts carry no second line"
+        );
+        assert_eq!(
+            toast_secondary_line(2, &AppLanguage::En).as_deref(),
+            Some("+ 1 more events")
+        );
+        assert_eq!(
+            toast_secondary_line(3, &AppLanguage::En).as_deref(),
+            Some("+ 2 more events")
+        );
+        assert_eq!(
+            toast_secondary_line(3, &AppLanguage::ZhCn).as_deref(),
+            Some("以及另外 2 个事件")
+        );
     }
 
     #[test]
