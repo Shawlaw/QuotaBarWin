@@ -6,6 +6,7 @@ src-tauri/gen/
 .tmp/
 .zcode/
 .codex/
+/private-doc/
 /artifacts/
 .env
 .env.*
