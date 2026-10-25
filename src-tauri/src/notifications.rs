@@ -558,6 +558,8 @@ fn toast_secondary_line(event_count: usize, language: &AppLanguage) -> Option<St
     }
     Some(if language_is_chinese(language) {
         format!("以及另外 {remaining} 个事件")
+    } else if remaining == 1 {
+        "+ 1 more event".to_string()
     } else {
         format!("+ {remaining} more events")
     })
@@ -723,7 +725,7 @@ mod tests {
         );
         assert_eq!(
             toast_secondary_line(2, &AppLanguage::En).as_deref(),
-            Some("+ 1 more events")
+            Some("+ 1 more event")
         );
         assert_eq!(
             toast_secondary_line(3, &AppLanguage::En).as_deref(),
