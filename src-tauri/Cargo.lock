@@ -833,8 +833,8 @@ dependencies = [
 
 [[package]]
 name = "desktop-notify"
-version = "0.1.0"
-source = "git+https://github.com/Shawlaw/DeskFoundry.git?tag=v0.1.7#ffad2b64ef5b65eea76a0395fc6f3c163fddbf16"
+version = "0.1.1"
+source = "git+https://github.com/Shawlaw/DeskFoundry.git?tag=v0.1.8#22a5f28661671e721d04ef6dd26b880a548598c7"
 dependencies = [
  "tauri-winrt-notification",
  "windows-sys 0.61.2",
@@ -843,7 +843,7 @@ dependencies = [
 [[package]]
 name = "desktop-updater"
 version = "0.1.5"
-source = "git+https://github.com/Shawlaw/DeskFoundry.git?tag=v0.1.7#ffad2b64ef5b65eea76a0395fc6f3c163fddbf16"
+source = "git+https://github.com/Shawlaw/DeskFoundry.git?tag=v0.1.8#22a5f28661671e721d04ef6dd26b880a548598c7"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
