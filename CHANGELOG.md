@@ -2,7 +2,7 @@
 
 本文记录 QuotaBarWin 的用户可见变化。默认以简体中文维护；英文对照版见 [CHANGELOG.en.md](CHANGELOG.en.md)。
 
-## [Unreleased]
+## [1.6.3] - 2026-10-28
 
 ### Fixed
 
