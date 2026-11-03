@@ -1844,10 +1844,39 @@ button:disabled {
 .tray-popup__copy-all,
 .tray-popup__copy-provider {
   -webkit-app-region: no-drag;
+  align-items: center;
+  display: inline-flex;
   flex-shrink: 0;
+  height: 24px;
+  justify-content: center;
   min-height: 24px;
-  padding: 0 7px;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
   white-space: nowrap;
+  width: 26px;
+}
+
+.tray-popup:hover .tray-popup__copy-all,
+.tray-popup:focus-within .tray-popup__copy-all,
+.tray-popup__provider-group:hover .tray-popup__copy-provider,
+.tray-popup__provider-group:focus-within .tray-popup__copy-provider {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tray-popup__copy-all:hover,
+.tray-popup__copy-provider:hover {
+  background: var(--qb-surface-muted);
+  color: var(--qb-text-heading);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tray-popup__copy-all,
+  .tray-popup__copy-provider {
+    transition: none;
+  }
 }
 
 .tray-popup__header p.tray-popup__meta-message--failed {

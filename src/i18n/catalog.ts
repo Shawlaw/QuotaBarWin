@@ -50,10 +50,7 @@ export type I18nCatalog = {
     refresh: string;
     refreshingShort: string;
     copyAll: string;
-    copyAllShort: string;
     copyProvider: (providerName: string) => string;
-    copyShort: string;
-    copyingShort: string;
     copied: string;
     copyFailed: string;
     capturedAt: (time: string) => string;
@@ -563,10 +560,7 @@ export const en: I18nCatalog = {
     refresh: "Refresh",
     refreshingShort: "...",
     copyAll: "Copy all Provider screenshots",
-    copyAllShort: "Copy all",
     copyProvider: (providerName) => `Copy ${providerName} screenshot`,
-    copyShort: "Copy",
-    copyingShort: "...",
     copied: "Image copied to clipboard.",
     copyFailed: "Could not copy the image. Please try again.",
     capturedAt: (time) => `Captured at ${time}`,
@@ -1169,10 +1163,7 @@ export const zhCN: I18nCatalog = {
     refresh: "刷新",
     refreshingShort: "...",
     copyAll: "复制全部提供方截图",
-    copyAllShort: "全部截图",
     copyProvider: (providerName) => `复制 ${providerName} 截图`,
-    copyShort: "截图",
-    copyingShort: "...",
     copied: "截图已复制到剪贴板。",
     copyFailed: "截图复制失败，请重试。",
     capturedAt: (time) => `截图时间 ${time}`,

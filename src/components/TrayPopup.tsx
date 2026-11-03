@@ -114,6 +114,26 @@ function blurStalePopupFocus() {
   }
 }
 
+function CameraIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      focusable="false"
+      height="16"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.7"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <path d="M14.5 4h-5L8.5 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4.5L14.5 4Z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
+  );
+}
+
 type TrayPopupProps = {
   onThemeChange?: (theme: AppTheme) => void;
 };
@@ -617,6 +637,18 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
               onMouseDown={(event) => event.stopPropagation()}
               onDoubleClick={(event) => event.stopPropagation()}
             >
+              <button
+                aria-label={t.tray.copyAll}
+                aria-busy={capturingTarget === "all"}
+                className="button-compact button-ghost tray-popup__copy-all"
+                type="button"
+                disabled={capturingTarget !== null || providersWithWindows.length === 0}
+                onClick={() => void copyProviderCapture("all")}
+                data-testid="tray-popup-copy-all"
+                title={t.tray.copyAll}
+              >
+                <CameraIcon />
+              </button>
               {primaryIssue ? (
                 <span
                   className={`status status--${primaryIssue.status} tray-popup__title-status`}
@@ -631,17 +663,6 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
                   )}
                 </span>
               ) : null}
-              <button
-                aria-label={t.tray.copyAll}
-                className="button-compact button-secondary tray-popup__copy-all"
-                type="button"
-                disabled={capturingTarget !== null || providersWithWindows.length === 0}
-                onClick={() => void copyProviderCapture("all")}
-                data-testid="tray-popup-copy-all"
-                title={t.tray.copyAll}
-              >
-                {capturingTarget === "all" ? t.tray.copyingShort : t.tray.copyAllShort}
-              </button>
             </div>
           </div>
         </div>
@@ -684,13 +705,9 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
                   <header className="tray-popup__provider-header">
                     <strong>{provider.name}</strong>
                     <div className="tray-popup__provider-actions">
-                      {providerStatus !== "ok" ? (
-                        <span className={`status status--${providerStatus}`}>
-                          {t.tray.status[providerStatus]}
-                        </span>
-                      ) : null}
                       <button
                         aria-label={t.tray.copyProvider(provider.name)}
+                        aria-busy={capturingTarget === provider.id}
                         className="button-compact button-ghost tray-popup__copy-provider"
                         type="button"
                         disabled={capturingTarget !== null}
@@ -699,8 +716,13 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
                         data-html2canvas-ignore
                         title={t.tray.copyProvider(provider.name)}
                       >
-                        {capturingTarget === provider.id ? t.tray.copyingShort : t.tray.copyShort}
+                        <CameraIcon />
                       </button>
+                      {providerStatus !== "ok" ? (
+                        <span className={`status status--${providerStatus}`}>
+                          {t.tray.status[providerStatus]}
+                        </span>
+                      ) : null}
                     </div>
                   </header>
                   <div className="tray-popup__provider-windows">

@@ -256,6 +256,13 @@ test("tray_popup_copies_one_provider_or_all_providers_to_the_clipboard", async (
 
   const providerButton = screen.getByTestId("tray-popup-copy-remote-kimi");
   expect(providerButton).toHaveAttribute("data-html2canvas-ignore");
+  expect(providerButton.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  expect(screen.getByTestId("tray-popup-copy-all").nextElementSibling).toHaveClass(
+    "tray-popup__title-status",
+  );
+  expect(screen.getByTestId("tray-popup-copy-mock-codex").nextElementSibling).toHaveClass(
+    "status--warning",
+  );
   fireEvent.click(providerButton);
 
   await waitFor(() => expect(mocks.captureTrayImageToClipboard).toHaveBeenCalledTimes(1));
