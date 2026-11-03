@@ -218,6 +218,34 @@ test("provider_card_renders_reset_time_for_each_window", () => {
   expect(screen.getByText("resets 06/30/2026, 10:00 AM GMT+8")).toBeInTheDocument();
 });
 
+test("provider_card_shows_full_date_when_hovering_a_weekday_reset", () => {
+  const resetAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+  const resetDate = new Date(resetAt);
+  const shortLabel = resetDate.toLocaleString(undefined, {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+  const fullLabel = resetDate.toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
+  renderWithEnglish(
+    <ProviderCard
+      provider={{
+        ...provider,
+        windows: [{ ...provider.windows[0], id: "weekly", resetAt }]
+      }}
+    />
+  );
+
+  expect(screen.getByText(`resets ${shortLabel}`)).toHaveAttribute("title", fullLabel);
+});
+
 test("provider_card_collapses_and_expands_many_quota_windows", () => {
   renderWithEnglish(
     <ProviderCard

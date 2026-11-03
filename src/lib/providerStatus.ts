@@ -194,6 +194,35 @@ export function formatShortDateTime(value: string | null | undefined, now = new 
   });
 }
 
+export function formatQuotaResetTooltip(
+  window: QuotaWindow,
+  now = new Date()
+): string | null {
+  if (!window.resetAt) {
+    return null;
+  }
+
+  const date = new Date(window.resetAt);
+  if (!Number.isFinite(date.getTime())) {
+    return null;
+  }
+
+  const sameDay = date.toDateString() === now.toDateString();
+  const withinWeek =
+    date.getTime() > now.getTime() && date.getTime() - now.getTime() < 7 * 24 * 60 * 60 * 1000;
+  if (sameDay || !withinWeek) {
+    return null;
+  }
+
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 export function formatQuotaReset(
   window: QuotaWindow,
   now = new Date(),

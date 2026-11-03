@@ -149,6 +149,7 @@ const mocks = vi.hoisted(() => {
   };
 
   return {
+    captureTrayImageToClipboard: vi.fn(async () => undefined),
     dismissAppUpdateNotice: vi.fn(async () => ({
       configured: true, currentVersion: "1.0.0", available: false, version: null, notesUrl: null, downloaded: false,
     })),
@@ -190,6 +191,9 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("../lib/api", () => mocks);
+vi.mock("../lib/traySnapshot", () => ({
+  captureTrayImageToClipboard: mocks.captureTrayImageToClipboard,
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -239,6 +243,59 @@ test("tray_popup_loads_snapshot_and_refreshes_when_shown", async () => {
   });
 
   expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(2);
+});
+
+test("tray_popup_copies_one_provider_or_all_providers_to_the_clipboard", async () => {
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+  await waitFor(() => expect(screen.getByText("Kimi Daily")).toBeInTheDocument());
+
+  const providerButton = screen.getByTestId("tray-popup-copy-remote-kimi");
+  expect(providerButton).toHaveAttribute("data-html2canvas-ignore");
+  fireEvent.click(providerButton);
+
+  await waitFor(() => expect(mocks.captureTrayImageToClipboard).toHaveBeenCalledTimes(1));
+  expect(mocks.captureTrayImageToClipboard).toHaveBeenLastCalledWith({
+    target: screen.getByTestId("tray-popup-provider-remote-kimi"),
+    appVersion: "1.0.0(abc1234)",
+    capturedAt: expect.any(Date),
+    capturedAtLabel: expect.any(Function),
+    language: "en",
+  });
+  expect(await screen.findByRole("status")).toHaveTextContent("Image copied to clipboard.");
+  expect(mocks.getAppVersion).toHaveBeenCalledTimes(1);
+
+  fireEvent.click(screen.getByTestId("tray-popup-copy-all"));
+
+  await waitFor(() => expect(mocks.captureTrayImageToClipboard).toHaveBeenCalledTimes(2));
+  expect(mocks.captureTrayImageToClipboard).toHaveBeenLastCalledWith({
+    target: screen.getByLabelText("Quota windows"),
+    appVersion: "1.0.0(abc1234)",
+    capturedAt: expect.any(Date),
+    capturedAtLabel: expect.any(Function),
+    language: "en",
+  });
+});
+
+test("tray_popup_reports_clipboard_capture_failures", async () => {
+  mocks.captureTrayImageToClipboard.mockRejectedValueOnce(new Error("clipboard busy"));
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+  await waitFor(() => expect(screen.getByText("Kimi Daily")).toBeInTheDocument());
+  fireEvent.click(screen.getByTestId("tray-popup-copy-remote-kimi"));
+
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "Could not copy the image. Please try again.",
+  );
+  expect(screen.getByTestId("tray-popup-copy-remote-kimi")).toBeEnabled();
 });
 
 test("tray_popup_hides_providers_disabled_for_tray_display", async () => {
@@ -613,6 +670,62 @@ test("tray_popup_exposes_amount_detail_on_hover", async () => {
     "Remaining 148 minutes / 1440 minutes"
   );
   expect(screen.getByText("resets tonight")).toBeInTheDocument();
+});
+
+test("tray_popup_shows_full_date_when_hovering_a_weekday_reset", async () => {
+  const resetAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+  const resetDate = new Date(resetAt);
+  const shortLabel = resetDate.toLocaleString(undefined, {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+  const fullLabel = resetDate.toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+  mocks.refreshSnapshot.mockResolvedValueOnce({
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:00:00+08:00",
+    providers: [
+      {
+        id: "remote-weekly",
+        name: "Weekly Provider",
+        status: "ok",
+        source: "remote",
+        updatedAt: "2026-06-08T10:00:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [
+          {
+            id: "weekly",
+            label: "Weekly",
+            used: 20,
+            limit: 100,
+            unit: "percent",
+            usedPercent: 20,
+            remainingPercent: 80,
+            resetAt,
+            resetText: null,
+            confidence: "exact",
+          },
+        ],
+      },
+    ],
+  });
+
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+
+  expect(await screen.findByText(`resets ${shortLabel}`)).toHaveAttribute("title", fullLabel);
 });
 
 test("tray_popup_colors_each_window_by_its_own_warning_status", async () => {

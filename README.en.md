@@ -194,6 +194,7 @@ The CLI can also validate Provider configuration, manifest, source checksum, and
 - In-app event history records app starts/updates, quota resets/unexpected recoveries/exhaustion/low quota, and Provider failures/recoveries; stored locally, filterable, and clearable.
 - Supports event notifications via Windows toasts (body includes the event time) and webhooks (JSON POST, with an optional custom body template), with per-event-type selection and a test-notification button.
 - Includes Windows tray integration, hidden startup, single-instance behavior, and a resizable tray popup.
+- The tray popup can copy one Provider's display or all Provider displays as an image with the app icon, name, version, and capture time. Images go directly to the clipboard without being saved as files.
 - The Settings page is organized into Provider / General / Notifications / Application update / Advanced categories: General keeps the refresh interval, display mode, language, theme, and launch-at-startup; the low-quota warning threshold is edited under Notifications, with a summary and shortcut in General; the network proxy, local integration API, secret security, config storage, and logging live under Advanced. The theme follows Windows by default and can be fixed to light or dark.
 - Supports AppData storage and portable mode. Portable mode keeps config, logs, secrets, and cached remote providers beside the exe.
 - Supports Provider enablement, ordering, visible quota windows, and custom window labels.

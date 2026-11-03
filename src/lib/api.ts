@@ -324,6 +324,21 @@ export async function getAppVersion(): Promise<string> {
   return invoke<string>("get_app_version");
 }
 
+export type ClipboardImagePayload = {
+  width: number;
+  height: number;
+  rgbaBase64: string;
+};
+
+export async function copyImageToClipboard(image: ClipboardImagePayload): Promise<void> {
+  if (!hasTauriInternals()) {
+    void image;
+    throw new Error("Image clipboard capture is available only in the desktop app");
+  }
+
+  return invoke<void>("copy_image_to_clipboard", { image });
+}
+
 // Dev builds (identifier com.quotabarwin.app.dev from tauri.dev.conf.json)
 // disable release-only features such as autostart and app updates.
 export async function getIsDevBuild(): Promise<boolean> {

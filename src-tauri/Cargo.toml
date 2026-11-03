@@ -33,6 +33,7 @@ bench = false
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+arboard = "3.7"
 chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
 fs2 = "0.4"

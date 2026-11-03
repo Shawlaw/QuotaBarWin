@@ -1,12 +1,17 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ProviderSnapshot } from "../types";
 import {
   calculateProviderStatus,
   displayPercentForWindow,
   formatDisplayValue,
   formatQuotaReset,
+  formatQuotaResetTooltip,
   normalizeProviderStatus
 } from "./providerStatus";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const provider: ProviderSnapshot = {
   id: "provider",
@@ -135,6 +140,30 @@ describe("formatQuotaReset", () => {
     expect(formatQuotaReset({ ...provider.windows[0], resetAt: "2026-06-12T02:01:00Z" }, now)).toBe(
       "resets Fri 10:01"
     );
+  });
+
+  test("provides_full_date_and_time_only_for_weekday_reset_labels", () => {
+    const now = new Date("2026-06-09T10:00:00+08:00");
+    const resetAt = "2026-06-12T02:01:00Z";
+    const expected = new Date(resetAt).toLocaleString(undefined, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+
+    expect(formatQuotaResetTooltip({ ...provider.windows[0], resetAt }, now)).toBe(expected);
+    expect(formatQuotaResetTooltip({
+      ...provider.windows[0],
+      resetAt: "2026-06-09T03:35:00Z"
+    }, now)).toBeNull();
+    expect(formatQuotaResetTooltip({
+      ...provider.windows[0],
+      resetAt: "2026-06-30T02:00:00Z"
+    }, now)).toBeNull();
+    expect(formatQuotaResetTooltip({ ...provider.windows[0], resetAt: "invalid" }, now)).toBeNull();
+    expect(formatQuotaResetTooltip(provider.windows[0], now)).toBeNull();
   });
 
   test("falls_back_to_reset_text_for_invalid_dates", () => {

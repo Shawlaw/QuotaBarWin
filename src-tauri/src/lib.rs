@@ -8,6 +8,7 @@ mod cli;
 mod config;
 mod diagnostics;
 mod external_links;
+mod image_clipboard;
 mod local_api;
 mod local_api_token;
 pub mod logger;
@@ -239,6 +240,7 @@ pub fn run() {
             dev_preview_clone_source,
             dev_restart_app,
             get_app_version,
+            image_clipboard::copy_image_to_clipboard,
             app_info::get_is_dev_build,
             get_app_update_navigation_request,
             get_app_update_status,

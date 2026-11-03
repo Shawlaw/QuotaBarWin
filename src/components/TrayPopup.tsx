@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 import {
   dismissAppUpdateNotice,
   getAppUpdateStatus,
+  getAppVersion,
   getCachedSnapshot,
   getConfig,
   getTrayPopupPresentationId,
@@ -25,10 +26,12 @@ import {
   formatAmountDetail,
   formatDisplayValue,
   formatQuotaReset,
+  formatQuotaResetTooltip,
   formatShortDateTime,
   windowStatus
 } from "../lib/providerStatus";
 import type { AppConfig, AppSnapshot, AppTheme, ProviderSnapshot } from "../types";
+import { captureTrayImageToClipboard } from "../lib/traySnapshot";
 import { useI18n } from "../i18n";
 import { ProgressBar } from "./ProgressBar";
 import { AppUpdateNotice } from "./AppUpdateNotice";
@@ -46,6 +49,13 @@ type TitleDragStart = {
   x: number;
   y: number;
 };
+
+type CaptureFeedback = {
+  target: string;
+  status: "copied" | "failed";
+};
+
+const CAPTURE_FEEDBACK_DURATION_MS = 2600;
 
 const issueStatusPriority: Record<ProviderSnapshot["status"], number> = {
   error: 0,
@@ -109,10 +119,14 @@ type TrayPopupProps = {
 };
 
 export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
-  const { t } = useI18n();
+  const { language, t } = useI18n();
   const popupRef = useRef<HTMLElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const providerGroupsRef = useRef<HTMLElement | null>(null);
+  const providerRefs = useRef(new Map<string, HTMLElement>());
+  const captureInFlight = useRef<string | null>(null);
+  const captureFeedbackTimer = useRef<number | null>(null);
   const refreshInFlight = useRef(false);
   const lastHandledPresentationId = useRef(0);
   const lastRequestedAutoHeight = useRef<number | null>(null);
@@ -124,6 +138,8 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
   const [hasSessionManualSize, setHasSessionManualSize] = useState(false);
   const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [appUpdateNoticeSequence, setAppUpdateNoticeSequence] = useState(0);
+  const [capturingTarget, setCapturingTarget] = useState<string | null>(null);
+  const [captureFeedback, setCaptureFeedback] = useState<CaptureFeedback | null>(null);
 
   const syncCachedSnapshot = useCallback(async () => {
     try {
@@ -223,6 +239,12 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
       onThemeChange(config.theme ?? "system");
     }
   }, [config, onThemeChange]);
+
+  useEffect(() => () => {
+    if (captureFeedbackTimer.current !== null) {
+      window.clearTimeout(captureFeedbackTimer.current);
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -478,6 +500,51 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
     void dismissAppUpdateNotice().then(setAppUpdateInfo).catch(() => undefined);
   }
 
+  function showCaptureFeedback(feedback: CaptureFeedback) {
+    setCaptureFeedback(feedback);
+    if (captureFeedbackTimer.current !== null) {
+      window.clearTimeout(captureFeedbackTimer.current);
+    }
+    captureFeedbackTimer.current = window.setTimeout(() => {
+      captureFeedbackTimer.current = null;
+      setCaptureFeedback(null);
+    }, CAPTURE_FEEDBACK_DURATION_MS);
+  }
+
+  async function copyProviderCapture(targetKey: string) {
+    if (captureInFlight.current) {
+      return;
+    }
+
+    const target = targetKey === "all"
+      ? providerGroupsRef.current
+      : providerRefs.current.get(targetKey);
+    if (!target) {
+      return;
+    }
+
+    const capturedAt = new Date();
+    captureInFlight.current = targetKey;
+    setCapturingTarget(targetKey);
+    setCaptureFeedback(null);
+    try {
+      const appVersion = await getAppVersion();
+      await captureTrayImageToClipboard({
+        target,
+        appVersion,
+        capturedAt,
+        capturedAtLabel: t.tray.capturedAt,
+        language,
+      });
+      showCaptureFeedback({ target: targetKey, status: "copied" });
+    } catch {
+      showCaptureFeedback({ target: targetKey, status: "failed" });
+    } finally {
+      captureInFlight.current = null;
+      setCapturingTarget(null);
+    }
+  }
+
   return (
     <main className="tray-popup" data-testid="tray-popup" ref={popupRef}>
       <header className="tray-popup__header" ref={headerRef}>
@@ -531,25 +598,51 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
             </div>
           </div>
           <div className="tray-popup__meta-row">
-            <p>
-              {refreshedText
-                ? t.tray.lastRefreshedAt(refreshedText)
-                : t.tray.waitingForData}
+            <p
+              className={captureFeedback?.status === "failed"
+                ? "tray-popup__meta-message--failed"
+                : undefined}
+              role={captureFeedback ? "status" : undefined}
+            >
+              {captureFeedback
+                ? captureFeedback.status === "copied"
+                  ? t.tray.copied
+                  : t.tray.copyFailed
+                : refreshedText
+                  ? t.tray.lastRefreshedAt(refreshedText)
+                  : t.tray.waitingForData}
             </p>
-            {primaryIssue ? (
-              <span
-                className={`status status--${primaryIssue.status} tray-popup__title-status`}
-                title={providerIssues
-                  .map((issue) => `${issue.provider.name}: ${t.tray.status[issue.status]}`)
-                  .join("\n")}
+            <div
+              className="tray-popup__meta-actions"
+              onMouseDown={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              {primaryIssue ? (
+                <span
+                  className={`status status--${primaryIssue.status} tray-popup__title-status`}
+                  title={providerIssues
+                    .map((issue) => `${issue.provider.name}: ${t.tray.status[issue.status]}`)
+                    .join("\n")}
+                >
+                  {t.tray.healthSummary(
+                    primaryIssue.provider.name,
+                    primaryIssue.status,
+                    providerIssues.length - 1
+                  )}
+                </span>
+              ) : null}
+              <button
+                aria-label={t.tray.copyAll}
+                className="button-compact button-secondary tray-popup__copy-all"
+                type="button"
+                disabled={capturingTarget !== null || providersWithWindows.length === 0}
+                onClick={() => void copyProviderCapture("all")}
+                data-testid="tray-popup-copy-all"
+                title={t.tray.copyAll}
               >
-                {t.tray.healthSummary(
-                  primaryIssue.provider.name,
-                  primaryIssue.status,
-                  providerIssues.length - 1
-                )}
-              </span>
-            ) : null}
+                {capturingTarget === "all" ? t.tray.copyingShort : t.tray.copyAllShort}
+              </button>
+            </div>
           </div>
         </div>
         <AppUpdateNotice
@@ -568,18 +661,47 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
         ) : null}
 
         {providersWithWindows.length > 0 ? (
-          <section className="tray-popup__provider-groups" aria-label={t.tray.quotaWindowsLabel}>
+          <section
+            className="tray-popup__provider-groups"
+            aria-label={t.tray.quotaWindowsLabel}
+            ref={providerGroupsRef}
+          >
             {providersWithWindows.map((provider) => {
               const providerStatus = calculateProviderStatus(provider, lowQuotaWarningThreshold);
               return (
-                <article className="tray-popup__provider-group" key={provider.id}>
+                <article
+                  className="tray-popup__provider-group"
+                  data-testid={`tray-popup-provider-${provider.id}`}
+                  key={provider.id}
+                  ref={(element) => {
+                    if (element) {
+                      providerRefs.current.set(provider.id, element);
+                    } else {
+                      providerRefs.current.delete(provider.id);
+                    }
+                  }}
+                >
                   <header className="tray-popup__provider-header">
                     <strong>{provider.name}</strong>
-                    {providerStatus !== "ok" ? (
-                      <span className={`status status--${providerStatus}`}>
-                        {t.tray.status[providerStatus]}
-                      </span>
-                    ) : null}
+                    <div className="tray-popup__provider-actions">
+                      {providerStatus !== "ok" ? (
+                        <span className={`status status--${providerStatus}`}>
+                          {t.tray.status[providerStatus]}
+                        </span>
+                      ) : null}
+                      <button
+                        aria-label={t.tray.copyProvider(provider.name)}
+                        className="button-compact button-ghost tray-popup__copy-provider"
+                        type="button"
+                        disabled={capturingTarget !== null}
+                        onClick={() => void copyProviderCapture(provider.id)}
+                        data-testid={`tray-popup-copy-${provider.id}`}
+                        data-html2canvas-ignore
+                        title={t.tray.copyProvider(provider.name)}
+                      >
+                        {capturingTarget === provider.id ? t.tray.copyingShort : t.tray.copyShort}
+                      </button>
+                    </div>
                   </header>
                   <div className="tray-popup__provider-windows">
                     {provider.windows.map((window) => {
@@ -590,7 +712,9 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
                         (window.usedPercent !== null && window.usedPercent !== undefined
                           ? 100 - window.usedPercent
                           : null);
-                      const resetText = formatQuotaReset(window, new Date(), t);
+                      const now = new Date();
+                      const resetText = formatQuotaReset(window, now, t);
+                      const resetTooltip = formatQuotaResetTooltip(window, now);
                       const amountDetail = formatAmountDetail(window);
                       return (
                         <section
@@ -609,7 +733,7 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
                             label={`${provider.name} ${window.label} ${displayMode}`}
                             tone={windowProgressTone(providerStatus, quotaStatus)}
                           />
-                          {resetText ? <p>{resetText}</p> : null}
+                          {resetText ? <p title={resetTooltip ?? undefined}>{resetText}</p> : null}
                         </section>
                       );
                     })}

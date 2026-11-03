@@ -1763,7 +1763,7 @@ button:disabled {
   background: var(--qb-surface);
   color: var(--qb-text);
   display: grid;
-  gap: 12px;
+  gap: 10px;
   grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
@@ -1775,10 +1775,9 @@ button:disabled {
 .tray-popup__header {
   align-items: start;
   display: block;
-  /* The popup's own horizontal padding was partly handed to the scrolling
-     content so card shadows stop clipping; give the header back the same
-     10px per side so the title, actions, and status row keep their inset. */
-  padding: 0 10px;
+  /* Match the scrolling content's horizontal inset so the title, header
+     actions, and Provider cards share the same left and right boundaries. */
+  padding: 0 12px;
   min-width: 0;
   user-select: none;
 }
@@ -1786,9 +1785,9 @@ button:disabled {
 .tray-popup__titlebar {
   cursor: move;
   display: grid;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
-  padding: 2px 0;
+  padding: 2px 0 0;
   width: 100%;
 }
 
@@ -1826,6 +1825,33 @@ button:disabled {
 .tray-popup__meta-row {
   gap: 8px;
   justify-content: space-between;
+}
+
+.tray-popup__meta-actions,
+.tray-popup__provider-actions {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tray-popup__meta-actions {
+  flex-shrink: 1;
+  justify-content: flex-end;
+}
+
+.tray-popup__copy-all,
+.tray-popup__copy-provider {
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 7px;
+  white-space: nowrap;
+}
+
+.tray-popup__header p.tray-popup__meta-message--failed {
+  color: var(--qb-danger);
 }
 
 .tray-popup__content {
@@ -1892,7 +1918,8 @@ button:disabled {
   flex-shrink: 1;
   font-size: 12px;
   line-height: 1.2;
-  max-width: min(180px, 55%);
+  max-width: 180px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

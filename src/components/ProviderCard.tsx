@@ -6,6 +6,7 @@ import {
   formatAmountDetail,
   formatDisplayValue,
   formatQuotaReset,
+  formatQuotaResetTooltip,
   formatShortDateTime,
   windowStatus
 } from "../lib/providerStatus";
@@ -143,7 +144,9 @@ function QuotaWindowRow({
         ? 100 - window.usedPercent
         : null;
   const status = windowStatus(window, lowQuotaWarningThreshold);
-  const resetText = formatQuotaReset(window, new Date(), t);
+  const now = new Date();
+  const resetText = formatQuotaReset(window, now, t);
+  const resetTooltip = formatQuotaResetTooltip(window, now);
 
   return (
     <section
@@ -158,7 +161,7 @@ function QuotaWindowRow({
         </span>
       </div>
       {resetText ? (
-        <div className="quota-window__details">{resetText}</div>
+        <div className="quota-window__details" title={resetTooltip ?? undefined}>{resetText}</div>
       ) : amountDetail ? null : (
         <div className="quota-window__details">{t.providerCard.noResetTime}</div>
       )}

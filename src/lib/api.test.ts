@@ -5,6 +5,7 @@ import {
   applyRemoteUpdate,
   checkRemoteUpdates,
   checkAppUpdate,
+  copyImageToClipboard,
   dismissAppUpdateNotice,
   downloadAppUpdate,
   getApplicationUpdateNavigationRequest,
@@ -206,6 +207,21 @@ test("api_invokes_application_update_commands", async () => {
   expect(calls.find((call) => call.cmd === "open_app_update_notes")?.payload).toEqual({
     notesUrl: update.notesUrl,
   });
+});
+
+test("api_passes_rgba_pixels_to_the_image_clipboard_command", async () => {
+  const calls: Array<{ cmd: string; payload?: unknown }> = [];
+  mockIPC((cmd, payload) => {
+    calls.push({ cmd, payload });
+    if (cmd === "copy_image_to_clipboard") {
+      return null;
+    }
+    throw new Error(`unexpected command ${cmd}`);
+  });
+  const image = { width: 2, height: 1, rgbaBase64: "AQIDBAUGBwg=" };
+
+  await expect(copyImageToClipboard(image)).resolves.toBeNull();
+  expect(calls).toEqual([{ cmd: "copy_image_to_clipboard", payload: { image } }]);
 });
 
 test("api_invokes_tray_popup_commands", async () => {
