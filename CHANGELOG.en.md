@@ -2,10 +2,16 @@
 
 This file records user-visible changes in QuotaBarWin. Simplified Chinese counterpart: [CHANGELOG.md](CHANGELOG.md).
 
-## [Unreleased]
+## [1.7.0] - 2026-11-04
+
+### Added
+
+- The tray popup can now copy display images for one Provider or all Providers. Images include the app icon, name, version, and capture time and are written directly to the clipboard without saving a file. Camera actions fade in on hover or keyboard focus and stay visually unobtrusive by default.
 
 ### Changed
 
+- When a reset time uses a weekday-and-time label, hovering now reveals the full local date and time in both the main window and tray popup.
+- Improved alignment between the tray popup header and Provider cards, and balanced the spacing above and below the last-refresh row.
 - The Add Provider catalog now prefers the last successfully cached registry, manifests, and scripts and shows the cache time instead of requiring network access every time the page opens or Install is clicked. Use **Refresh List** to fetch new upstream content explicitly; a failed refresh preserves the previous cache. After a successful cache download, catalog Providers can be installed and additional accounts can be added while offline.
 
 ## [1.6.3] - 2026-10-28
