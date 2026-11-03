@@ -198,6 +198,13 @@ export type RemoteProviderCatalogEntry = {
   error?: string | null;
 };
 
+export type RemoteProviderCatalogResult = {
+  entries: RemoteProviderCatalogEntry[];
+  fromCache: boolean;
+  cachedAt?: string | null;
+  refreshError?: string | null;
+};
+
 export type RegistryMigrationFailure = {
   id: string;
   error: string;

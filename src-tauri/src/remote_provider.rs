@@ -3,6 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, Instant},
 };
@@ -189,6 +190,171 @@ pub struct ProviderRegistryEntry {
     pub provider_url: String,
     #[serde(default)]
     pub checksum: Option<String>,
+}
+
+const REMOTE_PROVIDER_CATALOG_CACHE_SCHEMA_VERSION: u8 = 1;
+const REMOTE_PROVIDER_CATALOG_CACHE_DIR: &str = "providers/catalog";
+static CATALOG_TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CachedRemoteProviderCatalog {
+    pub schema_version: u8,
+    pub registry_url: String,
+    pub refreshed_at: String,
+    pub entries: Vec<CachedRemoteProviderCatalogEntry>,
+}
+
+impl CachedRemoteProviderCatalog {
+    pub(crate) fn new(registry_url: &str, refreshed_at: String) -> Self {
+        Self {
+            schema_version: REMOTE_PROVIDER_CATALOG_CACHE_SCHEMA_VERSION,
+            registry_url: registry_url.trim().to_string(),
+            refreshed_at,
+            entries: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CachedRemoteProviderCatalogEntry {
+    pub id: String,
+    pub provider_url: String,
+    #[serde(default)]
+    pub checksum: Option<String>,
+    pub manifest_text: String,
+    pub source_url: String,
+    pub source: String,
+    pub source_checksum: String,
+    pub fetched_at: String,
+}
+
+pub(crate) struct ValidatedCachedCatalogEntry {
+    pub manifest: ProviderManifest,
+    pub source_url: String,
+    pub source: String,
+}
+
+pub(crate) fn validate_cached_catalog_entry(
+    entry: &CachedRemoteProviderCatalogEntry,
+) -> Result<ValidatedCachedCatalogEntry, String> {
+    if let Some(expected) = entry
+        .checksum
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        verify_checksum(&entry.manifest_text, expected).map_err(|error| error.to_string())?;
+    }
+
+    let manifest = parse_manifest(&entry.manifest_text).map_err(|error| error.to_string())?;
+    if manifest.id != entry.id {
+        return Err(format!(
+            "registry id '{}' does not match cached manifest id '{}'",
+            entry.id, manifest.id
+        ));
+    }
+
+    let source_url = resolve_source_url(&entry.provider_url, &manifest.entry);
+    if source_url != entry.source_url {
+        return Err(format!(
+            "cached source URL does not match the manifest for '{}'",
+            entry.id
+        ));
+    }
+    if let Some(expected) = manifest.checksums.source.as_deref() {
+        verify_checksum(&entry.source, expected).map_err(|error| error.to_string())?;
+    }
+    verify_checksum(&entry.source, &entry.source_checksum).map_err(|error| error.to_string())?;
+
+    Ok(ValidatedCachedCatalogEntry {
+        manifest,
+        source_url,
+        source: entry.source.clone(),
+    })
+}
+
+pub(crate) fn remote_provider_catalog_cache_path(
+    config_path: &Path,
+    registry_url: &str,
+) -> Result<PathBuf, String> {
+    let config_dir = config_path.parent().ok_or_else(|| {
+        "Unable to resolve config directory for provider catalog cache".to_string()
+    })?;
+    let checksum = compute_checksum(registry_url.trim());
+    let key = checksum.trim_start_matches("sha256:");
+    Ok(config_dir
+        .join(REMOTE_PROVIDER_CATALOG_CACHE_DIR)
+        .join(format!("{key}.json")))
+}
+
+pub(crate) fn load_remote_provider_catalog_cache(
+    config_path: &Path,
+    registry_url: &str,
+) -> Result<Option<CachedRemoteProviderCatalog>, String> {
+    let path = remote_provider_catalog_cache_path(config_path, registry_url)?;
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let contents = fs::read_to_string(&path)
+        .map_err(|error| format!("Unable to read provider catalog cache: {error}"))?;
+    let cache: CachedRemoteProviderCatalog = serde_json::from_str(&contents)
+        .map_err(|error| format!("Unable to parse provider catalog cache: {error}"))?;
+    if cache.schema_version != REMOTE_PROVIDER_CATALOG_CACHE_SCHEMA_VERSION {
+        return Err(format!(
+            "Unsupported provider catalog cache schema: {}",
+            cache.schema_version
+        ));
+    }
+    if cache.registry_url != registry_url.trim() {
+        return Err("Provider catalog cache registry URL does not match".to_string());
+    }
+    for entry in &cache.entries {
+        validate_cached_catalog_entry(entry)?;
+    }
+    Ok(Some(cache))
+}
+
+pub(crate) fn save_remote_provider_catalog_cache(
+    config_path: &Path,
+    cache: &CachedRemoteProviderCatalog,
+) -> Result<(), String> {
+    if cache.schema_version != REMOTE_PROVIDER_CATALOG_CACHE_SCHEMA_VERSION {
+        return Err("Refusing to save an unsupported provider catalog cache".to_string());
+    }
+    for entry in &cache.entries {
+        validate_cached_catalog_entry(entry)?;
+    }
+
+    let path = remote_provider_catalog_cache_path(config_path, &cache.registry_url)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Unable to resolve provider catalog cache directory".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("Unable to create provider catalog cache directory: {error}"))?;
+
+    let counter = CATALOG_TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_else(|| "catalog.json".into());
+    let temporary_path =
+        path.with_file_name(format!(".{file_name}.{}.{counter}.tmp", std::process::id()));
+    let contents = serde_json::to_string_pretty(cache)
+        .map_err(|error| format!("Unable to serialize provider catalog cache: {error}"))?;
+
+    let write_result = (|| {
+        fs::write(&temporary_path, contents)
+            .map_err(|error| format!("Unable to write provider catalog cache: {error}"))?;
+        fs::rename(&temporary_path, &path)
+            .map_err(|error| format!("Unable to replace provider catalog cache: {error}"))
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    write_result
 }
 
 #[derive(Debug, Clone, PartialEq)]

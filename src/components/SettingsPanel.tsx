@@ -734,14 +734,18 @@ export function SettingsPanel({
     url: string,
     checksum: string | null,
     proxyUrl: string | null,
-    autoUpdate: boolean
+    autoUpdate: boolean,
+    registryUrl: string | null,
+    catalogCachedAt: string | null
   ): Promise<RemoteProviderConfig | null> {
     return runWithUnsavedChangesProtection(async () => {
       const installed = await installRemoteProviderManifest(
         url,
         checksum,
         proxyUrl,
-        autoUpdate
+        autoUpdate,
+        registryUrl,
+        catalogCachedAt
       );
       const updated = await getConfig();
       acceptPersistedConfig(updated);

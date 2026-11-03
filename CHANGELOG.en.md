@@ -2,6 +2,12 @@
 
 This file records user-visible changes in QuotaBarWin. Simplified Chinese counterpart: [CHANGELOG.md](CHANGELOG.md).
 
+## [Unreleased]
+
+### Changed
+
+- The Add Provider catalog now prefers the last successfully cached registry, manifests, and scripts and shows the cache time instead of requiring network access every time the page opens or Install is clicked. Use **Refresh List** to fetch new upstream content explicitly; a failed refresh preserves the previous cache. After a successful cache download, catalog Providers can be installed and additional accounts can be added while offline.
+
 ## [1.6.3] - 2026-10-28
 
 ### Fixed

@@ -153,18 +153,23 @@ const apiMocks = vi.hoisted(() => {
     })),
     openAppUpdateNotes: vi.fn(async () => undefined),
     openRemoteProviderGuide: vi.fn(async () => undefined),
-    previewRemoteProviderRegistry: vi.fn(async () => [
-      {
-        id: "catalog-kimi",
-        displayName: "Catalog Kimi",
-        version: "1.0.0",
-        description: "Catalog provider",
-        providerUrl: "https://example.com/catalog-kimi/provider.json",
-        checksum: "sha256:manifest",
-        installed: false,
-        error: null,
-      },
-    ]),
+    previewRemoteProviderRegistry: vi.fn(async () => ({
+      entries: [
+        {
+          id: "catalog-kimi",
+          displayName: "Catalog Kimi",
+          version: "1.0.0",
+          description: "Catalog provider",
+          providerUrl: "https://example.com/catalog-kimi/provider.json",
+          checksum: "sha256:manifest",
+          installed: false,
+          error: null,
+        },
+      ],
+      fromCache: false,
+      cachedAt: null,
+      refreshError: null,
+    })),
     removeRemoteProvider: vi.fn(async (id: string) => {
       if (state.config) {
         state.config = {
@@ -511,6 +516,8 @@ test("settings_add_provider_page_installs_catalog_provider", async () => {
       "sha256:manifest",
       null,
       true,
+      "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json",
+      null,
     ),
   );
 
@@ -544,6 +551,7 @@ test("saving a provider source returns to the catalog and refreshes it with its 
     expect(apiMocks.previewRemoteProviderRegistry).toHaveBeenLastCalledWith(
       "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json",
       "socks5://127.0.0.1:1080",
+      false,
     ),
   );
 });

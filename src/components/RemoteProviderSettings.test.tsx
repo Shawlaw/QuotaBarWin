@@ -6,6 +6,7 @@ import { DEFAULT_REMOTE_PROVIDER_REGISTRY_URL } from "../lib/defaults";
 import { I18nProvider } from "../i18n";
 import type {
   RemoteProviderCatalogEntry,
+  RemoteProviderCatalogResult,
   RemoteProviderConfig,
   RegistryMigrationResult,
   RemoteProviderRegistrySettings
@@ -29,6 +30,19 @@ const catalog: RemoteProviderCatalogEntry[] = [
     error: null
   }
 ];
+
+function catalogResult(
+  entries: RemoteProviderCatalogEntry[] = catalog,
+  overrides: Partial<RemoteProviderCatalogResult> = {}
+): RemoteProviderCatalogResult {
+  return {
+    entries,
+    fromCache: false,
+    cachedAt: null,
+    refreshError: null,
+    ...overrides
+  };
+}
 
 const installedProvider: RemoteProviderConfig = {
   id: "kimi-coding",
@@ -66,7 +80,7 @@ function renderRemoteProviderSettings(
     registrySettings,
     installedProviderIds: [],
     onRegistrySettingsChange: vi.fn(),
-    onPreviewRegistry: vi.fn(async () => catalog),
+    onPreviewRegistry: vi.fn(async () => catalogResult()),
     onInstallManifest: vi.fn(async () => installedProvider),
     onMigrateSource: vi.fn(async () => migratedSource),
     onOpenGuide: vi.fn(async () => undefined),
@@ -97,7 +111,8 @@ describe("RemoteProviderSettings", () => {
     await screen.findByText("Kimi Coding");
     expect(props.onPreviewRegistry).toHaveBeenCalledWith(
       DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
-      null
+      null,
+      false
     );
 
     fireEvent.click(screen.getByTestId("open-remote-provider-guide"));
@@ -116,7 +131,9 @@ describe("RemoteProviderSettings", () => {
         "https://example.com/kimi/provider.json",
         "sha256:manifest",
         null,
-        true
+        true,
+        DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
+        null
       )
     );
     expect(await screen.findByText("Provider installed")).toBeInTheDocument();
@@ -130,13 +147,15 @@ describe("RemoteProviderSettings", () => {
     }));
     renderRemoteProviderSettings({
       onInstallManifest,
-      onPreviewRegistry: vi.fn(async () => [
-        {
-          ...catalog[0],
-          installed: true,
-          installedCount: 1
-        }
-      ])
+      onPreviewRegistry: vi.fn(async () =>
+        catalogResult([
+          {
+            ...catalog[0],
+            installed: true,
+            installedCount: 1
+          }
+        ])
+      )
     });
 
     await screen.findByText("Kimi Coding");
@@ -148,7 +167,9 @@ describe("RemoteProviderSettings", () => {
         "https://example.com/kimi/provider.json",
         "sha256:manifest",
         null,
-        true
+        true,
+        DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
+        null
       )
     );
     expect(await screen.findByText("Account added")).toBeInTheDocument();
@@ -172,7 +193,9 @@ describe("RemoteProviderSettings", () => {
         "D:\\Providers\\provider.json",
         "sha256:abc",
         null,
-        true
+        true,
+        null,
+        null
       )
     );
   });
@@ -254,14 +277,16 @@ describe("RemoteProviderSettings", () => {
   });
 
   test("add_page_loads_all_enabled_sources", async () => {
-    const onPreviewRegistry = vi.fn(async (url: string) => [
-      {
-        ...catalog[0],
-        id: url.includes("team") ? "team-provider" : "project-provider",
-        displayName: url.includes("team") ? "Team Provider" : "Project Provider",
-        providerUrl: `${url}/provider.json`
-      }
-    ]);
+    const onPreviewRegistry = vi.fn(async (url: string) =>
+      catalogResult([
+        {
+          ...catalog[0],
+          id: url.includes("team") ? "team-provider" : "project-provider",
+          displayName: url.includes("team") ? "Team Provider" : "Project Provider",
+          providerUrl: `${url}/provider.json`
+        }
+      ])
+    );
 
     renderRemoteProviderSettings({
       registrySettings: {
@@ -294,20 +319,72 @@ describe("RemoteProviderSettings", () => {
     await screen.findByText("Team Provider");
     expect(onPreviewRegistry).toHaveBeenCalledWith(
       "https://example.com/project/registry.json",
-      null
+      null,
+      false
     );
     expect(onPreviewRegistry).toHaveBeenCalledWith(
       "https://example.com/team/registry.json",
-      "http://proxy:8080"
+      "http://proxy:8080",
+      false
+    );
+  });
+
+  test("cached catalog supports forced refresh and keeps working after refresh failure", async () => {
+    const cachedAt = "2026-11-03T08:00:00Z";
+    const onPreviewRegistry = vi
+      .fn()
+      .mockResolvedValueOnce(
+        catalogResult(catalog, { fromCache: true, cachedAt })
+      )
+      .mockResolvedValueOnce(
+        catalogResult(catalog, {
+          fromCache: true,
+          cachedAt,
+          refreshError: "Network offline"
+        })
+      );
+    const { props } = renderRemoteProviderSettings({ onPreviewRegistry });
+
+    expect(
+      await screen.findByText(/Project-maintained source: using local cache from/)
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh List" }));
+
+    expect(
+      await screen.findByText(/refresh failed; showing the previous cached list/)
+    ).toBeInTheDocument();
+    expect(onPreviewRegistry).toHaveBeenNthCalledWith(
+      1,
+      DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
+      null,
+      false
+    );
+    expect(onPreviewRegistry).toHaveBeenNthCalledWith(
+      2,
+      DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
+      null,
+      true
+    );
+    expect(screen.getByRole("button", { name: "Install" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Install" }));
+    await waitFor(() =>
+      expect(props.onInstallManifest).toHaveBeenCalledWith(
+        "https://example.com/kimi/provider.json",
+        "sha256:manifest",
+        null,
+        true,
+        DEFAULT_REMOTE_PROVIDER_REGISTRY_URL,
+        cachedAt
+      )
     );
   });
 
   test("late catalog failure does not overwrite a newer successful load", async () => {
     let rejectInitialLoad: (reason?: unknown) => void = () => undefined;
-    let resolveLatestLoad: (entries: RemoteProviderCatalogEntry[]) => void = () => undefined;
+    let resolveLatestLoad: (result: RemoteProviderCatalogResult) => void = () => undefined;
     const onPreviewRegistry = vi.fn(
       (_url: string, proxyUrl: string | null) =>
-        new Promise<RemoteProviderCatalogEntry[]>((resolve, reject) => {
+        new Promise<RemoteProviderCatalogResult>((resolve, reject) => {
           if (proxyUrl) {
             resolveLatestLoad = resolve;
           } else {
@@ -348,7 +425,7 @@ describe("RemoteProviderSettings", () => {
     );
     await waitFor(() => expect(onPreviewRegistry).toHaveBeenCalledTimes(2));
 
-    resolveLatestLoad([{ ...catalog[0], displayName: "Fresh Catalog" }]);
+    resolveLatestLoad(catalogResult([{ ...catalog[0], displayName: "Fresh Catalog" }]));
     expect(await screen.findByText("Fresh Catalog")).toBeInTheDocument();
 
     rejectInitialLoad(new Error("Network error: stale request"));

@@ -324,6 +324,8 @@ export type I18nCatalog = {
     failedToMigrateSource: string;
     enabledSourcesCount: (count: number) => string;
     sourceLoadError: (sourceName: string, message: string) => string;
+    sourceCacheRefreshError: (sourceName: string, message: string) => string;
+    cachedCatalog: (sourceName: string, cachedAt: string) => string;
     sourceConflict: (providerId: string, sourceNames: string) => string;
     backToSettings: string;
     backToAddProvider: string;
@@ -858,6 +860,12 @@ export const en: I18nCatalog = {
     failedToMigrateSource: "Failed to migrate installed Providers",
     enabledSourcesCount: (count) => `${count} source(s) enabled`,
     sourceLoadError: (sourceName, message) => `${sourceName}: ${message}`,
+    sourceCacheRefreshError: (sourceName, message) =>
+      `${sourceName}: refresh failed; showing the previous cached list. ${message}`,
+    cachedCatalog: (sourceName, cachedAt) =>
+      cachedAt
+        ? `${sourceName}: using local cache from ${cachedAt}`
+        : `${sourceName}: using local cache`,
     sourceConflict: (providerId, sourceNames) =>
       `Provider id '${providerId}' appears in multiple sources: ${sourceNames}`,
     backToSettings: "Back to Settings",
@@ -1446,6 +1454,10 @@ export const zhCN: I18nCatalog = {
     failedToMigrateSource: "迁移已安装提供方失败",
     enabledSourcesCount: (count) => `已启用 ${count} 个来源`,
     sourceLoadError: (sourceName, message) => `${sourceName}：${message}`,
+    sourceCacheRefreshError: (sourceName, message) =>
+      `${sourceName}：重新拉取失败，继续显示之前的缓存。${message}`,
+    cachedCatalog: (sourceName, cachedAt) =>
+      `${sourceName}：正在使用本地缓存${cachedAt ? `（${cachedAt}）` : ""}`,
     sourceConflict: (providerId, sourceNames) =>
       `提供方 id '${providerId}' 同时出现在多个来源：${sourceNames}`,
     backToSettings: "返回设置",

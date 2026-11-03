@@ -92,9 +92,10 @@ QuotaBarWin 项目维护的 registry 当前包含以下 manifest；实际可安�
 **安装前请再次确认来源可信。提供方脚本会在你的机器上运行，可以读取你配置给它的 token、API key、Cookie、账号 ID 等鉴权信息，并访问网络。**
 
 1. 打开 **设置 → 提供方 → 添加提供方**。
-2. 默认会加载 QuotaBarWin 项目维护的提供方来源；如果列表为空，可以在 **管理来源** 中填入上面的 registry URL。
-3. 点击需要的提供方的 **安装**。应用会立即打开该账号的配置表单；新实例在验证成功前默认停用，不参与周期刷新。
-4. 同一提供方需要多个账号时，再次点击已安装项的 **添加账号**。
+2. 默认会加载 QuotaBarWin 项目维护的提供方来源；如果列表为空，可以在 **管理来源** 中填入上面的 registry URL。首次加载以及点击 **刷新列表** 时，应用会联网拉取 registry、manifest 和对应脚本，并保存校验成功的本地缓存。
+3. 之后打开添加页会优先显示上次成功缓存的目录和缓存时间，不会自动联网检查最新版本。需要新版本时点击 **刷新列表**；如果重新拉取失败，会继续显示旧缓存。目录安装和 **添加账号** 都优先使用这份缓存，因此之前缓存成功后，即使暂时断网也能继续添加。
+4. 点击需要的提供方的 **安装**。应用会立即打开该账号的配置表单；新实例在验证成功前默认停用，不参与周期刷新。
+5. 同一提供方需要多个账号时，再次点击已安装项的 **添加账号**。自定义 manifest URL 安装仍会在点击时在线拉取，不使用目录缓存。
 
 ### 4. 配置凭据
 
@@ -319,7 +320,13 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run icons:check
 ```
 
-E2E 使用 `tauri-driver` 和 WebDriverIO：
+E2E 使用 `tauri-driver` 和 WebDriverIO。日常开发使用独立 Dev 渠道，可与正在运行的生产版和普通 Dev 版并存：
+
+```powershell
+npm run e2e:dev
+```
+
+需要演练 release 身份时运行：
 
 ```powershell
 npm run e2e
@@ -331,7 +338,7 @@ npm run e2e
 cargo install tauri-driver --locked
 ```
 
-注意：E2E 当前是维护者可选检查，不能替代上面的常规构建和单元测试。运行前请先退出所有已运行的 QuotaBarWin 实例；Tauri 单实例机制会把新启动重定向到已有进程。脚本会构建 release app，并写入临时 portable 配置和本地 remote 提供方 cache。排查失败时可设置 `QBWIN_E2E_KEEP_ARTIFACTS=1` 保留这些临时文件。
+注意：E2E 当前是维护者可选检查，不能替代上面的常规构建和单元测试。`e2e:dev` 使用专用 `com.quotabarwin.app.dev.e2e` 身份和 `target/e2e-dev` 构建目录，沿用 Dev 行为并独立写入临时 portable 配置和本地 remote 提供方 cache，不会读写生产版或普通 Dev 版的配置；其结果适用于 UI 和提供方流程回归，但不覆盖生产身份、生产通知 AUMID、开机启动和应用更新等 release-only 行为。`npm run e2e` 构建 release app，运行前仍必须退出其他 QuotaBarWin 实例，避免单实例机制把启动重定向到已有进程。排查失败时可设置 `QBWIN_E2E_KEEP_ARTIFACTS=1` 保留临时文件。
 
 ---
 

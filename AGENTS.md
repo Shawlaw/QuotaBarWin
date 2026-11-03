@@ -221,6 +221,15 @@ Important storage details:
   (`remote_provider_commands::ensure_remote_provider_cache`); update checks
   treat a higher manifest version as an update even when the source checksum
   is unchanged.
+- Add-page catalog caches live at
+  `<config-dir>\providers\catalog\<registry-url-sha256>.json` and contain the
+  registry entries, original manifest text, provider source, source URLs,
+  checksums, and fetch timestamps. `preview_remote_provider_registry` prefers a
+  validated cache unless `forceRefresh` is true; a failed manual refresh keeps
+  the previous cache. Catalog installs pass the registry URL and displayed
+  `catalogCachedAt` snapshot token, revalidate the manifest/source checksums,
+  and only fall back to the network when that exact cached snapshot cannot be
+  used. Custom manifest-URL installs and Provider update flows remain online.
 
 Secret placeholders:
 
@@ -330,12 +339,20 @@ npm run icons:generate
 E2E:
 
 ```powershell
+npm run e2e:dev
 npm run e2e
 ```
 
-The E2E runner requires `tauri-driver`, WebDriverIO, and a release build path.
-It seeds schema `17` remote Provider fixtures, including current setup state,
-and exercises settings save, guided Provider save/test/enable, secret
+Both runners require `tauri-driver` and WebDriverIO. `e2e:dev` builds the
+`tauri.dev.conf.json` variant with the additional
+`tauri.e2e.dev.conf.json` override (`com.quotabarwin.app.dev.e2e`) into the
+isolated `target/e2e-dev` directory, so it can run alongside release and normal
+Dev instances without sharing their mutex or config. It covers Dev behavior and
+shared UI/Provider flows, not release-only identity, autostart, notification
+AUMID, or application-update behavior. `npm run e2e` remains the release-shaped
+check and requires other QuotaBarWin instances to be closed.
+The runner seeds schema `17` remote Provider fixtures, including current setup
+state, and exercises settings save, guided Provider save/test/enable, secret
 non-disclosure, refresh/timeout, tray behavior, and managed-secret removal.
 The seeded legacy config migrates to the current schema, so the runner defers
 the one-time secret encryption upgrade prompt at startup to keep exercising

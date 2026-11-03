@@ -1609,6 +1609,11 @@ button:disabled {
   font-weight: 600;
 }
 
+.source-cache-status {
+  color: var(--qb-text-subtle);
+  font-size: 12px;
+}
+
 .source-summary code {
   background: var(--qb-surface-muted);
   border: 1px solid var(--qb-border);

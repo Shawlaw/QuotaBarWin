@@ -11,12 +11,14 @@ import { download as downloadEdgeDriver } from "edgedriver";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isWindows = process.platform === "win32";
+const devBuild = process.argv.includes("--dev");
 const npmCommand = isWindows ? "npm.cmd" : "npm";
+const cargoTargetDir = devBuild
+  ? path.join(root, "src-tauri", "target", "e2e-dev")
+  : path.join(root, "src-tauri", "target");
 const appExecutable = path.join(
-  root,
-  "src-tauri",
-  "target",
-  "release",
+  cargoTargetDir,
+  devBuild ? "debug" : "release",
   isWindows ? "quotabarwin.exe" : "quotabarwin"
 );
 const tauriDriver = resolveTauriDriver();
@@ -40,8 +42,28 @@ let app;
 
 try {
   assertNoConflictingAppInstance();
-  run(npmCommand, ["run", "build"], root);
-  run("cargo", ["build", "--release", "--features", "tauri/custom-protocol"], path.join(root, "src-tauri"));
+  if (devBuild) {
+    run(
+      npmCommand,
+      [
+        "run",
+        "tauri",
+        "--",
+        "build",
+        "--no-bundle",
+        "--debug",
+        "--config",
+        "src-tauri/tauri.dev.conf.json",
+        "--config",
+        "src-tauri/tauri.e2e.dev.conf.json"
+      ],
+      root,
+      { CARGO_TARGET_DIR: cargoTargetDir }
+    );
+  } else {
+    run(npmCommand, ["run", "build"], root);
+    run("cargo", ["build", "--release", "--features", "tauri/custom-protocol"], path.join(root, "src-tauri"));
+  }
   assertBuiltAppExists();
   writeE2eConfig();
   assertE2eConfigWritten();
@@ -76,7 +98,7 @@ try {
   await assertTrayPopupInteractions();
   await assertProviderRemovalCleansManagedSecrets();
 
-  console.log("Tauri WebdriverIO E2E passed");
+  console.log(`Tauri WebdriverIO E2E passed (${devBuild ? "dev" : "release"})`);
 } finally {
   if (app) {
     await app.deleteSession().catch(() => undefined);
@@ -295,6 +317,9 @@ async function assertTrayPopupInteractions() {
   await switchToWindowWithTestId("tray-popup");
   await sleep(2200);
   await app.switchToWindow(mainHandle);
+  // WebDriver window switching does not guarantee a Windows focus change.
+  // Move real OS focus to the main window before invoking the focus-loss hook.
+  await invokeInApp("e2e_focus_main_window");
   await app.switchToWindow(trayHandle);
   await invokeInApp("e2e_simulate_tray_popup_focus_lost");
   await app.switchToWindow(mainHandle);
@@ -779,11 +804,22 @@ function assertNoConflictingAppInstance() {
   }
 
   const target = normalizePath(appExecutable);
-  const conflicts = result.stdout
+  const processPaths = result.stdout
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((processPath) => normalizePath(processPath) !== target);
+    .filter(Boolean);
+
+  if (devBuild) {
+    // The dedicated com.quotabarwin.app.dev.e2e identity has its own mutex, so
+    // release and normal dev instances can stay open. Only the previous E2E
+    // executable itself would conflict with this run and its temporary files.
+    if (processPaths.some((processPath) => normalizePath(processPath) === target)) {
+      throw new Error(`The Dev E2E executable is already running. Quit it before rerunning E2E: ${appExecutable}`);
+    }
+    return;
+  }
+
+  const conflicts = processPaths.filter((processPath) => normalizePath(processPath) !== target);
 
   if (conflicts.length > 0) {
     throw new Error(
@@ -796,11 +832,12 @@ function normalizePath(value) {
   return path.resolve(value).toLowerCase();
 }
 
-function run(command, args, cwd) {
+function run(command, args, cwd, extraEnv = {}) {
+  const env = { ...process.env, ...extraEnv };
   const result =
     isWindows && command === npmCommand
-      ? spawnSync([command, ...args].join(" "), { cwd, shell: true, stdio: "inherit" })
-      : spawnSync(command, args, { cwd, stdio: "inherit" });
+      ? spawnSync([command, ...args].join(" "), { cwd, shell: true, stdio: "inherit", env })
+      : spawnSync(command, args, { cwd, stdio: "inherit", env });
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed`);
   }

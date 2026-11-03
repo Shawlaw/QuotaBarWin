@@ -92,9 +92,10 @@ The QuotaBarWin-maintained registry currently contains these manifests; the actu
 **Before installing, confirm that the source is trusted. Provider scripts run on your machine, can read the tokens, API keys, cookies, account IDs, and other credentials configured for them, and can access the network.**
 
 1. Open **Settings → Providers → Add Provider**.
-2. The QuotaBarWin-maintained Provider source should load automatically. If the list is empty, open **Manage Source** and paste the registry URL above.
-3. Click **Install** on the Provider you want. The app immediately opens that account's setup form; the new instance stays disabled and is excluded from scheduled refreshes until it is verified.
-4. For multiple accounts on the same Provider, click **Add account** on the already-installed item.
+2. The QuotaBarWin-maintained Provider source should load automatically. If the list is empty, open **Manage Source** and paste the registry URL above. The first load and every explicit **Refresh List** action download the registry, manifests, and provider scripts, then retain the successfully validated content in a local cache.
+3. Later visits prefer the last successfully cached catalog and show its cache time instead of checking for a newer version online. Click **Refresh List** when you want new upstream content. A failed refresh keeps the previous cached list. Catalog installs and **Add account** both prefer this cache, so either action can continue while offline after a successful cache download.
+4. Click **Install** on the Provider you want. The app immediately opens that account's setup form; the new instance stays disabled and is excluded from scheduled refreshes until it is verified.
+5. For multiple accounts on the same Provider, click **Add account** on the already-installed item. Installing a custom manifest URL still fetches it online when clicked and does not use the catalog cache.
 
 ### 4. Configure Credentials
 
@@ -320,7 +321,13 @@ Check icons:
 npm run icons:check
 ```
 
-The E2E runner uses `tauri-driver` and WebDriverIO:
+The E2E runner uses `tauri-driver` and WebDriverIO. For daily development, use the isolated Dev channel; it can run alongside both the release app and a normal Dev build:
+
+```powershell
+npm run e2e:dev
+```
+
+To rehearse the release identity, run:
 
 ```powershell
 npm run e2e
@@ -332,7 +339,7 @@ Install `tauri-driver` first if needed:
 cargo install tauri-driver --locked
 ```
 
-Note: E2E is currently an optional maintainer check and does not replace the regular build and unit test checks above. Quit all running QuotaBarWin instances first; Tauri single-instance behavior redirects startup to the existing process. The script builds the release app and writes temporary portable config plus a local remote Provider cache. Set `QBWIN_E2E_KEEP_ARTIFACTS=1` when debugging to keep those temporary files.
+Note: E2E is currently an optional maintainer check and does not replace the regular build and unit test checks above. `e2e:dev` uses the dedicated `com.quotabarwin.app.dev.e2e` identity and `target/e2e-dev` build directory. It follows Dev behavior and writes its temporary portable config and local remote Provider cache independently, never reading or overwriting release or normal Dev config. Its results are reliable for UI and Provider workflow regression coverage, but do not cover release-only behavior such as the production identity/AUMID, autostart, or application updates. `npm run e2e` builds the release app; quit all other QuotaBarWin instances first so Tauri single-instance behavior cannot redirect startup to an existing process. Set `QBWIN_E2E_KEEP_ARTIFACTS=1` when debugging to keep temporary files.
 
 ---
 

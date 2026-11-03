@@ -13,7 +13,7 @@ import type {
   ProxyConfig,
   ProxyTestResult,
   QuotaEvent,
-  RemoteProviderCatalogEntry,
+  RemoteProviderCatalogResult,
   RemoteProviderConfig,
   RemoteProviderManifest,
   ProviderSetupDescriptor,
@@ -567,16 +567,24 @@ export type RegistryInstallResult = {
 export async function previewRemoteProviderRegistry(
   url: string,
   proxyUrl: string | null,
-): Promise<RemoteProviderCatalogEntry[]> {
+  forceRefresh = false,
+): Promise<RemoteProviderCatalogResult> {
   if (!hasTauriInternals()) {
     void url;
     void proxyUrl;
-    return [];
+    void forceRefresh;
+    return {
+      entries: [],
+      fromCache: false,
+      cachedAt: null,
+      refreshError: null,
+    };
   }
 
-  return invoke<RemoteProviderCatalogEntry[]>("preview_remote_provider_registry", {
+  return invoke<RemoteProviderCatalogResult>("preview_remote_provider_registry", {
     url,
     proxyUrl,
+    forceRefresh,
   });
 }
 
@@ -585,12 +593,16 @@ export async function installRemoteProviderManifest(
   checksum: string | null,
   proxyUrl: string | null,
   autoUpdate: boolean,
+  registryUrl: string | null = null,
+  catalogCachedAt: string | null = null,
 ): Promise<RemoteProviderConfig> {
   if (!hasTauriInternals()) {
     void url;
     void checksum;
     void proxyUrl;
     void autoUpdate;
+    void registryUrl;
+    void catalogCachedAt;
     throw new Error(
       "Installing a remote provider manifest is not available in browser preview",
     );
@@ -601,6 +613,8 @@ export async function installRemoteProviderManifest(
     checksum,
     proxyUrl,
     autoUpdate,
+    registryUrl,
+    catalogCachedAt,
   });
 }
 

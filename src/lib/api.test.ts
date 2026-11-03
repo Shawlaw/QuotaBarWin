@@ -270,18 +270,23 @@ test("api_invokes_remote_provider_commands", async () => {
     skipped: [],
     failed: [],
   };
-  const catalogResult = [
-    {
-      id: "remote-kimi",
-      displayName: "Remote Kimi",
-      version: "1.0.0",
-      description: "Kimi usage",
-      providerUrl: "https://example.com/provider.json",
-      checksum: "sha256:manifest",
-      installed: false,
-      error: null,
-    },
-  ];
+  const catalogResult = {
+    entries: [
+      {
+        id: "remote-kimi",
+        displayName: "Remote Kimi",
+        version: "1.0.0",
+        description: "Kimi usage",
+        providerUrl: "https://example.com/provider.json",
+        checksum: "sha256:manifest",
+        installed: false,
+        error: null,
+      },
+    ],
+    fromCache: true,
+    cachedAt: "2026-11-03T08:00:00Z",
+    refreshError: null,
+  };
   const manifestResult = registryResult.installed[0];
   const migrationResult = {
     migrated: ["remote-kimi"],
@@ -360,6 +365,7 @@ test("api_invokes_remote_provider_commands", async () => {
     previewRemoteProviderRegistry(
       "https://example.com/registry.json",
       "http://proxy.example.com:8080",
+      true,
     ),
   ).resolves.toEqual(catalogResult);
   await expect(
@@ -368,6 +374,8 @@ test("api_invokes_remote_provider_commands", async () => {
       "sha256:manifest",
       "http://proxy.example.com:8080",
       true,
+      "https://example.com/registry.json",
+      "2026-11-03T08:00:00Z",
     ),
   ).resolves.toEqual(manifestResult);
   await expect(
@@ -426,12 +434,15 @@ test("api_invokes_remote_provider_commands", async () => {
   expect(payloads.preview_remote_provider_registry).toEqual({
     url: "https://example.com/registry.json",
     proxyUrl: "http://proxy.example.com:8080",
+    forceRefresh: true,
   });
   expect(payloads.install_remote_provider_manifest).toEqual({
     url: "https://example.com/provider.json",
     checksum: "sha256:manifest",
     proxyUrl: "http://proxy.example.com:8080",
     autoUpdate: true,
+    registryUrl: "https://example.com/registry.json",
+    catalogCachedAt: "2026-11-03T08:00:00Z",
   });
   expect(payloads.get_installed_remote_provider_manifest).toEqual({ id: "remote-kimi" });
   expect(payloads.get_provider_setup).toEqual({ providerId: "remote-kimi" });

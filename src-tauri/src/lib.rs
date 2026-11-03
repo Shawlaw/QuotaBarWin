@@ -63,6 +63,7 @@ pub use remote_provider_commands::{
     migrate_remote_providers_to_registry, preview_remote_provider_registry,
     refresh_remote_provider, remove_remote_provider, set_network_proxy, RegistryInstallFailure,
     RegistryInstallResult, RegistryMigrationResult, RemoteProviderCatalogEntry,
+    RemoteProviderCatalogResult,
 };
 pub use tray::{
     e2e_focus_main_window, e2e_is_tray_popup_focused, e2e_is_tray_popup_visible,

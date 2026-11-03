@@ -178,7 +178,12 @@ const mocks = vi.hoisted(() => {
       hasUnknownEnvVars: false,
       canAutoDetect: true,
     })),
-    previewRemoteProviderRegistry: vi.fn(async () => []),
+    previewRemoteProviderRegistry: vi.fn(async () => ({
+      entries: [],
+      fromCache: false,
+      cachedAt: null,
+      refreshError: null,
+    })),
     removeRemoteProvider: vi.fn(async () => undefined),
     refreshRemoteProvider: vi.fn(async () => ({
       id: "",

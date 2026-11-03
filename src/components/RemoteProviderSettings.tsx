@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   RemoteProviderCatalogEntry,
+  RemoteProviderCatalogResult,
   RemoteProviderConfig,
   RemoteProviderRegistrySettings,
   RemoteProviderRegistrySource,
@@ -14,6 +15,8 @@ type RemoteProviderSettingsView = "add" | "sources";
 type SourceCatalogEntry = RemoteProviderCatalogEntry & {
   sourceId: string;
   sourceName: string;
+  sourceRegistryUrl: string;
+  sourceCachedAt: string | null;
   sourceProxyUrl: string | null;
   sourceAutoUpdate: boolean;
 };
@@ -25,13 +28,16 @@ type RemoteProviderSettingsProps = {
   onRegistrySettingsChange: (settings: RemoteProviderRegistrySettings) => void;
   onPreviewRegistry: (
     url: string,
-    proxyUrl: string | null
-  ) => Promise<RemoteProviderCatalogEntry[]>;
+    proxyUrl: string | null,
+    forceRefresh: boolean
+  ) => Promise<RemoteProviderCatalogResult>;
   onInstallManifest: (
     url: string,
     checksum: string | null,
     proxyUrl: string | null,
-    autoUpdate: boolean
+    autoUpdate: boolean,
+    registryUrl: string | null,
+    catalogCachedAt: string | null
   ) => Promise<RemoteProviderConfig | null>;
   onMigrateSource: (
     url: string,
@@ -114,6 +120,7 @@ export function RemoteProviderSettings({
   const [catalog, setCatalog] = useState<SourceCatalogEntry[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogMessage, setCatalogMessage] = useState<string | null>(null);
+  const [catalogCacheMessage, setCatalogCacheMessage] = useState<string | null>(null);
   const [installingKey, setInstallingKey] = useState<string | null>(null);
   const [manifestUrl, setManifestUrl] = useState("");
   const [manifestChecksum, setManifestChecksum] = useState("");
@@ -167,13 +174,15 @@ export function RemoteProviderSettings({
     persistSources(sources.filter((source) => source.id !== sourceId));
   }
 
-  async function loadCatalog() {
+  async function loadCatalog(forceRefresh = false) {
     const requestId = ++catalogRequestId.current;
     const isLatestRequest = () => requestId === catalogRequestId.current;
 
     if (enabledSources.length === 0) {
       if (isLatestRequest()) {
         setCatalog([]);
+        setCatalogLoading(false);
+        setCatalogCacheMessage(null);
         setCatalogMessage(t.remoteProviders.noCatalogProviders);
       }
       return;
@@ -181,19 +190,21 @@ export function RemoteProviderSettings({
 
     setCatalogLoading(true);
     setCatalogMessage(null);
+    setCatalogCacheMessage(null);
     try {
       const sourceResults = await Promise.all(
         enabledSources.map(async (source) => {
           try {
-            const entries = await onPreviewRegistry(
+            const result = await onPreviewRegistry(
               source.url.trim(),
-              sourceProxy(source)
+              sourceProxy(source),
+              forceRefresh
             );
-            return { source, entries, error: null as string | null };
+            return { source, result, error: null as string | null };
           } catch (error) {
             return {
               source,
-              entries: [] as RemoteProviderCatalogEntry[],
+              result: null as RemoteProviderCatalogResult | null,
               error:
                 error instanceof Error
                   ? error.message
@@ -215,12 +226,37 @@ export function RemoteProviderSettings({
             result.error ?? t.remoteProviders.catalogLoadFailed
           )
         );
+      const refreshErrors = sourceResults
+        .filter((result) => result.result?.refreshError)
+        .map((result) =>
+          t.remoteProviders.sourceCacheRefreshError(
+            result.source.name || result.source.url,
+            result.result?.refreshError ?? t.remoteProviders.catalogLoadFailed
+          )
+        );
+      const cacheNotices = sourceResults
+        .filter((result) => result.result?.fromCache)
+        .map((result) => {
+          const cachedAt = result.result?.cachedAt;
+          const parsedDate = cachedAt ? new Date(cachedAt) : null;
+          const formattedCachedAt = parsedDate
+            ? Number.isNaN(parsedDate.getTime())
+              ? cachedAt ?? ""
+              : parsedDate.toLocaleString()
+            : "";
+          return t.remoteProviders.cachedCatalog(
+            result.source.name || result.source.url,
+            formattedCachedAt
+          );
+        });
       const loadedEntries: SourceCatalogEntry[] = sourceResults.flatMap(
-        ({ source, entries }) =>
-          entries.map((entry) => ({
+        ({ source, result }) =>
+          (result?.entries ?? []).map((entry) => ({
             ...entry,
             sourceId: source.id,
             sourceName: source.name || source.url,
+            sourceRegistryUrl: source.url.trim(),
+            sourceCachedAt: result?.cachedAt ?? null,
             sourceProxyUrl: sourceProxy(source),
             sourceAutoUpdate: sourceAutoUpdate(source)
           }))
@@ -247,9 +283,11 @@ export function RemoteProviderSettings({
       });
 
       setCatalog(entriesWithConflicts);
+      setCatalogCacheMessage(cacheNotices.join(" · ") || null);
       setCatalogMessage(
         [
           ...loadErrors,
+          ...refreshErrors,
           entriesWithConflicts.length === 0
             ? t.remoteProviders.noCatalogProviders
             : null
@@ -289,7 +327,9 @@ export function RemoteProviderSettings({
         entry.providerUrl,
         entry.checksum ?? null,
         entry.sourceProxyUrl,
-        entry.sourceAutoUpdate
+        entry.sourceAutoUpdate,
+        entry.sourceRegistryUrl,
+        entry.sourceCachedAt
       );
       if (!installed) {
         return;
@@ -333,7 +373,9 @@ export function RemoteProviderSettings({
         trimmedUrl,
         manifestChecksum.trim() || null,
         defaultInstallSource ? sourceProxy(defaultInstallSource) : null,
-        defaultInstallSource ? sourceAutoUpdate(defaultInstallSource) : true
+        defaultInstallSource ? sourceAutoUpdate(defaultInstallSource) : true,
+        null,
+        null
       );
       if (!installed) {
         return;
@@ -604,7 +646,7 @@ export function RemoteProviderSettings({
             <button
               type="button"
               className="button-secondary"
-              onClick={() => void loadCatalog()}
+              onClick={() => void loadCatalog(true)}
               disabled={catalogLoading}
             >
               {catalogLoading ? t.remoteProviders.loading : t.remoteProviders.refreshCatalog}
@@ -629,6 +671,9 @@ export function RemoteProviderSettings({
           </code>
         </div>
 
+        {catalogCacheMessage ? (
+          <div className="source-cache-status" role="status">{catalogCacheMessage}</div>
+        ) : null}
         {catalogMessage ? (
           <div className="settings-message">{catalogMessage}</div>
         ) : null}

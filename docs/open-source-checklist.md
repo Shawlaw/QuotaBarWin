@@ -23,7 +23,8 @@
 - 提供方 manifest/source 和 registry checksum 由 Rust 测试校验。
 - 当前 E2E 使用 schema 17 的远程提供方 fixture，覆盖设置保存、向导式
   提供方保存/测试/启用、secret 不进入 config/log、提供方刷新/超时、
-  托盘交互和删除托管 secret。
+  托盘交互和删除托管 secret。`npm run e2e:dev` 使用独立 Dev E2E 身份与
+  构建目录供日常回归；release 候选仍须用 `npm run e2e` 验证 release 身份。
 
 ## 每次公开同步前
 

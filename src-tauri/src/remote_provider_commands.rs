@@ -19,9 +19,11 @@ use crate::{
     remote_provider::{
         cache_remote_provider, check_update, compute_checksum, fetch_manifest, fetch_manifest_text,
         fetch_provider_registry, fetch_source, is_builtin_js_runtime, load_cached_manifest,
-        parse_manifest, resolve_provider_url, resolve_runtime, resolve_source_url,
-        source_file_name, validate_runtime_executable, verify_checksum, ProviderManifest,
-        UpdateInfo,
+        load_remote_provider_catalog_cache, parse_manifest, remote_provider_catalog_cache_path,
+        resolve_provider_url, resolve_runtime, resolve_source_url,
+        save_remote_provider_catalog_cache, source_file_name, validate_cached_catalog_entry,
+        validate_runtime_executable, verify_checksum, CachedRemoteProviderCatalog,
+        CachedRemoteProviderCatalogEntry, ProviderManifest, UpdateInfo,
     },
 };
 
@@ -538,7 +540,7 @@ fn install_remote_provider_from_manifest(
     manifest: ProviderManifest,
     log: &LogSink,
 ) -> Result<ProviderConfig, String> {
-    let mut loaded = load_or_create_config(path)?;
+    let loaded = load_or_create_config(path)?;
     let global_proxy = loaded.config.network_proxy.clone();
     log_remote(
         log,
@@ -552,6 +554,39 @@ fn install_remote_provider_from_manifest(
         ),
     );
 
+    let source_url = resolve_source_url(url, &manifest.entry);
+    log_remote(
+        log,
+        LogLevel::Info,
+        &format!(
+            "provider source fetch started manifestId={} sourceUrl={}",
+            manifest.id, source_url
+        ),
+    );
+    let source = fetch_source(&source_url, proxy_url, global_proxy.as_ref(), FETCH_TIMEOUT)
+        .map_err(|e| e.to_string())?;
+    log_remote(
+        log,
+        LogLevel::Info,
+        &format!(
+            "provider source fetched manifestId={} bytes={}",
+            manifest.id,
+            source.len()
+        ),
+    );
+
+    install_remote_provider_from_source(path, url, auto_update, manifest, source, log)
+}
+
+fn install_remote_provider_from_source(
+    path: &Path,
+    url: &str,
+    auto_update: bool,
+    manifest: ProviderManifest,
+    source: String,
+    log: &LogSink,
+) -> Result<ProviderConfig, String> {
+    let mut loaded = load_or_create_config(path)?;
     let (instance_id, instance_index) = unique_provider_id(&loaded.config, &manifest.id);
     let default_name = manifest
         .default_config
@@ -570,27 +605,6 @@ fn install_remote_provider_from_manifest(
     );
 
     let source_url = resolve_source_url(url, &manifest.entry);
-    log_remote(
-        log,
-        LogLevel::Info,
-        &format!(
-            "provider source fetch started providerId={} manifestId={} sourceUrl={}",
-            instance_id, manifest.id, source_url
-        ),
-    );
-    let source = fetch_source(&source_url, proxy_url, global_proxy.as_ref(), FETCH_TIMEOUT)
-        .map_err(|e| e.to_string())?;
-    log_remote(
-        log,
-        LogLevel::Info,
-        &format!(
-            "provider source fetched providerId={} manifestId={} bytes={}",
-            instance_id,
-            manifest.id,
-            source.len()
-        ),
-    );
-
     let actual_auto_update = manifest.checksums.source.is_some() && auto_update;
 
     if let Some(expected) = manifest.checksums.source.as_ref() {
@@ -754,109 +768,392 @@ pub struct RemoteProviderCatalogEntry {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteProviderCatalogResult {
+    pub entries: Vec<RemoteProviderCatalogEntry>,
+    pub from_cache: bool,
+    #[serde(default)]
+    pub cached_at: Option<String>,
+    #[serde(default)]
+    pub refresh_error: Option<String>,
+}
+
+fn catalog_result_from_cache(
+    config: &AppConfig,
+    cache: &CachedRemoteProviderCatalog,
+    refresh_error: Option<String>,
+) -> Result<RemoteProviderCatalogResult, String> {
+    let mut entries = Vec::with_capacity(cache.entries.len());
+    for cached_entry in &cache.entries {
+        let validated = validate_cached_catalog_entry(cached_entry)?;
+        let installed_count =
+            installed_provider_instance_count(config, &cached_entry.id, &cached_entry.provider_url);
+        entries.push(RemoteProviderCatalogEntry {
+            id: cached_entry.id.clone(),
+            display_name: validated.manifest.display_name,
+            version: validated.manifest.version,
+            description: validated.manifest.description,
+            provider_url: cached_entry.provider_url.clone(),
+            checksum: cached_entry.checksum.clone(),
+            installed: installed_count > 0,
+            installed_count,
+            error: None,
+        });
+    }
+    Ok(RemoteProviderCatalogResult {
+        entries,
+        from_cache: true,
+        cached_at: Some(cache.refreshed_at.clone()),
+        refresh_error,
+    })
+}
+
+fn fetch_catalog_preview(
+    config: &AppConfig,
+    url: &str,
+    proxy_url: Option<&str>,
+    global_proxy: Option<&ProxyConfig>,
+    registry: crate::remote_provider::ProviderRegistry,
+) -> (
+    CachedRemoteProviderCatalog,
+    Vec<RemoteProviderCatalogEntry>,
+    Vec<String>,
+) {
+    let refreshed_at = Utc::now().to_rfc3339();
+    let mut cache = CachedRemoteProviderCatalog::new(url, refreshed_at.clone());
+    let mut entries = Vec::new();
+    let mut errors = Vec::new();
+
+    for entry in registry.providers {
+        let provider_url = resolve_provider_url(url, &entry.provider_url);
+        let installed_count = installed_provider_instance_count(config, &entry.id, &provider_url);
+        let mut catalog_entry = RemoteProviderCatalogEntry {
+            id: entry.id.clone(),
+            display_name: entry.id.clone(),
+            version: None,
+            description: None,
+            provider_url: provider_url.clone(),
+            checksum: entry.checksum.clone(),
+            installed: installed_count > 0,
+            installed_count,
+            error: None,
+        };
+
+        let prepared = (|| -> Result<_, String> {
+            let manifest_text =
+                fetch_manifest_text(&provider_url, proxy_url, global_proxy, FETCH_TIMEOUT)
+                    .map_err(|error| error.to_string())?;
+            if let Some(expected) = entry.checksum.as_deref() {
+                verify_checksum(&manifest_text, expected.trim())
+                    .map_err(|error| error.to_string())?;
+            }
+            let manifest = parse_manifest(&manifest_text).map_err(|error| error.to_string())?;
+            if manifest.id != entry.id {
+                return Err(format!(
+                    "registry id '{}' does not match manifest id '{}'",
+                    entry.id, manifest.id
+                ));
+            }
+
+            let source_url = resolve_source_url(&provider_url, &manifest.entry);
+            let source = fetch_source(&source_url, proxy_url, global_proxy, FETCH_TIMEOUT)
+                .map_err(|error| error.to_string())?;
+            if let Some(expected) = manifest.checksums.source.as_deref() {
+                verify_checksum(&source, expected).map_err(|error| error.to_string())?;
+            }
+            let source_checksum = compute_checksum(&source);
+            Ok((manifest_text, manifest, source_url, source, source_checksum))
+        })();
+
+        match prepared {
+            Ok((manifest_text, manifest, source_url, source, source_checksum)) => {
+                catalog_entry.display_name = manifest.display_name.clone();
+                catalog_entry.version = manifest.version.clone();
+                catalog_entry.description = manifest.description.clone();
+                cache.entries.push(CachedRemoteProviderCatalogEntry {
+                    id: entry.id,
+                    provider_url,
+                    checksum: entry.checksum,
+                    manifest_text,
+                    source_url,
+                    source,
+                    source_checksum,
+                    fetched_at: refreshed_at.clone(),
+                });
+            }
+            Err(error) => {
+                catalog_entry.error = Some(error.clone());
+                errors.push(format!("{}: {error}", entry.id));
+            }
+        }
+        entries.push(catalog_entry);
+    }
+
+    (cache, entries, errors)
+}
+
+fn preview_remote_provider_registry_inner(
+    path: &Path,
+    url: &str,
+    proxy_url: Option<&str>,
+    force_refresh: bool,
+) -> Result<RemoteProviderCatalogResult, String> {
+    let loaded = load_or_create_config(path)?;
+    let log = LogSink::from_config_path(path, &loaded.config);
+    let global_proxy = loaded.config.network_proxy.clone();
+    log_remote(
+        &log,
+        LogLevel::Info,
+        &format!(
+            "registry preview started url={} forceRefresh={} proxyConfigured={}",
+            url,
+            force_refresh,
+            proxy_url
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false)
+        ),
+    );
+
+    let cached = match load_remote_provider_catalog_cache(path, url) {
+        Ok(cache) => cache,
+        Err(error) => {
+            log_remote(
+                &log,
+                LogLevel::Warn,
+                &format!("registry cache load failed url={} error={}", url, error),
+            );
+            None
+        }
+    };
+    if !force_refresh {
+        if let Some(cache) = cached.as_ref() {
+            let result = catalog_result_from_cache(&loaded.config, cache, None)?;
+            log_remote(
+                &log,
+                LogLevel::Info,
+                &format!(
+                    "registry cache hit url={} entries={}",
+                    url,
+                    result.entries.len()
+                ),
+            );
+            return Ok(result);
+        }
+    }
+
+    let registry =
+        match fetch_provider_registry(url, proxy_url, global_proxy.as_ref(), FETCH_TIMEOUT) {
+            Ok(registry) => registry,
+            Err(error) => {
+                let error = error.to_string();
+                if let Some(cache) = cached.as_ref() {
+                    log_remote(
+                        &log,
+                        LogLevel::Warn,
+                        &format!(
+                            "registry refresh failed; using cache url={} error={}",
+                            url, error
+                        ),
+                    );
+                    return catalog_result_from_cache(&loaded.config, cache, Some(error));
+                }
+                return Err(error);
+            }
+        };
+
+    let (cache, entries, errors) = fetch_catalog_preview(
+        &loaded.config,
+        url,
+        proxy_url,
+        global_proxy.as_ref(),
+        registry,
+    );
+    if !errors.is_empty() {
+        if let Some(cached) = cached.as_ref() {
+            let refresh_error = errors.join("; ");
+            log_remote(
+                &log,
+                LogLevel::Warn,
+                &format!(
+                    "registry package refresh failed; using cache url={} error={}",
+                    url, refresh_error
+                ),
+            );
+            return catalog_result_from_cache(&loaded.config, cached, Some(refresh_error));
+        }
+        return Ok(RemoteProviderCatalogResult {
+            entries,
+            from_cache: false,
+            cached_at: None,
+            refresh_error: None,
+        });
+    }
+
+    if let Err(error) = save_remote_provider_catalog_cache(path, &cache) {
+        log_remote(
+            &log,
+            LogLevel::Warn,
+            &format!("registry cache save failed url={} error={}", url, error),
+        );
+    } else if let Ok(cache_path) = remote_provider_catalog_cache_path(path, url) {
+        log_remote(
+            &log,
+            LogLevel::Info,
+            &format!(
+                "registry cache saved url={} entries={} path={}",
+                url,
+                cache.entries.len(),
+                cache_path.display()
+            ),
+        );
+    }
+
+    log_remote(
+        &log,
+        LogLevel::Info,
+        &format!("registry preview finished entries={}", entries.len()),
+    );
+    Ok(RemoteProviderCatalogResult {
+        entries,
+        from_cache: false,
+        cached_at: Some(cache.refreshed_at),
+        refresh_error: None,
+    })
+}
+
 #[tauri::command]
 pub async fn preview_remote_provider_registry(
     app: AppHandle,
     url: String,
     proxy_url: Option<String>,
-) -> Result<Vec<RemoteProviderCatalogEntry>, String> {
+    force_refresh: Option<bool>,
+) -> Result<RemoteProviderCatalogResult, String> {
     let path = config_path_for_app(&app)?;
     let proxy_url_ref = proxy_url.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        let loaded = load_or_create_config(&path)?;
-        let log = LogSink::from_config_path(&path, &loaded.config);
-        let global_proxy = loaded.config.network_proxy.clone();
-        log_remote(
-            &log,
-            LogLevel::Info,
-            &format!(
-                "registry preview started url={} proxyConfigured={}",
-                url,
-                proxy_url_ref
-                    .as_deref()
-                    .map(|value| !value.trim().is_empty())
-                    .unwrap_or(false)
-            ),
-        );
-
-        let registry = fetch_provider_registry(
+        preview_remote_provider_registry_inner(
+            &path,
             &url,
             proxy_url_ref.as_deref(),
-            global_proxy.as_ref(),
-            FETCH_TIMEOUT,
+            force_refresh.unwrap_or(false),
         )
-        .map_err(|e| e.to_string())?;
-
-        let mut entries = Vec::new();
-        for entry in registry.providers {
-            let provider_url = resolve_provider_url(&url, &entry.provider_url);
-            let installed_count =
-                installed_provider_instance_count(&loaded.config, &entry.id, &provider_url);
-            let installed = installed_count > 0;
-            let mut catalog_entry = RemoteProviderCatalogEntry {
-                id: entry.id.clone(),
-                display_name: entry.id.clone(),
-                version: None,
-                description: None,
-                provider_url: provider_url.clone(),
-                checksum: entry.checksum.clone(),
-                installed,
-                installed_count,
-                error: None,
-            };
-
-            match fetch_manifest_text(
-                &provider_url,
-                proxy_url_ref.as_deref(),
-                global_proxy.as_ref(),
-                FETCH_TIMEOUT,
-            ) {
-                Ok(manifest_text) => {
-                    if let Some(expected) = entry.checksum.as_ref() {
-                        if let Err(error) =
-                            crate::remote_provider::verify_checksum(&manifest_text, expected.trim())
-                        {
-                            catalog_entry.error = Some(error.to_string());
-                            entries.push(catalog_entry);
-                            continue;
-                        }
-                    }
-
-                    match parse_manifest(&manifest_text) {
-                        Ok(manifest) => {
-                            if manifest.id != entry.id {
-                                catalog_entry.error = Some(format!(
-                                    "registry id '{}' does not match manifest id '{}'",
-                                    entry.id, manifest.id
-                                ));
-                            }
-                            catalog_entry.display_name = manifest.display_name;
-                            catalog_entry.version = manifest.version;
-                            catalog_entry.description = manifest.description;
-                        }
-                        Err(error) => {
-                            catalog_entry.error = Some(error.to_string());
-                        }
-                    }
-                }
-                Err(error) => {
-                    catalog_entry.error = Some(error.to_string());
-                }
-            }
-
-            entries.push(catalog_entry);
-        }
-
-        log_remote(
-            &log,
-            LogLevel::Info,
-            &format!("registry preview finished entries={}", entries.len()),
-        );
-        Ok(entries)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn install_remote_provider_manifest_inner(
+    path: &Path,
+    url: &str,
+    checksum: Option<&str>,
+    proxy_url: Option<&str>,
+    auto_update: bool,
+    registry_url: Option<&str>,
+    catalog_cached_at: Option<&str>,
+) -> Result<ProviderConfig, String> {
+    let loaded = load_or_create_config(path)?;
+    let log = LogSink::from_config_path(path, &loaded.config);
+    let global_proxy = loaded.config.network_proxy.clone();
+
+    if let (Some(registry_url), Some(expected_cached_at)) = (registry_url, catalog_cached_at) {
+        match load_remote_provider_catalog_cache(path, registry_url) {
+            Ok(Some(cache)) if cache.refreshed_at == expected_cached_at => {
+                let expected_checksum = checksum.map(str::trim).filter(|value| !value.is_empty());
+                let cached_entry = cache.entries.iter().find(|entry| {
+                    entry.provider_url == url.trim()
+                        && expected_checksum.is_none_or(|expected| {
+                            entry.checksum.as_deref().map(str::trim) == Some(expected)
+                        })
+                });
+                if let Some(entry) = cached_entry {
+                    match validate_cached_catalog_entry(entry) {
+                        Ok(validated) => {
+                            log_remote(
+                                &log,
+                                LogLevel::Info,
+                                &format!(
+                                    "provider catalog cache hit manifestId={} manifestUrl={} sourceUrl={} registryUrl={}",
+                                    validated.manifest.id, url, validated.source_url, registry_url
+                                ),
+                            );
+                            log_remote(
+                                &log,
+                                LogLevel::Info,
+                                &format!(
+                                    "provider install started manifestId={} manifestUrl={} autoUpdateRequested={} fromCatalogCache=true",
+                                    validated.manifest.id, url, auto_update
+                                ),
+                            );
+                            return install_remote_provider_from_source(
+                                path,
+                                &entry.provider_url,
+                                auto_update,
+                                validated.manifest,
+                                validated.source,
+                                &log,
+                            );
+                        }
+                        Err(error) => {
+                            log_remote(
+                                &log,
+                                LogLevel::Warn,
+                                &format!(
+                                    "provider catalog cache validation failed; using network manifestUrl={} error={}",
+                                    url, error
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(Some(_)) => {
+                log_remote(
+                    &log,
+                    LogLevel::Warn,
+                    &format!(
+                        "provider catalog cache snapshot changed; using network manifestUrl={} registryUrl={}",
+                        url, registry_url
+                    ),
+                );
+            }
+            Ok(None) => {}
+            Err(error) => {
+                log_remote(
+                    &log,
+                    LogLevel::Warn,
+                    &format!(
+                        "provider catalog cache load failed; using network manifestUrl={} error={}",
+                        url, error
+                    ),
+                );
+            }
+        }
+    }
+
+    log_remote(
+        &log,
+        LogLevel::Info,
+        &format!(
+            "provider manifest install started url={} autoUpdate={} proxyConfigured={}",
+            url,
+            auto_update,
+            proxy_url
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false)
+        ),
+    );
+
+    let manifest_text = fetch_manifest_text(url, proxy_url, global_proxy.as_ref(), FETCH_TIMEOUT)
+        .map_err(|e| e.to_string())?;
+
+    if let Some(expected) = checksum.filter(|value| !value.trim().is_empty()) {
+        verify_checksum(&manifest_text, expected.trim()).map_err(|e| e.to_string())?;
+    }
+
+    let manifest = parse_manifest(&manifest_text).map_err(|e| e.to_string())?;
+    install_remote_provider_from_manifest(path, url, proxy_url, auto_update, manifest, &log)
 }
 
 #[tauri::command]
@@ -866,49 +1163,21 @@ pub async fn install_remote_provider_manifest(
     checksum: Option<String>,
     proxy_url: Option<String>,
     auto_update: bool,
+    registry_url: Option<String>,
+    catalog_cached_at: Option<String>,
 ) -> Result<ProviderConfig, String> {
     let path = config_path_for_app(&app)?;
     let proxy_url_ref = proxy_url.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        let loaded = load_or_create_config(&path)?;
-        let log = LogSink::from_config_path(&path, &loaded.config);
-        let global_proxy = loaded.config.network_proxy.clone();
-        log_remote(
-            &log,
-            LogLevel::Info,
-            &format!(
-                "provider manifest install started url={} autoUpdate={} proxyConfigured={}",
-                url,
-                auto_update,
-                proxy_url_ref
-                    .as_deref()
-                    .map(|value| !value.trim().is_empty())
-                    .unwrap_or(false)
-            ),
-        );
-
-        let manifest_text = fetch_manifest_text(
-            &url,
-            proxy_url_ref.as_deref(),
-            global_proxy.as_ref(),
-            FETCH_TIMEOUT,
-        )
-        .map_err(|e| e.to_string())?;
-
-        if let Some(expected) = checksum.as_ref().filter(|value| !value.trim().is_empty()) {
-            crate::remote_provider::verify_checksum(&manifest_text, expected.trim())
-                .map_err(|e| e.to_string())?;
-        }
-
-        let manifest = parse_manifest(&manifest_text).map_err(|e| e.to_string())?;
-        install_remote_provider_from_manifest(
+        install_remote_provider_manifest_inner(
             &path,
             &url,
+            checksum.as_deref(),
             proxy_url_ref.as_deref(),
             auto_update,
-            manifest,
-            &log,
+            registry_url.as_deref(),
+            catalog_cached_at.as_deref(),
         )
     })
     .await
@@ -2034,6 +2303,220 @@ mod tests {
         )
         .expect("write manifest");
         manifest_path.to_string_lossy().to_string()
+    }
+
+    struct TestCatalogUpstream {
+        registry_url: String,
+        provider_url: String,
+        manifest_checksum: String,
+    }
+
+    fn write_builtin_catalog(dir: &Path, version: &str, source: &str) -> TestCatalogUpstream {
+        fs::create_dir_all(dir).expect("create catalog dir");
+        fs::write(dir.join("provider.js"), source).expect("write catalog source");
+        let manifest = serde_json::json!({
+            "schemaVersion": 2,
+            "id": "cached",
+            "displayName": "Cached Provider",
+            "version": version,
+            "minAppVersion": "1.0.0",
+            "runtime": "builtin-js",
+            "entry": "provider.js",
+            "requiredEnvVars": [],
+            "output": "provider-snapshot-v1",
+            "permissions": [],
+            "checksums": { "source": compute_checksum(source) }
+        });
+        let manifest_text = serde_json::to_string_pretty(&manifest).expect("manifest json");
+        let provider_path = dir.join("provider.json");
+        fs::write(&provider_path, &manifest_text).expect("write catalog manifest");
+        let manifest_checksum = compute_checksum(&manifest_text);
+        let registry = serde_json::json!({
+            "schemaVersion": 1,
+            "providers": [{
+                "id": "cached",
+                "providerUrl": "provider.json",
+                "checksum": manifest_checksum
+            }]
+        });
+        let registry_path = dir.join("registry.json");
+        fs::write(
+            &registry_path,
+            serde_json::to_string_pretty(&registry).expect("registry json"),
+        )
+        .expect("write registry");
+        TestCatalogUpstream {
+            registry_url: registry_path.to_string_lossy().to_string(),
+            provider_url: provider_path.to_string_lossy().to_string(),
+            manifest_checksum,
+        }
+    }
+
+    #[test]
+    fn catalog_cache_supports_offline_preview_and_repeated_install() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let upstream_dir = temp.path().join("upstream");
+        let source = "function main() { return { status: 'ok', windows: [] }; } // v1";
+        let upstream = write_builtin_catalog(&upstream_dir, "1.0.0", source);
+        let config_path = temp.path().join("config.json");
+
+        let initial = preview_remote_provider_registry_inner(
+            &config_path,
+            &upstream.registry_url,
+            None,
+            false,
+        )
+        .expect("initial catalog preview");
+        assert!(!initial.from_cache);
+        assert_eq!(initial.entries[0].version.as_deref(), Some("1.0.0"));
+        assert!(remote_provider_catalog_cache_path(&config_path, &upstream.registry_url)
+            .expect("catalog cache path")
+            .is_file());
+
+        fs::remove_dir_all(&upstream_dir).expect("remove upstream");
+        let cached = preview_remote_provider_registry_inner(
+            &config_path,
+            &upstream.registry_url,
+            None,
+            false,
+        )
+        .expect("offline cached preview");
+        assert!(cached.from_cache);
+        assert!(cached.refresh_error.is_none());
+        assert_eq!(cached.entries[0].installed_count, 0);
+
+        let stale_snapshot_error = install_remote_provider_manifest_inner(
+            &config_path,
+            &upstream.provider_url,
+            Some(&upstream.manifest_checksum),
+            None,
+            true,
+            Some(&upstream.registry_url),
+            Some("stale-snapshot"),
+        )
+        .expect_err("reject a different catalog snapshot");
+        assert!(stale_snapshot_error.contains("Network error"));
+
+        for expected_id in ["cached", "cached-2"] {
+            let installed = install_remote_provider_manifest_inner(
+                &config_path,
+                &upstream.provider_url,
+                Some(&upstream.manifest_checksum),
+                None,
+                true,
+                Some(&upstream.registry_url),
+                cached.cached_at.as_deref(),
+            )
+            .expect("offline cached install");
+            assert_eq!(provider_id(&installed), expected_id);
+            let provider_dir = remote_provider_dir(&config_path, expected_id).expect("provider dir");
+            assert_eq!(
+                fs::read_to_string(provider_dir.join("provider.js")).expect("cached source"),
+                source
+            );
+        }
+
+        let after_install = preview_remote_provider_registry_inner(
+            &config_path,
+            &upstream.registry_url,
+            None,
+            false,
+        )
+        .expect("cached preview after install");
+        assert!(after_install.entries[0].installed);
+        assert_eq!(after_install.entries[0].installed_count, 2);
+    }
+
+    #[test]
+    fn catalog_manual_refresh_replaces_cache_and_failure_preserves_it() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let upstream_dir = temp.path().join("upstream");
+        let upstream = write_builtin_catalog(&upstream_dir, "1.0.0", "// v1");
+        let config_path = temp.path().join("config.json");
+        preview_remote_provider_registry_inner(
+            &config_path,
+            &upstream.registry_url,
+            None,
+            false,
+        )
+        .expect("initial catalog preview");
+
+        let upstream = write_builtin_catalog(&upstream_dir, "2.0.0", "// v2");
+        let automatic = preview_remote_provider_registry_inner(
+            &config_path,
+            &upstream.registry_url,
+            None,
+            false,
+        )
+        .expect("cache-first preview");
+        assert_eq!(automatic.entries[0].version.as_deref(), Some("1.0.0"));
+
+        let refreshed = preview_remote_provider_registry_inner(
+            &config_path,
+            &upstream.registry_url,
+            None,
+            true,
+        )
+        .expect("forced catalog refresh");
+        assert!(!refreshed.from_cache);
+        assert_eq!(refreshed.entries[0].version.as_deref(), Some("2.0.0"));
+
+        fs::remove_dir_all(&upstream_dir).expect("remove upstream");
+        let fallback = preview_remote_provider_registry_inner(
+            &config_path,
+            &upstream.registry_url,
+            None,
+            true,
+        )
+        .expect("cached refresh fallback");
+        assert!(fallback.from_cache);
+        assert!(fallback.refresh_error.is_some());
+        assert_eq!(fallback.entries[0].version.as_deref(), Some("2.0.0"));
+    }
+
+    #[test]
+    fn corrupted_catalog_cache_is_not_used_for_offline_install() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let upstream_dir = temp.path().join("upstream");
+        let upstream = write_builtin_catalog(&upstream_dir, "1.0.0", "// trusted");
+        let config_path = temp.path().join("config.json");
+        let initial = preview_remote_provider_registry_inner(
+            &config_path,
+            &upstream.registry_url,
+            None,
+            false,
+        )
+        .expect("initial catalog preview");
+
+        let cache_path =
+            remote_provider_catalog_cache_path(&config_path, &upstream.registry_url)
+                .expect("catalog cache path");
+        let mut cache: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&cache_path).expect("read catalog cache"),
+        )
+        .expect("parse catalog cache");
+        cache["entries"][0]["source"] = serde_json::json!("// tampered");
+        fs::write(&cache_path, serde_json::to_string_pretty(&cache).expect("cache json"))
+            .expect("tamper catalog cache");
+        let validation_error =
+            load_remote_provider_catalog_cache(&config_path, &upstream.registry_url)
+                .expect_err("reject tampered cache");
+        assert!(validation_error.contains("Checksum mismatch"));
+
+        fs::remove_dir_all(&upstream_dir).expect("remove upstream");
+        let install_error = install_remote_provider_manifest_inner(
+            &config_path,
+            &upstream.provider_url,
+            Some(&upstream.manifest_checksum),
+            None,
+            true,
+            Some(&upstream.registry_url),
+            initial.cached_at.as_deref(),
+        )
+        .expect_err("do not install tampered cache");
+        assert!(install_error.contains("Network error"));
+        let loaded = load_or_create_config(&config_path).expect("reload config");
+        assert!(loaded.config.providers.is_empty());
     }
 
     fn provider_with_trusted_checksum(

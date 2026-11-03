@@ -20,6 +20,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "e2e": "node e2e/tauri.e2e.mjs",
+    "e2e:dev": "node e2e/tauri.e2e.mjs --dev",
     "icons:generate": "node scripts/generate-icons.mjs",
     "icons:check": "node scripts/generate-icons.mjs --check",
     "test": "vitest",

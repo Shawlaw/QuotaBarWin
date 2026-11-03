@@ -56,6 +56,29 @@ fn dev_config_swaps_identity_with_a_complete_window() {
 }
 
 #[test]
+fn dev_e2e_channel_has_a_dedicated_non_release_identity() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let e2e_config = fs::read_to_string(root.join("tauri.e2e.dev.conf.json"))
+        .expect("dev E2E config");
+    let value: serde_json::Value =
+        serde_json::from_str(&e2e_config).expect("json dev E2E config");
+    let identifier = value
+        .get("identifier")
+        .and_then(serde_json::Value::as_str)
+        .expect("dev E2E identifier");
+    assert_eq!(identifier, "com.quotabarwin.app.dev.e2e");
+    assert!(crate::app_identity::is_dev_build_identifier(identifier));
+    assert_ne!(identifier, crate::app_identity::DEV_APP_IDENTIFIER);
+
+    let package = fs::read_to_string(root.join("../package.json")).expect("package.json");
+    let package: serde_json::Value = serde_json::from_str(&package).expect("json package");
+    assert_eq!(
+        package.pointer("/scripts/e2e:dev"),
+        Some(&serde_json::json!("node e2e/tauri.e2e.mjs --dev"))
+    );
+}
+
+#[test]
 fn tauri_csp_is_enabled() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let config = fs::read_to_string(root.join("tauri.conf.json")).expect("tauri config");
