@@ -7,6 +7,11 @@
 而无需把提供方查询逻辑打包进 QuotaBarWin 主程序。这适合第三方提供方接入、
 快速迭代提供方脚本，或在多台机器之间共享提供方配置。
 
+正式发布包还会把项目维护的提供方脚本内置进 exe，并把 GitHub `main` 作为更新源。
+全新安装首次启动时会自动安装这些提供方（停用、待配置），不需要先联网拉取 registry；
+升级到新版本时只补装新增的内置提供方，不会覆盖或改动已经安装的提供方。之后仍可在
+设置页手动检查并应用 `main` 上的提供方更新。
+
 ## 工作方式
 
 1. 在设置页提供 registry URL 或本地路径，例如 `registry.json`。支持 `https://`、
@@ -15,7 +20,7 @@
    并下载 source script。
 3. Source script 会缓存到本机，并使用 manifest 声明的 runtime 执行。`builtin-js`
    使用应用内置的 QuickJS，不需要用户安装 Node.js；`node`、`python`、`pwsh`、`bash`
-   和绝对路径仍会启动对应的外部进程。官方维护的提供方脚本全部使用 `builtin-js`，
+   和绝对路径仍会启动对应的外部进程。项目维护的提供方脚本全部使用 `builtin-js`，
    普通用户无需安装任何运行时。
 4. 每次刷新时，QuotaBarWin 运行缓存脚本，并归一化为标准额度窗口。
 
@@ -82,7 +87,7 @@
 | `permissions` | 否 | 对外部 runtime 是说明字段；对 `builtin-js` 是强制能力边界，格式和用法见下一节。 |
 | `defaultConfig` | 否 | 首次安装时写入本地 provider 配置的默认值，例如 `name`、`timeoutSeconds`、`notificationsEnabled`（事件通知参与开关，默认 `true`；纯展示类提供方可声明 `false`，安装后用户仍可自行修改）、`visibleWindowIds`、`windowLabelOverrides`、`envVars`。后续 provider 更新不会覆盖用户本地修改。 |
 | `parameters` | 否 | 设置页展示的结构化参数。每项可包含 `name`、`label`、`kind`、`required`、`defaultValue`、`placeholder`、`description`、`options`、`helpUrl`、`advanced`。不要放真实凭据。 |
-| `checksums.source` | 否 | Source 文件 SHA-256。启用安全 auto-update 时需要，格式为 `sha256:<hex>`。更新检测以 checksum 为准；`version` 升高时即使 source 未变化也会视为有可用更新，但不会替代 checksum 校验。 |
+| `checksums.source` | 否 | Source 文件 SHA-256。启用更新检测和校验时需要，格式为 `sha256:<hex>`。更新检测以 checksum 为准；`version` 升高时即使 source 未变化也会视为有可用更新，但不会替代 checksum 校验。 |
 
 ### 向导式配置字段
 
@@ -99,7 +104,7 @@
 `builtin-js` 面向不想让普通用户额外安装 Node.js 的提供方作者。它运行在应用内置的
 QuickJS 沙箱中。新发布或远程更新的 manifest 必须使用 `schemaVersion: 2` 并声明 `minAppVersion`；入口必须是 `.js` 文件，`output` 必须为 `provider-snapshot-v1`，并导出
 一个同步的全局函数 `main(qb)`：函数直接返回快照对象，**不使用** `console.log`、stdout
-或 `process.exit`。官方提供方都使用此 runtime。
+或 `process.exit`。项目维护的提供方都使用此 runtime。
 
 ```js
 function main(qb) {
@@ -460,7 +465,7 @@ secret 文件；配置文件中只保存占位符，不保存明文 token。
 ## 实现示例：Zhipu / BigModel
 
 以下示例调用 Zhipu / BigModel quota endpoint，并输出 `provider-snapshot-v1`。
-它们都从 `BIGMODEL_API_KEY` 读取 API key。官方维护的提供方均使用 `builtin-js`，
+它们都从 `BIGMODEL_API_KEY` 读取 API key。项目维护的提供方均使用 `builtin-js`，
 推荐新提供方也走这条路（用户零依赖）；随后的外部 runtime 示例供兼容参考。
 
 ### 内置 JavaScript（`builtin-js`，推荐）
@@ -688,10 +693,11 @@ Bash 示例需要 `jq`。Windows 上 Git Bash 通常会随附它。
 ## 安全检查清单
 
 - **只安装使用可信任的远程提供方。提供方脚本可以直接读取你配置给它的各类
-  AI 鉴权信息，并发起网络通讯。**
+  AI 鉴权信息，并发起网络通讯。** 随发布包内置的项目维护提供方会自动安装，
+  但同样只在你完成配置后读取对应凭据；不需要的可以在设置中删除。
 - 安装前检查 source URL、runtime 和 required env vars。
 - 优先使用带 `providers[].checksum` 的 registry。
-- 优先使用带 `checksums.source` 的 manifest；否则无法安全自动更新。
+- 优先使用带 `checksums.source` 的 manifest；否则无法安全校验更新。
 - 缓存的 source 文件位于 app data 目录下的 `providers/remote/<id>/`，这里的
   `<id>` 是本地安装实例 id；同一个 manifest 的多个账号会使用不同目录。
 
@@ -704,16 +710,18 @@ Bash 示例需要 `jq`。Windows 上 Git Bash 通常会随附它。
   `BIGMODEL_API_KEY`。
 - `codex-usage`：ChatGPT/Codex 5h 和 weekly usage，默认读取
   `~/.codex/auth.json`，也支持 `CODEX_ACCESS_TOKEN` 等覆盖。
+- `opencode-go`：OpenCode Go 订阅的 5 小时 / 本周 / 本月额度，需要
+  `OPENCODE_GO_API_KEY`；接口只返回百分比。
 - `deepseek-balance`：DeepSeek pay-as-you-go balance，需要
   `DEEPSEEK_API_KEY`，支持余额参考值和低余额阈值配置。
+- `time-flies`：本机时区与当前时间，不需要凭据。
 
 ## 更新远程提供方
 
 如果 manifest 包含 `checksums.source`，QuotaBarWin 可以检测 source 变化。设置页会显示
 已安装版本、安装时间、更新时间和上次检查时间：
 
-- **自动更新**：安装时为提供方启用 auto-update 后，checksum 不同时会静默更新。
-- **手动更新**：在设置页使用「检查更新」/「应用更新」。
+- **手动更新**：在设置页使用「检查更新」/「应用更新」。安装时的 auto-update 偏好会被记录，但当前版本不会在后台自动下载或应用更新。
 
 如果缺少 `checksums.source`，需要移除并重新添加提供方才能更新。
 
@@ -722,6 +730,6 @@ Bash 示例需要 `jq`。Windows 上 Git Bash 通常会随附它。
 发布或远程更新 `builtin-js` 提供方时必须使用 manifest schema 2，并设置其实际所需的
 `minAppVersion`。更新前，宿主会先校验 schema 与最低版本；若本体版本不足，会保留当前
 缓存、配置和旧脚本不变，并提示用户先升级 QuotaBarWin。旧版应用只支持 schema 1，因此也会
-在下载新 source **之前**拒绝 schema 2 manifest；这避免了自动更新将还能工作的 Node 提供方
+在下载新 source **之前**拒绝 schema 2 manifest；这避免了更新将还能工作的 Node 提供方
 覆盖为旧本体无法执行的 `builtin-js` 脚本。为平滑升级，当前版本仍可运行已缓存的 schema 1
 `builtin-js` 提供方，但不会从远程安装或更新这类旧 manifest。

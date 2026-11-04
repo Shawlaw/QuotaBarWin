@@ -35,6 +35,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Check provider bundle
+        run: npm run providers:bundle:check
+
       - name: Test frontend
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_tests)
         run: npm run test -- --run

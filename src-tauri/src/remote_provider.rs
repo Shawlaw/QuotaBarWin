@@ -1583,6 +1583,7 @@ fn example_remote_provider_manifests_are_valid() {
         "kimi-coding",
         "bigmodel-coding-plan",
         "codex-usage",
+        "opencode-go",
         "deepseek-balance",
         "time-flies",
     ] {

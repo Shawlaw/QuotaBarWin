@@ -26,6 +26,7 @@ The top-level README is only an index. Each provider directory's `api.md` record
 | `kimi-coding` | `GET https://api.kimi.com/coding/v1/usages` | `KIMI_API_KEY` | [`api.md`](kimi-coding/api.md) / [`EN`](kimi-coding/api.en.md) | Kimi coding quota usage. |
 | `bigmodel-coding-plan` | `GET https://open.bigmodel.cn/api/monitor/usage/quota/limit` | `BIGMODEL_API_KEY` | [`api.md`](bigmodel-coding-plan/api.md) / [`EN`](bigmodel-coding-plan/api.en.md) | Zhipu/BigModel coding plan quota. |
 | `codex-usage` | `GET https://chatgpt.com/backend-api/wham/usage` | none by default | [`api.md`](codex-usage/api.md) / [`EN`](codex-usage/api.en.md) | ChatGPT/Codex 5h and weekly usage. Reads `~/.codex/auth.json` by default. Optional `CODEX_ACCESS_TOKEN`, `CODEX_ACCOUNT_ID`, or `CODEX_AUTH_FILE` env vars can override the local Codex auth file. Supports runtime proxy injection via `QBWIN_PROXY_URL`. |
+| `opencode-go` | `GET https://opencode.ai/zen/go/v1/usage` | `OPENCODE_GO_API_KEY` | [`api.md`](opencode-go/api.md) / [`EN`](opencode-go/api.en.md) | OpenCode Go subscription 5-hour, weekly, and monthly quota usage. Percentages only, no balance; create the API key on the Go page in the OpenCode Console. |
 | `deepseek-balance` | `GET https://api.deepseek.com/user/balance` | `DEEPSEEK_API_KEY` | [`api.md`](deepseek-balance/api.md) / [`EN`](deepseek-balance/api.en.md) | DeepSeek pay-as-you-go balance. Optional `DEEPSEEK_BALANCE_REFERENCE_TOTAL`, `DEEPSEEK_BALANCE_WARNING`, and `DEEPSEEK_BALANCE_CURRENCY`; append `_CNY` or another currency code for per-currency overrides. |
 | `time-flies` | Local timezone and current time | none | [`api.md`](time-flies/api.md) / [`EN`](time-flies/api.en.md) | Shows the remaining minutes in the current day, week, month, and year without network access or account credentials. |
 
@@ -87,3 +88,8 @@ Then set `checksums.source` to `sha256:<hex>`.
 
 If you edit `provider.json` itself, including display metadata such as `version`,
 also recompute that manifest checksum and update `registry.json`.
+
+After changing an example provider, run `npm run providers:bundle` to regenerate
+the embedded bundle (`src-tauri/src/provider_bundle.json`).
+`npm run providers:bundle:check` and `cargo test` verify it matches the examples
+directory.

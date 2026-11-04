@@ -5,6 +5,8 @@ Default documentation is Simplified Chinese:
 
 Remote providers let you install quota providers from a hosted manifest + script, without bundling them into the app. This is useful for third-party providers, rapid iteration, or sharing provider configurations across machines.
 
+Release packages also embed the project-maintained provider scripts in the executable and use GitHub `main` as the update source. A fresh installation installs them on first launch (disabled and pending setup) without fetching the registry first; an upgrade only adds newly embedded providers and never overwrites or modifies an installed provider. Later provider updates from `main` are still checked and applied manually in Settings.
+
 ## How it works
 
 1. You provide a registry URL or local file path (`registry.json`) that lists one or more providers. Both `https://` and `file://` URLs, as well as plain local paths like `C:\Providers\registry.json`, are supported.
@@ -12,7 +14,7 @@ Remote providers let you install quota providers from a hosted manifest + script
 3. Each script is cached locally and executed with its declared runtime. `builtin-js`
    uses the app's embedded QuickJS and needs no user-installed Node.js; `node`,
    `python`, `pwsh`, `bash`, and absolute paths still start an external process.
-   Every officially maintained provider script uses `builtin-js`, so regular
+   Every project-maintained provider script uses `builtin-js`, so regular
    users never need to install a runtime.
 4. On every refresh QuotaBarWin runs the cached scripts and normalizes their results into quota windows.
 
@@ -83,7 +85,7 @@ Field descriptions:
 | `permissions` | no | Informational for external runtimes; an enforced capability boundary for `builtin-js`. See the next section for its syntax. |
 | `defaultConfig` | no | Default local provider config written during first install, such as `name`, `timeoutSeconds`, `notificationsEnabled` (the event-notification opt-out, default `true`; display-only providers may declare `false`, and the user can still change it after install), `visibleWindowIds`, `windowLabelOverrides`, and `envVars`. Provider updates do not overwrite user edits. |
 | `parameters` | no | Structured parameters shown in Settings. Each item may include `name`, `label`, `kind`, `required`, `defaultValue`, `placeholder`, `description`, `options`, `helpUrl`, and `advanced`. Do not include real credentials. |
-| `checksums.source` | no | SHA-256 checksum of the source file. Required if you want `autoUpdate` to work. Format: `sha256:<hex>`. Update detection is checksum-first; a higher `version` also marks an update as available when the source is unchanged, but it never replaces checksum verification. |
+| `checksums.source` | no | SHA-256 checksum of the source file. Required for update checks and verification. Format: `sha256:<hex>`. Update detection is checksum-first; a higher `version` also marks an update as available when the source is unchanged, but it never replaces checksum verification. |
 
 ### Guided setup fields
 
@@ -579,7 +581,7 @@ Treat the remote script as shared code and keep user-specific tokens in local co
 
 These examples call the Zhipu/BigModel quota endpoint and print a
 `provider-snapshot-v1` response. They all read the API key from
-`BIGMODEL_API_KEY`. Every officially maintained provider uses `builtin-js`, and
+`BIGMODEL_API_KEY`. Every project-maintained provider uses `builtin-js`, and
 new providers are encouraged to do the same (zero user dependencies); the
 external-runtime examples below are kept for compatibility.
 
@@ -811,9 +813,12 @@ For Bash, `jq` must be available. On Windows, Git Bash usually ships with it.
 
 - **Only install and use remote providers you trust. Provider scripts can directly
   read the AI credentials configured for them and make network requests.**
+  Project-maintained providers bundled with the release are installed automatically,
+  but they only read the credentials you configure for them; remove the ones you do
+  not need in Settings.
 - Review each provider's `sourceUrl`, `runtime`, and `requiredEnvVars` before installing a registry.
 - Prefer registries that include `providers[].checksum` so QuotaBarWin can verify the manifest before installing.
-- Prefer manifests that include `checksums.source`; without it QuotaBarWin cannot auto-update safely.
+- Prefer manifests that include `checksums.source`; without it QuotaBarWin cannot verify updates safely.
 - The cached source file lives in the app data directory under `providers/remote/<id>/`, where `<id>` is the local installed instance id. Multiple accounts from the same manifest use different directories.
 
 ## Examples
@@ -823,7 +828,9 @@ See [`examples/remote-providers/`](../examples/remote-providers) for complete sa
 - `kimi-coding` — Kimi coding quota via `KIMI_API_KEY`.
 - `bigmodel-coding-plan` — Zhipu/BigModel quota via `BIGMODEL_API_KEY`.
 - `codex-usage` — ChatGPT/Codex 5h and weekly usage via `~/.codex/auth.json` by default, with optional `CODEX_ACCESS_TOKEN`, `CODEX_ACCOUNT_ID`, or `CODEX_AUTH_FILE` env var overrides. Supports runtime proxy injection via `QBWIN_PROXY_URL`.
+- `opencode-go` — OpenCode Go subscription 5-hour, weekly, and monthly quota via `OPENCODE_GO_API_KEY`; the endpoint reports percentages only.
 - `deepseek-balance` — DeepSeek pay-as-you-go balance via `${secret:DEEPSEEK_API_KEY}` plus optional local balance display settings.
+- `time-flies` — Local timezone and current time; no credentials required.
 
 To host your own, upload a directory containing `provider.json` + the source file and paste the raw `provider.json` URL into QuotaBarWin.
 
@@ -831,8 +838,7 @@ To host your own, upload a directory containing `provider.json` + the source fil
 
 If the manifest contains `checksums.source`, QuotaBarWin can detect when the source file changes. Settings shows the installed version, install time, update time, and last check time:
 
-- **Auto-update**: enabled per provider during install; updates are applied silently when the checksum differs.
-- **Manual update**: use the "Check Updates" / "Apply Update" buttons in Settings.
+- **Manual update**: use the "Check Updates" / "Apply Update" buttons in Settings. The install-time auto-update preference is recorded, but this version does not download or apply Provider updates in the background.
 
 If `checksums.source` is missing, updates must be applied by removing and re-adding the provider.
 
@@ -843,7 +849,7 @@ actual minimum `minAppVersion`. Before an update, the host validates both fields
 too old, it keeps the current cache, config, and source untouched and tells the
 user to update QuotaBarWin first. Older apps understand only schema 1, so they
 also reject a schema 2 manifest **before** downloading the new source. This
-prevents automatic updates from replacing a working Node Provider with a
+prevents updates from replacing a working Node Provider with a
 `builtin-js` script that an older host cannot run. For a smooth migration, the
 current app still runs an already cached schema 1 `builtin-js` Provider, but
 will not install or update one from a remote manifest.

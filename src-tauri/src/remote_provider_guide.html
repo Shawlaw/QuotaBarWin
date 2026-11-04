@@ -198,9 +198,10 @@
           <ol>
             <li>在设置页提供 registry URL 或本地路径，例如 <code>registry.json</code>。</li>
             <li>QuotaBarWin 读取 registry，拉取每个提供方 manifest，校验可选 checksum，并下载 source script。</li>
-            <li>脚本会缓存到本机。<code>builtin-js</code> 用内置 QuickJS 执行，不需要 Node.js；其他 runtime 可为 <code>node</code>、<code>python</code>、<code>pwsh</code>、<code>bash</code> 或绝对路径。官方维护的提供方脚本全部使用 <code>builtin-js</code>，普通用户无需安装任何运行时。</li>
+            <li>脚本会缓存到本机。<code>builtin-js</code> 用内置 QuickJS 执行，不需要 Node.js；其他 runtime 可为 <code>node</code>、<code>python</code>、<code>pwsh</code>、<code>bash</code> 或绝对路径。项目维护的提供方脚本全部使用 <code>builtin-js</code>，普通用户无需安装任何运行时。</li>
             <li>每次刷新时，QuotaBarWin 运行缓存脚本，并归一化为标准额度窗口。</li>
           </ol>
+          <p>正式发布包会把项目维护的提供方脚本内置进 exe。全新安装首次启动时会自动安装这些提供方（停用、待配置状态），升级时只补装新增的提供方，不会覆盖已安装项；后续更新仍由用户在设置页手动检查并应用。</p>
           <p>同一个 manifest 可以安装多次，用于查询同一提供方的多个账号。QuotaBarWin 会生成 <code>kimi-coding</code>、<code>kimi-coding-2</code> 这类稳定的本地提供方 id。</p>
         </section>
 
@@ -261,7 +262,7 @@
               <tr><td><code>output</code></td><td>是</td><td>当前使用 <code>provider-snapshot-v1</code>。</td></tr>
               <tr><td><code>defaultConfig</code></td><td>否</td><td>首次安装时写入本地 provider 配置的默认值。后续更新不会覆盖用户修改。</td></tr>
               <tr><td><code>parameters</code></td><td>否</td><td>用于生成安装后结构化配置表单。字段可包含 <code>name</code>、<code>label</code>、<code>kind</code>、<code>required</code>、<code>defaultValue</code>、<code>placeholder</code>、<code>description</code>、<code>options</code>、<code>helpUrl</code> 和 <code>advanced</code>；不要包含真实凭据。</td></tr>
-              <tr><td><code>checksums.source</code></td><td>否</td><td>Source SHA-256。启用安全 auto-update 时需要；<code>version</code> 只用于展示，不替代 checksum。</td></tr>
+              <tr><td><code>checksums.source</code></td><td>否</td><td>Source SHA-256。启用安全更新时需要；<code>version</code> 只用于展示，不替代 checksum。</td></tr>
             </tbody>
           </table>
           <h3>向导式配置字段</h3>
@@ -309,7 +310,7 @@
             </tbody>
           </table>
           <p>可用同步 JavaScript、Date、JSON、RegExp、Map 和 Set。没有 Promise、import、require、Node/Bun/Deno API、process、console、子进程、任意 socket、任意文件访问或动态加载；内存 16 MiB、JS 栈 512 KiB，并受提供方 <code>timeoutSeconds</code> 限制。<code>QBWIN_</code> 是保留前缀，不能授予 env/file 访问；元信息用 <code>qb.meta</code>，代理由 <code>qb.http</code> 自动使用。URL、鉴权格式和响应解析仍属于提供方脚本，不属于平台。</p>
-          <p>更新前会校验 schema 与最低版本。本体版本不足时不会改写缓存、配置或旧脚本；只支持 schema 1 的旧版应用也会在下载新 source 前拒绝 schema 2 manifest，避免自动更新造成提供方不可运行。当前版本仍可运行已缓存的 schema 1 <code>builtin-js</code> 提供方，但不会远程安装或更新这类旧 manifest。</p>
+          <p>更新前会校验 schema 与最低版本。本体版本不足时不会改写缓存、配置或旧脚本；只支持 schema 1 的旧版应用也会在下载新 source 前拒绝 schema 2 manifest，避免更新造成提供方不可运行。当前版本仍可运行已缓存的 schema 1 <code>builtin-js</code> 提供方，但不会远程安装或更新这类旧 manifest。</p>
         </section>
 
         <section>
@@ -361,7 +362,7 @@
           <h2>实现示例：Zhipu / BigModel</h2>
           <p>
             以下示例调用 Zhipu / BigModel quota endpoint，并输出 <code>provider-snapshot-v1</code>。
-            它们都从 <code>BIGMODEL_API_KEY</code> 读取 API key。官方维护的提供方均使用 <code>builtin-js</code>，
+            它们都从 <code>BIGMODEL_API_KEY</code> 读取 API key。项目维护的提供方均使用 <code>builtin-js</code>，
             推荐新提供方也走这条路（用户零依赖）；随后的外部 runtime 示例供兼容参考。
           </p>
 
@@ -576,10 +577,10 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
         <section>
           <h2>安全检查清单</h2>
           <ul>
-            <li><strong>只安装使用可信任的远程提供方。提供方脚本可以直接读取你配置给它的各类 AI 鉴权信息，并发起网络通讯。</strong></li>
+            <li><strong>只安装使用可信任的远程提供方。提供方脚本可以直接读取你配置给它的各类 AI 鉴权信息，并发起网络通讯。随发布包内置的项目维护提供方会自动安装，但同样只在你完成配置后读取对应凭据；不需要的可以在设置中删除。</strong></li>
             <li>安装前检查 source URL、runtime 和 required env vars。</li>
             <li>优先使用带 <code>providers[].checksum</code> 的 registry。</li>
-            <li>优先使用带 <code>checksums.source</code> 的 manifest；否则无法安全自动更新。</li>
+            <li>优先使用带 <code>checksums.source</code> 的 manifest；否则无法安全校验更新。</li>
             <li>缓存 source 位于 app data 目录下的 <code>providers/remote/&lt;id&gt;/</code>，这里的 <code>&lt;id&gt;</code> 是本地安装实例 id。</li>
           </ul>
         </section>
@@ -587,10 +588,10 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
         <section>
           <h2>示例与更新</h2>
           <p>
-            仓库中的 <code>examples/remote-providers/</code> 包含 Kimi、BigModel、Codex usage 和 DeepSeek balance 示例。
+            仓库中的 <code>examples/remote-providers/</code> 包含 Kimi、BigModel、Codex、OpenCode Go、DeepSeek 和光阴似箭（Time Flies）示例。
           </p>
           <p>
-            如果 manifest 包含 <code>checksums.source</code>，可在设置页使用自动更新或手动 “检查更新 / 应用更新”。设置页会显示版本、安装时间、更新时间和上次检查时间。缺少 checksum 时，需要移除后重新添加提供方。
+            如果 manifest 包含 <code>checksums.source</code>，可在设置页使用 “检查更新 / 应用更新”。设置页会显示版本、安装时间、更新时间和上次检查时间。安装时的 auto-update 偏好会被记录，但当前版本不会在后台自动下载或应用更新。缺少 checksum 时，需要移除后重新添加提供方。
           </p>
         </section>
       </article>
@@ -612,9 +613,10 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
           <ol>
             <li>You provide a registry URL or local file path such as <code>registry.json</code>.</li>
             <li>QuotaBarWin reads the registry, fetches each provider manifest, verifies optional checksums, and downloads source scripts.</li>
-            <li>Each script is cached locally. <code>builtin-js</code> uses embedded QuickJS and needs no Node.js; other runtimes can be <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path. Every officially maintained provider script uses <code>builtin-js</code>, so regular users never need to install a runtime.</li>
+            <li>Each script is cached locally. <code>builtin-js</code> uses embedded QuickJS and needs no Node.js; other runtimes can be <code>node</code>, <code>python</code>, <code>pwsh</code>, <code>bash</code>, or an absolute path. Every project-maintained provider script uses <code>builtin-js</code>, so regular users never need to install a runtime.</li>
             <li>On every refresh, QuotaBarWin runs the cached scripts and normalizes their results into quota windows.</li>
           </ol>
+          <p>Release packages embed the project-maintained provider scripts in the executable. A fresh installation installs them on first launch (disabled and pending setup); an upgrade only adds newly embedded providers and never overwrites an installed one. Later updates are still checked and applied manually in Settings.</p>
           <p>The same manifest can be installed more than once for multiple accounts. QuotaBarWin generates stable local provider ids such as <code>kimi-coding</code> and <code>kimi-coding-2</code>.</p>
         </section>
 
@@ -675,7 +677,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
               <tr><td><code>output</code></td><td>yes</td><td>Use <code>provider-snapshot-v1</code>.</td></tr>
               <tr><td><code>defaultConfig</code></td><td>no</td><td>Default local provider config written during first install. Updates do not overwrite user edits.</td></tr>
               <tr><td><code>parameters</code></td><td>no</td><td>Generates the structured post-install setup form. Fields can include <code>name</code>, <code>label</code>, <code>kind</code>, <code>required</code>, <code>defaultValue</code>, <code>placeholder</code>, <code>description</code>, <code>options</code>, <code>helpUrl</code>, and <code>advanced</code>. Never include real credentials.</td></tr>
-              <tr><td><code>checksums.source</code></td><td>no</td><td>Source SHA-256. Required for safe auto-update; <code>version</code> is display metadata and does not replace checksum verification.</td></tr>
+              <tr><td><code>checksums.source</code></td><td>no</td><td>Source SHA-256. Required for safe updates; <code>version</code> is display metadata and does not replace checksum verification.</td></tr>
             </tbody>
           </table>
           <h3>Guided setup fields</h3>
@@ -723,7 +725,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
             </tbody>
           </table>
           <p>Use synchronous JavaScript, Date, JSON, RegExp, Map, and Set. Promises, import, require, Node/Bun/Deno APIs, process, console, subprocesses, arbitrary sockets, arbitrary files, and dynamic loading are unavailable. Limits are 16 MiB memory, a 512 KiB JS stack, and Provider <code>timeoutSeconds</code>. <code>QBWIN_</code> is reserved and cannot be granted env/file access; use <code>qb.meta</code> for metadata and let <code>qb.http</code> use the proxy. URLs, auth formats, and response parsing remain Provider-owned.</p>
-          <p>The host validates the schema and minimum app version before an update. A host that is too old leaves its cached source and configuration untouched; apps that support only schema 1 reject schema 2 before downloading the new source, preventing an automatic update from making a Provider unrunnable. The current app still runs an already cached schema 1 <code>builtin-js</code> Provider, but will not install or update one remotely.</p>
+          <p>The host validates the schema and minimum app version before an update. A host that is too old leaves its cached source and configuration untouched; apps that support only schema 1 reject schema 2 before downloading the new source, preventing an update from making a Provider unrunnable. The current app still runs an already cached schema 1 <code>builtin-js</code> Provider, but will not install or update one remotely.</p>
         </section>
 
         <section>
@@ -776,7 +778,7 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
           <p>
             These examples call the Zhipu/BigModel quota endpoint and print a
             <code>provider-snapshot-v1</code> response. They all read the API key from
-            <code>BIGMODEL_API_KEY</code>. Every officially maintained provider uses
+            <code>BIGMODEL_API_KEY</code>. Every project-maintained provider uses
             <code>builtin-js</code>, and new providers are encouraged to do the same (zero
             user dependencies); the external-runtime examples below are kept for compatibility.
           </p>
@@ -994,10 +996,10 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
         <section>
           <h2>Security checklist</h2>
           <ul>
-            <li><strong>Only install and use remote providers you trust. Provider scripts can directly read the AI credentials configured for them and make network requests.</strong></li>
+            <li><strong>Only install and use remote providers you trust. Provider scripts can directly read the AI credentials configured for them and make network requests. Project-maintained providers bundled with the release are installed automatically, but they only read the credentials you configure for them; remove the ones you do not need in Settings.</strong></li>
             <li>Review source URL, runtime, and required env vars before installing.</li>
             <li>Prefer registries that include <code>providers[].checksum</code>.</li>
-            <li>Prefer manifests that include <code>checksums.source</code>; without it QuotaBarWin cannot auto-update safely.</li>
+            <li>Prefer manifests that include <code>checksums.source</code>; without it QuotaBarWin cannot verify updates safely.</li>
             <li>The cached source lives under <code>providers/remote/&lt;id&gt;/</code> in the app data directory, where <code>&lt;id&gt;</code> is the local installed instance id.</li>
           </ul>
         </section>
@@ -1005,10 +1007,10 @@ jq -n --arg updatedAt "$UPDATED_AT" --argjson windows "$WINDOWS" \
         <section>
           <h2>Examples and updates</h2>
           <p>
-            The repository's <code>examples/remote-providers/</code> directory contains Kimi, BigModel, Codex usage, and DeepSeek balance examples.
+            The repository's <code>examples/remote-providers/</code> directory contains Kimi, BigModel, Codex, OpenCode Go, DeepSeek, and 光阴似箭 (Time Flies) examples.
           </p>
           <p>
-            If the manifest contains <code>checksums.source</code>, use auto-update or the Settings page's Check Updates / Apply Update actions. Settings shows the version, install time, update time, and last check time. Without a checksum, remove and re-add the provider to update it.
+            If the manifest contains <code>checksums.source</code>, use the Settings page's Check Updates / Apply Update actions. Settings shows the version, install time, update time, and last check time. The install-time auto-update preference is recorded, but this version does not download or apply provider updates in the background. Without a checksum, remove and re-add the provider to update it.
           </p>
         </section>
       </article>

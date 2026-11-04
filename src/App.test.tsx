@@ -692,6 +692,39 @@ test("empty overview opens the provider catalog", async () => {
   expect(await screen.findByTestId("add-provider-page")).toBeInTheDocument();
 });
 
+test("empty overview points at already installed providers", async () => {
+  mocks.getConfig.mockResolvedValueOnce({
+    schemaVersion: 27,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "en",
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
+    providerBundle: {
+      seededProviderIds: ["remote-a"],
+    },
+    providers: [
+      {
+        ...buildRemoteProvider("remote-a", "Remote A"),
+        enabled: false,
+        setupState: "pending",
+      },
+    ],
+  });
+
+  render(<App />);
+
+  expect(await screen.findByTestId("provider-setup-empty-state")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Configure Providers" }));
+
+  expect(await screen.findByTestId("providers-settings-section")).toBeInTheDocument();
+  expect(screen.queryByTestId("add-provider-page")).not.toBeInTheDocument();
+});
+
 test("settings button returns from the provider catalog to the main settings page", async () => {
   render(<App />);
 

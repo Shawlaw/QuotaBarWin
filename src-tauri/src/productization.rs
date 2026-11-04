@@ -193,6 +193,12 @@ fn release_workflow_yaml_is_valid() {
         Some("write")
     );
     assert!(workflow.contains("tauri -- build --no-bundle"));
+    assert!(workflow.contains("providers:bundle:check"));
+    assert!(root
+        .join("src-tauri")
+        .join("src")
+        .join("provider_bundle.json")
+        .is_file());
     assert!(workflow.contains("Build CLI companion"));
     assert!(workflow.contains("--bin quotabarwin-cli"));
     assert!(workflow.contains("QuotaBarWin.Cli.exe"));

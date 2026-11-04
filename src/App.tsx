@@ -767,6 +767,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
 
   const hasSnapshot = snapshot !== null;
   const providers = snapshot?.providers ?? [];
+  const hasInstalledProviders = (config?.providers.length ?? 0) > 0;
 
   function rememberActiveScrollPosition() {
     if (settingsOpenRef.current) {
@@ -985,15 +986,25 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
                 provider.enabled && provider.setupState !== "pending" && provider.setupState !== "unverified"
               ) ? (
                 <section className="settings-empty provider-setup-empty" data-testid="provider-setup-empty-state">
-                  <h2>{t.providerSetup.noUsableProvidersTitle}</h2>
-                  <p>{t.providerSetup.noUsableProvidersBody}</p>
+                  <h2>
+                    {hasInstalledProviders
+                      ? t.providerSetup.installedProvidersTitle
+                      : t.providerSetup.noUsableProvidersTitle}
+                  </h2>
+                  <p>
+                    {hasInstalledProviders
+                      ? t.providerSetup.installedProvidersBody
+                      : t.providerSetup.noUsableProvidersBody}
+                  </p>
                   <div className="settings-actions">
                     <button
                       type="button"
                       className="button-primary"
-                      onClick={() => openSettings("add")}
+                      onClick={() => openSettings(hasInstalledProviders ? "main" : "add")}
                     >
-                      {t.providerSetup.addProvider}
+                      {hasInstalledProviders
+                        ? t.providerSetup.configureProviders
+                        : t.providerSetup.addProvider}
                     </button>
                     <button
                       type="button"

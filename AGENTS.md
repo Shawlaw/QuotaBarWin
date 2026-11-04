@@ -95,6 +95,10 @@ Start with these files:
   `src-tauri/src/remote_provider_runner.rs` for remote provider install/update,
   cache metadata, runtime resolution, execution, timeout, stderr diagnostics,
   and environment injection.
+- `src-tauri/src/bundled_providers.rs` and
+  `src-tauri/src/provider_bootstrap.rs` for the embedded Provider bundle
+  generated from `examples/remote-providers`, first-run/upgrade seeding, and
+  the `providerBundle.seededProviderIds` state.
 - `src-tauri/src/proxy.rs`, `src-tauri/src/logger.rs`, and
   `src-tauri/src/diagnostics.rs` for proxy priority, structured redacted logs,
   log rotation, and diagnostics export.
@@ -110,7 +114,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `26`.
+Current config schema version: `27`.
 
 Supported persisted provider config kind:
 
@@ -173,6 +177,16 @@ Remote provider public contract:
   from opted-out providers are still recorded in the local event history but
   are filtered out of toast and webhook delivery
   (`notifications::dispatch_events`).
+- Schema `26 -> 27` adds `providerBundle.seededProviderIds`, the list of
+  embedded Provider ids already offered to this installation. Release builds
+  embed `src-tauri/src/provider_bundle.json` (generated from
+  `examples/remote-providers` by `npm run providers:bundle`), and
+  `provider_bootstrap::seed_bundled_providers` installs Providers missing from
+  that list on startup. Ids stay recorded after removal, so an upgrade never
+  resurrects a Provider the user deleted. Fresh installations receive every
+  embedded Provider; existing installations only receive ids they have not seen.
+  Seeded Providers are installed disabled and `pending`, keep the GitHub `main`
+  registry/manifest URLs, and are never updated automatically.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.
@@ -328,6 +342,17 @@ Tests:
 npm run test -- --run
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
+
+Embedded Provider bundle:
+
+```powershell
+npm run providers:bundle
+npm run providers:bundle:check
+```
+
+Run `providers:bundle` whenever `examples/remote-providers` changes; the
+generated `src-tauri/src/provider_bundle.json` is embedded into the exe and
+`cargo test` fails when it drifts.
 
 Icons:
 

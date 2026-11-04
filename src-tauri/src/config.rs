@@ -15,7 +15,7 @@ use crate::{
     proxy::ProxyConfig,
 };
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 26;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 27;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_LOCAL_API_PORT: u16 = 41833;
@@ -91,6 +91,8 @@ pub struct AppConfig {
     pub secrets_encryption_prompt_pending: bool,
     #[serde(default)]
     pub remote_provider_registry: RemoteProviderRegistrySettings,
+    #[serde(default)]
+    pub provider_bundle: ProviderBundleSettings,
     pub providers: Vec<ProviderConfig>,
 }
 
@@ -274,6 +276,16 @@ impl Default for RemoteProviderRegistrySettings {
             sources: Vec::new(),
         }
     }
+}
+
+/// Tracks which embedded Providers have already been offered to this
+/// installation. Ids are kept after the Provider is removed so a later app
+/// upgrade never resurrects a Provider the user deliberately deleted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderBundleSettings {
+    #[serde(default)]
+    pub seeded_provider_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -597,6 +609,7 @@ pub fn default_config() -> AppConfig {
         secrets_storage: default_secret_storage_mode(),
         secrets_encryption_prompt_pending: false,
         remote_provider_registry: RemoteProviderRegistrySettings::default(),
+        provider_bundle: ProviderBundleSettings::default(),
         providers: Vec::new(),
     }
 }
@@ -1315,6 +1328,21 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(26);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(26);
+    if version < 27 {
+        // Embedded Providers are offered once per installation. Existing
+        // configurations start with an empty list: the next start installs the
+        // embedded Providers they do not have yet, then records them so later
+        // upgrades only add genuinely new ones.
+        if value.get("providerBundle").is_none() {
+            value["providerBundle"] = serde_json::json!({ "seededProviderIds": [] });
+        }
+        value["schemaVersion"] = serde_json::json!(27);
+    }
+
     Ok(value)
 }
 
@@ -1768,8 +1796,16 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
     let launch_at_startup = config.launch_at_startup;
     let theme = config.theme;
     let next_notifications = config.notifications.clone();
+    let mut config = config;
     let saved_path = path.clone();
     let previous_notifications = tauri::async_runtime::spawn_blocking(move || {
+        // Embedding bookkeeping belongs to the backend: keep the persisted list
+        // even when a frontend payload was built before the field existed.
+        if let Ok(contents) = fs::read_to_string(&saved_path) {
+            if let Ok(persisted) = serde_json::from_str::<AppConfig>(&contents) {
+                config.provider_bundle = persisted.provider_bundle;
+            }
+        }
         // Capture the persisted notification settings before the file is
         // overwritten so the cleanup below can compare pre-save and post-save
         // toast state.
@@ -2500,6 +2536,7 @@ mod tests {
             secrets_storage: default_secret_storage_mode(),
             secrets_encryption_prompt_pending: false,
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
+            provider_bundle: ProviderBundleSettings::default(),
             providers: vec![remote_provider_config("remote")],
         };
 
@@ -3489,6 +3526,31 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v26_adds_empty_provider_bundle_state() {
+        let value = serde_json::json!({
+            "schemaVersion": 26,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "providers": []
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(
+            migrated["providerBundle"]["seededProviderIds"],
+            serde_json::json!([])
+        );
+        let config: AppConfig =
+            serde_json::from_value(migrated).expect("migrated config deserializes");
+        assert!(config.provider_bundle.seeded_provider_ids.is_empty());
+    }
+
+    #[test]
     fn muted_notification_provider_ids_list_only_opted_out_providers() {
         let mut config = default_config();
         let mut muted_provider = remote_provider_config("remote-time");
@@ -3662,6 +3724,7 @@ mod tests {
                 auto_update: false,
                 sources: Vec::new(),
             },
+            provider_bundle: ProviderBundleSettings::default(),
             providers: vec![ProviderConfig::Remote {
                 id: "provider".to_string(),
                 name: "Provider".to_string(),

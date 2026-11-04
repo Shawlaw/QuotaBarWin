@@ -37,6 +37,15 @@ const e2eManagedSecretRoot = path.join(
 );
 const trayPopupLabel = "tray-popup";
 
+function bundledProviderIds() {
+  const bundlePath = path.join(root, "src-tauri", "src", "provider_bundle.json");
+  if (!fs.existsSync(bundlePath)) {
+    return [];
+  }
+  const bundle = JSON.parse(fs.readFileSync(bundlePath, "utf8"));
+  return (bundle.providers ?? []).map((provider) => provider.id);
+}
+
 let driverProcess;
 let app;
 
@@ -558,6 +567,11 @@ function writeE2eConfig() {
           providerProxyUrl: null,
           autoUpdate: false,
           sources: []
+        },
+        // The E2E suite supplies its own synthetic providers and must not have
+        // the embedded official providers auto-installed on startup.
+        providerBundle: {
+          seededProviderIds: bundledProviderIds()
         },
         providers: [fixtureProvider, slowProvider, setupProvider]
       },

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 2,
+  "id": "opencode-go",
+  "displayName": "OpenCode Go",
+  "version": "1.0.0",
+  "minAppVersion": "1.1.0",
+  "description": "OpenCode Go subscription 5h, weekly, and monthly quota usage via remote provider script.",
+  "runtime": "builtin-js",
+  "entry": "provider.js",
+  "requiredEnvVars": ["OPENCODE_GO_API_KEY"],
+  "output": "provider-snapshot-v1",
+  "permissions": ["env:OPENCODE_GO_API_KEY", "net:https://opencode.ai"],
+  "defaultConfig": {
+    "name": "OpenCode Go",
+    "visibleWindowIds": ["5h", "weekly", "monthly"],
+    "windowLabelOverrides": {
+      "5h": "5小时限",
+      "weekly": "周限",
+      "monthly": "月限"
+    },
+    "envVars": {
+      "OPENCODE_GO_API_KEY": "${secret:OPENCODE_GO_API_KEY}"
+    }
+  },
+  "parameters": [
+    {
+      "name": "OPENCODE_GO_API_KEY",
+      "label": "OpenCode Go API Key",
+      "kind": "secret",
+      "required": true,
+      "defaultValue": "${secret:OPENCODE_GO_API_KEY}",
+      "description": "API key for an account with an active OpenCode Go subscription. Create it in the OpenCode Console.",
+      "helpUrl": "https://opencode.ai/console"
+    }
+  ],
+  "checksums": {
+    "source": "sha256:1be986426cf0a585e37eef2070d6a2671d5f68df02c6013446818c90a15336a9"
+  }
+}

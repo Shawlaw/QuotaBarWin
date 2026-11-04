@@ -578,7 +578,7 @@ fn install_remote_provider_from_manifest(
     install_remote_provider_from_source(path, url, auto_update, manifest, source, log)
 }
 
-fn install_remote_provider_from_source(
+pub(crate) fn install_remote_provider_from_source(
     path: &Path,
     url: &str,
     auto_update: bool,

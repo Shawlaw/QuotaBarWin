@@ -4,6 +4,7 @@ mod app_identity;
 mod app_info;
 mod app_update;
 mod builtin_js;
+mod bundled_providers;
 mod cli;
 mod config;
 mod diagnostics;
@@ -17,6 +18,7 @@ mod managed_secret_store;
 mod notifications;
 #[cfg(test)]
 mod productization;
+mod provider_bootstrap;
 mod provider_error;
 mod provider_setup;
 mod proxy;
@@ -194,6 +196,15 @@ pub fn run() {
                         logger::LogLevel::Warn,
                         "app",
                         &format!("provider cache path migration failed: {error}"),
+                    );
+                }
+                if let Err(error) =
+                    crate::provider_bootstrap::seed_bundled_providers(&path, Some(&log))
+                {
+                    let _ = log.write_unfiltered(
+                        logger::LogLevel::Warn,
+                        "app",
+                        &format!("bundled provider seeding failed: {error}"),
                     );
                 }
                 let _ = log.write_unfiltered(

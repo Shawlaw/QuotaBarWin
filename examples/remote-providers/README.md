@@ -32,6 +32,7 @@ https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-provi
 | `kimi-coding` | `GET https://api.kimi.com/coding/v1/usages` | `KIMI_API_KEY` | [`api.md`](kimi-coding/api.md) / [`EN`](kimi-coding/api.en.md) | Kimi 编程额度用量。 |
 | `bigmodel-coding-plan` | `GET https://open.bigmodel.cn/api/monitor/usage/quota/limit` | `BIGMODEL_API_KEY` | [`api.md`](bigmodel-coding-plan/api.md) / [`EN`](bigmodel-coding-plan/api.en.md) | 智谱 / BigModel 编程套餐额度。 |
 | `codex-usage` | `GET https://chatgpt.com/backend-api/wham/usage` | 默认无 | [`api.md`](codex-usage/api.md) / [`EN`](codex-usage/api.en.md) | ChatGPT / Codex 5h 与 weekly 用量。默认读取 `~/.codex/auth.json`；可选 `CODEX_ACCESS_TOKEN`、`CODEX_ACCOUNT_ID` 或 `CODEX_AUTH_FILE` 覆盖本地 Codex auth 文件；支持通过 `QBWIN_PROXY_URL` 注入运行时代理。 |
+| `opencode-go` | `GET https://opencode.ai/zen/go/v1/usage` | `OPENCODE_GO_API_KEY` | [`api.md`](opencode-go/api.md) / [`EN`](opencode-go/api.en.md) | OpenCode Go 订阅的 5 小时 / 本周 / 本月额度用量。只返回百分比，不返回余额；API Key 在 OpenCode Console 的 Go 页面创建。 |
 | `deepseek-balance` | `GET https://api.deepseek.com/user/balance` | `DEEPSEEK_API_KEY` | [`api.md`](deepseek-balance/api.md) / [`EN`](deepseek-balance/api.en.md) | DeepSeek 按量付费余额。可选 `DEEPSEEK_BALANCE_REFERENCE_TOTAL`、`DEEPSEEK_BALANCE_WARNING` 和 `DEEPSEEK_BALANCE_CURRENCY`；也可以追加 `_CNY` 或其他币种代码做按币种覆盖。 |
 | `time-flies` | 本机时区与当前时间 | 无 | [`api.md`](time-flies/api.md) / [`EN`](time-flies/api.en.md) | 光阴似箭：以分钟显示本日、本周（周一 / 周日开始）、本月和本年的剩余时间；不访问网络或账号凭据。 |
 
@@ -82,3 +83,5 @@ sha256sum provider.js
 然后将 `checksums.source` 设置为 `sha256:<hex>`。
 
 如果修改 `provider.json` 本身，包括 `version` 等展示元数据，也需要重新计算该 manifest 的 checksum 并更新 `registry.json`。
+
+修改示例提供方后，还需要运行 `npm run providers:bundle` 重新生成内置 bundle（`src-tauri/src/provider_bundle.json`）；`npm run providers:bundle:check` 和 `cargo test` 会校验它是否与示例目录一致。

@@ -30,6 +30,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Check provider bundle
+        run: npm run providers:bundle:check
+
       - name: Build frontend
         run: npm run build
 

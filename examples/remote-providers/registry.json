@@ -17,6 +17,11 @@
       "checksum": "sha256:cc9380998a657e533c72a3159f4a722dad38fcaea2fea7c7c9d6acd8477792a3"
     },
     {
+      "id": "opencode-go",
+      "providerUrl": "opencode-go/provider.json",
+      "checksum": "sha256:61d301e16dbba63a645cd91168db0ca98b9d8d4eac35547badbc49cb491b5196"
+    },
+    {
       "id": "deepseek-balance",
       "providerUrl": "deepseek-balance/provider.json",
       "checksum": "sha256:8390c7338addbca2f26980d5331e34db0c93ac7ba842fa999fceb8128dcd847e"

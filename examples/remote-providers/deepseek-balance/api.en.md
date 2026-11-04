@@ -2,7 +2,7 @@
 
 Default documentation is Simplified Chinese: [`api.md`](api.md).
 
-This file documents the request, response shape, and field mapping used by `deepseek-balance/provider.js` (`builtin-js`). It describes the example provider implementation, not a stable official third-party API contract. If the API changes, update the script and this document together.
+This file documents the request, response shape, and field mapping used by `deepseek-balance/provider.js` (`builtin-js`). It describes the example provider implementation, not a stable public third-party API contract. If the API changes, update the script and this document together.
 
 ## Request
 

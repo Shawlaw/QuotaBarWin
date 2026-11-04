@@ -2,6 +2,13 @@
 
 本文记录 QuotaBarWin 的用户可见变化。默认以简体中文维护；英文对照版见 [CHANGELOG.en.md](CHANGELOG.en.md)。
 
+## [Unreleased]
+
+### Added
+
+- 新增 OpenCode Go 订阅额度提供方：展示 5 小时、本周和本月用量百分比，使用 `OPENCODE_GO_API_KEY`。
+- 发布包内置项目维护的提供方脚本（Kimi、BigModel、Codex、OpenCode Go、DeepSeek、光阴似箭）：全新安装首次启动会自动安装这些提供方（停用、待配置状态），不需要先联网拉取 registry；升级时只补装新增的提供方，不会覆盖已安装的提供方。后续更新仍从 GitHub `main` 源手动检查并应用。
+
 ## [1.7.0] - 2026-11-04
 
 ### Added

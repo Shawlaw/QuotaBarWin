@@ -2,6 +2,13 @@
 
 This file records user-visible changes in QuotaBarWin. Simplified Chinese counterpart: [CHANGELOG.md](CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+
+- Added the OpenCode Go subscription usage provider: it shows 5-hour, weekly, and monthly usage percentages and uses `OPENCODE_GO_API_KEY`.
+- Release packages now embed the project-maintained Provider scripts (Kimi, BigModel, Codex, OpenCode Go, DeepSeek, and Time Flies): a fresh installation installs them on first launch (disabled and pending setup) without fetching the registry first, while an upgrade only adds newly embedded Providers and never overwrites an installed one. Later updates are still checked and applied manually from the GitHub `main` source.
+
 ## [1.7.0] - 2026-11-04
 
 ### Added

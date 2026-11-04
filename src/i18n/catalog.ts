@@ -501,6 +501,9 @@ export type I18nCatalog = {
     noUsableProvidersTitle: string;
     noUsableProvidersBody: string;
     addProvider: string;
+    installedProvidersTitle: string;
+    installedProvidersBody: string;
+    configureProviders: string;
     openGuide: string;
   };
   format: {
@@ -1104,6 +1107,10 @@ export const en: I18nCatalog = {
     noUsableProvidersTitle: "No quota source is ready yet",
     noUsableProvidersBody: "Add a Provider and set up an account to see quota information here.",
     addProvider: "Add Provider",
+    installedProvidersTitle: "Providers are installed and ready to configure",
+    installedProvidersBody:
+      "Finish setting up an account to see quota information here.",
+    configureProviders: "Configure Providers",
     openGuide: "View guide"
   },
   format: {
@@ -1698,6 +1705,9 @@ export const zhCN: I18nCatalog = {
     noUsableProvidersTitle: "还没有可用的额度来源",
     noUsableProvidersBody: "添加一个提供方并配置账号后，即可在这里查看额度。",
     addProvider: "添加提供方",
+    installedProvidersTitle: "提供方已安装，等待配置",
+    installedProvidersBody: "完成账号配置后即可在这里查看额度。",
+    configureProviders: "去配置提供方",
     openGuide: "查看使用说明"
   },
   format: {

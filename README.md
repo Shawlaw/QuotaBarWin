@@ -34,7 +34,7 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 - 分发方式：**绿色版 portable zip + 单 exe**
 - 当前版本：**v1.7.0**
 - 技术栈：Tauri 2、Rust 2021、React 19、TypeScript、Vite
-- 当前配置 schema version：**26**
+- 当前配置 schema version：**27**
 
 ---
 
@@ -65,7 +65,9 @@ QuotaBarWin 发布包不会内置你的账号凭据，也不会默认启用某�
 
 [QuotaBarWin 项目维护的提供方 registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
 
-**安全提示：只安装使用可信任的提供方。`builtin-js` 只能访问 manifest 明确声明的环境变量、文件和网络 origin；外部 runtime 提供方则按其自身 runtime 的权限运行。**
+**安全提示：只安装使用可信任的提供方。`builtin-js` 只能访问 manifest 明确声明的环境变量、文件和网络 origin；外部 runtime 提供方则按其自身 runtime 的权限运行。随发布包内置的项目维护提供方会自动安装，但同样只在你填写并保存凭据后才会读取对应凭据；不需要的可以在设置中删除。**
+
+发布包会把项目维护的提供方脚本内置进 exe。全新安装首次启动时会自动安装这些提供方（停用、待配置状态），不需要联网从 GitHub 下载；升级时只补装新增的内置提供方，不会覆盖已安装的提供方。后续更新仍从上面的 `main` registry 手动检查并应用。当前内置：Kimi Coding Usage、BigModel Coding Plan、Codex Usage、OpenCode Go、DeepSeek Balance、光阴似箭（Time Flies）。
 
 应用内也可以随时打开这份指南：**设置 → 左侧导航底部「使用说明」**，内容会在系统浏览器中打开（同一页面内置中英文切换）。
 
@@ -77,25 +79,29 @@ QuotaBarWin 发布包不会内置你的账号凭据，也不会默认启用某�
 
 ### 2. 选择项目维护的提供方
 
-QuotaBarWin 项目维护的 registry 当前包含以下 manifest；实际可安装列表以 registry 为准：
+QuotaBarWin 项目维护的提供方当前包括以下 manifest；发布包会内置这些脚本，实际可安装列表仍以 registry 为准：
 
 | Manifest ID | 显示名称 | 监控内容 | 常用凭据 / 配置 |
 |---|---|---|---|
 | `kimi-coding` | Kimi Coding Usage | Kimi coding quota 用量 | `KIMI_API_KEY` |
 | `bigmodel-coding-plan` | BigModel Coding Plan | 智谱 / BigModel coding plan 额度 | `BIGMODEL_API_KEY` |
 | `codex-usage` | Codex Usage | ChatGPT / Codex 5h 与 weekly 用量 | 默认读取本机 Codex auth，可用 `CODEX_ACCESS_TOKEN` 等覆盖；代理见第 5 节。 |
+| `opencode-go` | OpenCode Go | OpenCode Go 订阅的 5h / 周 / 月额度 | `OPENCODE_GO_API_KEY`（在 OpenCode Console 的 Go 页面创建；只返回百分比，不含余额）。 |
 | `deepseek-balance` | DeepSeek Balance | DeepSeek 按量付费余额 | `DEEPSEEK_API_KEY`，可选参考总额、低余额阈值和币种。 |
 | `time-flies` | 光阴似箭 (Time Flies) | 以分钟显示本日、本周、本月和本年余时 | 无；只读取本机时区和当前时间。 |
 
-### 3. 安装提供方
+### 3. 安装或配置提供方
 
 **安装前请再次确认来源可信。提供方脚本会在你的机器上运行，可以读取你配置给它的 token、API key、Cookie、账号 ID 等鉴权信息，并访问网络。**
 
-1. 打开 **设置 → 提供方 → 添加提供方**。
-2. 默认会加载 QuotaBarWin 项目维护的提供方来源；如果列表为空，可以在 **管理来源** 中填入上面的 registry URL。首次加载以及点击 **刷新列表** 时，应用会联网拉取 registry、manifest 和对应脚本，并保存校验成功的本地缓存。
-3. 之后打开添加页会优先显示上次成功缓存的目录和缓存时间，不会自动联网检查最新版本。需要新版本时点击 **刷新列表**；如果重新拉取失败，会继续显示旧缓存。目录安装和 **添加账号** 都优先使用这份缓存，因此之前缓存成功后，即使暂时断网也能继续添加。
-4. 点击需要的提供方的 **安装**。应用会立即打开该账号的配置表单；新实例在验证成功前默认停用，不参与周期刷新。
-5. 同一提供方需要多个账号时，再次点击已安装项的 **添加账号**。自定义 manifest URL 安装仍会在点击时在线拉取，不使用目录缓存。
+发布包已经内置项目维护的提供方。全新安装首次启动后，它们会以「待配置」状态出现在 **设置 → 提供方**，不需要先联网下载或点击安装。
+
+1. 打开 **设置 → 提供方**，选择要使用的提供方，点击 **配置** 填写账号和凭据。
+2. 需要额外提供方，或同一提供方的更多账号时，再打开 **设置 → 提供方 → 添加提供方**。
+3. 添加页默认加载 QuotaBarWin 项目维护的提供方来源；如果列表为空，可以在 **管理来源** 中填入上面的 registry URL。首次加载以及点击 **刷新列表** 时，应用会联网拉取 registry、manifest 和对应脚本，并保存校验成功的本地缓存。
+4. 之后打开添加页会优先显示上次成功缓存的目录和缓存时间，不会自动联网检查最新版本。需要新版本时点击 **刷新列表**；如果重新拉取失败，会继续显示旧缓存。目录安装和 **添加账号** 都优先使用这份缓存，因此之前缓存成功后，即使暂时断网也能继续添加。
+5. 点击需要的提供方的 **安装**。应用会立即打开该账号的配置表单；新实例在验证成功前默认停用，不参与周期刷新。
+6. 同一提供方需要多个账号时，再次点击已安装项的 **添加账号**。自定义 manifest URL 安装仍会在点击时在线拉取，不使用目录缓存。
 
 ### 4. 配置凭据
 
@@ -215,7 +221,7 @@ QuotaBarWin 的核心架构原则是：**提供方是唯一对外数据抽象**�
 
 | Kind | 来源 | 说明 |
 |---|---|---|
-| `remote` | 缓存提供方脚本 | 从 registry / manifest 安装。官方提供方使用内置 `builtin-js`；也兼容 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
+| `remote` | 缓存提供方脚本 | 从 registry / manifest 安装。项目维护的提供方使用内置 `builtin-js`；也兼容 `node`、`python`、`pwsh`、`bash` 或绝对路径。 |
 
 ---
 

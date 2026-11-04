@@ -1338,6 +1338,40 @@ mod tests {
             .expect("Kimi snapshot")
     }
 
+    fn run_official_opencode_go_source(raw: serde_json::Value) -> ProviderSnapshot {
+        let provider_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root")
+            .join("examples")
+            .join("remote-providers")
+            .join("opencode-go");
+        let manifest = load_cached_manifest(&provider_dir).expect("OpenCode Go manifest");
+        let source = std::fs::read_to_string(provider_dir.join(&manifest.entry))
+            .expect("OpenCode Go source")
+            .replace(
+                "const raw = fetchOpenCodeGoUsage(qb, apiKey);",
+                &format!(
+                    "const raw = {};",
+                    serde_json::to_string(&raw).expect("OpenCode Go fixture JSON")
+                ),
+            );
+        let env = HashMap::from([("OPENCODE_GO_API_KEY".to_string(), "test-token".to_string())]);
+        let result = run_builtin_js_provider(BuiltinJsRun {
+            provider_id: "opencode-go",
+            provider_name: "OpenCode Go",
+            manifest: &manifest,
+            source: &source,
+            env: &env,
+            sensitive_values: &[],
+            timeout: Duration::from_secs(2),
+            proxy_url: None,
+            log: None,
+        })
+        .expect("OpenCode Go builtin-js result");
+        parse_remote_provider_snapshot_v1("opencode-go", "OpenCode Go", &result.json)
+            .expect("OpenCode Go snapshot")
+    }
+
     fn node_command(script: &str) -> RemoteCommandSpec {
         RemoteCommandSpec {
             executable: "node".to_string(),
@@ -1393,6 +1427,70 @@ mod tests {
         assert_eq!(weekly.used_percent, Some(15.0));
         assert_eq!(weekly.remaining_percent, Some(85.0));
         assert_eq!(weekly.confidence, "exact");
+    }
+
+    #[test]
+    fn builtin_opencode_go_maps_usage_percentages() {
+        let provider = run_official_opencode_go_source(serde_json::json!({
+            "usage": {
+                "mine": true,
+                "useBalance": false,
+                "rolling": { "status": "ok", "percent": 12, "resetsAt": "2026-11-04T13:20:00.000Z" },
+                "weekly": { "status": "ok", "percent": 34, "resetsAt": "2026-11-09T00:00:00.000Z" },
+                "monthly": { "status": "ok", "percent": 56, "resetsAt": "2026-12-03T08:30:00.000Z" }
+            }
+        }));
+
+        assert_eq!(provider.status, "ok");
+        let ids = provider
+            .windows
+            .iter()
+            .map(|window| window.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["5h", "weekly", "monthly"]);
+
+        let five_hour = &provider.windows[0];
+        assert_eq!(five_hour.used_percent, Some(12.0));
+        assert_eq!(five_hour.remaining_percent, Some(88.0));
+        assert_eq!(five_hour.used, None);
+        assert_eq!(five_hour.limit, None);
+        assert_eq!(five_hour.unit.as_deref(), Some("percent"));
+        assert_eq!(
+            five_hour.reset_at.as_deref(),
+            Some("2026-11-04T13:20:00.000Z")
+        );
+        assert_eq!(five_hour.confidence, "exact");
+
+        let metadata = provider.metadata.expect("metadata");
+        assert_eq!(metadata["useBalance"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn builtin_opencode_go_accepts_console_window_fields() {
+        let provider = run_official_opencode_go_source(serde_json::json!({
+            "usage": {
+                "rollingUsage": { "status": "ok", "resetInSec": 3600, "usagePercent": 25 },
+                "weeklyUsage": { "status": "ok", "resetInSec": 172800, "usagePercent": 50 },
+                "monthlyUsage": { "status": "ok", "resetInSec": 864000, "usagePercent": 75 }
+            }
+        }));
+
+        assert_eq!(provider.windows.len(), 3);
+        assert_eq!(provider.windows[0].id, "5h");
+        assert_eq!(provider.windows[0].used_percent, Some(25.0));
+        assert_eq!(provider.windows[0].remaining_percent, Some(75.0));
+        assert!(provider.windows[0].reset_at.is_some());
+        assert_eq!(provider.windows[2].used_percent, Some(75.0));
+    }
+
+    #[test]
+    fn builtin_opencode_go_warns_when_no_window_is_recognized() {
+        let provider = run_official_opencode_go_source(serde_json::json!({
+            "usage": { "mine": true, "useBalance": false }
+        }));
+
+        assert_eq!(provider.status, "warning");
+        assert!(provider.windows.is_empty());
     }
 
     #[test]
@@ -1789,6 +1887,7 @@ mod tests {
             "bigmodel-coding-plan",
             "deepseek-balance",
             "codex-usage",
+            "opencode-go",
         ] {
             let provider_dir = providers_root.join(provider_id);
             let manifest = load_cached_manifest(&provider_dir).expect("manifest");
