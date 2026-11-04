@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appVersion": "1.7.0",
+  "appVersion": "1.8.0",
   "registryUrl": "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json",
   "providers": [
     {

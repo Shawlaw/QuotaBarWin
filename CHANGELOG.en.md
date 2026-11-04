@@ -2,7 +2,7 @@
 
 This file records user-visible changes in QuotaBarWin. Simplified Chinese counterpart: [CHANGELOG.md](CHANGELOG.md).
 
-## [Unreleased]
+## [1.8.0] - 2026-11-04
 
 ### Added
 
