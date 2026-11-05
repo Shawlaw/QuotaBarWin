@@ -363,7 +363,7 @@ Windows release 由 `.github/workflows/release.yml` 生成。当前发布工作�
 QuotaBarWin_<version>_windows_x64_portable_<commit>.zip
 ```
 
-zip 内包含 `quotabarwin.portable`，解压后默认使用可执行文件旁的 portable 配置。推送 `v*` tag 时，zip 会上传为 GitHub Release asset，并自动将 `CHANGELOG.md` 中对应版本的段落写入 Release 说明；手动触发工作流时会保留为 Actions artifact。
+zip 内包含 `quotabarwin.portable`，解压后默认使用可执行文件旁的 portable 配置。推送 `v*` tag 时，zip 会上传为 GitHub Release asset，并自动将 `CHANGELOG.md` 中对应版本的段落写入 Release 说明；同一份说明（中文与英文对照）还会作为 `updates/notes/<version>.md` / `<version>.en.md` 提交回 `main` 分支，更新清单的 `notesUrl` 指向该 raw 文件，供应用内"应用更新"设置页直接展示。手动触发工作流时会保留为 Actions artifact。
 
 ### 应用自动更新发布配置
 

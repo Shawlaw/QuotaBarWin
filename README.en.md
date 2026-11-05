@@ -364,7 +364,7 @@ Windows releases are produced by `.github/workflows/release.yml`. The current re
 QuotaBarWin_<version>_windows_x64_portable_<commit>.zip
 ```
 
-The zip includes `quotabarwin.portable`, so extracted releases use portable config beside the executable by default. On `v*` tags, the zip is uploaded as a GitHub Release asset and the matching `CHANGELOG.md` section becomes the Release notes; manual workflow runs keep it as an Actions artifact.
+The zip includes `quotabarwin.portable`, so extracted releases use portable config beside the executable by default. On `v*` tags, the zip is uploaded as a GitHub Release asset and the matching `CHANGELOG.md` section becomes the Release notes; the same notes (Chinese plus the English counterpart) are also committed back to the `main` branch as `updates/notes/<version>.md` / `<version>.en.md`, and the update manifest's `notesUrl` points at that raw file so the in-app application-update settings page can render it. Manual workflow runs keep the zip as an Actions artifact.
 
 ### Application-update release setup
 

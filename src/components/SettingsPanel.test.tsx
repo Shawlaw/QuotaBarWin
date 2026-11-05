@@ -152,6 +152,7 @@ const apiMocks = vi.hoisted(() => {
       failed: [],
     })),
     openAppUpdateNotes: vi.fn(async () => undefined),
+    fetchAppUpdateNotes: vi.fn(async () => "## [1.0.4]\n\n- Mocked in-app release notes.\n"),
     openRemoteProviderGuide: vi.fn(async () => undefined),
     previewRemoteProviderRegistry: vi.fn(async () => ({
       entries: [

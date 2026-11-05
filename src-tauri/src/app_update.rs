@@ -37,6 +37,11 @@ const APP_UPDATE_HELPER_COPY_PREFIX: &str = "helper-";
 const APP_UPDATE_HELPER_COPY_SUFFIX: &str = ".exe";
 const APP_UPDATE_HELPER_CLEANUP_RETRY_DELAY: Duration = Duration::from_millis(250);
 const APP_UPDATE_HELPER_CLEANUP_MAX_RETRIES: usize = 40;
+const RELEASE_NOTES_TIMEOUT: Duration = Duration::from_secs(10);
+const RELEASE_NOTES_SIZE_LIMIT: usize = 256 * 1024;
+const RAW_RELEASE_NOTES_URL_PREFIX: &str =
+    "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/";
+const RAW_RELEASE_NOTES_PATH_PREFIX: &str = "updates/notes/";
 const MAIN_WINDOW_LABEL: &str = "main";
 #[cfg(any(debug_assertions, feature = "update-preview"))]
 const APP_UPDATE_DEMO_ENV: &str = "QBWIN_DEMO_APP_UPDATE";
@@ -358,6 +363,165 @@ pub async fn dismiss_app_update_notice(
     let info = info_from_cache(&cache, app_updates_are_configured(), downloaded);
     emit_update_status(&app, &info, false);
     Ok(info)
+}
+
+/// Fetches the release notes of the currently offered update for in-app
+/// display. The signed manifest only carries a `notesUrl`, so the note body is
+/// downloaded separately and failures never affect update checking or
+/// downloading. English UIs prefer `<file>.en.md` and fall back to the default
+/// note when the English file is missing.
+#[tauri::command]
+pub async fn fetch_app_update_notes(
+    app: AppHandle,
+    state: State<'_, AppUpdateState>,
+    language: String,
+) -> Result<String, String> {
+    // Dev/demo preview notes come from the in-memory demo state; every other
+    // build resolves the notes URL from the persisted update status.
+    #[cfg(any(debug_assertions, feature = "update-preview"))]
+    let demo_notes_url = demo_update_preview_mode()
+        .is_some()
+        .then(|| {
+            state
+                .inner
+                .lock()
+                .ok()
+                .and_then(|inner| inner.demo_info.clone())
+                .and_then(|info| info.notes_url)
+        })
+        .flatten();
+    #[cfg(not(any(debug_assertions, feature = "update-preview")))]
+    let demo_notes_url: Option<String> = None;
+
+    let app_for_notes = app.clone();
+    let language_for_task = language.clone();
+    let markdown = tauri::async_runtime::spawn_blocking(move || {
+        let notes_url = demo_notes_url
+            .or_else(|| current_cached_notes_url(&app_for_notes))
+            .ok_or_else(|| "No application update is currently available".to_string())?;
+        if !is_fetchable_notes_url(&notes_url) {
+            // Manifests published before in-app notes existed point at the
+            // GitHub release page, which is not a fetchable Markdown note.
+            return Err(
+                "Release notes are not available in the app for this update version".to_string(),
+            );
+        }
+        let proxy_url = update_notes_proxy_url(&app_for_notes);
+        fetch_notes_with_language_preference(proxy_url.as_deref(), &notes_url, &language_for_task)
+    })
+    .await
+    .map_err(redacted_error)??;
+
+    log_app_update_event(
+        &app,
+        LogLevel::Info,
+        &format!("release notes fetched language={language}"),
+    );
+    Ok(markdown)
+}
+
+/// Notes URL of the currently offered update, resolved from the persisted
+/// status cache. Mirrors the availability gating of [`info_from_cache`] so
+/// notes are never served for a version that is no longer offered.
+fn current_cached_notes_url(app: &AppHandle) -> Option<String> {
+    let cache = load_status_cache_for_app(app).ok()?;
+    info_from_cache(&cache, true, false).notes_url
+}
+
+fn update_notes_proxy_url(app: &AppHandle) -> Option<String> {
+    let path = crate::config::config_path_for_app(app).ok()?;
+    let config = crate::config::load_or_create_config(&path).ok()?.config;
+    crate::proxy::select_proxy_url(None, config.network_proxy.as_ref())
+}
+
+/// Fetches release notes from the first URL that responds successfully. The
+/// English candidate is tried first for English UIs; a missing English file
+/// must not surface as an error while the default note still loads.
+fn fetch_notes_with_language_preference(
+    proxy_url: Option<&str>,
+    notes_url: &str,
+    language: &str,
+) -> Result<String, String> {
+    let mut urls = Vec::new();
+    if language.eq_ignore_ascii_case("en") {
+        if let Some(english_url) = english_notes_url(notes_url) {
+            urls.push(english_url);
+        }
+    }
+    urls.push(notes_url.to_string());
+
+    let mut last_error = String::from("No release notes URL was requested");
+    for url in &urls {
+        match fetch_release_notes_markdown(proxy_url, url) {
+            Ok(markdown) => return Ok(markdown),
+            Err(error) => last_error = error,
+        }
+    }
+    Err(last_error)
+}
+
+fn english_notes_url(notes_url: &str) -> Option<String> {
+    if notes_url.ends_with(".en.md") {
+        return None;
+    }
+    notes_url
+        .strip_suffix(".md")
+        .map(|base| format!("{base}.en.md"))
+}
+
+/// Release-note URLs are restricted to the project's raw GitHub notes files.
+/// Manifests published before in-app notes existed point at the GitHub release
+/// page instead and must fail this gate so the UI falls back to the external
+/// button.
+fn is_fetchable_notes_url(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix(RAW_RELEASE_NOTES_URL_PREFIX) else {
+        return false;
+    };
+    let Some((reference, path)) = rest.split_once('/') else {
+        return false;
+    };
+    if reference.is_empty() || !reference.bytes().all(is_valid_notes_url_byte) {
+        return false;
+    }
+    let Some(file) = path.strip_prefix(RAW_RELEASE_NOTES_PATH_PREFIX) else {
+        return false;
+    };
+    file.ends_with(".md") && file.bytes().all(is_valid_notes_url_byte)
+}
+
+fn is_valid_notes_url_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_')
+}
+
+/// Blocking release-notes download: short timeout, hard size limit, and a
+/// cache-busting header so a just-published note is not served stale.
+fn fetch_release_notes_markdown(proxy_url: Option<&str>, url: &str) -> Result<String, String> {
+    let mut builder = reqwest::blocking::Client::builder().timeout(RELEASE_NOTES_TIMEOUT);
+    if let Some(proxy_url) = proxy_url.map(str::trim).filter(|value| !value.is_empty()) {
+        let proxy = reqwest::Proxy::all(proxy_url)
+            .map_err(|error| format!("release notes proxy is invalid: {error}"))?;
+        builder = builder.proxy(proxy);
+    }
+    let client = builder
+        .build()
+        .map_err(|error| format!("release notes client failed: {error}"))?;
+
+    let response = client
+        .get(url)
+        .header(reqwest::header::CACHE_CONTROL, "no-cache")
+        .send()
+        .map_err(|error| format!("release notes request failed: {error}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("release notes http {}", status.as_u16()));
+    }
+    let bytes = response
+        .bytes()
+        .map_err(|error| format!("release notes body failed: {error}"))?;
+    if bytes.len() > RELEASE_NOTES_SIZE_LIMIT {
+        return Err("release notes exceed the size limit".to_string());
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 #[tauri::command]
@@ -762,7 +926,12 @@ fn demo_update_info() -> AppUpdateInfo {
         current_version: current_version(),
         available: true,
         version: Some("1.2.3-demo".to_string()),
-        notes_url: Some("https://github.com/Shawlaw/QuotaBarWin/releases".to_string()),
+        // Points at the published raw note for the latest release so the demo
+        // exercises the real in-app release-notes fetch path.
+        notes_url: Some(
+            "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/notes/v1.8.0.md"
+                .to_string(),
+        ),
         downloaded: false,
         checked_at: Some(Local::now().to_rfc3339()),
         error: None,
@@ -1588,5 +1757,180 @@ mod tests {
         assert!(official_helper.exists());
         assert!(package.exists());
         assert!(helper_named_directory.is_dir());
+    }
+
+    #[test]
+    fn release_notes_urls_are_limited_to_project_raw_notes_files() {
+        assert!(is_fetchable_notes_url(
+            "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/notes/v1.8.0.md"
+        ));
+        assert!(is_fetchable_notes_url(
+            "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/notes/v1.8.0.en.md"
+        ));
+        assert!(is_fetchable_notes_url(
+            "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/v1.8.0/updates/notes/v1.8.0.md"
+        ));
+
+        // Manifests published before in-app notes existed point at the GitHub
+        // release page instead of a fetchable Markdown note.
+        assert!(!is_fetchable_notes_url(
+            "https://github.com/Shawlaw/QuotaBarWin/releases/tag/v1.8.0"
+        ));
+        assert!(!is_fetchable_notes_url(
+            "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/stable.json"
+        ));
+        assert!(!is_fetchable_notes_url(
+            "https://raw.githubusercontent.com/example/other/main/updates/notes/v1.0.0.md"
+        ));
+        assert!(!is_fetchable_notes_url(
+            "http://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/notes/v1.0.0.md"
+        ));
+        assert!(!is_fetchable_notes_url(
+            "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/notes/v1.0.0.txt"
+        ));
+        assert!(!is_fetchable_notes_url(
+            "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/other/notes/v1.0.0.md"
+        ));
+        assert!(!is_fetchable_notes_url(
+            "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/notes/../secret.md"
+        ));
+    }
+
+    #[test]
+    fn english_notes_url_is_derived_from_the_default_note() {
+        assert_eq!(
+            english_notes_url(
+                "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/notes/v1.8.0.md"
+            )
+            .as_deref(),
+            Some(
+                "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/notes/v1.8.0.en.md"
+            )
+        );
+        assert_eq!(
+            english_notes_url(
+                "https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/updates/notes/v1.8.0.en.md"
+            ),
+            None
+        );
+    }
+
+    fn spawn_notes_http_server(
+        response: &'static str,
+        connections: usize,
+    ) -> (String, thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = thread::spawn(move || {
+            for _ in 0..connections {
+                let (mut stream, _) = listener.accept().expect("connection");
+                let mut request = [0_u8; 1024];
+                let _ = stream.read(&mut request).expect("request");
+                stream
+                    .write_all(response.as_bytes())
+                    .and_then(|_| stream.flush())
+                    .expect("response");
+            }
+        });
+        (format!("http://{address}/notes.md"), server)
+    }
+
+    #[test]
+    fn release_notes_are_fetched_with_a_size_limit() {
+        let body = "## [1.9.0]\n\n- Added in-app release notes.\n";
+        let response: &'static str = Box::leak(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/markdown\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .into_boxed_str(),
+        );
+        let (url, server) = spawn_notes_http_server(response, 1);
+
+        let markdown = fetch_release_notes_markdown(None, &url).expect("release notes");
+        assert!(markdown.contains("in-app release notes"));
+        server.join().expect("server thread");
+
+        let oversized: &'static str = Box::leak(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/markdown\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                RELEASE_NOTES_SIZE_LIMIT + 1,
+                "x".repeat(RELEASE_NOTES_SIZE_LIMIT + 1)
+            )
+            .into_boxed_str(),
+        );
+        let (url, server) = spawn_notes_http_server(oversized, 1);
+        let error = fetch_release_notes_markdown(None, &url)
+            .expect_err("oversized release notes must fail");
+        assert!(error.contains("size limit"), "{error}");
+        server.join().expect("server thread");
+    }
+
+    #[test]
+    fn release_notes_fetch_reports_http_failures() {
+        let (url, server) = spawn_notes_http_server(
+            "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            1,
+        );
+        let error =
+            fetch_release_notes_markdown(None, &url).expect_err("missing release notes");
+        assert!(error.contains("404"), "{error}");
+        server.join().expect("server thread");
+    }
+
+    #[test]
+    fn english_release_notes_fall_back_to_the_default_note() {
+        let english_body = "## [1.9.0]\n\n- English notes.\n";
+        let english_response: &'static str = Box::leak(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/markdown\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                english_body.len(),
+                english_body
+            )
+            .into_boxed_str(),
+        );
+        let (english_url, english_server) = spawn_notes_http_server(english_response, 1);
+
+        // The default note URL never exists in this test, so the English file
+        // must be tried first and its result must win.
+        let markdown = fetch_notes_with_language_preference(
+            None,
+            &english_url,
+            "en",
+        )
+        .expect("english release notes");
+        assert!(markdown.contains("English notes"));
+        english_server.join().expect("server thread");
+
+        // English UIs fall back to the default note when the English file is
+        // unavailable: both the derived English URL and the default URL miss.
+        let (url, server) = spawn_notes_http_server(
+            "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            2,
+        );
+        let error = fetch_notes_with_language_preference(None, &url, "en")
+            .expect_err("both notes URLs failed");
+        assert!(error.contains("404"), "{error}");
+        server.join().expect("server thread");
+
+        // Non-English UIs request the default note directly; the derived
+        // English URL is not part of the request order.
+        let chinese_body = "## [1.9.0]\n\n- 中文说明。\n";
+        let chinese_response: &'static str = Box::leak(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/markdown\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                chinese_body.len(),
+                chinese_body
+            )
+            .into_boxed_str(),
+        );
+        let (url, server) = spawn_notes_http_server(chinese_response, 1);
+        let markdown =
+            fetch_notes_with_language_preference(None, &url, "zh-CN").expect("default notes");
+        assert!(markdown.contains("中文说明"));
+        server.join().expect("server thread");
     }
 }

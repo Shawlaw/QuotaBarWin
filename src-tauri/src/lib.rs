@@ -39,8 +39,8 @@ const HIDDEN_STARTUP_ARG: &str = "--hidden";
 pub use app_info::get_app_version;
 pub use app_update::{
     apply_app_update, check_app_update, dismiss_app_update_notice, download_app_update,
-    get_app_update_navigation_request, get_app_update_status, AppUpdateNavigationState,
-    AppUpdateState,
+    fetch_app_update_notes, get_app_update_navigation_request, get_app_update_status,
+    AppUpdateNavigationState, AppUpdateState,
 };
 pub use cli::run_cli;
 pub use config::{
@@ -256,6 +256,7 @@ pub fn run() {
             get_app_update_navigation_request,
             get_app_update_status,
             check_app_update,
+            fetch_app_update_notes,
             download_app_update,
             apply_app_update,
             dismiss_app_update_notice,

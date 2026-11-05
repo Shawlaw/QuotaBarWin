@@ -520,6 +520,17 @@ export async function applyAppUpdate(): Promise<void> {
   return invoke<void>("apply_app_update");
 }
 
+// Fetches the release notes of the currently offered update for in-app
+// display. Rejects when notes are unavailable; callers fall back to the
+// external release-page button.
+export async function fetchAppUpdateNotes(language: string): Promise<string> {
+  if (!hasTauriInternals()) {
+    throw new Error("Application update notes are unavailable in the browser preview");
+  }
+
+  return invoke<string>("fetch_app_update_notes", { language });
+}
+
 export async function openAppUpdateNotes(notesUrl: string): Promise<void> {
   if (!hasTauriInternals()) {
     window.open(notesUrl, "_blank", "noopener,noreferrer");

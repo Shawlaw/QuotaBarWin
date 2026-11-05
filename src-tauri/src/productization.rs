@@ -213,7 +213,7 @@ fn release_workflow_yaml_is_valid() {
     assert!(workflow.contains("quotabarwin.portable"));
     assert!(workflow.contains("Compute release metadata"));
     assert!(workflow.contains("Generate release notes"));
-    assert!(workflow.contains("CHANGELOG.md does not contain release notes"));
+    assert!(workflow.contains("does not contain release notes for $versionName"));
     assert!(workflow
         .contains("zip_name=QuotaBarWin_$($versionName)_windows_x64_portable_$commitId.zip"));
     assert!(workflow.contains("softprops/action-gh-release@v2"));
@@ -223,4 +223,13 @@ fn release_workflow_yaml_is_valid() {
     assert!(workflow.contains("steps.release_meta.outputs.artifact_name"));
     assert!(workflow.contains("steps.release_meta.outputs.zip_name"));
     assert!(workflow.contains("body_path: artifacts/release-notes.md"));
+    // Release notes are also published as raw Markdown files so the in-app
+    // update view can fetch them from the update manifest's notesUrl.
+    assert!(workflow.contains("Publish release notes file"));
+    assert!(workflow.contains("updates/notes/${version}.md"));
+    assert!(workflow.contains("updates/notes/${version}.en.md"));
+    assert!(workflow.contains("git push origin HEAD:main"));
+    assert!(workflow.contains(
+        "notes-url: https://raw.githubusercontent.com/${{ github.repository }}/main/updates/notes/"
+    ));
 }

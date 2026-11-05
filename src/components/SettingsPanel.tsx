@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AppUpdateNotes } from "./AppUpdateNotes";
 import type {
   AppConfig,
   ConfigStorageInfo,
@@ -1451,6 +1452,7 @@ function renderUnsavedChangesDialog() {
               {t.appUpdate.available(appUpdateInfo.version)}
             </div>
           ) : null}
+          <AppUpdateNotes info={appUpdateInfo} />
           <div className="settings-actions settings-actions--inline">
             <button
               type="button"

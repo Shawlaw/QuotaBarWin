@@ -73,6 +73,8 @@ const mocks = vi.hoisted(() => {
     })),
     getAppVersion: vi.fn(async () => "1.0.0(abc1234)"),
 
+    fetchAppUpdateNotes: vi.fn(async () => "## [1.0.4]\n\n- Mocked in-app release notes.\n"),
+
     getIsDevBuild: vi.fn(async () => false),
 
 

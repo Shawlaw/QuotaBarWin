@@ -2,6 +2,12 @@
 
 This file records user-visible changes in QuotaBarWin. Simplified Chinese counterpart: [CHANGELOG.md](CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+
+- The Settings → Application update page now shows the release notes of the offered update in-app (preferring the Chinese or English note based on the UI language and falling back to Chinese when the English note is missing); loading failures offer a retry and the external release page remains available.
+
 ## [1.8.0] - 2026-11-04
 
 ### Added

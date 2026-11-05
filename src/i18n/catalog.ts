@@ -223,6 +223,10 @@ export type I18nCatalog = {
     checkFailed: string;
     openUpdate: string;
     later: string;
+    notesSection: string;
+    notesLoading: string;
+    notesUnavailable: string;
+    notesRetry: string;
   };
   secretSecurity: {
     promptTitle: string;
@@ -754,7 +758,11 @@ export const en: I18nCatalog = {
     lastChecked: (time) => `Last automatic check: ${time}`,
     checkFailed: "The last automatic check failed. You can try again manually.",
     openUpdate: "Update",
-    later: "Later"
+    later: "Later",
+    notesSection: "What's new",
+    notesLoading: "Loading release notes...",
+    notesUnavailable: "Release notes could not be loaded.",
+    notesRetry: "Retry"
   },
   secretSecurity: {
     promptTitle: "Encrypted secret storage",
@@ -1360,7 +1368,11 @@ export const zhCN: I18nCatalog = {
     lastChecked: (time) => `上次自动检查：${time}`,
     checkFailed: "最近一次自动检查失败，可手动重试。",
     openUpdate: "前往更新",
-    later: "稍后"
+    later: "稍后",
+    notesSection: "更新内容",
+    notesLoading: "正在加载更新说明……",
+    notesUnavailable: "更新说明暂时无法加载。",
+    notesRetry: "重试"
   },
   secretSecurity: {
     promptTitle: "密钥加密存储",
