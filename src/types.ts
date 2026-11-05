@@ -321,6 +321,7 @@ export type RemoteProviderConfig = {
   visibleWindowIds?: string[];
   showInTray?: boolean;
   notificationsEnabled?: boolean;
+  showInScreenshot?: boolean;
   envVars?: Record<string, string>;
   setupState?: ProviderSetupState;
   setupLastTestedAt?: string | null;

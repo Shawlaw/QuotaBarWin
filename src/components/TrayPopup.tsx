@@ -31,7 +31,12 @@ import {
   windowStatus
 } from "../lib/providerStatus";
 import type { AppConfig, AppSnapshot, AppTheme, ProviderSnapshot } from "../types";
-import { captureTrayImageToClipboard } from "../lib/traySnapshot";
+import {
+  captureTrayImageToClipboard,
+  stageTrayElementCapture,
+  stageTrayGroupCapture,
+  type StagedTrayCapture,
+} from "../lib/traySnapshot";
 import { useI18n } from "../i18n";
 import { ProgressBar } from "./ProgressBar";
 import { AppUpdateNotice } from "./AppUpdateNotice";
@@ -358,6 +363,14 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
   const lowQuotaWarningThreshold = config?.lowQuotaWarningThreshold ?? 20;
   const displayMode = config?.displayMode ?? "remaining";
   const providersWithWindows = providers.filter((provider) => provider.windows.length > 0);
+  const screenshotHiddenIds = new Set(
+    (config?.providers ?? [])
+      .filter((provider) => provider.showInScreenshot === false)
+      .map((provider) => provider.id)
+  );
+  const providersInScreenshot = providersWithWindows.filter(
+    (provider) => !screenshotHiddenIds.has(provider.id)
+  );
   const providerIssues = orderedProviderIssues(providers, lowQuotaWarningThreshold);
   const primaryIssue = providerIssues[0] ?? null;
   const refreshedText = formatShortDateTime(snapshot?.refreshedAt);
@@ -536,11 +549,32 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
       return;
     }
 
-    const target = targetKey === "all"
-      ? providerGroupsRef.current
-      : providerRefs.current.get(targetKey);
-    if (!target) {
-      return;
+    // Captures render an off-screen staged clone so excluded Providers are
+    // absent from the image without layout gaps and the card shadows stay
+    // inside the capture bounds.
+    let staged: StagedTrayCapture | null = null;
+    if (targetKey === "all") {
+      const group = providerGroupsRef.current;
+      const cards = providersInScreenshot
+        .map((provider) => providerRefs.current.get(provider.id))
+        .filter((element): element is HTMLElement => Boolean(element));
+      if (!group || cards.length === 0) {
+        return;
+      }
+      staged = stageTrayGroupCapture(
+        cards,
+        group.className,
+        group.getBoundingClientRect().width
+      );
+    } else {
+      if (screenshotHiddenIds.has(targetKey)) {
+        return;
+      }
+      const target = providerRefs.current.get(targetKey);
+      if (!target) {
+        return;
+      }
+      staged = stageTrayElementCapture(target);
     }
 
     const capturedAt = new Date();
@@ -550,7 +584,7 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
     try {
       const appVersion = await getAppVersion();
       await captureTrayImageToClipboard({
-        target,
+        target: staged.element,
         appVersion,
         capturedAt,
         capturedAtLabel: t.tray.capturedAt,
@@ -560,6 +594,7 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
     } catch {
       showCaptureFeedback({ target: targetKey, status: "failed" });
     } finally {
+      staged.dispose();
       captureInFlight.current = null;
       setCapturingTarget(null);
     }
@@ -642,7 +677,7 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
                 aria-busy={capturingTarget === "all"}
                 className="button-compact button-ghost tray-popup__copy-all"
                 type="button"
-                disabled={capturingTarget !== null || providersWithWindows.length === 0}
+                disabled={capturingTarget !== null || providersInScreenshot.length === 0}
                 onClick={() => void copyProviderCapture("all")}
                 data-testid="tray-popup-copy-all"
                 title={t.tray.copyAll}
@@ -705,19 +740,21 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
                   <header className="tray-popup__provider-header">
                     <strong>{provider.name}</strong>
                     <div className="tray-popup__provider-actions">
-                      <button
-                        aria-label={t.tray.copyProvider(provider.name)}
-                        aria-busy={capturingTarget === provider.id}
-                        className="button-compact button-ghost tray-popup__copy-provider"
-                        type="button"
-                        disabled={capturingTarget !== null}
-                        onClick={() => void copyProviderCapture(provider.id)}
-                        data-testid={`tray-popup-copy-${provider.id}`}
-                        data-html2canvas-ignore
-                        title={t.tray.copyProvider(provider.name)}
-                      >
-                        <CameraIcon />
-                      </button>
+                      {screenshotHiddenIds.has(provider.id) ? null : (
+                        <button
+                          aria-label={t.tray.copyProvider(provider.name)}
+                          aria-busy={capturingTarget === provider.id}
+                          className="button-compact button-ghost tray-popup__copy-provider"
+                          type="button"
+                          disabled={capturingTarget !== null}
+                          onClick={() => void copyProviderCapture(provider.id)}
+                          data-testid={`tray-popup-copy-${provider.id}`}
+                          data-html2canvas-ignore
+                          title={t.tray.copyProvider(provider.name)}
+                        >
+                          <CameraIcon />
+                        </button>
+                      )}
                       {providerStatus !== "ok" ? (
                         <span className={`status status--${providerStatus}`}>
                           {t.tray.status[providerStatus]}

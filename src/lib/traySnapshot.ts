@@ -8,6 +8,59 @@ const OUTER_PADDING = 16;
 const HEADER_HEIGHT = 72;
 const ICON_SIZE = 42;
 const BASE64_CHUNK_SIZE = 0x8000;
+// Tray cards cast `0 5px 14px` drop shadows; the stage padding keeps the
+// shadow fully inside the html2canvas bounds, which otherwise clip to the
+// target's border box.
+const CAPTURE_STAGE_PADDING = 24;
+const CAPTURE_STAGE_CLASS = "tray-capture-stage";
+
+export type StagedTrayCapture = {
+  element: HTMLElement;
+  dispose: () => void;
+};
+
+function stageCaptureTree(inner: HTMLElement, width: number): StagedTrayCapture {
+  inner.style.width = `${width}px`;
+  const stage = document.createElement("div");
+  stage.className = CAPTURE_STAGE_CLASS;
+  stage.style.position = "fixed";
+  stage.style.left = "-200vw";
+  stage.style.top = "0";
+  stage.style.padding = `${CAPTURE_STAGE_PADDING}px`;
+  stage.appendChild(inner);
+  document.body.appendChild(stage);
+  return { element: stage, dispose: () => stage.remove() };
+}
+
+/**
+ * Stages a clone of a single tray card off-screen for capture. Rendering a
+ * clone (instead of the live element) lets html2canvas bounds include the
+ * card's drop shadow without pulling neighboring popup content into the
+ * image.
+ */
+export function stageTrayElementCapture(source: HTMLElement): StagedTrayCapture {
+  const clone = source.cloneNode(true) as HTMLElement;
+  return stageCaptureTree(clone, source.getBoundingClientRect().width);
+}
+
+/**
+ * Stages a fresh grid of tray-card clones off-screen for the copy-all
+ * capture. Providers excluded from screenshots are simply not added, so the
+ * grid reflows without gaps, and every rendered shadow stays in bounds.
+ */
+export function stageTrayGroupCapture(
+  sources: HTMLElement[],
+  groupClassName: string,
+  width: number
+): StagedTrayCapture {
+  const group = document.createElement("section");
+  group.className = groupClassName;
+  group.setAttribute("aria-hidden", "true");
+  for (const source of sources) {
+    group.appendChild(source.cloneNode(true));
+  }
+  return stageCaptureTree(group, width);
+}
 
 type CaptureTrayImageOptions = {
   target: HTMLElement;

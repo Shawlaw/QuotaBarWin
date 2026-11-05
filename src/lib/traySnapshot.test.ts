@@ -1,4 +1,9 @@
-import { captureTrayImageToClipboard, formatCaptureTime } from "./traySnapshot";
+import {
+  captureTrayImageToClipboard,
+  formatCaptureTime,
+  stageTrayElementCapture,
+  stageTrayGroupCapture,
+} from "./traySnapshot";
 
 const mocks = vi.hoisted(() => ({
   copyImageToClipboard: vi.fn(async () => undefined),
@@ -83,4 +88,53 @@ test("capture_time_uses_seconds_and_the_resolved_language", () => {
   }).format(date);
 
   expect(formatCaptureTime(date, "zh-CN")).toBe(expected);
+});
+
+test("staged_single_element_capture_clones_offscreen_and_disposes", () => {
+  const card = document.createElement("article");
+  card.className = "tray-popup__provider-group";
+  card.dataset.testid = "tray-popup-provider-a";
+  document.body.appendChild(card);
+
+  const staged = stageTrayElementCapture(card);
+
+  try {
+    expect(staged.element.className).toContain("tray-capture-stage");
+    expect(staged.element.style.padding).toBe("24px");
+    // The stage renders a clone, not the live card, so capture bounds can
+    // extend past the card without pulling in neighboring popup content.
+    const clone = staged.element.querySelector('[data-testid="tray-popup-provider-a"]');
+    expect(clone).not.toBeNull();
+    expect(clone).not.toBe(card);
+    expect(card.parentElement).not.toBe(staged.element);
+  } finally {
+    card.remove();
+    staged.dispose();
+  }
+  expect(staged.element.parentElement).toBeNull();
+});
+
+test("staged_group_capture_only_contains_the_requested_cards", () => {
+  const first = document.createElement("article");
+  first.dataset.testid = "tray-popup-provider-a";
+  const second = document.createElement("article");
+  second.dataset.testid = "tray-popup-provider-b";
+  const excluded = document.createElement("article");
+  excluded.dataset.testid = "tray-popup-provider-c";
+
+  const staged = stageTrayGroupCapture([first, second], "tray-popup__provider-groups", 320);
+
+  try {
+    const group = staged.element.querySelector<HTMLElement>(".tray-popup__provider-groups");
+    expect(group).not.toBeNull();
+    expect(group?.getAttribute("aria-hidden")).toBe("true");
+    expect(group?.style.width).toBe("320px");
+    expect(group?.children).toHaveLength(2);
+    expect(group?.querySelector('[data-testid="tray-popup-provider-a"]')).not.toBeNull();
+    expect(group?.querySelector('[data-testid="tray-popup-provider-b"]')).not.toBeNull();
+    expect(group?.querySelector('[data-testid="tray-popup-provider-c"]')).toBeNull();
+  } finally {
+    staged.dispose();
+  }
+  expect(staged.element.parentElement).toBeNull();
 });

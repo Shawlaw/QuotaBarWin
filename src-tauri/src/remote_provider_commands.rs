@@ -709,6 +709,7 @@ pub(crate) fn install_remote_provider_from_source(
             .default_config
             .notifications_enabled
             .unwrap_or(true),
+        show_in_screenshot: true,
         env_vars: manifest.default_config.env_vars.clone(),
         setup_state: crate::config::ProviderSetupState::Pending,
         setup_last_tested_at: None,
@@ -2144,6 +2145,7 @@ mod tests {
             visible_window_ids: Vec::new(),
             show_in_tray: true,
             notifications_enabled: true,
+            show_in_screenshot: true,
             env_vars: HashMap::new(),
             setup_state: crate::config::ProviderSetupState::Ready,
             setup_last_tested_at: None,

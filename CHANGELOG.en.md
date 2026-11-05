@@ -13,6 +13,11 @@ This file records user-visible changes in QuotaBarWin. Simplified Chinese counte
 - Bundled Providers are no longer installed automatically on first launch. The first launch is equivalent to fetching the project registry once: the add-provider page lists every bundled Provider offline without a manual refresh (Providers newly bundled by an upgrade also appear there, ready for extra accounts), and Install / Add account opens the existing guided setup flow.
 - The upgrade no longer keeps bundled Providers that older versions installed automatically but were never configured (they carry no saved data); re-add them from the add-provider page when needed.
 
+### Added
+
+- Tray captures support a permanent per-provider opt-out: turn off "Include in tray screenshots" in the Provider's details and both the copy-all image and that Provider's own capture button exclude its quota details, while the tray popup keeps showing it.
+- Tray captures now preserve the Provider cards' shadow effect, so the images match the rendered popup.
+
 ## [1.8.0] - 2026-11-04
 
 ### Added

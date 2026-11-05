@@ -1892,6 +1892,20 @@ function renderUnsavedChangesDialog() {
                       />
                       {t.settings.providerNotifications}
                     </label>
+                    <label className="checkbox-row settings-toggle-row">
+                      <input
+                        type="checkbox"
+                        data-testid={`provider-show-in-screenshot-${provider.id}`}
+                        checked={provider.showInScreenshot !== false}
+                        onChange={(event) =>
+                          updateRemoteProvider(provider, {
+                            showInScreenshot: event.currentTarget.checked
+                          })
+                        }
+                      />
+                      {t.settings.showInScreenshot}
+                    </label>
+                    <span className="settings-hint">{t.settings.showInScreenshotHint}</span>
                     {renderProviderParameters(provider)}
                     <div className="args-field settings-field">
                       <label htmlFor={`provider-env-vars-${provider.id}`}>

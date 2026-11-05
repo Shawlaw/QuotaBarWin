@@ -15,7 +15,7 @@ use crate::{
     proxy::ProxyConfig,
 };
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 28;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 29;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_LOCAL_API_PORT: u16 = 41833;
@@ -437,6 +437,13 @@ pub enum ProviderConfig {
             alias = "notifications-enabled"
         )]
         notifications_enabled: bool,
+        #[serde(
+            default = "default_show_in_screenshot",
+            rename = "showInScreenshot",
+            alias = "show_in_screenshot",
+            alias = "show-in-screenshot"
+        )]
+        show_in_screenshot: bool,
         #[serde(default, rename = "envVars", alias = "env_vars", alias = "env-vars")]
         env_vars: HashMap<String, String>,
         #[serde(
@@ -545,6 +552,10 @@ fn default_show_in_tray() -> bool {
 }
 
 fn default_provider_notifications_enabled() -> bool {
+    true
+}
+
+fn default_show_in_screenshot() -> bool {
     true
 }
 
@@ -1387,6 +1398,29 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
             }
         }
         value["schemaVersion"] = serde_json::json!(28);
+    }
+
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(28);
+    if version < 29 {
+        // Providers gain a per-provider screenshot opt-out. Existing
+        // installations keep their current behaviour: every provider stays in
+        // tray captures until the user turns it off.
+        if let Some(providers) = value
+            .get_mut("providers")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for provider in providers {
+                if provider.get("kind").and_then(serde_json::Value::as_str) == Some("remote")
+                    && provider.get("showInScreenshot").is_none()
+                {
+                    provider["showInScreenshot"] = serde_json::Value::Bool(true);
+                }
+            }
+        }
+        value["schemaVersion"] = serde_json::json!(29);
     }
 
     Ok(value)
@@ -2531,6 +2565,7 @@ mod tests {
             visible_window_ids: Vec::new(),
             show_in_tray: true,
             notifications_enabled: true,
+            show_in_screenshot: true,
             env_vars: HashMap::new(),
             setup_state: ProviderSetupState::Ready,
             setup_last_tested_at: None,
@@ -3685,6 +3720,59 @@ mod tests {
     }
 
     #[test]
+    fn config_migration_v29_enables_provider_screenshots_by_default() {
+        let value = serde_json::json!({
+            "schemaVersion": 28,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "providers": [
+                {
+                    "kind": "remote",
+                    "id": "legacy-provider",
+                    "name": "Legacy Provider",
+                    "enabled": true,
+                    "manifestUrl": "https://example.com/provider.json",
+                    "sourceUrl": "https://example.com/provider.js",
+                    "runtime": "node",
+                    "setupState": "ready"
+                },
+                {
+                    "kind": "remote",
+                    "id": "opted-out-provider",
+                    "name": "Opted Out Provider",
+                    "enabled": true,
+                    "manifestUrl": "https://example.com/other.json",
+                    "sourceUrl": "https://example.com/other.js",
+                    "runtime": "node",
+                    "showInScreenshot": false,
+                    "setupState": "ready"
+                }
+            ]
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
+        assert_eq!(
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        let providers = migrated["providers"].as_array().expect("providers");
+        assert_eq!(
+            providers[0]["showInScreenshot"],
+            serde_json::Value::Bool(true),
+            "existing installations keep every provider in captures"
+        );
+        assert_eq!(providers[1]["showInScreenshot"], serde_json::Value::Bool(false));
+        let config: AppConfig =
+            serde_json::from_value(migrated).expect("migrated config deserializes");
+        let ProviderConfig::Remote {
+            show_in_screenshot, ..
+        } = &config.providers[0];
+        assert!(*show_in_screenshot);
+    }
+
+    #[test]
     fn muted_notification_provider_ids_list_only_opted_out_providers() {
         let mut config = default_config();
         let mut muted_provider = remote_provider_config("remote-time");
@@ -3883,6 +3971,7 @@ mod tests {
                 visible_window_ids: vec!["5h".to_string()],
                 show_in_tray: true,
                 notifications_enabled: true,
+            show_in_screenshot: true,
                 env_vars: HashMap::from([(
                     "KIMI_API_KEY".to_string(),
                     "${secret:KIMI_API_KEY}".to_string(),
@@ -3963,6 +4052,7 @@ mod tests {
             "windowLabelOverrides": { "300-minute": "5h" },
             "visibleWindowIds": ["5h"],
             "showInTray": false,
+            "showInScreenshot": false,
             "envVars": { "KIMI_API_KEY": "${secret:KIMI_API_KEY}" }
         });
 
@@ -3973,6 +4063,7 @@ mod tests {
             window_label_overrides,
             visible_window_ids,
             show_in_tray,
+            show_in_screenshot,
             env_vars,
             version,
             installed_at,
@@ -3988,13 +4079,13 @@ mod tests {
         );
         assert_eq!(visible_window_ids, vec!["5h".to_string()]);
         assert!(!show_in_tray);
+        assert!(!show_in_screenshot);
         assert_eq!(
             env_vars.get("KIMI_API_KEY"),
             Some(&"${secret:KIMI_API_KEY}".to_string())
         );
     }
 
-    #[test]
     #[test]
     fn backups_are_written_into_the_bak_directory() {
         let temp = tempfile::tempdir().expect("temp dir");
@@ -4040,6 +4131,7 @@ mod tests {
         assert!(keep.exists());
     }
 
+    #[test]
     fn config_migration_backup_created() {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join("config.json");

@@ -115,7 +115,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `28`.
+Current config schema version: `29`.
 
 Supported persisted provider config kind:
 
@@ -192,6 +192,11 @@ Remote provider public contract:
   migration drops never-configured (`enabled: false` + `pending`) Providers
   whose id or `manifestUrl` matches the embedded bundle; they carry no user
   data and can be re-added from the add-provider page at any time.
+- Schema `28 -> 29` adds the per-provider screenshot opt-out
+  (`showInScreenshot` on each remote provider, default `true`). Turning it
+  off removes the Provider's quota details from tray popup capture images —
+  both its own capture button (hidden) and the copy-all image — while it
+  stays visible in the tray popup itself.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.

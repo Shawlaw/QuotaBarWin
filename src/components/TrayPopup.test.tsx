@@ -149,7 +149,15 @@ const mocks = vi.hoisted(() => {
   };
 
   return {
-    captureTrayImageToClipboard: vi.fn(async () => undefined),
+    captureTrayImageToClipboard: vi.fn(
+      async (_options: {
+        target: HTMLElement;
+        appVersion: string;
+        capturedAt: Date;
+        capturedAtLabel: (time: string) => string;
+        language: string;
+      }) => undefined,
+    ),
     dismissAppUpdateNotice: vi.fn(async () => ({
       configured: true, currentVersion: "1.0.0", available: false, version: null, notesUrl: null, downloaded: false,
     })),
@@ -191,7 +199,10 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("../lib/api", () => mocks);
-vi.mock("../lib/traySnapshot", () => ({
+// Only the clipboard step is mocked: captures go through the real off-screen
+// staging helpers, so the tests can assert what the staged image contains.
+vi.mock("../lib/traySnapshot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/traySnapshot")>()),
   captureTrayImageToClipboard: mocks.captureTrayImageToClipboard,
 }));
 
@@ -266,26 +277,96 @@ test("tray_popup_copies_one_provider_or_all_providers_to_the_clipboard", async (
   fireEvent.click(providerButton);
 
   await waitFor(() => expect(mocks.captureTrayImageToClipboard).toHaveBeenCalledTimes(1));
-  expect(mocks.captureTrayImageToClipboard).toHaveBeenLastCalledWith({
-    target: screen.getByTestId("tray-popup-provider-remote-kimi"),
-    appVersion: "1.0.0(abc1234)",
-    capturedAt: expect.any(Date),
-    capturedAtLabel: expect.any(Function),
-    language: "en",
-  });
+  const singleCapture = mocks.captureTrayImageToClipboard.mock.calls[0][0];
+  expect(singleCapture.appVersion).toBe("1.0.0(abc1234)");
+  expect(singleCapture.capturedAt).toEqual(expect.any(Date));
+  expect(singleCapture.capturedAtLabel).toEqual(expect.any(Function));
+  expect(singleCapture.language).toBe("en");
+  // The target is an off-screen stage holding a clone of the card, so the
+  // card shadow fits inside the capture bounds.
+  expect(singleCapture.target.className).toContain("tray-capture-stage");
+  expect(
+    singleCapture.target.querySelector('[data-testid="tray-popup-provider-remote-kimi"]')
+  ).not.toBeNull();
   expect(await screen.findByRole("status")).toHaveTextContent("Image copied to clipboard.");
   expect(mocks.getAppVersion).toHaveBeenCalledTimes(1);
+  // The stage is disposed once the capture settles.
+  await waitFor(() => expect(singleCapture.target.parentNode).toBeNull());
 
   fireEvent.click(screen.getByTestId("tray-popup-copy-all"));
 
   await waitFor(() => expect(mocks.captureTrayImageToClipboard).toHaveBeenCalledTimes(2));
-  expect(mocks.captureTrayImageToClipboard).toHaveBeenLastCalledWith({
-    target: screen.getByLabelText("Quota windows"),
-    appVersion: "1.0.0(abc1234)",
-    capturedAt: expect.any(Date),
-    capturedAtLabel: expect.any(Function),
-    language: "en",
+  const allCapture = mocks.captureTrayImageToClipboard.mock.calls[1][0];
+  expect(allCapture.target.className).toContain("tray-capture-stage");
+  expect(allCapture.target.querySelector(".tray-popup__provider-groups")).not.toBeNull();
+  expect(
+    allCapture.target.querySelector('[data-testid="tray-popup-provider-remote-kimi"]')
+  ).not.toBeNull();
+  expect(
+    allCapture.target.querySelector('[data-testid="tray-popup-provider-mock-codex"]')
+  ).not.toBeNull();
+  await waitFor(() => expect(allCapture.target.parentNode).toBeNull());
+});
+
+test("tray_popup_excludes_providers_opted_out_of_screenshots", async () => {
+  const excludedConfig: AppConfig = {
+    schemaVersion: 17,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "system",
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
+    providers: [
+      {
+        id: "remote-kimi",
+        name: "Kimi",
+        enabled: true,
+        kind: "remote",
+        manifestUrl: "https://example.test/kimi/provider.json",
+        sourceUrl: "https://example.test/kimi/provider.cjs",
+        runtime: "node",
+        autoUpdate: false,
+        updateIntervalSeconds: 3600,
+        timeoutSeconds: 30,
+        showInScreenshot: false,
+      },
+    ],
+  };
+  mocks.getConfig
+    .mockResolvedValueOnce(excludedConfig)
+    .mockResolvedValueOnce(excludedConfig);
+
+  renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
   });
+
+  await waitFor(() => expect(mocks.getConfig).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.getByText("Kimi Daily")).toBeInTheDocument());
+
+  // Still visible in the tray, but its own capture button is gone and the
+  // copy-all image no longer contains its quota details.
+  expect(screen.getByTestId("tray-popup-provider-remote-kimi")).toBeInTheDocument();
+  expect(screen.queryByTestId("tray-popup-copy-remote-kimi")).not.toBeInTheDocument();
+  const copyAll = screen.getByTestId("tray-popup-copy-all");
+  expect(copyAll).toBeEnabled();
+
+  fireEvent.click(copyAll);
+
+  await waitFor(() => expect(mocks.captureTrayImageToClipboard).toHaveBeenCalledTimes(1));
+  const allCapture = mocks.captureTrayImageToClipboard.mock.calls[0][0];
+  expect(
+    allCapture.target.querySelector('[data-testid="tray-popup-provider-mock-codex"]')
+  ).not.toBeNull();
+  expect(
+    allCapture.target.querySelector('[data-testid="tray-popup-provider-remote-kimi"]')
+  ).toBeNull();
 });
 
 test("tray_popup_reports_clipboard_capture_failures", async () => {

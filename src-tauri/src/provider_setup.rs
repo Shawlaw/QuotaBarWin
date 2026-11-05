@@ -702,6 +702,7 @@ mod tests {
             visible_window_ids: Vec::new(),
             show_in_tray: true,
             notifications_enabled: true,
+            show_in_screenshot: true,
             env_vars: if with_required_secret {
                 HashMap::from([
                     (

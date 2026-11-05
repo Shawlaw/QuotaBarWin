@@ -462,6 +462,20 @@ test("settings_toggles_provider_notifications", async () => {
   expect(apiMocks.state.config?.providers[0].notificationsEnabled).toBe(false);
 });
 
+test("settings_toggles_provider_screenshot_inclusion", async () => {
+  renderSettings();
+
+  fireEvent.click(screen.getByTestId("edit-provider-remote-kimi"));
+  const screenshotToggle = await screen.findByTestId(
+    "provider-show-in-screenshot-remote-kimi",
+  );
+  expect(screenshotToggle).toBeChecked();
+
+  fireEvent.click(screenshotToggle);
+
+  expect(apiMocks.state.config?.providers[0].showInScreenshot).toBe(false);
+});
+
 test("settings_edits_local_log_limit_in_megabytes", () => {
   renderSettings();
   switchSettingsCategory("advanced");

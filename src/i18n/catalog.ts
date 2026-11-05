@@ -144,6 +144,8 @@ export type I18nCatalog = {
     displayedWindows: string;
     showInTray: string;
     providerNotifications: string;
+    showInScreenshot: string;
+    showInScreenshotHint: string;
     displayedWindowsPlaceholder: string;
     windowDisplay: string;
     windowDisplayNoSnapshot: string;
@@ -673,6 +675,9 @@ export const en: I18nCatalog = {
     displayedWindows: "Displayed windows",
     showInTray: "Show in tray popup",
     providerNotifications: "Send notifications for this provider's events",
+    showInScreenshot: "Include in tray screenshots",
+    showInScreenshotHint:
+      "Turn off to keep this provider's quota details out of the tray popup's copy-image captures, including the copy-all image.",
     displayedWindowsPlaceholder: "Leave empty to show all\n5h\nweekly\nWeekly limit",
     windowDisplay: "Window display",
     windowDisplayNoSnapshot: "No recent snapshot windows yet.",
@@ -1284,6 +1289,9 @@ export const zhCN: I18nCatalog = {
     displayedWindows: "显示的窗口",
     showInTray: "在托盘小窗中显示",
     providerNotifications: "发送此提供方的事件通知",
+    showInScreenshot: "在截图中包含此提供方",
+    showInScreenshotHint:
+      "关闭后，托盘小窗的截图（含「复制全部提供方截图」）将永久不包含该提供方的额度细节。",
     displayedWindowsPlaceholder: "留空显示全部\n5h\nweekly\nWeekly limit",
     windowDisplay: "窗口显示",
     windowDisplayNoSnapshot: "暂无最近快照窗口。",
