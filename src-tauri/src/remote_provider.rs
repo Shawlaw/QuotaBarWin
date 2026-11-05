@@ -79,6 +79,13 @@ pub struct ManifestDefaultConfig {
     pub notifications_enabled: Option<bool>,
     #[serde(
         default,
+        rename = "showInScreenshot",
+        alias = "show_in_screenshot",
+        alias = "show-in-screenshot"
+    )]
+    pub show_in_screenshot: Option<bool>,
+    #[serde(
+        default,
         rename = "windowLabelOverrides",
         alias = "window_label_overrides",
         alias = "window-label-overrides"
@@ -100,6 +107,7 @@ impl ManifestDefaultConfig {
         self.name.as_deref().unwrap_or_default().trim().is_empty()
             && self.timeout_seconds.is_none()
             && self.notifications_enabled.is_none()
+            && self.show_in_screenshot.is_none()
             && self.window_label_overrides.is_empty()
             && self.visible_window_ids.is_empty()
             && self.env_vars.is_empty()

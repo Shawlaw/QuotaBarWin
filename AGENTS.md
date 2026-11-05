@@ -196,7 +196,10 @@ Remote provider public contract:
   (`showInScreenshot` on each remote provider, default `true`). Turning it
   off removes the Provider's quota details from tray popup capture images —
   both its own capture button (hidden) and the copy-all image — while it
-  stays visible in the tray popup itself.
+  stays visible in the tray popup itself. The remote provider manifest
+  `defaultConfig` may declare `showInScreenshot` to seed the flag when the
+  provider is installed (the bundled `time-flies` Provider ships `false`);
+  updates never re-apply it.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.

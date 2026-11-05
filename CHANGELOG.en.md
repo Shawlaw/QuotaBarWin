@@ -15,7 +15,7 @@ This file records user-visible changes in QuotaBarWin. Simplified Chinese counte
 
 ### Added
 
-- Tray captures support a permanent per-provider opt-out: turn off "Include in tray screenshots" in the Provider's details and both the copy-all image and that Provider's own capture button exclude its quota details, while the tray popup keeps showing it.
+- Tray captures support a permanent per-provider opt-out: turn off "Include in tray screenshots" in the Provider's details and both the copy-all image and that Provider's own capture button exclude its quota details, while the tray popup keeps showing it. Provider manifests can ship their own install-time default; Time Flies is updated to 1.4.0 and new installs start excluded from captures (re-enable it in Settings).
 - Tray captures now preserve the Provider cards' shadow effect, so the images match the rendered popup.
 
 ## [1.8.0] - 2026-11-04

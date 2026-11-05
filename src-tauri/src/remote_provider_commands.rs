@@ -709,7 +709,10 @@ pub(crate) fn install_remote_provider_from_source(
             .default_config
             .notifications_enabled
             .unwrap_or(true),
-        show_in_screenshot: true,
+        show_in_screenshot: manifest
+            .default_config
+            .show_in_screenshot
+            .unwrap_or(true),
         env_vars: manifest.default_config.env_vars.clone(),
         setup_state: crate::config::ProviderSetupState::Pending,
         setup_last_tested_at: None,
@@ -2232,7 +2235,8 @@ mod tests {
             "permissions": [],
             "defaultConfig": {
                 "name": "光阴似箭",
-                "notificationsEnabled": false
+                "notificationsEnabled": false,
+                "showInScreenshot": false
             },
             "checksums": { "source": compute_checksum(source) }
         });
@@ -2252,13 +2256,15 @@ mod tests {
         )
         .expect("install");
 
-        // The manifest default seeds the flag; a manifest without it installs
-        // participating (checked by the default unwrap in the install path).
+        // The manifest default seeds the flags; a manifest without them installs
+        // the participating defaults (checked by the unwraps in the install path).
         let ProviderConfig::Remote {
             notifications_enabled,
+            show_in_screenshot,
             ..
         } = &installed;
         assert!(!notifications_enabled);
+        assert!(!show_in_screenshot);
     }
 
     #[test]
