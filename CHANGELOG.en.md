@@ -2,21 +2,19 @@
 
 This file records user-visible changes in QuotaBarWin. Simplified Chinese counterpart: [CHANGELOG.md](CHANGELOG.md).
 
-## [Unreleased]
+## [1.8.1] - 2026-11-05
 
 ### Added
 
-- The Settings → Application update page now shows the release notes of the offered update in-app (preferring the Chinese or English note based on the UI language and falling back to Chinese when the English note is missing); loading failures offer a retry and the external release page remains available.
+- The Settings → Application update page now shows the release notes of the offered update in-app, preferring the Chinese or English note based on the UI language and falling back to Chinese when the English note is missing; loading failures offer a retry and the external release page remains available.
+- Tray captures support a permanent per-provider opt-out: turn off "Include in tray screenshots" in the Provider's details and both the copy-all image and that Provider's own capture button exclude its quota details, while the tray popup keeps showing it.
+- Tray captures now preserve the Provider cards' shadow effect, so the images match the rendered popup.
 
 ### Changed
 
 - Bundled Providers are no longer installed automatically on first launch. The first launch is equivalent to fetching the project registry once: the add-provider page lists every bundled Provider offline without a manual refresh (Providers newly bundled by an upgrade also appear there, ready for extra accounts), and Install / Add account opens the existing guided setup flow.
 - The upgrade no longer keeps bundled Providers that older versions installed automatically but were never configured (they carry no saved data); re-add them from the add-provider page when needed.
-
-### Added
-
-- Tray captures support a permanent per-provider opt-out: turn off "Include in tray screenshots" in the Provider's details and both the copy-all image and that Provider's own capture button exclude its quota details, while the tray popup keeps showing it. Provider manifests can ship their own install-time default; Time Flies is updated to 1.4.0 and new installs start excluded from captures (re-enable it in Settings).
-- Tray captures now preserve the Provider cards' shadow effect, so the images match the rendered popup.
+- Provider script update: Time Flies is updated to 1.4.0 — new installs start excluded from tray captures (re-enable it in Settings; existing installs are unaffected).
 
 ## [1.8.0] - 2026-11-04
 
