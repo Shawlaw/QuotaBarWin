@@ -34,7 +34,7 @@ Default documentation is Simplified Chinese: [README.md](README.md).
 - Distribution: **portable zip + single exe**
 - Current version: **v1.8.0**
 - Stack: Tauri 2, Rust 2021, React 19, TypeScript, Vite
-- Current config schema version: **27**
+- Current config schema version: **28**
 
 ---
 
@@ -65,9 +65,9 @@ The QuotaBarWin release package does not include your account credentials and do
 
 [QuotaBarWin-maintained Provider registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
 
-**Security notice: only install and use Providers you trust. `builtin-js` can access only manifest-declared environment values, files, and network origins; external-runtime Providers run with the permissions of their own runtime. Project-maintained Providers bundled with the release are installed automatically, but they only read the credentials you enter and save for them; remove the ones you do not need in Settings.**
+**Security notice: only install and use Providers you trust. `builtin-js` can access only manifest-declared environment values, files, and network origins; external-runtime Providers run with the permissions of their own runtime. Project-maintained Providers bundled with the release only read the credentials you enter and save for them; you never have to install the ones you do not need, and installed ones can be removed in Settings.**
 
-The release package embeds the project-maintained Provider scripts in the executable. A fresh installation installs them on first launch (disabled and pending setup) without downloading from GitHub; an upgrade only adds newly embedded Providers and never overwrites an installed one. Later updates are still checked and applied manually from the `main` registry above. Bundled Providers: Kimi Coding Usage, BigModel Coding Plan, Codex Usage, OpenCode Go, DeepSeek Balance, and 光阴似箭 (Time Flies).
+The release package embeds the project-maintained Provider scripts in the executable. First launch is equivalent to having fetched the `main` registry above once: opening the **Add Provider** page lists every embedded Provider offline, and clicking **Install / Add account** walks you through the guided setup — no network access or manual refresh needed first; upgrades add newly embedded Providers to that catalog automatically. Updates for installed Providers are still checked and applied manually from the `main` registry. Bundled Providers: Kimi Coding Usage, BigModel Coding Plan, Codex Usage, OpenCode Go, DeepSeek Balance, and 光阴似箭 (Time Flies).
 
 The same guide is available in the app at any time: **Settings → "Open guide" at the bottom of the navigation rail** opens it in the system browser (the page is bilingual with a built-in language switch).
 
@@ -94,10 +94,10 @@ The QuotaBarWin-maintained Providers currently include these manifests; release 
 
 **Before installing, confirm that the source is trusted. Provider scripts run on your machine, can read the tokens, API keys, cookies, account IDs, and other credentials configured for them, and can access the network.**
 
-Release packages already embed the project-maintained Providers. After a fresh install's first launch they appear under **Settings → Providers** in the "Pending setup" state; no download or manual install step is required first.
+Release packages already embed the project-maintained Providers: the first launch materializes them into the add-provider catalog, so they are ready to install offline.
 
-1. Open **Settings → Providers**, choose the Provider you want, and click **Set up** to enter its account and credentials.
-2. To add another Provider, or another account for an existing one, open **Settings → Providers → Add Provider**.
+1. Open **Settings → Providers → Add Provider**, pick the Provider you want, and click **Install** (or **Add account**) to enter its account and credentials.
+2. To add another Provider, or another account for an existing one, open **Settings → Providers → Add Provider** again.
 3. The Add page loads the QuotaBarWin-maintained Provider source by default. If the list is empty, open **Manage Source** and paste the registry URL above. The first load and every explicit **Refresh List** action download the registry, manifests, and provider scripts, then retain the successfully validated content in a local cache.
 4. Later visits prefer the last successfully cached catalog and show its cache time instead of checking for a newer version online. Click **Refresh List** when you want new upstream content. A failed refresh keeps the previous cached list. Catalog installs and **Add account** both prefer this cache, so either action can continue while offline after a successful cache download.
 5. Click **Install** on the Provider you want. The app immediately opens that account's setup form; the new instance stays disabled and is excluded from scheduled refreshes until it is verified.

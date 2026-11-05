@@ -34,7 +34,7 @@ macOS 用户可以使用或参考 [CodexBar](https://github.com/steipete/CodexBa
 - 分发方式：**绿色版 portable zip + 单 exe**
 - 当前版本：**v1.8.0**
 - 技术栈：Tauri 2、Rust 2021、React 19、TypeScript、Vite
-- 当前配置 schema version：**27**
+- 当前配置 schema version：**28**
 
 ---
 
@@ -65,9 +65,9 @@ QuotaBarWin 发布包不会内置你的账号凭据，也不会默认启用某�
 
 [QuotaBarWin 项目维护的提供方 registry](https://raw.githubusercontent.com/Shawlaw/QuotaBarWin/main/examples/remote-providers/registry.json)
 
-**安全提示：只安装使用可信任的提供方。`builtin-js` 只能访问 manifest 明确声明的环境变量、文件和网络 origin；外部 runtime 提供方则按其自身 runtime 的权限运行。随发布包内置的项目维护提供方会自动安装，但同样只在你填写并保存凭据后才会读取对应凭据；不需要的可以在设置中删除。**
+**安全提示：只安装使用可信任的提供方。`builtin-js` 只能访问 manifest 明确声明的环境变量、文件和网络 origin；外部 runtime 提供方则按其自身 runtime 的权限运行。随发布包内置的项目维护提供方同样只在你填写并保存凭据后才会读取对应凭据；不需要的可以不安装，已安装的可以在设置中删除。**
 
-发布包会把项目维护的提供方脚本内置进 exe。全新安装首次启动时会自动安装这些提供方（停用、待配置状态），不需要联网从 GitHub 下载；升级时只补装新增的内置提供方，不会覆盖已安装的提供方。后续更新仍从上面的 `main` registry 手动检查并应用。当前内置：Kimi Coding Usage、BigModel Coding Plan、Codex Usage、OpenCode Go、DeepSeek Balance、光阴似箭（Time Flies）。
+发布包会把项目维护的提供方脚本内置进 exe。首次启动时相当于已经成功拉取了一次上面的 `main` registry：打开「添加提供方」页即可离线看到全部内置提供方，点「安装 / 添加账号」并完成配置流程即可使用，无需先联网或手动刷新；升级到新版本时，新增的内置提供方也会自动出现在目录里。已安装提供方的后续更新仍从 `main` registry 手动检查并应用。当前内置：Kimi Coding Usage、BigModel Coding Plan、Codex Usage、OpenCode Go、DeepSeek Balance、光阴似箭（Time Flies）。
 
 应用内也可以随时打开这份指南：**设置 → 左侧导航底部「使用说明」**，内容会在系统浏览器中打开（同一页面内置中英文切换）。
 
@@ -94,9 +94,9 @@ QuotaBarWin 项目维护的提供方当前包括以下 manifest；发布包会�
 
 **安装前请再次确认来源可信。提供方脚本会在你的机器上运行，可以读取你配置给它的 token、API key、Cookie、账号 ID 等鉴权信息，并访问网络。**
 
-发布包已经内置项目维护的提供方。全新安装首次启动后，它们会以「待配置」状态出现在 **设置 → 提供方**，不需要先联网下载或点击安装。
+发布包已经内置项目维护的提供方：首次启动会把它们物化到「添加提供方」目录缓存，随时可以离线安装。
 
-1. 打开 **设置 → 提供方**，选择要使用的提供方，点击 **配置** 填写账号和凭据。
+1. 打开 **设置 → 提供方 → 添加提供方**，选择要使用的提供方，点击 **安装 / 添加账号**，在配置页填写账号和凭据。
 2. 需要额外提供方，或同一提供方的更多账号时，再打开 **设置 → 提供方 → 添加提供方**。
 3. 添加页默认加载 QuotaBarWin 项目维护的提供方来源；如果列表为空，可以在 **管理来源** 中填入上面的 registry URL。首次加载以及点击 **刷新列表** 时，应用会联网拉取 registry、manifest 和对应脚本，并保存校验成功的本地缓存。
 4. 之后打开添加页会优先显示上次成功缓存的目录和缓存时间，不会自动联网检查最新版本。需要新版本时点击 **刷新列表**；如果重新拉取失败，会继续显示旧缓存。目录安装和 **添加账号** 都优先使用这份缓存，因此之前缓存成功后，即使暂时断网也能继续添加。

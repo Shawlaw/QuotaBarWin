@@ -696,7 +696,7 @@ test("empty overview opens the provider catalog", async () => {
 
 test("empty overview points at already installed providers", async () => {
   mocks.getConfig.mockResolvedValueOnce({
-    schemaVersion: 27,
+    schemaVersion: 28,
     refreshIntervalSeconds: 300,
     displayMode: "remaining",
     lowQuotaWarningThreshold: 20,
@@ -705,9 +705,6 @@ test("empty overview points at already installed providers", async () => {
       registryUrl: null,
       providerProxyUrl: null,
       autoUpdate: true,
-    },
-    providerBundle: {
-      seededProviderIds: ["remote-a"],
     },
     providers: [
       {

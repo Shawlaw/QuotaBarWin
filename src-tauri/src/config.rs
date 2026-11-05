@@ -15,7 +15,7 @@ use crate::{
     proxy::ProxyConfig,
 };
 
-pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 27;
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 28;
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_LOCAL_API_PORT: u16 = 41833;
@@ -91,8 +91,6 @@ pub struct AppConfig {
     pub secrets_encryption_prompt_pending: bool,
     #[serde(default)]
     pub remote_provider_registry: RemoteProviderRegistrySettings,
-    #[serde(default)]
-    pub provider_bundle: ProviderBundleSettings,
     pub providers: Vec<ProviderConfig>,
 }
 
@@ -276,16 +274,6 @@ impl Default for RemoteProviderRegistrySettings {
             sources: Vec::new(),
         }
     }
-}
-
-/// Tracks which embedded Providers have already been offered to this
-/// installation. Ids are kept after the Provider is removed so a later app
-/// upgrade never resurrects a Provider the user deliberately deleted.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderBundleSettings {
-    #[serde(default)]
-    pub seeded_provider_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -609,7 +597,6 @@ pub fn default_config() -> AppConfig {
         secrets_storage: default_secret_storage_mode(),
         secrets_encryption_prompt_pending: false,
         remote_provider_registry: RemoteProviderRegistrySettings::default(),
-        provider_bundle: ProviderBundleSettings::default(),
         providers: Vec::new(),
     }
 }
@@ -1343,6 +1330,65 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
         value["schemaVersion"] = serde_json::json!(27);
     }
 
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(27);
+    if version < 28 {
+        // Schema 28 stops installing embedded Providers on startup: seeding
+        // now materializes the embedded catalog into the add-page registry
+        // cache instead, so the per-installation `providerBundle` bookkeeping
+        // is retired and the never-configured Providers installed by the old
+        // seeding are removed. They carry no user data (secrets are only
+        // written during guided setup) and can be re-added from the
+        // add-provider page at any time.
+        if let Some(object) = value.as_object_mut() {
+            object.remove("providerBundle");
+        }
+        if let Ok(bundle) = crate::bundled_providers::bundle() {
+            let bundled_ids: std::collections::HashSet<&str> = bundle
+                .providers
+                .iter()
+                .map(|provider| provider.id.as_str())
+                .collect();
+            let bundled_manifest_urls: std::collections::HashSet<&str> = bundle
+                .providers
+                .iter()
+                .map(|provider| provider.manifest_url.as_str())
+                .collect();
+            if let Some(providers) = value
+                .get_mut("providers")
+                .and_then(serde_json::Value::as_array_mut)
+            {
+                providers.retain(|provider| {
+                    if provider.get("kind").and_then(serde_json::Value::as_str) != Some("remote") {
+                        return true;
+                    }
+                    let never_configured = provider.get("enabled")
+                        .and_then(serde_json::Value::as_bool)
+                        == Some(false)
+                        && provider
+                            .get("setupState")
+                            .and_then(serde_json::Value::as_str)
+                            == Some("pending");
+                    if !never_configured {
+                        return true;
+                    }
+                    let id = provider.get("id").and_then(serde_json::Value::as_str);
+                    let manifest_url = provider
+                        .get("manifestUrl")
+                        .or_else(|| provider.get("manifest_url"))
+                        .and_then(serde_json::Value::as_str);
+                    let matches_bundle = id.is_some_and(|id| bundled_ids.contains(id))
+                        || manifest_url
+                            .is_some_and(|url| bundled_manifest_urls.contains(url));
+                    !matches_bundle
+                });
+            }
+        }
+        value["schemaVersion"] = serde_json::json!(28);
+    }
+
     Ok(value)
 }
 
@@ -1796,16 +1842,9 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
     let launch_at_startup = config.launch_at_startup;
     let theme = config.theme;
     let next_notifications = config.notifications.clone();
-    let mut config = config;
+    let config = config;
     let saved_path = path.clone();
     let previous_notifications = tauri::async_runtime::spawn_blocking(move || {
-        // Embedding bookkeeping belongs to the backend: keep the persisted list
-        // even when a frontend payload was built before the field existed.
-        if let Ok(contents) = fs::read_to_string(&saved_path) {
-            if let Ok(persisted) = serde_json::from_str::<AppConfig>(&contents) {
-                config.provider_bundle = persisted.provider_bundle;
-            }
-        }
         // Capture the persisted notification settings before the file is
         // overwritten so the cleanup below can compare pre-save and post-save
         // toast state.
@@ -2536,7 +2575,6 @@ mod tests {
             secrets_storage: default_secret_storage_mode(),
             secrets_encryption_prompt_pending: false,
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
-            provider_bundle: ProviderBundleSettings::default(),
             providers: vec![remote_provider_config("remote")],
         };
 
@@ -3526,7 +3564,7 @@ mod tests {
     }
 
     #[test]
-    fn config_migration_v26_adds_empty_provider_bundle_state() {
+    fn config_migration_v26_adds_then_v28_retires_provider_bundle_state() {
         let value = serde_json::json!({
             "schemaVersion": 26,
             "refreshIntervalSeconds": 300,
@@ -3541,13 +3579,109 @@ mod tests {
             migrated["schemaVersion"],
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
+        // Schema 27 introduced the per-installation seeding list; schema 28
+        // retires it because seeding no longer installs Providers.
+        assert!(migrated.get("providerBundle").is_none());
+        let config: AppConfig =
+            serde_json::from_value(migrated).expect("migrated config deserializes");
+        assert!(config.providers.is_empty());
+    }
+
+    #[test]
+    fn config_migration_v28_drops_never_configured_seeded_providers() {
+        let bundle = crate::bundled_providers::bundle().expect("bundle");
+        let bundled = &bundle.providers[0];
+        let value = serde_json::json!({
+            "schemaVersion": 27,
+            "refreshIntervalSeconds": 300,
+            "displayMode": "remaining",
+            "lowQuotaWarningThreshold": 20,
+            "providers": [
+                {
+                    // Old seeding artifact: disabled, pending, bundled id.
+                    "kind": "remote",
+                    "id": bundled.id,
+                    "name": bundled.display_name,
+                    "enabled": false,
+                    "manifestUrl": bundled.manifest_url,
+                    "sourceUrl": bundled.source_url,
+                    "runtime": "builtin-js",
+                    "setupState": "pending"
+                },
+                {
+                    // Manual install of the same Provider, still never
+                    // configured: matched through the bundled manifest URL.
+                    "kind": "remote",
+                    "id": format!("{}-2", bundled.id),
+                    "name": format!("{} 2", bundled.display_name),
+                    "enabled": false,
+                    "manifestUrl": bundled.manifest_url,
+                    "sourceUrl": bundled.source_url,
+                    "runtime": "builtin-js",
+                    "setupState": "pending"
+                },
+                {
+                    // Saved-but-untested setups keep their user data.
+                    "kind": "remote",
+                    "id": "kept-unverified",
+                    "name": "Kept Unverified",
+                    "enabled": false,
+                    "manifestUrl": bundled.manifest_url,
+                    "sourceUrl": bundled.source_url,
+                    "runtime": "builtin-js",
+                    "setupState": "unverified"
+                },
+                {
+                    // Configured Providers always stay.
+                    "kind": "remote",
+                    "id": "kept-ready",
+                    "name": "Kept Ready",
+                    "enabled": true,
+                    "manifestUrl": bundled.manifest_url,
+                    "sourceUrl": bundled.source_url,
+                    "runtime": "builtin-js",
+                    "setupState": "ready"
+                },
+                {
+                    // A third-party Provider the user installed but has not
+                    // configured yet is a user action, not a seeding artifact.
+                    "kind": "remote",
+                    "id": "kept-custom-pending",
+                    "name": "Kept Custom Pending",
+                    "enabled": false,
+                    "manifestUrl": "https://example.com/custom/provider.json",
+                    "sourceUrl": "https://example.com/custom/provider.js",
+                    "runtime": "node",
+                    "setupState": "pending"
+                }
+            ],
+            "providerBundle": { "seededProviderIds": [bundled.id.clone()] }
+        });
+
+        let migrated = migrate_config_value(value).expect("migrates");
+
         assert_eq!(
-            migrated["providerBundle"]["seededProviderIds"],
-            serde_json::json!([])
+            migrated["schemaVersion"],
+            serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
+        );
+        assert!(migrated.get("providerBundle").is_none());
+        let ids: Vec<String> = migrated["providers"]
+            .as_array()
+            .expect("providers array")
+            .iter()
+            .map(|provider| provider["id"].as_str().expect("id").to_string())
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                "kept-unverified".to_string(),
+                "kept-ready".to_string(),
+                "kept-custom-pending".to_string()
+            ]
         );
         let config: AppConfig =
             serde_json::from_value(migrated).expect("migrated config deserializes");
-        assert!(config.provider_bundle.seeded_provider_ids.is_empty());
+        assert_eq!(config.providers.len(), 3);
     }
 
     #[test]
@@ -3724,7 +3858,6 @@ mod tests {
                 auto_update: false,
                 sources: Vec::new(),
             },
-            provider_bundle: ProviderBundleSettings::default(),
             providers: vec![ProviderConfig::Remote {
                 id: "provider".to_string(),
                 name: "Provider".to_string(),

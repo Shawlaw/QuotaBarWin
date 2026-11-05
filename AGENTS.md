@@ -97,8 +97,9 @@ Start with these files:
   and environment injection.
 - `src-tauri/src/bundled_providers.rs` and
   `src-tauri/src/provider_bootstrap.rs` for the embedded Provider bundle
-  generated from `examples/remote-providers`, first-run/upgrade seeding, and
-  the `providerBundle.seededProviderIds` state.
+  generated from `examples/remote-providers` and first-run/upgrade seeding,
+  which materializes the bundle into the add-page catalog cache without
+  installing anything.
 - `src-tauri/src/proxy.rs`, `src-tauri/src/logger.rs`, and
   `src-tauri/src/diagnostics.rs` for proxy priority, structured redacted logs,
   log rotation, and diagnostics export.
@@ -114,7 +115,7 @@ README, current docs, and source code as the project facts.
 
 ## Current Provider Model
 
-Current config schema version: `27`.
+Current config schema version: `28`.
 
 Supported persisted provider config kind:
 
@@ -177,16 +178,20 @@ Remote provider public contract:
   from opted-out providers are still recorded in the local event history but
   are filtered out of toast and webhook delivery
   (`notifications::dispatch_events`).
-- Schema `26 -> 27` adds `providerBundle.seededProviderIds`, the list of
-  embedded Provider ids already offered to this installation. Release builds
-  embed `src-tauri/src/provider_bundle.json` (generated from
-  `examples/remote-providers` by `npm run providers:bundle`), and
-  `provider_bootstrap::seed_bundled_providers` installs Providers missing from
-  that list on startup. Ids stay recorded after removal, so an upgrade never
-  resurrects a Provider the user deleted. Fresh installations receive every
-  embedded Provider; existing installations only receive ids they have not seen.
-  Seeded Providers are installed disabled and `pending`, keep the GitHub `main`
-  registry/manifest URLs, and are never updated automatically.
+- Schema `26 -> 27` added `providerBundle.seededProviderIds` and startup
+  installation of embedded Providers (disabled and `pending`).
+- Schema `27 -> 28` replaces that design: seeding no longer installs anything.
+  `provider_bootstrap::seed_bundled_providers` materializes the embedded
+  bundle (release builds embed `src-tauri/src/provider_bundle.json`, generated
+  from `examples/remote-providers` by `npm run providers:bundle`) into the
+  add-page catalog cache for the configured official registry — merging only
+  missing ids and preserving `refreshedAt` — so opening the add-provider page
+  always shows every embedded Provider without a manual refresh, offline
+  included. Adding an account goes through the add-provider page and the
+  guided setup flow. The `providerBundle` config state is removed, and the
+  migration drops never-configured (`enabled: false` + `pending`) Providers
+  whose id or `manifestUrl` matches the embedded bundle; they carry no user
+  data and can be re-added from the add-provider page at any time.
 - The host injects `QBWIN_PROVIDER_ID`, `QBWIN_PROVIDER_MANIFEST_ID`,
   `QBWIN_PROVIDER_NAME`, optional version/checksum vars,
   `QBWIN_PROVIDER_TIMEOUT_SECONDS`, and optional `QBWIN_PROXY_URL`.

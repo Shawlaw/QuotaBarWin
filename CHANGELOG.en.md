@@ -8,6 +8,11 @@ This file records user-visible changes in QuotaBarWin. Simplified Chinese counte
 
 - The Settings → Application update page now shows the release notes of the offered update in-app (preferring the Chinese or English note based on the UI language and falling back to Chinese when the English note is missing); loading failures offer a retry and the external release page remains available.
 
+### Changed
+
+- Bundled Providers are no longer installed automatically on first launch. The first launch is equivalent to fetching the project registry once: the add-provider page lists every bundled Provider offline without a manual refresh (Providers newly bundled by an upgrade also appear there, ready for extra accounts), and Install / Add account opens the existing guided setup flow.
+- The upgrade no longer keeps bundled Providers that older versions installed automatically but were never configured (they carry no saved data); re-add them from the add-provider page when needed.
+
 ## [1.8.0] - 2026-11-04
 
 ### Added

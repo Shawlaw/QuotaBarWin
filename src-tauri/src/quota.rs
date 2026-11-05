@@ -1219,7 +1219,6 @@ mod tests {
             secrets_storage: crate::config::SecretStorageMode::Encrypted,
             secrets_encryption_prompt_pending: false,
             remote_provider_registry: RemoteProviderRegistrySettings::default(),
-            provider_bundle: crate::config::ProviderBundleSettings::default(),
             providers,
         }
     }

@@ -37,15 +37,6 @@ const e2eManagedSecretRoot = path.join(
 );
 const trayPopupLabel = "tray-popup";
 
-function bundledProviderIds() {
-  const bundlePath = path.join(root, "src-tauri", "src", "provider_bundle.json");
-  if (!fs.existsSync(bundlePath)) {
-    return [];
-  }
-  const bundle = JSON.parse(fs.readFileSync(bundlePath, "utf8"));
-  return (bundle.providers ?? []).map((provider) => provider.id);
-}
-
 let driverProcess;
 let app;
 
@@ -568,11 +559,9 @@ function writeE2eConfig() {
           autoUpdate: false,
           sources: []
         },
-        // The E2E suite supplies its own synthetic providers and must not have
-        // the embedded official providers auto-installed on startup.
-        providerBundle: {
-          seededProviderIds: bundledProviderIds()
-        },
+        // The E2E suite supplies its own synthetic providers. Embedded
+        // Providers are never auto-installed; startup seeding only materializes
+        // the official catalog cache, which the suite never loads.
         providers: [fixtureProvider, slowProvider, setupProvider]
       },
       null,
@@ -602,6 +591,8 @@ function cleanupE2eConfig() {
   }
   removePathBestEffort(e2eProviderRoot);
   removePathBestEffort(e2eManagedSecretRoot);
+  // Startup seeding materializes the embedded catalog cache beside the config.
+  removePathBestEffort(path.join(portableDir, "providers", "catalog"));
 }
 
 function removePathWithRetry(targetPath) {

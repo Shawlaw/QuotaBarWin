@@ -5,7 +5,7 @@ Default documentation is Simplified Chinese:
 
 Remote providers let you install quota providers from a hosted manifest + script, without bundling them into the app. This is useful for third-party providers, rapid iteration, or sharing provider configurations across machines.
 
-Release packages also embed the project-maintained provider scripts in the executable and use GitHub `main` as the update source. A fresh installation installs them on first launch (disabled and pending setup) without fetching the registry first; an upgrade only adds newly embedded providers and never overwrites or modifies an installed provider. Later provider updates from `main` are still checked and applied manually in Settings.
+Release packages also embed the project-maintained provider scripts in the executable and use GitHub `main` as the update source. The first launch is equivalent to having fetched the `main` registry once: the add-provider page lists every embedded Provider offline for install-and-setup, and upgrades add newly embedded Providers to that catalog automatically without touching installed ones. Later provider updates from `main` are still checked and applied manually in Settings.
 
 ## How it works
 
@@ -813,9 +813,9 @@ For Bash, `jq` must be available. On Windows, Git Bash usually ships with it.
 
 - **Only install and use remote providers you trust. Provider scripts can directly
   read the AI credentials configured for them and make network requests.**
-  Project-maintained providers bundled with the release are installed automatically,
-  but they only read the credentials you configure for them; remove the ones you do
-  not need in Settings.
+  Project-maintained providers bundled with the release only read the credentials
+  you configure after installing and setting them up; you never have to install
+  the ones you do not need, and installed ones can be removed in Settings.
 - Review each provider's `sourceUrl`, `runtime`, and `requiredEnvVars` before installing a registry.
 - Prefer registries that include `providers[].checksum` so QuotaBarWin can verify the manifest before installing.
 - Prefer manifests that include `checksums.source`; without it QuotaBarWin cannot verify updates safely.

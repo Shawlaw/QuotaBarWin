@@ -67,12 +67,7 @@ export type AppConfig = {
   secretsStorage?: SecretStorageMode;
   secretsEncryptionPromptPending?: boolean;
   remoteProviderRegistry?: RemoteProviderRegistrySettings;
-  providerBundle?: ProviderBundleSettings;
   providers: RemoteProviderConfig[];
-};
-
-export type ProviderBundleSettings = {
-  seededProviderIds: string[];
 };
 
 export type WebhookEndpoint = {
