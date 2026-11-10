@@ -111,6 +111,7 @@ export type I18nCatalog = {
     addProvider: string;
     noProviders: string;
     edit: string;
+    advanced: string;
     collapse: string;
     more: string;
     up: string;
@@ -139,6 +140,8 @@ export type I18nCatalog = {
     remoteEnvVars: string;
     remoteEnvVarsPlaceholder: string;
     remoteEnvVarsHint: string;
+    showManagedBindings: (count: number) => string;
+    hideManagedBindings: string;
     windowLabelOverrides: string;
     windowLabelOverridesPlaceholder: string;
     displayedWindows: string;
@@ -194,6 +197,14 @@ export type I18nCatalog = {
     saving: string;
     saved: string;
     saveFailed: string;
+    reloadRequired: string;
+    saveConflictTitle: string;
+    saveConflictHint: string;
+    keepEditing: string;
+    reloadConfig: string;
+    reloaded: string;
+    reloadedAfterUncertain: string;
+    mutationInFlight: string;
     unsavedChanges: string;
     unsavedChangesTitle: string;
     unsavedChangesPrompt: string;
@@ -496,11 +507,27 @@ export type I18nCatalog = {
     completeSetup: string;
     testConfiguration: string;
     repairConfiguration: string;
+    configure: string;
     providerPreview: (count: number) => string;
+    optionalCredentials: (count: number) => string;
+    unknownEnvVars: string;
+    unknownEnvVarsHint: string;
     missingRequired: (name: string) => string;
     invalidNumber: (name: string) => string;
     credentialSource: (source: string) => string;
     credentialSourceType: (source: string) => string;
+    adoptSecret: string;
+    adopting: string;
+    adopted: string;
+    adoptFailed: (error: string) => string;
+    adoptHint: string;
+    revealSecret: string;
+    cancel: string;
+    hideSecret: string;
+    copySecret: string;
+    copied: string;
+    revealFailed: (error: string) => string;
+    copyFailed: (error: string) => string;
     errorCategory: (category: string) => string;
     saveFailed: string;
     testFailedKeepSaved: string;
@@ -639,6 +666,7 @@ export const en: I18nCatalog = {
     addProvider: "Add Provider",
     noProviders: "No providers yet. Add one to start monitoring quota.",
     edit: "Edit",
+    advanced: "Advanced",
     collapse: "Collapse",
     more: "More",
     up: "Up",
@@ -670,6 +698,8 @@ export const en: I18nCatalog = {
       "KEY=value, one per line\nKIMI_API_KEY=${secret:KIMI_WORK_API_KEY}\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",
     remoteEnvVarsHint:
       "For multiple accounts, keep the left side as the script env var and change the secret name on the right, e.g. KIMI_API_KEY=${secret:KIMI_WORK_API_KEY} reads secrets/KIMI_WORK_API_KEY.txt.",
+    showManagedBindings: (count) => `Show ${count} app-managed credential binding(s)`,
+    hideManagedBindings: "Hide app-managed credential bindings",
     windowLabelOverrides: "Window label overrides",
     windowLabelOverridesPlaceholder: "window-id=Display name\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "Displayed windows",
@@ -731,6 +761,16 @@ export const en: I18nCatalog = {
     saving: "Saving",
     saved: "Saved",
     saveFailed: "Save failed",
+    reloadRequired: "Reload the configuration before making further changes",
+    saveConflictTitle: "Configuration changed elsewhere",
+    saveConflictHint:
+      "Your draft is kept. Reload to use the version currently on disk, or cancel to keep editing.",
+    keepEditing: "Keep editing",
+    reloadConfig: "Reload configuration",
+    reloaded: "Configuration reloaded",
+    reloadedAfterUncertain:
+      "The change could not be confirmed; the configuration was reloaded. Please review and retry.",
+    mutationInFlight: "Another configuration change is still running",
     unsavedChanges: "Unsaved changes",
     unsavedChangesTitle: "Unsaved changes",
     unsavedChangesPrompt:
@@ -1084,7 +1124,12 @@ export const en: I18nCatalog = {
     completeSetup: "Complete setup",
     testConfiguration: "Test configuration",
     repairConfiguration: "Repair configuration",
+    configure: "Configure",
     providerPreview: (count) => `Connected successfully${count ? ` · ${count} quota window(s)` : ""}`,
+    optionalCredentials: (count) => `Optional credentials (${count})`,
+    unknownEnvVars: "Other environment variables (undeclared)",
+    unknownEnvVarsHint:
+      "These names are configured but not declared by the provider; edit them in Advanced.",
     missingRequired: (name) => `${name} is required.`,
     invalidNumber: (name) => `${name} must be a number.`,
     credentialSource: (source) => `Credential source: ${source}`,
@@ -1101,6 +1146,18 @@ export const en: I18nCatalog = {
       };
       return labels[source] ?? labels.missing;
     },
+    adoptSecret: "Move to app-managed",
+    adopting: "Moving…",
+    adopted: "Moved to app-managed",
+    adoptFailed: (error) => `Could not move the credential: ${error}`,
+    adoptHint: "Stores this plaintext value in the app-managed secret file and keeps the provider state.",
+    revealSecret: "View",
+    cancel: "Cancel",
+    hideSecret: "Hide",
+    copySecret: "Copy",
+    copied: "Copied.",
+    revealFailed: (error) => `Could not view the credential: ${error}`,
+    copyFailed: (error) => `Could not copy the credential: ${error}`,
     errorCategory: (category) => {
       const labels: Record<string, string> = {
         missingCredential: "Missing account credential",
@@ -1253,6 +1310,7 @@ export const zhCN: I18nCatalog = {
     addProvider: "添加提供方",
     noProviders: "尚无提供方。添加一个以开始监控额度。",
     edit: "编辑",
+    advanced: "高级",
     collapse: "收起",
     more: "更多",
     up: "上移",
@@ -1284,6 +1342,8 @@ export const zhCN: I18nCatalog = {
       "每行一个 KEY=value\nKIMI_API_KEY=${secret:KIMI_WORK_API_KEY}\nDEEPSEEK_API_KEY=${secret:DEEPSEEK_API_KEY}\nDEEPSEEK_BALANCE_REFERENCE_TOTAL_CNY=200\nDEEPSEEK_BALANCE_WARNING_CNY=20",
     remoteEnvVarsHint:
       "多账号时，左边保持脚本需要的环境变量名，右边换成这个账号的 secret 名；例如 KIMI_API_KEY=${secret:KIMI_WORK_API_KEY} 会读取 secrets/KIMI_WORK_API_KEY.txt。",
+    showManagedBindings: (count) => `显示 ${count} 条应用托管凭据绑定`,
+    hideManagedBindings: "隐藏应用托管凭据绑定",
     windowLabelOverrides: "窗口标签覆盖",
     windowLabelOverridesPlaceholder: "window-id=显示名称\n5h=5h\nweekly=Weekly limit",
     displayedWindows: "显示的窗口",
@@ -1344,6 +1404,14 @@ export const zhCN: I18nCatalog = {
     saving: "保存中",
     saved: "已保存",
     saveFailed: "保存失败",
+    reloadRequired: "配置需要重新加载后才能继续修改",
+    saveConflictTitle: "配置已在别处修改",
+    saveConflictHint: "草稿已保留。重新加载会采用磁盘上的版本；取消则继续编辑。",
+    keepEditing: "继续编辑",
+    reloadConfig: "重新加载配置",
+    reloaded: "配置已重新加载",
+    reloadedAfterUncertain: "无法确认本次修改是否已保存，配置已重新载入，请检查后重试",
+    mutationInFlight: "另一个配置修改正在进行中",
     unsavedChanges: "未保存的更改",
     unsavedChangesTitle: "未保存的更改",
     unsavedChangesPrompt:
@@ -1689,7 +1757,11 @@ export const zhCN: I18nCatalog = {
     completeSetup: "完成配置",
     testConfiguration: "测试配置",
     repairConfiguration: "修复配置",
+    configure: "配置",
     providerPreview: (count) => `连接成功${count ? ` · ${count} 个额度窗口` : ""}`,
+    optionalCredentials: (count) => `可选凭据（${count}）`,
+    unknownEnvVars: "其他环境变量（未声明）",
+    unknownEnvVarsHint: "这些变量已配置但提供方未声明，请在「高级」中编辑。",
     missingRequired: (name) => `请填写 ${name}。`,
     invalidNumber: (name) => `${name} 必须是数字。`,
     credentialSource: (source) => `凭据来源：${source}`,
@@ -1706,6 +1778,18 @@ export const zhCN: I18nCatalog = {
       };
       return labels[source] ?? labels.missing;
     },
+    adoptSecret: "转为应用托管",
+    adopting: "正在转换…",
+    adopted: "已转为应用托管",
+    adoptFailed: (error) => `无法转为应用托管：${error}`,
+    adoptHint: "把当前明文值写入应用托管的密钥文件，提供方状态保持不变。",
+    revealSecret: "查看",
+    cancel: "取消",
+    hideSecret: "隐藏",
+    copySecret: "复制",
+    copied: "已复制。",
+    revealFailed: (error) => `无法查看凭据：${error}`,
+    copyFailed: (error) => `无法复制凭据：${error}`,
     errorCategory: (category) => {
       const labels: Record<string, string> = {
         missingCredential: "缺少账号凭据",

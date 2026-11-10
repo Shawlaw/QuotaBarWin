@@ -82,6 +82,28 @@ impl ManagedSecretStore {
         Ok(managed_secret_path(&self.config_dir, provider_id, parameter_name)?.exists())
     }
 
+    /// Reads the effective value of a managed secret (both storage formats) and
+    /// trims it the same way the resolver does.
+    ///
+    /// Empty files resolve as `None`; decryption/UTF-8 failures surface as
+    /// errors so callers can distinguish "missing" from "unreadable".
+    pub fn read_effective_value(
+        &self,
+        provider_id: &str,
+        parameter_name: &str,
+    ) -> Result<Option<String>, String> {
+        let path = managed_secret_path(&self.config_dir, provider_id, parameter_name)?;
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(format!("Unable to read managed secret file: {error}")),
+        };
+        let reference = managed_secret_reference(provider_id, parameter_name);
+        let value = secret_encryption::decode_managed_secret_payload(&bytes, &reference)?;
+        let trimmed = value.trim().to_string();
+        Ok((!trimmed.is_empty()).then_some(trimmed))
+    }
+
     /// Reads the exact existing bytes only for an in-process config-save
     /// rollback, so restoring reproduces the on-disk format (encrypted or
     /// plaintext) without re-encrypting. Callers must never serialize or log
@@ -122,7 +144,9 @@ impl ManagedSecretStore {
         let path = managed_secret_path(&self.config_dir, provider_id, parameter_name)?;
         match fs::remove_file(&path) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            result => result.map_err(|error| format!("Unable to delete managed secret file: {error}")),
+            result => {
+                result.map_err(|error| format!("Unable to delete managed secret file: {error}"))
+            }
         }
     }
 
@@ -130,9 +154,8 @@ impl ManagedSecretStore {
         let provider_dir = managed_provider_secret_dir(&self.config_dir, provider_id)?;
         match fs::remove_dir_all(&provider_dir) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            result => result.map_err(|error| {
-                format!("Unable to delete managed Provider secrets: {error}")
-            }),
+            result => result
+                .map_err(|error| format!("Unable to delete managed Provider secrets: {error}")),
         }
     }
 
@@ -148,9 +171,7 @@ impl ManagedSecretStore {
         let provider_dirs = match fs::read_dir(&root) {
             Ok(dirs) => dirs,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(entries),
-            Err(error) => {
-                return Err(format!("Unable to list managed Provider secrets: {error}"))
-            }
+            Err(error) => return Err(format!("Unable to list managed Provider secrets: {error}")),
         };
         for provider_dir in provider_dirs {
             let provider_dir = provider_dir
@@ -171,7 +192,11 @@ impl ManagedSecretStore {
             for file in files {
                 let file = file
                     .map_err(|error| format!("Unable to list managed Provider secrets: {error}"))?;
-                if !file.file_type().map_err(|error| error.to_string())?.is_file() {
+                if !file
+                    .file_type()
+                    .map_err(|error| error.to_string())?
+                    .is_file()
+                {
                     continue;
                 }
                 let file_name = file.file_name().to_string_lossy().to_string();
@@ -192,7 +217,8 @@ impl ManagedSecretStore {
             }
         }
         entries.sort_by(|left, right| {
-            (&left.provider_id, &left.parameter_name).cmp(&(&right.provider_id, &right.parameter_name))
+            (&left.provider_id, &left.parameter_name)
+                .cmp(&(&right.provider_id, &right.parameter_name))
         });
         Ok(entries)
     }
@@ -212,7 +238,11 @@ impl ManagedSecretStore {
         for file in files {
             let file =
                 file.map_err(|error| format!("Unable to list user secret files: {error}"))?;
-            if !file.file_type().map_err(|error| error.to_string())?.is_file() {
+            if !file
+                .file_type()
+                .map_err(|error| error.to_string())?
+                .is_file()
+            {
                 continue;
             }
             let file_name = file.file_name().to_string_lossy().to_string();
@@ -350,8 +380,8 @@ pub fn managed_secret_path_from_reference(
 /// Returns whether the file was migrated. Empty files are left alone because
 /// they resolve as "missing" anyway.
 fn encrypt_entry_if_plaintext(path: &Path, reference: &str, label: &str) -> Result<bool, String> {
-    let bytes = fs::read(path)
-        .map_err(|error| format!("Unable to read {label} {reference}: {error}"))?;
+    let bytes =
+        fs::read(path).map_err(|error| format!("Unable to read {label} {reference}: {error}"))?;
     if secret_encryption::is_encrypted_payload(&bytes) || bytes.is_empty() {
         return Ok(false);
     }
@@ -365,8 +395,8 @@ fn encrypt_entry_if_plaintext(path: &Path, reference: &str, label: &str) -> Resu
 /// Decrypts one secret file in place if it currently holds an encrypted
 /// payload. Returns whether the file was restored to plaintext.
 fn decrypt_entry_if_encrypted(path: &Path, reference: &str, label: &str) -> Result<bool, String> {
-    let bytes = fs::read(path)
-        .map_err(|error| format!("Unable to read {label} {reference}: {error}"))?;
+    let bytes =
+        fs::read(path).map_err(|error| format!("Unable to read {label} {reference}: {error}"))?;
     if !secret_encryption::is_encrypted_payload(&bytes) {
         return Ok(false);
     }
@@ -489,7 +519,8 @@ mod tests {
             .write("kimi-coding", "KIMI_API_KEY", "secret-value")
             .expect("write encrypted secret");
 
-        let bytes = fs::read(secret_path(&temp, "kimi-coding", "KIMI_API_KEY")).expect("ciphertext");
+        let bytes =
+            fs::read(secret_path(&temp, "kimi-coding", "KIMI_API_KEY")).expect("ciphertext");
         assert!(secret_encryption::is_encrypted_payload(&bytes));
         assert!(!bytes.windows(12).any(|w| *w == b"secret-value"[..]));
         assert_eq!(
@@ -622,9 +653,10 @@ mod tests {
             .expect("migrate");
         assert_eq!(migrated, 2);
 
-        for (provider, parameter, value) in
-            [("provider-a", "API_KEY", "one"), ("provider-b", "TOKEN", "two")]
-        {
+        for (provider, parameter, value) in [
+            ("provider-a", "API_KEY", "one"),
+            ("provider-b", "TOKEN", "two"),
+        ] {
             let bytes = fs::read(secret_path(&temp, provider, parameter)).expect("payload");
             assert!(secret_encryption::is_encrypted_payload(&bytes));
             assert_eq!(
@@ -674,11 +706,7 @@ mod tests {
             .write("provider-a", "API_KEY", "one")
             .expect("write one");
         let path = secret_path(&temp, "provider-a", "API_KEY");
-        fs::write(
-            path.with_file_name(".API_KEY.123.0.tmp"),
-            "partial",
-        )
-        .expect("temp file");
+        fs::write(path.with_file_name(".API_KEY.123.0.tmp"), "partial").expect("temp file");
         fs::create_dir_all(
             temp.path()
                 .join(SECRET_DIRECTORY)
@@ -706,7 +734,9 @@ mod tests {
     }
 
     fn user_secret_path(temp: &tempfile::TempDir, name: &str) -> PathBuf {
-        temp.path().join(SECRET_DIRECTORY).join(format!("{name}.txt"))
+        temp.path()
+            .join(SECRET_DIRECTORY)
+            .join(format!("{name}.txt"))
     }
 
     #[test]
@@ -789,8 +819,8 @@ mod tests {
     fn decrypt_encrypted_secrets_restores_user_files() {
         let temp = tempfile::tempdir().expect("temp dir");
         fs::create_dir_all(temp.path().join(SECRET_DIRECTORY)).expect("secrets dir");
-        let encrypted = secret_encryption::encrypt_managed_secret("user-value", "USER_KEY")
-            .expect("encrypt");
+        let encrypted =
+            secret_encryption::encrypt_managed_secret("user-value", "USER_KEY").expect("encrypt");
         fs::write(user_secret_path(&temp, "USER_KEY"), &encrypted).expect("user file");
 
         let decrypted = ManagedSecretStore::new(temp.path(), PLAINTEXT)
@@ -806,5 +836,45 @@ mod tests {
             .decrypt_encrypted_secrets()
             .expect("decrypt again");
         assert_eq!(decrypted_again, 0);
+    }
+
+    #[test]
+    fn read_effective_value_handles_both_formats_and_empty_files() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let plaintext = ManagedSecretStore::new(temp.path(), PLAINTEXT);
+        plaintext
+            .write("provider-a", "API_KEY", "  spaced-value  ")
+            .expect("plaintext write");
+        assert_eq!(
+            plaintext
+                .read_effective_value("provider-a", "API_KEY")
+                .expect("read plaintext"),
+            Some("spaced-value".to_string())
+        );
+
+        let encrypted = ManagedSecretStore::new(temp.path(), ENCRYPTED);
+        encrypted
+            .write("provider-a", "TOKEN", "secret-value")
+            .expect("encrypted write");
+        assert_eq!(
+            encrypted
+                .read_effective_value("provider-a", "TOKEN")
+                .expect("read encrypted"),
+            Some("secret-value".to_string())
+        );
+
+        fs::write(secret_path(&temp, "provider-a", "EMPTY"), "").expect("empty file");
+        assert_eq!(
+            plaintext
+                .read_effective_value("provider-a", "EMPTY")
+                .expect("read empty"),
+            None
+        );
+        assert_eq!(
+            plaintext
+                .read_effective_value("provider-a", "MISSING")
+                .expect("read missing"),
+            None
+        );
     }
 }

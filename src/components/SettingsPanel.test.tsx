@@ -281,7 +281,7 @@ function renderSettings(
   initialConfig = configWithProviders([remoteProvider]),
   snapshotProviders: ProviderSnapshot[] = [],
   storageInfo: ConfigStorageInfo | null = configStorageInfo,
-  onSave: () => void | Promise<void> = () => undefined,
+  onSave: () => Promise<AppConfig | void> = async () => undefined,
   navigation: {
     closeRequest?: number;
     appUpdateFocusRequest?: number;
@@ -290,6 +290,7 @@ function renderSettings(
     initialProviderSettingsView?: "main" | "add";
     onRequestClose?: () => void;
   } = {},
+  onReload: () => Promise<AppConfig | void> = async () => undefined,
 ) {
   apiMocks.state.config = initialConfig;
 
@@ -311,6 +312,7 @@ function renderSettings(
           onOpenConfigFolder={async () => undefined}
           onResetConfig={async () => undefined}
           onSave={onSave}
+          onReload={onReload}
           onSetPortableMode={() => undefined}
           onPersistedConfigChanged={handleChange}
           onRequestClose={navigation.onRequestClose ?? (() => undefined)}
@@ -374,7 +376,7 @@ test("settings_does_not_replay_a_close_request_when_the_provider_catalog_mounts"
     configWithProviders([]),
     [],
     configStorageInfo,
-    () => undefined,
+    async () => undefined,
     {
       closeRequest: 1,
       initialProviderSettingsView: "add",
@@ -411,7 +413,7 @@ test("settings_checks_and_applies_signed application updates", async () => {
 
 test("manual application update checks notify the owning main window directly", async () => {
   const onAppUpdateStatusChange = vi.fn();
-  renderSettings(configWithProviders([remoteProvider]), [], configStorageInfo, () => undefined, {
+  renderSettings(configWithProviders([remoteProvider]), [], configStorageInfo, async () => undefined, {
     onAppUpdateStatusChange,
   });
   switchSettingsCategory("app-update");
@@ -640,6 +642,57 @@ test("settings_edits_remote_env_vars_and_window_display", async () => {
   );
   expect(screen.getByLabelText("Show daily")).toBeChecked();
   expect(screen.getByLabelText("Custom label for daily")).toHaveValue("Team daily");
+});
+
+test("settings_offers_a_reload_action_after_a_save_conflict", async () => {
+  const reloaded = configWithProviders([remoteProvider]);
+  const onReload = vi.fn(async () => reloaded);
+  const onSave = vi.fn(async () => {
+    throw Object.assign(new Error("Configuration changed on disk"), {
+      kind: "conflict",
+      fields: ["providers[remote-kimi].envVars"],
+    });
+  });
+  renderSettings(configWithProviders([remoteProvider]), [], configStorageInfo, onSave, {}, onReload);
+  switchSettingsCategory("general");
+
+  fireEvent.change(screen.getByTestId("refresh-interval-input"), { target: { value: "120" } });
+  fireEvent.click(screen.getByTestId("save-settings-button"));
+
+  expect(await screen.findByText("Configuration changed elsewhere")).toBeInTheDocument();
+  expect(screen.getByText("providers[remote-kimi].envVars")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Reload configuration" }));
+
+  await waitFor(() => expect(onReload).toHaveBeenCalled());
+  await waitFor(() =>
+    expect(screen.queryByText("Configuration changed elsewhere")).not.toBeInTheDocument()
+  );
+});
+
+test("managed credential bindings stay hidden in the advanced editor until shown", async () => {
+  const managedProvider = {
+    ...remoteProvider,
+    envVars: {
+      KIMI_API_KEY: "${secret:providers/remote-kimi/KIMI_API_KEY}",
+      OTHER_SETTING: "1",
+    },
+  };
+  renderSettings(configWithProviders([managedProvider]));
+
+  fireEvent.click(screen.getByTestId("edit-provider-remote-kimi"));
+  const editor = await screen.findByLabelText("Environment variables");
+  expect(editor).toHaveValue("OTHER_SETTING=1");
+  expect(
+    screen.queryByDisplayValue("KIMI_API_KEY=${secret:providers/remote-kimi/KIMI_API_KEY}")
+  ).not.toBeInTheDocument();
+
+  fireEvent.click(
+    screen.getByLabelText("Show 1 app-managed credential binding(s)")
+  );
+  expect(screen.getByLabelText("Environment variables")).toHaveValue(
+    "KIMI_API_KEY=${secret:providers/remote-kimi/KIMI_API_KEY}\nOTHER_SETTING=1"
+  );
 });
 
 test("settings_marks a ready provider with a refresh error as needing attention", () => {
@@ -908,7 +961,7 @@ function ResetEpochHarness() {
         onChange={setConfig}
         onOpenConfigFolder={async () => undefined}
         onResetConfig={reset}
-        onSave={() => undefined}
+        onSave={async () => undefined}
         onSetPortableMode={() => undefined}
         onPersistedConfigChanged={() => undefined}
         onRequestClose={() => undefined}
@@ -970,7 +1023,7 @@ test("dev_clone_shows_the_resolved_source_before_copying", async () => {
         onChange={() => undefined}
         onOpenConfigFolder={async () => undefined}
         onResetConfig={async () => undefined}
-        onSave={() => undefined}
+        onSave={async () => undefined}
         onSetPortableMode={() => undefined}
         onPersistedConfigChanged={() => undefined}
         onRequestClose={() => undefined}
@@ -1011,7 +1064,7 @@ test("dev_builds_lock_autostart_and_app_update_controls", () => {
         onChange={() => undefined}
         onOpenConfigFolder={async () => undefined}
         onResetConfig={async () => undefined}
-        onSave={() => undefined}
+        onSave={async () => undefined}
         onSetPortableMode={() => undefined}
         onPersistedConfigChanged={() => undefined}
         onRequestClose={() => undefined}

@@ -380,6 +380,8 @@ fn validate_installed_provider(options: &ValidationOptions) -> Result<Validation
         name,
         runtime,
         resolved_runtime,
+        trusted_checksum,
+        version,
         timeout_seconds,
         env_vars,
         window_label_overrides,
@@ -395,10 +397,26 @@ fn validate_installed_provider(options: &ValidationOptions) -> Result<Validation
             provider_dir.display()
         ));
     }
-    let manifest_path = provider_dir.join("provider.json");
+    let expected_fingerprint = crate::remote_provider::provider_cache_fingerprint_parts(
+        id,
+        runtime,
+        resolved_runtime.as_deref(),
+        trusted_checksum.as_deref(),
+        version.as_deref(),
+    );
+    let cache_root = crate::provider_cache_generation::resolve_cache_root_checked(
+        &provider_dir,
+        &expected_fingerprint,
+    )
+    .map_err(|error| {
+        format!(
+            "Provider {provider_id} cache does not match the saved configuration: {error}; refresh once in the app to repair it"
+        )
+    })?;
+    let manifest_path = cache_root.join("provider.json");
     let manifest_text = fs::read_to_string(&manifest_path).map_err(|error| error.to_string())?;
     let manifest = parse_manifest(&manifest_text).map_err(|error| error.to_string())?;
-    let source_path = provider_dir.join(source_file_name(&manifest.entry));
+    let source_path = cache_root.join(source_file_name(&manifest.entry));
     let mut report = validate_manifest_and_source(
         "installed",
         Some(id.clone()),
@@ -439,6 +457,8 @@ fn validate_installed_provider(options: &ValidationOptions) -> Result<Validation
             Some(&provider_dir),
             runtime,
             resolved_runtime.as_deref(),
+            trusted_checksum.as_deref(),
+            version.as_deref(),
             global_proxy.as_ref(),
             *timeout_seconds,
             config_dir,
@@ -949,8 +969,7 @@ mod tests {
 
         let mut config = crate::config::default_config();
         config.providers = vec![cli_provider_config("kimi", alien_dir)];
-        crate::config::save_config_to_path(&config_path, &config)
-            .expect("save config");
+        crate::config::save_config_to_path(&config_path, &config).expect("save config");
 
         let report =
             validate_installed_provider(&validate_options("kimi", &config_path)).expect("validate");
@@ -968,8 +987,7 @@ mod tests {
         let config_path = temp.path().join("config.json");
         let mut config = crate::config::default_config();
         config.providers = vec![cli_provider_config("kimi", temp.path().join("elsewhere"))];
-        crate::config::save_config_to_path(&config_path, &config)
-            .expect("save config");
+        crate::config::save_config_to_path(&config_path, &config).expect("save config");
 
         let error = match validate_installed_provider(&validate_options("kimi", &config_path)) {
             Err(error) => error,

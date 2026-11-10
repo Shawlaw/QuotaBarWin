@@ -92,13 +92,57 @@
 
 ### 向导式配置字段
 
-当前版本会基于 `parameters` 生成安装后的配置表单：`secret` 为密码框，`string` 为文本框，`number` 为数字框，`select` 为下拉框。必填字段会先校验，已保存的 secret 永不回传或回显给前端。
+当前版本会基于 `parameters` 生成安装后的配置表单：`secret` 为密码框，`string` 为文本框，`number` 为数字框，`select` 为下拉框。必填字段会先校验，已保存的 secret 默认不回传、不回显给前端；用户在配置页显式操作时可以查看或隐藏明文，也可以复制（不进入 Windows 剪贴板历史与云剪贴板同步）。
 
-`helpUrl` 是获取 API Key 或参数说明的外部帮助链接。设置 `"advanced": true` 会将可选、代理或诊断类字段默认收进“高级设置”；不要将正常首次配置所需的字段标为高级。
+配置项可以为 0 到多个，名称必须唯一，建议使用 `API_KEY`、`CLIENT_SECRET` 这样的 ASCII 环境变量标识符（`[A-Za-z_][A-Za-z0-9_]*`）。每个需要用户配置的变量声明一个同名 parameter；普通字符串、数字和下拉选项也按同样方式声明。
+
+- `parameters` 非空时，向导只展示其中声明的字段，**不会自动合并 `requiredEnvVars`**。需要通过向导配置的必填变量也必须逐项写进 `parameters`；其他已配置但未声明的变量只显示名称，仍可在高级面板的原始 `envVars` 编辑器中管理。
+- `parameters` 省略或为 `[]` 时，应用从 `requiredEnvVars` 为每个名称生成一个必填 `secret` 字段，兼容旧 manifest。
+- `required: true` 表示表单必填；省略或设为 `false` 表示可选。可选凭据默认收在“可选凭据”中，其他可选字段默认收在“高级设置”中。可选变量不要放进 `requiredEnvVars`，否则运行前仍会尝试解析它。
+
+`helpUrl` 是获取 API Key 或参数说明的外部帮助链接。`advanced: true` 将非 secret 字段收进“高级设置”；必填 secret 始终显示，可选 secret 放在“可选凭据”中。不要将正常首次配置所需的普通字段标为高级。
+
+#### 无配置、单 Key 与多个 Key
+
+不需要用户配置的提供方可以同时省略以下两个数组，或明确写空；安装后用户仍需保存并测试，脚本自行获取所需数据或本地登录信息：
+
+```json
+{ "requiredEnvVars": [], "parameters": [] }
+```
+
+上面的完整 manifest 示例展示单个 Key。多个 Key 则声明多个 `secret` 项，例如下面的 manifest 片段包含两个必填凭据、一个可选凭据和一个普通参数：
+
+```json
+{
+  "requiredEnvVars": ["CLIENT_ID", "CLIENT_SECRET"],
+  "parameters": [
+    { "name": "CLIENT_ID", "kind": "secret", "required": true, "label": "Client ID" },
+    { "name": "CLIENT_SECRET", "kind": "secret", "required": true, "label": "Client secret" },
+    { "name": "ACCESS_TOKEN", "kind": "secret", "required": false, "label": "Optional access token" },
+    { "name": "REGION", "kind": "string", "defaultValue": "global" }
+  ],
+  "permissions": ["env:CLIENT_ID", "env:CLIENT_SECRET", "env:ACCESS_TOKEN", "env:REGION"]
+}
+```
+
+`builtin-js` 必须为脚本读取的每个变量声明匹配的 `env:NAME` 或 `env-prefix:` permission；声明 `parameters` 不会自动授予权限。脚本通过 `qb.env.get("CLIENT_ID")` 读取必填值，通过 `qb.env.getOptional("ACCESS_TOKEN")` 读取可选值（未配置时返回 `null`）。外部 runtime 从进程环境读取同名变量。所有字段均可选时也可不填内容直接保存并测试，由脚本处理缺省情况。
+
+#### 默认值与现有绑定
+
+- 非 secret 参数的普通 `defaultValue` 是表单默认值：当前未配置该字段时显示它，保存表单后才写入 `envVars` 并注入运行环境；不是脚本直接运行时的自动默认值。
+- secret 参数的 `defaultValue` 不回显，也不会自动写入托管文件或 `envVars`。仅声明 `defaultValue: "${secret:NAME}"` 不会把凭据标记为已配置。
+- 某些占位符默认值会作为空表单处理，不能把 `defaultValue` 当作通用的绑定声明。确需预置外部来源时，使用安装时的 `defaultConfig.envVars`（例如 `{ "API_KEY": "${env:API_KEY}" }`）；来源必须实际可解析。面向普通用户的 Key 应留给用户在配置页输入。
+- 脚本需要运行时默认值时，应自行实现，例如 `qb.env.getOptional("REGION") || "global"`；仍需声明对应的环境变量权限。
 
 新实例会以“待配置”、停用状态安装。用户点击“保存并测试”时，宿主会把 secret 写入该实例独立的本地文件，并把 `${secret:providers/<provider-instance-id>/<parameter-name>}` 写入主配置；解析仍由同一套 `${secret:...}` resolver 和正式提供方 runner 完成。提供方作者不应要求用户手工创建文件或输入占位符。
 
-第三方 manifest 未提供 `parameters` 时仍可安装，用户可使用保留的原始 `envVars` 编辑器；这保持对旧 manifest 的兼容。
+凭据管理说明：
+
+- 应用托管的凭据在提供方「配置」页统一管理（替换、清除、查看、复制）；高级面板的 `envVars` 编辑器默认隐藏托管绑定，勾选「显示托管绑定」可临时查看。
+- 写进配置的明文凭据（literal）可以一键「转为托管」；来自 `${env:}`、`${file:}`、`${secret:名称}` 的外部来源不提供自动转换，请引导用户用「替换」重新输入。
+- 仅修改账号名称保存不会把提供方置为未验证；改变凭据绑定或运行参数后，提供方需要重新测试才会启用。
+
+每个 Key 按参数名分别管理，并按提供方实例隔离。已有托管 Key 的输入框留空表示保留原值，输入新值表示替换；只有显式点击“清除”才会删除绑定。查看与复制只面向应用托管凭据，外部来源不会被自动读取成可编辑明文。
 
 ## 内置 JavaScript runtime（`builtin-js`）
 

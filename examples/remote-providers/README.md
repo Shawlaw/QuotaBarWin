@@ -57,6 +57,8 @@ Manifest 格式和输出协议见 [`docs/remote-provider-guide.md`](../../docs/r
 4. 将套餐等级、模型用量、账户元数据、原始状态码等提供方专属细节放进 `metadata`。
 5. 凭据只保留在本地。这些示例通过 `qb.env.get("NAME")` 读取 manifest 声明的变量；普通用户在安装后的结构化表单中填写凭据，QuotaBarWin 会写入实例隔离的托管 secret 文件，并通过原有 resolver 注入脚本，而不把密钥写进远程源码。
 
+提供方可有 0 到多个配置项：不需要用户输入时，将 `requiredEnvVars` 和 `parameters` 留空；一个 Key 声明一个 `kind: "secret"` 项，多个 Key 声明多个不同名称的项，`required: false` 表示可选。`parameters` 非空时必须列全希望在向导中配置的字段，宿主不会自动补入 `requiredEnvVars`；仅当 `parameters` 缺省或为空时，才从 `requiredEnvVars` 自动生成必填密钥字段。`builtin-js` 还需为每个读取的变量声明环境变量 permission。无配置、多 Key 示例及默认值规则见[开发指南](../../docs/remote-provider-guide.md#向导式配置字段)（[EN](../../docs/remote-provider-guide.en.md#guided-setup-fields)）。
+
 同一提供方配多个账号时，每个账号实例都有独立的 `<config-dir>/secrets/providers/<provider-instance-id>/` 目录。高级用户仍可使用原始 `envVars`，并映射旧 `${secret:NAME}`、`${env:NAME}` 或 `${file:...}`。完整说明见 [`docs/remote-provider-guide.md`](../../docs/remote-provider-guide.md#本地配置与-secret)。
 
 ## 稳定窗口 ID

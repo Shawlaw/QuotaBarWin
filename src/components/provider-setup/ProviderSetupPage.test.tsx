@@ -1,12 +1,16 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import { I18nProvider } from "../../i18n";
 import { ProviderSetupPage } from "./ProviderSetupPage";
 import type { ProviderSetupDescriptor } from "../../types";
 
 const apiMocks = vi.hoisted(() => ({
+  adoptParameterAsManagedSecret: vi.fn(),
+  copyManagedSecret: vi.fn(),
+  getConfig: vi.fn(async () => ({ providers: [] }) as never),
   getProviderSetup: vi.fn(),
   openExternalLink: vi.fn(async () => undefined),
+  revealManagedSecret: vi.fn(),
   saveProviderSetup: vi.fn(),
   testProviderSetup: vi.fn(),
 }));
@@ -205,4 +209,149 @@ test("providers with only optional fields still save and test through the shared
     secretUpdates: {},
   }));
   await waitFor(() => expect(apiMocks.testProviderSetup).toHaveBeenCalledWith("codex-local"));
+});
+
+test("provider setup can view and copy a managed credential without saving it", async () => {
+  apiMocks.revealManagedSecret.mockResolvedValue({ value: "sk-managed-secret" });
+  apiMocks.copyManagedSecret.mockResolvedValue(undefined);
+
+  renderPage();
+
+  const revealButton = await screen.findByTestId("reveal-secret-API_KEY");
+  vi.useFakeTimers();
+  try {
+    await act(async () => {
+      fireEvent.click(revealButton);
+    });
+    expect(screen.getByTestId("revealed-secret-API_KEY")).toHaveTextContent(
+      "sk-managed-secret"
+    );
+    expect(apiMocks.revealManagedSecret).toHaveBeenCalledWith("kimi-work", "API_KEY");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16000);
+    });
+    expect(screen.getByTestId("revealed-secret-API_KEY")).toHaveTextContent(
+      "sk-managed-secret"
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+
+  fireEvent.click(screen.getByTestId("copy-secret-API_KEY"));
+  await waitFor(() =>
+    expect(apiMocks.copyManagedSecret).toHaveBeenCalledWith("kimi-work", "API_KEY")
+  );
+  expect(
+    await screen.findByText("Copied.")
+  ).toBeInTheDocument();
+  expect(screen.getByTestId("revealed-secret-API_KEY")).toHaveTextContent("sk-managed-secret");
+
+  fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+  expect(screen.queryByTestId("revealed-secret-API_KEY")).not.toBeInTheDocument();
+  expect(screen.getByTestId("copy-secret-API_KEY")).toBeEnabled();
+});
+
+test("provider setup collapses optional credentials and lists undeclared variables", async () => {
+  const grouped: ProviderSetupDescriptor = {
+    ...descriptor,
+    unknownEnvVars: ["LEGACY_FLAG"],
+    fields: [
+      ...descriptor.fields,
+      {
+        name: "OPTIONAL_TEAM",
+        label: "Team",
+        kind: "secret",
+        required: false,
+        configured: false,
+        source: "missing",
+      },
+    ],
+  };
+
+  renderPage(grouped);
+
+  expect(await screen.findByText("Optional credentials (1)")).toBeInTheDocument();
+  expect(screen.getByTestId("provider-setup-unknown-vars")).toHaveTextContent("LEGACY_FLAG");
+});
+
+test("providers with no fields can save and test", async () => {
+  renderPage({ ...descriptor, fields: [], canAutoDetect: true });
+  fireEvent.click(await screen.findByRole("button", { name: "Save and test" }));
+  await waitFor(() => expect(apiMocks.saveProviderSetup).toHaveBeenCalledWith({
+    providerId: "kimi-work",
+    displayName: "Kimi work",
+    values: {},
+    secretUpdates: {},
+  }));
+  await waitFor(() => expect(apiMocks.testProviderSetup).toHaveBeenCalledWith("kimi-work"));
+});
+
+test("multiple credentials keep blank replacements and send only explicit changes", async () => {
+  const field = descriptor.fields[0];
+  renderPage({
+    ...descriptor,
+    fields: [field, { ...field, name: "SECOND_KEY", label: "Second key", required: false }],
+  });
+  const first = await screen.findByLabelText("API key");
+  const second = screen.getByLabelText("Second key");
+  fireEvent.change(first, { target: { value: "temporary" } });
+  fireEvent.change(first, { target: { value: "" } });
+  fireEvent.change(second, { target: { value: "temporary" } });
+  fireEvent.change(second, { target: { value: "   " } });
+  fireEvent.click(screen.getByRole("button", { name: "Save without testing" }));
+  await waitFor(() => expect(apiMocks.saveProviderSetup).toHaveBeenCalledWith({
+    providerId: "kimi-work", displayName: "Kimi work", values: {}, secretUpdates: {},
+  }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save without testing" })).toBeEnabled());
+
+  apiMocks.revealManagedSecret.mockResolvedValueOnce({ value: "first-key" }).mockResolvedValueOnce({ value: "second-key" });
+  fireEvent.click(screen.getByTestId("reveal-secret-API_KEY"));
+  expect(await screen.findByTestId("revealed-secret-API_KEY")).toHaveTextContent("first-key");
+  fireEvent.click(screen.getByTestId("reveal-secret-SECOND_KEY"));
+  expect(await screen.findByTestId("revealed-secret-SECOND_KEY")).toHaveTextContent("second-key");
+  expect(screen.getByTestId("revealed-secret-API_KEY")).toHaveTextContent("first-key");
+  fireEvent.click(screen.getByTestId("copy-secret-SECOND_KEY"));
+  await waitFor(() => expect(apiMocks.copyManagedSecret).toHaveBeenCalledWith("kimi-work", "SECOND_KEY"));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save without testing" })).toBeEnabled());
+
+  fireEvent.change(screen.getByLabelText("API key"), { target: { value: "replacement" } });
+  fireEvent.click(screen.getAllByRole("button", { name: "Clear" })[1]);
+  fireEvent.click(screen.getByRole("button", { name: "Save without testing" }));
+  await waitFor(() => expect(apiMocks.saveProviderSetup).toHaveBeenLastCalledWith({
+    providerId: "kimi-work", displayName: "Kimi work", values: {},
+    secretUpdates: { API_KEY: "replacement", SECOND_KEY: null },
+  }));
+});
+
+test("provider setup can move a plaintext credential to the managed store", async () => {
+  const literalDescriptor: ProviderSetupDescriptor = {
+    ...descriptor,
+    fields: descriptor.fields.map((field) =>
+      field.name === "API_KEY" ? { ...field, source: "literal" } : field
+    ),
+  };
+  const managedDescriptor: ProviderSetupDescriptor = {
+    ...literalDescriptor,
+    fields: literalDescriptor.fields.map((field) =>
+      field.name === "API_KEY" ? { ...field, source: "managedLocalFile" } : field
+    ),
+  };
+  apiMocks.adoptParameterAsManagedSecret.mockResolvedValue({
+    descriptor: managedDescriptor,
+    adopted: true,
+  });
+
+  const { onConfigChanged } = renderPage(literalDescriptor);
+  const adopt = await screen.findByTestId("adopt-secret-API_KEY");
+
+  fireEvent.click(adopt);
+
+  await waitFor(() =>
+    expect(apiMocks.adoptParameterAsManagedSecret).toHaveBeenCalledWith(
+      "kimi-work",
+      "API_KEY"
+    )
+  );
+  await waitFor(() => expect(onConfigChanged).toHaveBeenCalled());
+  await waitFor(() => expect(screen.queryByTestId("adopt-secret-API_KEY")).toBeNull());
 });

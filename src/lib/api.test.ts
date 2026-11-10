@@ -98,16 +98,19 @@ test("api_passes_refresh_provider_and_config_payloads_to_ipc", async () => {
       return snapshot;
     }
     if (cmd === "save_config") {
-      return null;
+      return { config, warnings: [] };
     }
     throw new Error(`unexpected command ${cmd}`);
   });
 
   await expect(refreshProvider("mock-codex")).resolves.toEqual(snapshot);
-  await expect(saveConfig(config)).resolves.toBeNull();
+  await expect(saveConfig(null, config)).resolves.toEqual({
+    config,
+    warnings: [],
+  });
 
   expect(payloads.refresh_provider).toEqual({ providerId: "mock-codex" });
-  expect(payloads.save_config).toEqual({ config });
+  expect(payloads.save_config).toEqual({ base: null, next: config });
 });
 
 test("api_invokes_network_proxy_commands", async () => {

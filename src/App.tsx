@@ -39,6 +39,11 @@ import {
 } from "./lib/api";
 import { I18nProvider, useI18n } from "./i18n";
 import { applyAppTheme } from "./lib/theme";
+import {
+  createMutationGuard,
+  runConfigMutation,
+  type MutationResult,
+} from "./lib/configMutation";
 import type {
   AppConfig,
   AppSnapshot,
@@ -278,8 +283,19 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
   const refreshInFlight = useRef(false);
   const queuedGlobalRefresh = useRef(false);
   const persistedConfigRef = useRef<AppConfig | null>(null);
+  const mutationGuardRef = useRef(createMutationGuard());
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [configReloadRequired, setConfigReloadRequired] = useState(false);
+  // Synchronous mirror of `configReloadRequired`: the mutation wrapper must
+  // reject blocked mutations before any IPC, which a React state read from a
+  // closure cannot guarantee.
+  const configReloadRequiredRef = useRef(false);
+
+  function applyConfigReloadRequired(required: boolean) {
+    configReloadRequiredRef.current = required;
+    setConfigReloadRequired(required);
+  }
   const [configStorageInfo, setConfigStorageInfo] = useState<ConfigStorageInfo | null>(null);
   const [appVersion, setAppVersion] = useState<string>("unknown");
   const [singleInstanceNotice, setSingleInstanceNotice] = useState<string | null>(null);
@@ -692,21 +708,92 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
     }
   }
 
-  async function persistConfig() {
+  function commitConfigState(next: AppConfig) {
+    const previous = persistedConfigRef.current;
+    const refreshTarget = previous ? configRefreshTargets(previous, next) : null;
+    persistedConfigRef.current = next;
+    setConfig(next);
+    setSnapshot((current) => projectSnapshotForConfig(current, next));
+    if (refreshTarget) {
+      queueDataRefresh(refreshTarget);
+    }
+  }
+
+  async function reloadConfigFromDisk(): Promise<AppConfig> {
+    // Shares the mutation guard so a reload can never interleave with an
+    // in-flight mutation and commit an older snapshot over its result.
+    const guard = mutationGuardRef.current;
+    if (!guard.tryAcquire()) {
+      throw new Error(t.settings.mutationInFlight);
+    }
+    try {
+      const reloaded = await getConfig();
+      applyConfigReloadRequired(false);
+      commitConfigState(reloaded);
+      return reloaded;
+    } finally {
+      guard.release();
+    }
+  }
+
+  /** Shared single-flight mutation entry used by settings and provider setup. */
+  async function mutateConfig<T>(
+    operation: () => Promise<{ config: AppConfig; result: T; warnings?: string[] }>,
+  ): Promise<MutationResult<T>> {
+    return runConfigMutation(
+      operation,
+      {
+        commitConfig: commitConfigState,
+        reloadConfig: getConfig,
+        setReloadRequired: applyConfigReloadRequired,
+        isReloadRequired: () => configReloadRequiredRef.current,
+        messages: {
+          busy: t.settings.mutationInFlight,
+          reloadRequired: t.settings.reloadRequired,
+        },
+      },
+      mutationGuardRef.current,
+    );
+  }
+
+  async function persistConfig(): Promise<AppConfig> {
     if (!config) {
-      return;
+      throw new Error("Configuration is not loaded");
     }
 
     setIsSaving(true);
     try {
-      const refreshTarget = configRefreshTargets(persistedConfigRef.current, config);
-      await saveConfig(config);
-      persistedConfigRef.current = config;
-      setConfigStorageInfo(await getConfigStorageInfo());
-      setSnapshot((current) => projectSnapshotForConfig(current, config));
-      if (refreshTarget) {
-        queueDataRefresh(refreshTarget);
+      const base = persistedConfigRef.current;
+      const result = await mutateConfig(async () => {
+        const outcome = await saveConfig(base, config);
+        return {
+          config: outcome.config,
+          result: outcome.config,
+          warnings: outcome.warnings,
+        };
+      });
+
+      if (result.status === "success") {
+        applyConfigReloadRequired(false);
+        setConfigStorageInfo(await getConfigStorageInfo());
+        return result.result;
       }
+
+      if (result.status === "recovered") {
+        // The draft was replaced by the reloaded config; surface this as a
+        // distinct outcome so the settings page never reports "saved".
+        applyConfigReloadRequired(false);
+        const error = new Error(result.message);
+        Object.assign(error, { kind: "recovered" });
+        throw error;
+      }
+
+      const error = new Error(result.message);
+      Object.assign(error, {
+        kind: result.status,
+        fields: "fields" in result ? result.fields : undefined,
+      });
+      throw error;
     } finally {
       setIsSaving(false);
     }
@@ -719,7 +806,7 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
 
     setIsConfigStorageBusy(true);
     try {
-      await saveConfig(config);
+      await saveConfig(persistedConfigRef.current, config);
       const storageInfo = await setPortableMode(enabled);
       setConfigStorageInfo(storageInfo);
       const updatedConfig = await getConfig();
@@ -920,11 +1007,14 @@ function MainApp({ onLanguageChange, onThemeChange }: MainAppProps) {
             configStorageInfo={configStorageInfo}
             isConfigStorageBusy={isConfigStorageBusy}
             isSaving={isSaving}
+            reloadRequired={configReloadRequired}
             snapshotProviders={providers}
             onChange={setConfig}
             onOpenConfigFolder={openConfigFolder}
             onResetConfig={restoreDefaultConfig}
             onSave={persistConfig}
+            onReload={reloadConfigFromDisk}
+            onSetupMutation={mutateConfig}
             onSetPortableMode={(enabled) => void togglePortableMode(enabled)}
             onPersistedConfigChanged={synchronizePersistedConfig}
             onRequestClose={closeSettings}

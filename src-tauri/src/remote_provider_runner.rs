@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     io::{BufRead, BufReader, Read},
     path::Path,
     process::{ChildStderr, ChildStdout, Command, Stdio},
@@ -86,6 +86,8 @@ pub fn run_remote_provider(
     provider_dir: Option<&Path>,
     runtime: &str,
     resolved_runtime: Option<&str>,
+    trusted_checksum: Option<&str>,
+    version: Option<&str>,
     global_proxy: Option<&ProxyConfig>,
     timeout_seconds: u64,
     config_dir: &Path,
@@ -119,7 +121,34 @@ pub fn run_remote_provider(
         )];
     };
 
-    let manifest = match load_cached_manifest(provider_dir) {
+    let expected_fingerprint = crate::remote_provider::provider_cache_fingerprint_parts(
+        id,
+        runtime,
+        resolved_runtime,
+        trusted_checksum,
+        version,
+    );
+    let cache_root = match crate::provider_cache_generation::resolve_cache_root_checked(
+        provider_dir,
+        &expected_fingerprint,
+    ) {
+        Ok(root) => root,
+        Err(error) => {
+            log_provider(
+                log,
+                LogLevel::Error,
+                id,
+                &format!("provider cache/config pairing failed: {error}"),
+            );
+            return vec![provider_error_snapshot(
+                id,
+                name,
+                &format!("Provider cache is out of date: {error}"),
+            )];
+        }
+    };
+
+    let manifest = match load_cached_manifest(&cache_root) {
         Ok(manifest) => {
             log_provider(
                 log,
@@ -179,7 +208,7 @@ pub fn run_remote_provider(
     };
 
     let source_name = remote_source_file_name(&manifest.entry);
-    let source_path = provider_dir.join(&source_name);
+    let source_path = cache_root.join(&source_name);
     if !source_path.exists() {
         log_provider(
             log,
@@ -280,7 +309,7 @@ pub fn run_remote_provider(
             .display()
             .to_string(),
         args: vec![source_path.display().to_string()],
-        cwd: Some(provider_dir.display().to_string()),
+        cwd: Some(cache_root.display().to_string()),
         timeout_ms: timeout_seconds.max(1).saturating_mul(1000),
         env,
         sensitive_values,
@@ -871,7 +900,7 @@ fn short_checksum(value: &str) -> String {
     format!("{}...", &trimmed[..11])
 }
 
-fn resolve_required_env_vars(
+pub(crate) fn resolve_required_env_vars(
     required_env_vars: &[String],
     configured_env_vars: &HashMap<String, String>,
     config_dir: &Path,
@@ -908,6 +937,38 @@ fn resolve_required_env_vars(
         env.insert(name.to_string(), value);
     }
     Ok(env)
+}
+
+/// Resolves the exact environment a provider run injects: required env
+/// fallbacks, proxy resolution and trimming. Used by the execution fingerprint
+/// so a test result is tied to what the runner would actually see.
+pub(crate) fn resolve_execution_env(
+    manifest: &ProviderManifest,
+    env_vars: &HashMap<String, String>,
+    config_dir: &Path,
+    global_proxy: Option<&ProxyConfig>,
+) -> Result<BTreeMap<String, String>, String> {
+    let mut env = resolve_required_env_vars(&manifest.required_env_vars, env_vars, config_dir)?;
+    let configured_proxy = env
+        .get("QBWIN_PROXY_URL")
+        .map(String::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| select_proxy_url(None, global_proxy));
+    if let Some(proxy_url) = configured_proxy {
+        match resolve_secret_value(&proxy_url, config_dir) {
+            Ok(proxy_url) if !proxy_url.trim().is_empty() => {
+                env.insert("QBWIN_PROXY_URL".to_string(), proxy_url.trim().to_string());
+            }
+            Ok(_) => {}
+            Err(error) => {
+                return Err(format!(
+                    "Unable to resolve remote provider proxy URL: {error}"
+                ))
+            }
+        }
+    }
+    Ok(env.into_iter().collect())
 }
 
 fn runtime_sensitive_values(
@@ -1714,6 +1775,8 @@ mod tests {
             "node",
             None,
             None,
+            None,
+            None,
             crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
             temp.path(),
             &env_vars,
@@ -1769,6 +1832,8 @@ mod tests {
             "Builtin Env",
             Some(&provider_dir),
             "builtin-js",
+            None,
+            None,
             None,
             None,
             crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
@@ -1856,6 +1921,8 @@ mod tests {
             "Time Flies",
             Some(&provider_dir),
             "builtin-js",
+            None,
+            None,
             None,
             None,
             5,
@@ -1947,6 +2014,8 @@ mod tests {
             "node",
             None,
             None,
+            None,
+            None,
             42,
             temp.path(),
             &HashMap::new(),
@@ -2000,6 +2069,8 @@ mod tests {
             "node",
             None,
             None,
+            None,
+            None,
             crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
             temp.path(),
             &env_vars,
@@ -2043,6 +2114,8 @@ mod tests {
             "Remote Proxy",
             Some(&provider_dir),
             "node",
+            None,
+            None,
             None,
             Some(&ProxyConfig {
                 kind: ProxyKind::Socks5,
@@ -2099,6 +2172,8 @@ mod tests {
             Some(&provider_dir),
             "node",
             None,
+            None,
+            None,
             Some(&global_proxy),
             crate::config::DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS,
             temp.path(),
@@ -2110,5 +2185,96 @@ mod tests {
 
         assert_eq!(providers[0].status, "ok");
         assert_eq!(providers[0].windows[0].label, "[REDACTED]");
+    }
+
+    #[test]
+    fn cache_pairing_allows_execution_input_changes_and_rejects_runtime_drift() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let provider_dir = temp.path().join("provider");
+        std::fs::create_dir_all(&provider_dir).expect("create provider dir");
+        let manifest = serde_json::json!({
+            "schemaVersion": 1,
+            "id": "pairing-check",
+            "displayName": "Pairing Check",
+            "runtime": "builtin-js",
+            "entry": "provider.js",
+            "requiredEnvVars": [],
+            "output": "provider-snapshot-v1"
+        })
+        .to_string();
+        let source = r#"
+            function main(qb) {
+              return { windows: [{ id: "w", label: "ok", remainingPercent: 50, confidence: "exact" }] };
+            }
+        "#;
+
+        // Publish the cache the way install does: an immutable generation plus
+        // a pointer carrying the fingerprint of the installed config entry.
+        let prepared = crate::provider_cache_generation::prepare_generation(
+            &provider_dir,
+            &[
+                ("provider.json", manifest.as_bytes()),
+                ("provider.js", source.as_bytes()),
+            ],
+        )
+        .expect("prepare generation");
+        let installed_fingerprint = crate::remote_provider::provider_cache_fingerprint_parts(
+            "pairing-check",
+            "builtin-js",
+            None,
+            Some("sha256:installed"),
+            Some("1.0.0"),
+        );
+        crate::provider_cache_generation::activate_generation_with_fingerprint(
+            &provider_dir,
+            &prepared,
+            Some(&installed_fingerprint),
+        )
+        .expect("activate generation");
+
+        let run = |runtime: &str, env: &HashMap<String, String>, timeout: u64| {
+            run_remote_provider(
+                "pairing-check",
+                "Pairing Check",
+                Some(&provider_dir),
+                runtime,
+                None,
+                Some("sha256:installed"),
+                Some("1.0.0"),
+                None,
+                timeout,
+                temp.path(),
+                env,
+                &HashMap::new(),
+                &[],
+                None,
+            )
+        };
+
+        // Acceptance 1 + 2: an adopt-style binding change (literal -> managed
+        // placeholder) and a timeout edit are per-run execution inputs, not
+        // cache identity; the installed generation stays runnable.
+        crate::managed_secret_store::ManagedSecretStore::new(
+            temp.path(),
+            crate::config::SecretStorageMode::Plaintext,
+        )
+        .write("pairing-check", "API_KEY", "adopted-secret")
+        .expect("write managed secret");
+        let adopted_env = HashMap::from([(
+            "API_KEY".to_string(),
+            "${secret:providers/pairing-check/API_KEY}".to_string(),
+        )]);
+        let providers = run("builtin-js", &adopted_env, 77);
+        assert_eq!(providers[0].status, "ok", "{:?}", providers[0]);
+
+        // Acceptance 3: a config entry whose runtime no longer matches the
+        // published generation must be rejected instead of executed.
+        let drifted = run("node", &HashMap::new(), 30);
+        assert_eq!(drifted[0].status, "error");
+        assert!(drifted[0]
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("out of date"));
     }
 }

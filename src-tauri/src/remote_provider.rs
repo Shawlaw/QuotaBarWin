@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -14,6 +14,55 @@ use sha2::{Digest, Sha256};
 
 use crate::proxy::{build_http_client, ProxyConfig};
 use crate::redact::redact_sensitive;
+
+/// Fingerprint of the provider config fields that decide which cache
+/// generation may be executed.
+///
+/// Deliberately excludes `envVars`, `timeoutSeconds` and `providerDir`: those
+/// are per-run execution inputs, not cache identity. Changing a credential
+/// binding (adopt / Replace) or the timeout must not invalidate the installed
+/// cache — the execution fingerprint used by the setup test covers those
+/// inputs where it matters. Only fields that must agree with the cached
+/// manifest/source take part: the runtime pair, the trusted checksum and the
+/// version. Display-only fields (name, labels) are excluded as well, so a
+/// rename never invalidates the cache pairing.
+pub fn provider_cache_fingerprint_parts(
+    provider_id: &str,
+    runtime: &str,
+    resolved_runtime: Option<&str>,
+    trusted_checksum: Option<&str>,
+    version: Option<&str>,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(provider_id.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(runtime.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(resolved_runtime.unwrap_or("").as_bytes());
+    hasher.update([0u8]);
+    hasher.update(trusted_checksum.unwrap_or("").as_bytes());
+    hasher.update([0u8]);
+    hasher.update(version.unwrap_or("").as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+pub fn provider_cache_fingerprint(provider: &crate::config::ProviderConfig) -> String {
+    let crate::config::ProviderConfig::Remote {
+        id,
+        runtime,
+        resolved_runtime,
+        trusted_checksum,
+        version,
+        ..
+    } = provider;
+    provider_cache_fingerprint_parts(
+        id,
+        runtime,
+        resolved_runtime.as_deref(),
+        trusted_checksum.as_deref(),
+        version.as_deref(),
+    )
+}
 
 pub const BUILTIN_JS_RUNTIME: &str = "builtin-js";
 pub const LEGACY_PROVIDER_MANIFEST_SCHEMA_VERSION: u8 = 1;
@@ -437,9 +486,70 @@ fn validate_manifest(manifest: &ProviderManifest) -> Result<(), RemoteProviderEr
             "missing output".to_string(),
         ));
     }
+    validate_parameters(&manifest.parameters)?;
     if is_builtin_js_runtime(&manifest.runtime) {
         crate::builtin_js::validate_builtin_js_manifest(manifest)
             .map_err(RemoteProviderError::InvalidManifest)?;
+    }
+    Ok(())
+}
+
+fn validate_parameters(parameters: &[ProviderParameter]) -> Result<(), RemoteProviderError> {
+    let invalid = |message| RemoteProviderError::InvalidManifest(message);
+    let mut names = HashSet::new();
+    for parameter in parameters {
+        if parameter.name.is_empty()
+            || !parameter
+                .name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        {
+            return Err(invalid(
+                "parameter names must use ASCII letters, numbers, underscores, or hyphens"
+                    .to_string(),
+            ));
+        }
+        // Environment variables and managed-secret paths are case-insensitive
+        // on Windows, so case-only variants cannot represent separate fields.
+        if !names.insert(parameter.name.to_ascii_lowercase()) {
+            return Err(invalid(format!(
+                "duplicate parameter name '{}' (names are case-insensitive)",
+                parameter.name
+            )));
+        }
+        let kind = parameter.kind.as_deref().unwrap_or("string");
+        if !matches!(kind, "secret" | "string" | "number" | "select") {
+            return Err(invalid(format!(
+                "unsupported kind '{kind}' for parameter '{}'",
+                parameter.name
+            )));
+        }
+        let upper_name = parameter.name.to_ascii_uppercase();
+        if kind == "secret"
+            && (matches!(upper_name.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+                || ((upper_name.starts_with("COM") || upper_name.starts_with("LPT"))
+                    && upper_name.len() == 4
+                    && matches!(upper_name.as_bytes()[3], b'1'..=b'9')))
+        {
+            return Err(invalid(format!(
+                "secret parameter '{}' cannot use a reserved Windows device name",
+                parameter.name
+            )));
+        }
+        if kind == "select" {
+            let mut options = HashSet::new();
+            if parameter.options.is_empty()
+                || parameter
+                    .options
+                    .iter()
+                    .any(|option| option.trim().is_empty() || !options.insert(option))
+            {
+                return Err(invalid(format!(
+                    "select parameter '{}' needs non-empty, unique options",
+                    parameter.name
+                )));
+            }
+        }
     }
     Ok(())
 }
@@ -754,33 +864,30 @@ pub fn verify_checksum(source: &str, expected: &str) -> Result<(), RemoteProvide
     Ok(())
 }
 
-pub fn cache_remote_provider(
-    cache_dir: &Path,
-    id: &str,
+/// Serialized files that make up one provider cache generation.
+pub(crate) struct CacheFiles {
+    pub manifest_json: String,
+    pub source_name: String,
+    pub source: String,
+    pub meta_json: String,
+}
+
+/// Builds the cache files for `manifest`/`source` without writing anything.
+///
+/// Existing `.meta.json` (etag/installed_at) is preserved; it is resolved
+/// through the current generation pointer when present.
+pub(crate) fn build_cache_files(
+    provider_dir: &Path,
     manifest_url: &str,
     manifest: &ProviderManifest,
     source: &str,
     resolved_runtime: Option<&Path>,
-) -> Result<PathBuf, RemoteProviderError> {
-    let provider_dir = cache_dir.join(id);
-    fs::create_dir_all(&provider_dir)?;
+) -> Result<CacheFiles, RemoteProviderError> {
     let now = chrono::Utc::now().to_rfc3339();
-    let existing_meta = load_cached_meta(&provider_dir).ok().flatten();
-
-    let manifest_path = provider_dir.join("provider.json");
+    let existing_meta = load_cached_meta(provider_dir).ok().flatten();
     let source_name = source_file_name(&manifest.entry);
-    let source_path = provider_dir.join(&source_name);
-
-    if source_path.exists() {
-        let backup_path = provider_dir.join(format!("{source_name}.bak"));
-        fs::copy(&source_path, &backup_path)?;
-    }
-
     let manifest_json = serde_json::to_string_pretty(manifest)
         .map_err(|error| RemoteProviderError::Io(error.to_string()))?;
-    fs::write(&manifest_path, manifest_json)?;
-    fs::write(&source_path, source)?;
-
     let meta = RemoteProviderMeta {
         etag: existing_meta.as_ref().and_then(|meta| meta.etag.clone()),
         last_check_at: Some(now.clone()),
@@ -794,16 +901,77 @@ pub fn cache_remote_provider(
         source_url: resolve_source_url(manifest_url, &manifest.entry),
         resolved_runtime: resolved_runtime.map(|path| path.display().to_string()),
     };
-    let meta_path = provider_dir.join(".meta.json");
     let meta_json = serde_json::to_string_pretty(&meta)
         .map_err(|error| RemoteProviderError::Io(error.to_string()))?;
-    fs::write(&meta_path, meta_json)?;
+
+    Ok(CacheFiles {
+        manifest_json,
+        source_name,
+        source: source.to_string(),
+        meta_json,
+    })
+}
+
+#[allow(dead_code)] // retained for legacy-layout tests; production writes via build_cache_files
+pub fn cache_remote_provider(
+    cache_dir: &Path,
+    id: &str,
+    manifest_url: &str,
+    manifest: &ProviderManifest,
+    source: &str,
+    resolved_runtime: Option<&Path>,
+) -> Result<PathBuf, RemoteProviderError> {
+    let provider_dir = cache_dir.join(id);
+    fs::create_dir_all(&provider_dir)?;
+    let files = build_cache_files(
+        &provider_dir,
+        manifest_url,
+        manifest,
+        source,
+        resolved_runtime,
+    )?;
+
+    // A cache that already uses the generation layout must keep using it;
+    // otherwise the pointer would keep readers on a stale generation. New
+    // caches stay in the legacy layout until the next startup migration.
+    let uses_generations = match crate::provider_cache_generation::resolve_current(&provider_dir) {
+        Ok(current) => current.is_some(),
+        Err(error) => return Err(RemoteProviderError::Io(error)),
+    };
+    if uses_generations {
+        crate::provider_cache_generation::publish_generation(
+            &provider_dir,
+            &[
+                ("provider.json", files.manifest_json.as_bytes()),
+                (files.source_name.as_str(), files.source.as_bytes()),
+                (".meta.json", files.meta_json.as_bytes()),
+            ],
+        )
+        .map_err(RemoteProviderError::Io)?;
+        return Ok(provider_dir);
+    }
+
+    let manifest_path = provider_dir.join("provider.json");
+    let source_path = provider_dir.join(&files.source_name);
+
+    if source_path.exists() {
+        let backup_path = provider_dir.join(format!("{}.bak", files.source_name));
+        fs::copy(&source_path, &backup_path)?;
+    }
+
+    fs::write(&manifest_path, files.manifest_json)?;
+    fs::write(&source_path, files.source)?;
+    fs::write(provider_dir.join(".meta.json"), files.meta_json)?;
 
     Ok(provider_dir)
 }
 
 pub fn load_cached_manifest(provider_dir: &Path) -> Result<ProviderManifest, RemoteProviderError> {
-    let manifest_path = provider_dir.join("provider.json");
+    // New-layout caches resolve through `current.json`; legacy caches fall back
+    // to the provider directory itself.
+    let cache_root = crate::provider_cache_generation::resolve_cache_root(provider_dir)
+        .map_err(RemoteProviderError::Io)?;
+    let manifest_path = cache_root.join("provider.json");
     let contents = fs::read_to_string(&manifest_path)?;
     let manifest = serde_json::from_str(&contents)
         .map_err(|error| RemoteProviderError::InvalidManifest(error.to_string()))?;
@@ -814,7 +982,9 @@ pub fn load_cached_manifest(provider_dir: &Path) -> Result<ProviderManifest, Rem
 pub fn load_cached_meta(
     provider_dir: &Path,
 ) -> Result<Option<RemoteProviderMeta>, RemoteProviderError> {
-    let meta_path = provider_dir.join(".meta.json");
+    let cache_root = crate::provider_cache_generation::resolve_cache_root(provider_dir)
+        .map_err(RemoteProviderError::Io)?;
+    let meta_path = cache_root.join(".meta.json");
     if !meta_path.exists() {
         return Ok(None);
     }
@@ -1175,6 +1345,108 @@ mod tests {
         ));
     }
 
+    fn manifest_with_parameters(
+        parameters: serde_json::Value,
+    ) -> Result<ProviderManifest, RemoteProviderError> {
+        parse_manifest(
+            &serde_json::json!({
+                "schemaVersion": 1,
+                "id": "parameter-test",
+                "displayName": "Parameter test",
+                "runtime": "node",
+                "entry": "provider.cjs",
+                "output": "provider-snapshot-v1",
+                "parameters": parameters
+            })
+            .to_string(),
+        )
+    }
+
+    #[test]
+    fn validate_manifest_accepts_zero_or_multiple_parameters() {
+        assert!(manifest_with_parameters(serde_json::json!([])).is_ok());
+        assert!(manifest_with_parameters(serde_json::json!([
+            { "name": "API_KEY", "kind": "secret", "required": true },
+            { "name": "OPTIONAL_KEY", "kind": "secret" },
+            { "name": "region-name" },
+            { "name": "0_RETRIES", "kind": "number", "defaultValue": "3" },
+            { "name": "MODE", "kind": "select", "options": ["fast", "safe"] }
+        ]))
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_manifest_rejects_invalid_parameter_names() {
+        for name in ["", " ", "API KEY", "API/KEY", "API\\KEY", "API.KEY", "密钥"] {
+            let result = manifest_with_parameters(serde_json::json!([
+                { "name": name, "kind": "secret" }
+            ]));
+            assert!(
+                matches!(result, Err(RemoteProviderError::InvalidManifest(message)) if message.contains("parameter names")),
+                "invalid parameter name {name:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_manifest_rejects_duplicate_parameter_names_including_case_variants() {
+        for duplicate in ["API_KEY", "api_key"] {
+            let result = manifest_with_parameters(serde_json::json!([
+                { "name": "API_KEY", "kind": "secret" },
+                { "name": duplicate, "kind": "secret" }
+            ]));
+            assert!(
+                matches!(result, Err(RemoteProviderError::InvalidManifest(message)) if message.contains("duplicate parameter name"))
+            );
+        }
+    }
+
+    #[test]
+    fn validate_manifest_rejects_unknown_parameter_kinds() {
+        for kind in ["", "password", "boolean"] {
+            let result = manifest_with_parameters(serde_json::json!([
+                { "name": "KEY", "kind": kind }
+            ]));
+            assert!(
+                matches!(result, Err(RemoteProviderError::InvalidManifest(message)) if message.contains("unsupported kind"))
+            );
+        }
+    }
+
+    #[test]
+    fn validate_manifest_rejects_windows_device_names_for_secret_files() {
+        for name in ["CON", "prn", "Aux", "NUL", "COM1", "LPT9"] {
+            let result = manifest_with_parameters(serde_json::json!([
+                { "name": name, "kind": "secret" }
+            ]));
+            assert!(
+                matches!(result, Err(RemoteProviderError::InvalidManifest(message)) if message.contains("reserved Windows device name"))
+            );
+        }
+        assert!(manifest_with_parameters(serde_json::json!([
+            { "name": "NUL", "kind": "string" },
+            { "name": "COM10", "kind": "secret" }
+        ]))
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_manifest_rejects_unusable_select_options() {
+        for options in [
+            serde_json::json!([]),
+            serde_json::json!([""]),
+            serde_json::json!([" "]),
+            serde_json::json!(["fast", "fast"]),
+        ] {
+            let result = manifest_with_parameters(serde_json::json!([
+                { "name": "MODE", "kind": "select", "options": options }
+            ]));
+            assert!(
+                matches!(result, Err(RemoteProviderError::InvalidManifest(message)) if message.contains("unique options"))
+            );
+        }
+    }
+
     #[test]
     fn builtin_js_manifest_requires_declared_capabilities() {
         let legacy_builtin = parse_manifest(
@@ -1260,6 +1532,81 @@ mod tests {
             .expect("meta exists");
         assert_eq!(meta.source_url, "https://example.com/provider.cjs");
         assert!(meta.checksum.is_some());
+    }
+
+    #[test]
+    fn cache_remote_provider_keeps_a_migrated_cache_on_the_generation_layout() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let mut manifest = ProviderManifest {
+            schema_version: 1,
+            id: "kimi-coding".to_string(),
+            display_name: "Kimi Coding".to_string(),
+            version: Some("1.0.0".to_string()),
+            description: None,
+            min_app_version: None,
+            runtime: "node".to_string(),
+            entry: "provider.cjs".to_string(),
+            required_env_vars: vec![],
+            output: "provider-snapshot-v1".to_string(),
+            permissions: vec![],
+            default_config: ManifestDefaultConfig::default(),
+            parameters: vec![],
+            checksums: Checksums {
+                source: Some(compute_checksum("// source v1")),
+            },
+        };
+
+        let dir = cache_remote_provider(
+            temp.path(),
+            "kimi-coding",
+            "https://example.com/provider.json",
+            &manifest,
+            "// source v1",
+            None,
+        )
+        .expect("legacy cache");
+
+        let migration = crate::provider_cache_generation::migrate_legacy_cache(&dir)
+            .expect("migrate legacy cache");
+        let first_generation = match migration {
+            crate::provider_cache_generation::LegacyMigration::Migrated { generation } => {
+                generation
+            }
+            other => panic!("expected migration, got {other:?}"),
+        };
+
+        manifest.version = Some("2.0.0".to_string());
+        manifest.checksums.source = Some(compute_checksum("// source v2"));
+        cache_remote_provider(
+            temp.path(),
+            "kimi-coding",
+            "https://example.com/provider.json",
+            &manifest,
+            "// source v2",
+            None,
+        )
+        .expect("update migrated cache");
+
+        let current = crate::provider_cache_generation::resolve_current(&dir)
+            .expect("resolve")
+            .expect("pointer");
+        assert_ne!(current.generation, first_generation);
+        assert_eq!(
+            fs::read_to_string(current.dir.join("provider.cjs")).expect("new source"),
+            "// source v2"
+        );
+        assert_eq!(
+            load_cached_manifest(&dir)
+                .expect("load manifest")
+                .version
+                .as_deref(),
+            Some("2.0.0")
+        );
+        // The legacy files stay untouched for rollback.
+        assert_eq!(
+            fs::read_to_string(dir.join("provider.cjs")).expect("legacy source"),
+            "// source v1"
+        );
     }
 
     #[test]
@@ -1419,7 +1766,12 @@ mod tests {
             Some("1.1.0"),
             Some("1.2.0")
         ));
-        assert!(update_is_available(checksum, trusted, Some("1.9"), Some("2.0.0")));
+        assert!(update_is_available(
+            checksum,
+            trusted,
+            Some("1.9"),
+            Some("2.0.0")
+        ));
         assert!(!update_is_available(
             checksum,
             trusted,
@@ -1440,7 +1792,12 @@ mod tests {
         ));
         // Missing or unparseable versions fall back to the checksum decision.
         assert!(!update_is_available(checksum, trusted, None, Some("9.9.9")));
-        assert!(!update_is_available(checksum, trusted, Some("abc"), Some("9.9.9")));
+        assert!(!update_is_available(
+            checksum,
+            trusted,
+            Some("abc"),
+            Some("9.9.9")
+        ));
         assert!(update_is_available(
             Some("sha256:new"),
             trusted,

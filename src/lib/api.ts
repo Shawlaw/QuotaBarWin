@@ -4,6 +4,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   AppConfig,
   AppSnapshot,
+  AdoptSecretResult,
+  RevealSecretResult,
   ConfigStorageInfo,
   LocalApiAccessToken,
   LocalApiNetworkInterface,
@@ -20,6 +22,7 @@ import type {
   ProviderSetupTestResult,
   RegistryMigrationResult,
   SaveProviderSetupRequest,
+  SaveConfigOutcome,
   TestChannelOutcome,
   TestNotificationResult,
 } from "../types";
@@ -387,13 +390,15 @@ export async function openProjectGithub(): Promise<void> {
   return invoke<void>("open_project_github");
 }
 
-export async function saveConfig(config: AppConfig): Promise<void> {
+export async function saveConfig(
+  base: AppConfig | null,
+  next: AppConfig,
+): Promise<SaveConfigOutcome> {
   if (!hasTauriInternals()) {
-    void config;
-    return;
+    return { config: next, warnings: [] };
   }
 
-  return invoke<void>("save_config", { config });
+  return invoke<SaveConfigOutcome>("save_config", { base, next });
 }
 
 export async function setPortableMode(
@@ -716,12 +721,55 @@ export async function getProviderSetup(
       displayName: "Browser Preview",
       setupState: "ready",
       fields: [],
+      unknownEnvVars: [],
       hasUnknownEnvVars: false,
       canAutoDetect: true,
     };
   }
 
   return invoke<ProviderSetupDescriptor>("get_provider_setup", { providerId });
+}
+
+export async function adoptParameterAsManagedSecret(
+  providerId: string,
+  parameterName: string,
+): Promise<AdoptSecretResult> {
+  if (!hasTauriInternals()) {
+    throw new Error("Moving credentials is available only in the desktop app");
+  }
+
+  return invoke<AdoptSecretResult>("adopt_parameter_as_managed_secret", {
+    providerId,
+    parameterName,
+  });
+}
+
+export async function revealManagedSecret(
+  providerId: string,
+  parameterName: string,
+): Promise<RevealSecretResult> {
+  if (!hasTauriInternals()) {
+    throw new Error("Viewing credentials is available only in the desktop app");
+  }
+
+  return invoke<RevealSecretResult>("reveal_managed_secret", {
+    providerId,
+    parameterName,
+  });
+}
+
+export async function copyManagedSecret(
+  providerId: string,
+  parameterName: string,
+): Promise<void> {
+  if (!hasTauriInternals()) {
+    throw new Error("Copying credentials is available only in the desktop app");
+  }
+
+  return invoke<void>("copy_managed_secret", {
+    providerId,
+    parameterName,
+  });
 }
 
 export async function saveProviderSetup(

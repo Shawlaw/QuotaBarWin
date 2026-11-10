@@ -1,8 +1,13 @@
 use std::{
     collections::HashMap,
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex, OnceLock,
+    },
 };
 
 use chrono::Utc;
@@ -11,6 +16,7 @@ use tauri::{AppHandle, Manager, Theme};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::{
+    config_merge::{merge_config, MergeOutcome, MutationFailure, SaveConfigOutcome},
     logger::{LogLevel, LogSink},
     proxy::ProxyConfig,
 };
@@ -774,12 +780,8 @@ pub fn config_path_for_executable(executable: &Path) -> Result<PathBuf, String> 
     let portable_path = portable_config_path_for_exe_dir(exe_dir);
     let legacy_portable_path = legacy_portable_config_path_for_exe_dir(exe_dir);
     let marker_path = portable_marker_path_for_exe_dir(exe_dir);
-    let preferred_path = config_path_from_candidates(
-        app_data_path,
-        portable_path,
-        marker_path.clone(),
-        false,
-    );
+    let preferred_path =
+        config_path_from_candidates(app_data_path, portable_path, marker_path.clone(), false);
     let legacy_path = config_path_from_candidates(
         legacy_app_data_path,
         legacy_portable_path,
@@ -1375,13 +1377,12 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
                     if provider.get("kind").and_then(serde_json::Value::as_str) != Some("remote") {
                         return true;
                     }
-                    let never_configured = provider.get("enabled")
-                        .and_then(serde_json::Value::as_bool)
-                        == Some(false)
-                        && provider
-                            .get("setupState")
-                            .and_then(serde_json::Value::as_str)
-                            == Some("pending");
+                    let never_configured =
+                        provider.get("enabled").and_then(serde_json::Value::as_bool) == Some(false)
+                            && provider
+                                .get("setupState")
+                                .and_then(serde_json::Value::as_str)
+                                == Some("pending");
                     if !never_configured {
                         return true;
                     }
@@ -1391,8 +1392,7 @@ pub fn migrate_config_value(mut value: serde_json::Value) -> Result<serde_json::
                         .or_else(|| provider.get("manifest_url"))
                         .and_then(serde_json::Value::as_str);
                     let matches_bundle = id.is_some_and(|id| bundled_ids.contains(id))
-                        || manifest_url
-                            .is_some_and(|url| bundled_manifest_urls.contains(url));
+                        || manifest_url.is_some_and(|url| bundled_manifest_urls.contains(url));
                     !matches_bundle
                 });
             }
@@ -1469,7 +1469,35 @@ fn backup_config(path: &Path, reason: &str) -> Result<PathBuf, String> {
     Ok(backup_path)
 }
 
-pub fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(), String> {
+static CONFIG_WRITE_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+static CONFIG_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(test)]
+thread_local! {
+    static FAIL_CONFIG_WRITE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Test-only fault injection: makes `write_config_atomically` fail on the
+/// current thread so rollback paths can be exercised without real disk
+/// errors. The caller must reset it to `false` afterwards.
+#[cfg(test)]
+pub(crate) fn set_config_write_failure(fail: bool) {
+    FAIL_CONFIG_WRITE.with(|flag| flag.set(fail));
+}
+
+fn config_write_mutex() -> &'static Mutex<()> {
+    CONFIG_WRITE_MUTEX.get_or_init(|| Mutex::new(()))
+}
+
+/// Writes the config through a same-directory temporary file + rename.
+///
+/// Callers must hold [`config_write_mutex`]; this function itself never locks,
+/// so the transaction helper can compose read-modify-write atomically.
+fn write_config_atomically(path: &Path, config: &AppConfig) -> Result<(), String> {
+    #[cfg(test)]
+    if FAIL_CONFIG_WRITE.with(std::cell::Cell::get) {
+        return Err("injected config write failure".to_string());
+    }
     validate_local_api_settings(&config.local_api)?;
     if local_api_requires_access_token(&config.local_api)
         && crate::local_api_token::read_token(path)?.is_none()
@@ -1484,7 +1512,128 @@ pub fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(), String
     }
 
     let contents = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
-    fs::write(path, contents).map_err(|error| error.to_string())
+    let counter = CONFIG_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(CONFIG_FILE_NAME);
+    let temp_path = path.with_file_name(format!(
+        ".{file_name}.{}.{}.tmp",
+        std::process::id(),
+        counter
+    ));
+
+    let write_result = (|| -> Result<(), String> {
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp_path)
+            .map_err(|error| format!("Unable to create temporary config file: {error}"))?;
+        file.write_all(contents.as_bytes())
+            .map_err(|error| format!("Unable to write temporary config file: {error}"))?;
+        file.sync_all()
+            .map_err(|error| format!("Unable to flush temporary config file: {error}"))?;
+        drop(file);
+        // `rename` replaces the target atomically on the supported platform
+        // filesystems, so readers observe either the old or the new file.
+        fs::rename(&temp_path, path)
+            .map_err(|error| format!("Unable to replace config file: {error}"))
+    })();
+
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+    write_result
+}
+
+pub fn save_config_to_path(path: &Path, config: &AppConfig) -> Result<(), String> {
+    let _guard = config_write_mutex()
+        .lock()
+        .map_err(|_| "Config write lock poisoned".to_string())?;
+    write_config_atomically(path, config)
+}
+
+/// Read-only load used inside a config transaction.
+///
+/// Deliberately does not migrate/create: a transaction must not recursively
+/// call `save_config_to_path` (the write mutex is not re-entrant). Startup
+/// always runs `load_or_create_config` first, so by the time any command uses
+/// this helper the on-disk config is already at the current schema.
+fn load_config_for_update(path: &Path) -> Result<AppConfig, String> {
+    let contents = fs::read_to_string(path)
+        .map_err(|error| format!("Unable to read config for update: {error}"))?;
+    serde_json::from_str(&contents)
+        .map_err(|error| format!("Unable to parse config for update: {error}"))
+}
+
+/// Read-modify-write transaction for short, local mutations (adopt, field-level
+/// commits). Holds the config write lock across load, apply and atomic write.
+///
+/// The closure must not call `save_config_to_path` or `load_or_create_config`:
+/// both would try to take the same non-reentrant lock.
+pub fn update_config_at_path<T>(
+    path: &Path,
+    apply: impl FnOnce(&mut AppConfig) -> Result<T, String>,
+) -> Result<T, String> {
+    update_config_at_path_with(path, apply)
+}
+
+/// Typed variant of [`update_config_at_path`] for commands that return a
+/// structured error (for example `MutationFailure`).
+pub fn update_config_at_path_with<T, E>(
+    path: &Path,
+    apply: impl FnOnce(&mut AppConfig) -> Result<T, E>,
+) -> Result<T, E>
+where
+    E: From<String>,
+{
+    let _guard = config_write_mutex()
+        .lock()
+        .map_err(|_| E::from("Config write lock poisoned".to_string()))?;
+    let mut config = load_config_for_update(path).map_err(E::from)?;
+    let value = apply(&mut config)?;
+    write_config_atomically(path, &config).map_err(E::from)?;
+    Ok(value)
+}
+
+/// Merges a renderer draft onto the persisted config and writes the result.
+///
+/// `None` base means "first creation"; see [`crate::config_merge::merge_config`]
+/// for the exact rules. The whole load-merge-write sequence runs under the
+/// config write lock, so a backend command that commits between the renderer's
+/// load and this save is always observed by the merge — there is no window
+/// where a stale `current` could silently revert an adopt or a field-level
+/// commit.
+pub fn merge_and_save_config_at_path(
+    path: &Path,
+    base: Option<&AppConfig>,
+    next: &AppConfig,
+) -> Result<(AppConfig, Vec<String>), MutationFailure> {
+    let _guard = config_write_mutex()
+        .lock()
+        .map_err(|_| MutationFailure::Io {
+            message: "Config write lock poisoned".to_string(),
+        })?;
+
+    let current = if path.exists() {
+        Some(load_config_for_update(path).map_err(|message| MutationFailure::Io { message })?)
+    } else {
+        None
+    };
+
+    match merge_config(base, next, current.as_ref())? {
+        MergeOutcome::Merged { config, warnings } => {
+            // Already hold the write lock; call the primitive directly so the
+            // non-reentrant mutex is not taken twice.
+            write_config_atomically(path, &config)
+                .map_err(|message| MutationFailure::Io { message })?;
+            Ok((config, warnings))
+        }
+        MergeOutcome::Conflict { fields } => Err(MutationFailure::Conflict {
+            message: "Some settings were changed by another operation".to_string(),
+            fields,
+        }),
+    }
 }
 
 pub fn local_api_requires_access_token(settings: &LocalApiSettings) -> bool {
@@ -1702,7 +1851,9 @@ pub fn repair_remote_provider_cache_paths(
     let original_config = config.clone();
     let mut changed = false;
     for provider in &mut config.providers {
-        let ProviderConfig::Remote { id, provider_dir, .. } = provider;
+        let ProviderConfig::Remote {
+            id, provider_dir, ..
+        } = provider;
         let destination = crate::remote_provider_commands::remote_provider_dir(config_path, id)?;
         if provider_dir.as_ref() != Some(&destination) {
             *provider_dir = Some(destination);
@@ -1871,33 +2022,51 @@ pub async fn get_config(app: AppHandle) -> Result<AppConfig, String> {
 }
 
 #[tauri::command]
-pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
-    let path = config_path_for_app(&app)?;
-    let launch_at_startup = config.launch_at_startup;
-    let theme = config.theme;
-    let next_notifications = config.notifications.clone();
-    let config = config;
+pub async fn save_config(
+    app: AppHandle,
+    base: Option<AppConfig>,
+    next: AppConfig,
+) -> Result<SaveConfigOutcome, MutationFailure> {
+    let path = config_path_for_app(&app).map_err(|message| MutationFailure::Io { message })?;
     let saved_path = path.clone();
-    let previous_notifications = tauri::async_runtime::spawn_blocking(move || {
-        // Capture the persisted notification settings before the file is
-        // overwritten so the cleanup below can compare pre-save and post-save
-        // toast state.
-        let previous = read_saved_notification_settings(&saved_path);
-        save_config_to_path(&saved_path, &config).map(|()| previous)
-    })
-    .await
-    .map_err(|error| error.to_string())??;
+    let (saved, warnings, previous_notifications) =
+        tauri::async_runtime::spawn_blocking(move || {
+            // Capture the persisted notification settings before the file is
+            // overwritten so the cleanup below can compare pre-save and post-save
+            // toast state.
+            let previous = read_saved_notification_settings(&saved_path);
+            let (saved, warnings) =
+                merge_and_save_config_at_path(&saved_path, base.as_ref(), &next)?;
+            Ok::<_, MutationFailure>((saved, warnings, previous))
+        })
+        .await
+        .map_err(|error| MutationFailure::Io {
+            message: error.to_string(),
+        })??;
+
+    let mut warnings = warnings;
     remove_toast_registration_if_disabled(
         &path,
         previous_notifications.as_ref(),
-        &next_notifications,
+        &saved.notifications,
         crate::notifications::remove_toast_registration,
     );
-    apply_app_theme(&app, &theme);
-    sync_launch_at_startup_for_app(&app, launch_at_startup)?;
+    apply_app_theme(&app, &saved.theme);
+    if let Err(error) = sync_launch_at_startup_for_app(&app, saved.launch_at_startup) {
+        // The config is already committed; surface this as a warning instead of
+        // reporting the whole save as failed.
+        warnings.push(format!("launchAtStartup: {error}"));
+    }
     crate::local_api::reconfigure(&app);
     crate::refresh_scheduler::signal_config_changed();
-    crate::tray::refresh_tray_menu(&app)
+    if let Err(error) = crate::tray::refresh_tray_menu(&app) {
+        warnings.push(format!("tray: {error}"));
+    }
+
+    Ok(SaveConfigOutcome {
+        config: saved,
+        warnings,
+    })
 }
 
 /// Reads the notification settings persisted at `path` without migrating or
@@ -2000,8 +2169,15 @@ fn autostart_entry_points_at_current_exe() -> bool {
     let value_name: Vec<u16> = "QuotaBarWin".encode_utf16().chain([0]).collect();
 
     let mut hkey = std::ptr::null_mut();
-    if unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_QUERY_VALUE, &mut hkey) }
-        != 0
+    if unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            0,
+            KEY_QUERY_VALUE,
+            &mut hkey,
+        )
+    } != 0
     {
         return false;
     }
@@ -2144,8 +2320,7 @@ fn running_quotabarwin_exe_dirs(self_pid: u32) -> Vec<PathBuf> {
             .position(|&character| character == 0)
             .unwrap_or(entry.szExeFile.len());
         let process_name = String::from_utf16_lossy(&entry.szExeFile[..name_length]);
-        if entry.th32ProcessID != self_pid && process_name.eq_ignore_ascii_case("QuotaBarWin.exe")
-        {
+        if entry.th32ProcessID != self_pid && process_name.eq_ignore_ascii_case("QuotaBarWin.exe") {
             if let Some(dir) = process_image_dir(entry.th32ProcessID) {
                 if !dirs.contains(&dir) {
                     dirs.push(dir);
@@ -2180,9 +2355,7 @@ fn process_image_dir(pid: u32) -> Option<PathBuf> {
         return None;
     }
     let image_path = String::from_utf16_lossy(&buffer[..length as usize]);
-    PathBuf::from(image_path)
-        .parent()
-        .map(Path::to_path_buf)
+    PathBuf::from(image_path).parent().map(Path::to_path_buf)
 }
 
 #[cfg(not(windows))]
@@ -2265,10 +2438,7 @@ pub fn dev_restart_app(app: AppHandle) {
         // Execute the exe directly instead of 'start': ShellExecute can be
         // policy-blocked, while CreateProcess via cmd works everywhere. The
         // detached shell then waits for the relaunched app, which is fine.
-        let script = format!(
-            "/C timeout /t 2 /nobreak >nul & \"{}\"",
-            exe_path.display()
-        );
+        let script = format!("/C timeout /t 2 /nobreak >nul & \"{}\"", exe_path.display());
         let _ = Command::new("cmd")
             .raw_arg(script)
             .creation_flags(DETACHED_PROCESS)
@@ -2888,13 +3058,18 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let original_config_path = temp.path().join("original").join("config.json");
         let copied_config_path = temp.path().join("copied").join("config.json");
-        let original_cache =
-            crate::remote_provider_commands::remote_provider_dir(&original_config_path, "provider-a")
-                .expect("original cache path");
+        let original_cache = crate::remote_provider_commands::remote_provider_dir(
+            &original_config_path,
+            "provider-a",
+        )
+        .expect("original cache path");
         let copied_cache =
             crate::remote_provider_commands::remote_provider_dir(&copied_config_path, "provider-a")
                 .expect("copied cache path");
-        for (dir, marker) in [(&original_cache, "original cache"), (&copied_cache, "copied cache")] {
+        for (dir, marker) in [
+            (&original_cache, "original cache"),
+            (&copied_cache, "copied cache"),
+        ] {
             fs::create_dir_all(dir).expect("create cache directory");
             fs::write(dir.join("provider.json"), marker).expect("write cache marker");
         }
@@ -3472,7 +3647,10 @@ mod tests {
             migrated["schemaVersion"],
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
-        assert_eq!(migrated["notifications"]["toastEnabled"], serde_json::json!(false));
+        assert_eq!(
+            migrated["notifications"]["toastEnabled"],
+            serde_json::json!(false)
+        );
         assert_eq!(
             migrated["notifications"]["webhookEnabled"],
             serde_json::json!(false)
@@ -3508,16 +3686,33 @@ mod tests {
             migrated["schemaVersion"],
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
-        assert_eq!(migrated["notifications"]["toastEnabled"], serde_json::json!(true));
-        assert_eq!(migrated["notifications"]["events"], serde_json::json!(["quota-reset"]));
-        let webhooks = migrated["notifications"]["webhooks"].as_array().expect("webhooks");
-        assert_eq!(webhooks.len(), 1, "the configured webhook becomes one endpoint");
-        assert_eq!(webhooks[0]["url"], serde_json::json!("https://example.com/hook"));
+        assert_eq!(
+            migrated["notifications"]["toastEnabled"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            migrated["notifications"]["events"],
+            serde_json::json!(["quota-reset"])
+        );
+        let webhooks = migrated["notifications"]["webhooks"]
+            .as_array()
+            .expect("webhooks");
+        assert_eq!(
+            webhooks.len(),
+            1,
+            "the configured webhook becomes one endpoint"
+        );
+        assert_eq!(
+            webhooks[0]["url"],
+            serde_json::json!("https://example.com/hook")
+        );
         assert_eq!(webhooks[0]["timeoutSeconds"], serde_json::json!(15));
         assert_eq!(webhooks[0]["template"], serde_json::Value::Null);
         assert_eq!(webhooks[0]["enabled"], serde_json::json!(true));
         assert!(migrated["notifications"].get("webhookUrl").is_none());
-        assert!(migrated["notifications"].get("webhookTimeoutSeconds").is_none());
+        assert!(migrated["notifications"]
+            .get("webhookTimeoutSeconds")
+            .is_none());
         assert!(migrated["notifications"].get("webhookTemplate").is_none());
         assert_eq!(default_config().notifications.webhooks, Vec::new());
     }
@@ -3543,7 +3738,9 @@ mod tests {
             migrated["schemaVersion"],
             serde_json::json!(CURRENT_CONFIG_SCHEMA_VERSION)
         );
-        let webhooks = migrated["notifications"]["webhooks"].as_array().expect("webhooks");
+        let webhooks = migrated["notifications"]["webhooks"]
+            .as_array()
+            .expect("webhooks");
         assert_eq!(webhooks.len(), 1);
         assert_eq!(webhooks[0]["url"], serde_json::json!("${secret:HOOK_URL}"));
         assert_eq!(webhooks[0]["timeoutSeconds"], serde_json::json!(20));
@@ -3763,7 +3960,10 @@ mod tests {
             serde_json::Value::Bool(true),
             "existing installations keep every provider in captures"
         );
-        assert_eq!(providers[1]["showInScreenshot"], serde_json::Value::Bool(false));
+        assert_eq!(
+            providers[1]["showInScreenshot"],
+            serde_json::Value::Bool(false)
+        );
         let config: AppConfig =
             serde_json::from_value(migrated).expect("migrated config deserializes");
         let ProviderConfig::Remote {
@@ -3971,7 +4171,7 @@ mod tests {
                 visible_window_ids: vec!["5h".to_string()],
                 show_in_tray: true,
                 notifications_enabled: true,
-            show_in_screenshot: true,
+                show_in_screenshot: true,
                 env_vars: HashMap::from([(
                     "KIMI_API_KEY".to_string(),
                     "${secret:KIMI_API_KEY}".to_string(),
@@ -4106,11 +4306,12 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = temp.path().join(CONFIG_FILE_NAME);
         fs::write(&path, "{}").expect("write config");
-        let legacy_current =
-            temp.path()
-                .join(format!("{CONFIG_FILE_NAME}.pre-migration.20260101000000.bak"));
-        let legacy_old_config =
-            temp.path().join("config.json.pre-migration.20260101000001.bak");
+        let legacy_current = temp.path().join(format!(
+            "{CONFIG_FILE_NAME}.pre-migration.20260101000000.bak"
+        ));
+        let legacy_old_config = temp
+            .path()
+            .join("config.json.pre-migration.20260101000001.bak");
         let legacy_corrupt = temp.path().join("config.corrupt.20260101000002.json");
         for file in [&legacy_current, &legacy_old_config, &legacy_corrupt] {
             fs::write(file, "backup").expect("write backup");
@@ -4122,7 +4323,9 @@ mod tests {
 
         let bak = temp.path().join("bak");
         assert!(bak.join(legacy_current.file_name().expect("name")).exists());
-        assert!(bak.join(legacy_old_config.file_name().expect("name")).exists());
+        assert!(bak
+            .join(legacy_old_config.file_name().expect("name"))
+            .exists());
         assert!(bak.join(legacy_corrupt.file_name().expect("name")).exists());
         assert!(!legacy_current.exists());
         assert!(!legacy_old_config.exists());
@@ -4246,19 +4449,19 @@ mod tests {
         fs::create_dir_all(marker_path.parent().expect("marker parent")).expect("create dir");
         fs::write(&marker_path, "portable").expect("write marker");
 
-        let selected_with_marker = config_path_from_candidates(
-            app_data_path,
-            portable_path.clone(),
-            marker_path,
-            false,
-        );
+        let selected_with_marker =
+            config_path_from_candidates(app_data_path, portable_path.clone(), marker_path, false);
         assert_eq!(selected_with_marker, portable_path);
 
         // Dev builds ignore the marker entirely and stay portable so they can
         // never land on the release AppData directory.
         let app_data_path = temp.path().join("app-data").join(CONFIG_FILE_NAME);
-        let selected_when_forced =
-            config_path_from_candidates(app_data_path, portable_path, temp.path().join("gone"), true);
+        let selected_when_forced = config_path_from_candidates(
+            app_data_path,
+            portable_path,
+            temp.path().join("gone"),
+            true,
+        );
         assert!(selected_when_forced.ends_with(CONFIG_FILE_NAME));
         assert!(!selected_when_forced.to_string_lossy().contains("app-data"));
     }
@@ -4341,12 +4544,22 @@ mod tests {
         fs::create_dir_all(source.join("providers").join("remote")).expect("create cache");
         fs::write(source.join(CONFIG_FILE_NAME), "{}").expect("write config");
         fs::write(
-            source.join("secrets").join("providers").join("inst").join("KEY.txt"),
+            source
+                .join("secrets")
+                .join("providers")
+                .join("inst")
+                .join("KEY.txt"),
             "token",
         )
         .expect("write secret");
-        fs::write(source.join("providers").join("remote").join("provider.json"), "{}")
-            .expect("write cache");
+        fs::write(
+            source
+                .join("providers")
+                .join("remote")
+                .join("provider.json"),
+            "{}",
+        )
+        .expect("write cache");
         fs::write(source.join("events.quotaBarWin.json"), "{}").expect("write events");
         fs::write(source.join("quotabarwin.log"), "noise").expect("write log");
 
@@ -4359,7 +4572,11 @@ mod tests {
             .join("inst")
             .join("KEY.txt")
             .exists());
-        assert!(target.join("providers").join("remote").join("provider.json").exists());
+        assert!(target
+            .join("providers")
+            .join("remote")
+            .join("provider.json")
+            .exists());
         assert!(target.join("events.quotaBarWin.json").exists());
         assert!(!target.join("quotabarwin.log").exists());
     }
@@ -4514,9 +4731,8 @@ mod tests {
         fs::write(secret_dir.join("QBWIN_TEST_USER_ENCRYPTED.txt"), &payload)
             .expect("write encrypted user secret");
 
-        let actual =
-            resolve_secret_value("${secret:QBWIN_TEST_USER_ENCRYPTED}", temp.path())
-                .expect("resolve encrypted user secret");
+        let actual = resolve_secret_value("${secret:QBWIN_TEST_USER_ENCRYPTED}", temp.path())
+            .expect("resolve encrypted user secret");
 
         assert_eq!(actual, "user-secret");
     }
@@ -4548,7 +4764,7 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let secret_dir = temp.path().join("secrets");
         fs::create_dir(&secret_dir).expect("create secrets dir");
-        fs::write(secret_dir.join("QBWIN_TEST_EMPTY_FILE.txt",), " \n").expect("write empty secret");
+        fs::write(secret_dir.join("QBWIN_TEST_EMPTY_FILE.txt"), " \n").expect("write empty secret");
         std::env::set_var("QBWIN_TEST_EMPTY_FILE", "from-env");
 
         let actual = resolve_secret_value("${secret:QBWIN_TEST_EMPTY_FILE}", temp.path())
@@ -4619,5 +4835,334 @@ mod tests {
         .expect("resolve file placeholder");
 
         assert_eq!(actual, "token-from-file");
+    }
+
+    // --- P0-0a: atomic config writes and the read-modify-write transaction ---
+
+    fn temp_config_path(temp: &tempfile::TempDir) -> PathBuf {
+        temp.path().join(CONFIG_FILE_NAME)
+    }
+
+    fn temp_entries(temp: &tempfile::TempDir) -> Vec<String> {
+        fs::read_dir(temp.path())
+            .expect("read temp dir")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn save_config_writes_atomically_and_leaves_no_temp_files() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+
+        save_config_to_path(&path, &default_config()).expect("first save");
+        let mut config = default_config();
+        config.refresh_interval_seconds = 60;
+        save_config_to_path(&path, &config).expect("second save");
+
+        assert_eq!(
+            load_or_create_config(&path)
+                .expect("reload")
+                .config
+                .refresh_interval_seconds,
+            60
+        );
+        assert!(
+            !temp_entries(&temp)
+                .iter()
+                .any(|name| name.starts_with('.') && name.ends_with(".tmp")),
+            "temporary files must be cleaned up: {:?}",
+            temp_entries(&temp)
+        );
+    }
+
+    #[test]
+    fn save_config_keeps_previous_bytes_when_validation_fails() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        save_config_to_path(&path, &default_config()).expect("save");
+
+        let before = fs::read(&path).expect("read config");
+        let mut invalid = default_config();
+        invalid.local_api.port = 0;
+
+        let error = save_config_to_path(&path, &invalid).expect_err("invalid port must fail");
+
+        assert!(error.contains("port"), "unexpected error: {error}");
+        assert_eq!(fs::read(&path).expect("unchanged config"), before);
+    }
+
+    #[test]
+    fn update_config_at_path_applies_and_persists_the_mutation() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        save_config_to_path(&path, &default_config()).expect("save");
+
+        let marker = update_config_at_path(&path, |config| {
+            config.refresh_interval_seconds = 42;
+            Ok(7)
+        })
+        .expect("transaction");
+
+        assert_eq!(marker, 7);
+        assert_eq!(
+            load_or_create_config(&path)
+                .expect("reload")
+                .config
+                .refresh_interval_seconds,
+            42
+        );
+    }
+
+    #[test]
+    fn update_config_at_path_does_not_write_when_apply_fails() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        save_config_to_path(&path, &default_config()).expect("save");
+        let before = fs::read(&path).expect("read config");
+
+        let error = update_config_at_path(&path, |config| {
+            config.refresh_interval_seconds = 99;
+            Err::<(), _>("synthetic apply failure".to_string())
+        })
+        .expect_err("apply failure must abort");
+
+        assert!(error.contains("synthetic apply failure"));
+        assert_eq!(fs::read(&path).expect("unchanged config"), before);
+    }
+
+    #[test]
+    fn update_config_at_path_serializes_concurrent_writers() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        save_config_to_path(&path, &default_config()).expect("save");
+
+        let mut handles = Vec::new();
+        for index in 0..8 {
+            let path = path.clone();
+            handles.push(std::thread::spawn(move || {
+                update_config_at_path(&path, |config| {
+                    config
+                        .providers
+                        .push(remote_provider_config(&format!("provider-{index}")));
+                    Ok(())
+                })
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("writer thread").expect("transaction");
+        }
+
+        let config = load_or_create_config(&path).expect("reload").config;
+        assert_eq!(config.providers.len(), 8);
+        for index in 0..8 {
+            assert!(
+                config
+                    .providers
+                    .iter()
+                    .any(|provider| matches!(provider, ProviderConfig::Remote { id, .. } if id == &format!("provider-{index}"))),
+                "provider-{index} was lost"
+            );
+        }
+    }
+
+    #[test]
+    fn update_config_at_path_rejects_unparsable_config_without_resetting() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        fs::write(&path, "{ not json").expect("write corrupt config");
+        let before = fs::read(&path).expect("read corrupt config");
+
+        let error = update_config_at_path(&path, |_| Ok(())).expect_err("corrupt config must fail");
+
+        assert!(error.contains("parse"), "unexpected error: {error}");
+        assert_eq!(fs::read(&path).expect("unchanged config"), before);
+    }
+
+    #[test]
+    fn merge_and_save_never_reverts_concurrent_field_commits() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        save_config_to_path(&path, &default_config()).expect("initial config");
+        let base = load_or_create_config(&path).expect("base").config;
+
+        // Backend-style writers keep committing field-level changes while the
+        // renderer repeatedly saves through the merge path. With the merge's
+        // current-read outside the write lock these commits could be reverted
+        // (TOCTOU); under the lock they never are.
+        let writer = {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                for _ in 0..25 {
+                    update_config_at_path(&path, |config| {
+                        config.refresh_interval_seconds += 1;
+                        Ok(())
+                    })
+                    .expect("field commit");
+                }
+            })
+        };
+
+        let mut next = base.clone();
+        next.low_quota_warning_threshold = 0.42;
+        let mut rebased = base.clone();
+        for _ in 0..10 {
+            let (merged, _) = merge_and_save_config_at_path(&path, Some(&rebased), &next)
+                .expect("merge save");
+            rebased = merged.clone();
+            next = merged;
+        }
+        writer.join().expect("writer thread");
+
+        let final_config = load_or_create_config(&path).expect("reload").config;
+        assert_eq!(
+            final_config.refresh_interval_seconds,
+            base.refresh_interval_seconds + 25,
+            "a concurrent field commit was reverted by a merge save"
+        );
+        assert_eq!(final_config.low_quota_warning_threshold, 0.42);
+    }
+
+    // --- save_config merge wiring (01) ---
+
+    fn provider_with_env(id: &str, env: &[(&str, &str)]) -> ProviderConfig {
+        let mut provider = remote_provider_config(id);
+        let ProviderConfig::Remote { env_vars, .. } = &mut provider;
+        *env_vars = env
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect();
+        provider
+    }
+
+    fn provider_env(config: &AppConfig, id: &str) -> HashMap<String, String> {
+        config
+            .providers
+            .iter()
+            .find_map(|provider| match provider {
+                ProviderConfig::Remote {
+                    id: current,
+                    env_vars,
+                    ..
+                } if current == id => Some(env_vars.clone()),
+                _ => None,
+            })
+            .expect("provider present")
+    }
+
+    #[test]
+    fn merge_and_save_preserves_an_adopted_binding_from_an_unchanged_draft() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        let mut initial = default_config();
+        initial.providers = vec![provider_with_env("kimi", &[("API_KEY", "${env:OLD}")])];
+        save_config_to_path(&path, &initial).expect("save initial");
+
+        let base = load_or_create_config(&path).expect("load base").config;
+
+        // Backend command adopts the credential while the renderer holds `base`.
+        let mut adopted = base.clone();
+        adopted.providers[0] =
+            provider_with_env("kimi", &[("API_KEY", "${secret:providers/kimi/API_KEY}")]);
+        save_config_to_path(&path, &adopted).expect("save adopt");
+
+        let mut next = base.clone();
+        next.refresh_interval_seconds = 60;
+
+        let (saved, warnings) =
+            merge_and_save_config_at_path(&path, Some(&base), &next).expect("merge and save");
+
+        assert_eq!(saved.refresh_interval_seconds, 60);
+        assert_eq!(
+            provider_env(&saved, "kimi")
+                .get("API_KEY")
+                .map(String::as_str),
+            Some("${secret:providers/kimi/API_KEY}")
+        );
+        assert!(warnings.is_empty());
+        assert_eq!(
+            provider_env(
+                &load_or_create_config(&path).expect("reload").config,
+                "kimi"
+            )
+            .get("API_KEY")
+            .map(String::as_str),
+            Some("${secret:providers/kimi/API_KEY}")
+        );
+    }
+
+    #[test]
+    fn merge_and_save_rejects_a_conflict_without_writing() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        let mut initial = default_config();
+        initial.providers = vec![provider_with_env("kimi", &[("API_KEY", "${env:OLD}")])];
+        save_config_to_path(&path, &initial).expect("save initial");
+
+        let base = load_or_create_config(&path).expect("load base").config;
+        let mut adopted = base.clone();
+        adopted.providers[0] =
+            provider_with_env("kimi", &[("API_KEY", "${secret:providers/kimi/API_KEY}")]);
+        save_config_to_path(&path, &adopted).expect("save adopt");
+        let before = fs::read(&path).expect("read config");
+
+        let mut next = base.clone();
+        next.providers[0] = provider_with_env("kimi", &[("API_KEY", "${env:NEW}")]);
+
+        let failure = merge_and_save_config_at_path(&path, Some(&base), &next)
+            .expect_err("conflict must reject");
+        assert!(matches!(
+            failure,
+            MutationFailure::Conflict { ref fields, .. } if fields == &vec!["providers[kimi].envVars".to_string()]
+        ));
+        assert_eq!(fs::read(&path).expect("unchanged config"), before);
+    }
+
+    #[test]
+    fn merge_and_save_rejects_first_creation_with_providers() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        let mut next = default_config();
+        next.providers = vec![provider_with_env("sneaky", &[])];
+
+        let failure = merge_and_save_config_at_path(&path, None, &next)
+            .expect_err("first creation must not add providers");
+
+        assert!(matches!(failure, MutationFailure::Validation { .. }));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn merge_and_save_rejects_a_missing_base_for_an_existing_config() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        save_config_to_path(&path, &default_config()).expect("save");
+
+        let failure = merge_and_save_config_at_path(&path, None, &default_config())
+            .expect_err("missing base must be rejected");
+
+        assert!(matches!(failure, MutationFailure::Validation { .. }));
+    }
+
+    #[test]
+    fn merge_and_save_allows_the_first_creation_without_providers() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp_config_path(&temp);
+        let mut next = default_config();
+        next.refresh_interval_seconds = 90;
+
+        let (saved, warnings) =
+            merge_and_save_config_at_path(&path, None, &next).expect("first creation");
+
+        assert_eq!(saved.refresh_interval_seconds, 90);
+        assert!(warnings.is_empty());
+        assert_eq!(
+            load_or_create_config(&path)
+                .expect("reload")
+                .config
+                .refresh_interval_seconds,
+            90
+        );
     }
 }

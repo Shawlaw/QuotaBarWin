@@ -209,7 +209,7 @@ const mocks = vi.hoisted(() => {
     refreshSnapshot: vi.fn(async () => snapshot),
     resetConfig: vi.fn(async () => config),
     saveProviderSetup: vi.fn(async () => undefined),
-    saveConfig: vi.fn(async () => undefined),
+    saveConfig: vi.fn(async (_base: unknown, next: unknown) => ({ config: next, warnings: [] })),
     setNetworkProxy: vi.fn(async () => undefined),
     setLocalApiAccessToken: vi.fn(async () => ({ token: "x".repeat(32) })),
     setPortableMode: vi.fn(async () => configStorageInfo),

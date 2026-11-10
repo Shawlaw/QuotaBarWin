@@ -9,7 +9,7 @@ use tauri::AppHandle;
 
 use crate::{
     config::{
-        config_path_for_app, load_or_create_config, resolve_secret_value, save_config_to_path,
+        config_path_for_app, load_or_create_config, resolve_secret_value,
         ProviderConfig, ProviderSetupState,
     },
     managed_secret_store::ManagedSecretStore,
@@ -65,6 +65,8 @@ pub struct ProviderSetupDescriptor {
     pub display_name: String,
     pub setup_state: ProviderSetupState,
     pub fields: Vec<ProviderSetupField>,
+    /// Names of configured env vars that the manifest does not declare.
+    pub unknown_env_vars: Vec<String>,
     pub has_unknown_env_vars: bool,
     pub can_auto_detect: bool,
 }
@@ -90,7 +92,7 @@ pub struct ProviderSetupTestResult {
     pub error_category: Option<ProviderErrorCategory>,
 }
 
-fn provider_parameters(manifest: &ProviderManifest) -> Vec<ProviderParameter> {
+pub(crate) fn provider_parameters(manifest: &ProviderManifest) -> Vec<ProviderParameter> {
     if !manifest.parameters.is_empty() {
         return manifest.parameters.clone();
     }
@@ -112,7 +114,7 @@ fn provider_parameters(manifest: &ProviderManifest) -> Vec<ProviderParameter> {
         .collect()
 }
 
-fn parameter_kind(parameter: &ProviderParameter) -> &str {
+pub(crate) fn parameter_kind(parameter: &ProviderParameter) -> &str {
     match parameter.kind.as_deref() {
         Some("secret") => "secret",
         Some("number") => "number",
@@ -121,7 +123,7 @@ fn parameter_kind(parameter: &ProviderParameter) -> &str {
     }
 }
 
-fn managed_placeholder(provider_id: &str, parameter_name: &str) -> String {
+pub(crate) fn managed_placeholder(provider_id: &str, parameter_name: &str) -> String {
     format!("${{secret:providers/{provider_id}/{parameter_name}}}")
 }
 
@@ -199,7 +201,7 @@ fn source_for_value(
     Ok((ProviderParameterSource::Literal, true))
 }
 
-fn setup_descriptor(
+pub(crate) fn setup_descriptor(
     config_path: &Path,
     provider: &ProviderConfig,
     manifest: &ProviderManifest,
@@ -254,15 +256,21 @@ fn setup_descriptor(
         })
         .collect::<Result<Vec<_>, String>>()?;
 
+    let mut unknown_env_vars = env_vars
+        .keys()
+        .filter(|name| !parameter_names.contains(name.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    unknown_env_vars.sort();
+
     Ok(ProviderSetupDescriptor {
         provider_id: id.clone(),
         provider_type: manifest.id.clone(),
         display_name: name.clone(),
         setup_state: setup_state.clone(),
         fields,
-        has_unknown_env_vars: env_vars
-            .keys()
-            .any(|name| !parameter_names.contains(name.as_str())),
+        has_unknown_env_vars: !unknown_env_vars.is_empty(),
+        unknown_env_vars,
         can_auto_detect: !parameters.iter().any(|parameter| parameter.required),
     })
 }
@@ -295,6 +303,75 @@ pub fn get_provider_setup_from_path(
         &loaded.config.providers[provider_index],
         &manifest,
     )
+}
+
+/// Computes the execution fingerprint for a provider using the cache that the
+/// runner would execute and the exact environment it would inject.
+pub(crate) fn provider_execution_fingerprint(
+    config_path: &Path,
+    provider: &ProviderConfig,
+    global_proxy: Option<&crate::proxy::ProxyConfig>,
+) -> Result<crate::execution_fingerprint::ExecutionFingerprint, String> {
+    let ProviderConfig::Remote {
+        id,
+        name,
+        runtime,
+        resolved_runtime,
+        timeout_seconds,
+        env_vars,
+        source_url,
+        trusted_checksum,
+        ..
+    } = provider;
+    let provider_dir = cached_provider_dir(config_path, provider)?;
+    let cache_root = crate::provider_cache_generation::resolve_cache_root(&provider_dir)?;
+    let manifest = crate::remote_provider::load_cached_manifest(&cache_root)
+        .map_err(|error| error.to_string())?;
+    let manifest_bytes = std::fs::read(cache_root.join("provider.json"))
+        .map_err(|error| format!("Unable to read cached provider manifest: {error}"))?;
+    let source_name = crate::remote_provider::source_file_name(&manifest.entry);
+    let source_bytes = std::fs::read(cache_root.join(&source_name))
+        .map_err(|error| format!("Unable to read cached provider source: {error}"))?;
+    let config_dir = config_path
+        .parent()
+        .ok_or_else(|| "Unable to resolve config directory".to_string())?;
+    let effective_env = match crate::remote_provider_runner::resolve_execution_env(
+        &manifest,
+        env_vars,
+        config_dir,
+        global_proxy,
+    ) {
+        Ok(env) => env,
+        // A missing/undecryptable secret must still produce a stable
+        // fingerprint so the test can run and report the real error instead of
+        // failing the fingerprint step. The marker is constant on purpose:
+        // the resolver's error text depends on HashMap iteration order, and the
+        // runner reports the real error separately.
+        Err(_) => std::collections::BTreeMap::from([(
+            "__QBWIN_ENV_RESOLUTION_ERROR__".to_string(),
+            "unresolved".to_string(),
+        )]),
+    };
+    let generation = crate::provider_cache_generation::resolve_current(&provider_dir)?
+        .map(|current| current.generation)
+        .unwrap_or_else(|| "legacy".to_string());
+    let provider_dir_text = provider_dir.display().to_string();
+
+    let parts = crate::execution_fingerprint::ExecutionParts {
+        provider_id: id,
+        name,
+        cache_generation: &generation,
+        manifest: &manifest_bytes,
+        source: &source_bytes,
+        effective_env: &effective_env,
+        provider_dir: &provider_dir_text,
+        runtime,
+        resolved_runtime: resolved_runtime.as_deref(),
+        timeout_seconds: *timeout_seconds,
+        source_url,
+        trusted_checksum: trusted_checksum.as_deref(),
+    };
+    Ok(crate::execution_fingerprint::compute(&parts))
 }
 
 #[tauri::command]
@@ -347,175 +424,244 @@ fn value_to_env_value(
     Ok(value)
 }
 
-fn restore_secret_changes(
-    store: &ManagedSecretStore,
-    provider_id: &str,
-    previous_values: &[(String, Option<Vec<u8>>)],
-) -> Result<(), String> {
-    for (parameter_name, previous_value) in previous_values.iter().rev() {
-        store.restore_for_rollback(provider_id, parameter_name, previous_value.as_deref())?;
-    }
-    Ok(())
-}
-
 pub fn save_provider_setup_to_path(
     config_path: &Path,
     request: SaveProviderSetupRequest,
 ) -> Result<ProviderSetupDescriptor, String> {
-    save_provider_setup_to_path_with(config_path, request, save_config_to_path)
-}
-
-fn save_provider_setup_to_path_with<F>(
-    config_path: &Path,
-    request: SaveProviderSetupRequest,
-    save_config: F,
-) -> Result<ProviderSetupDescriptor, String>
-where
-    F: FnOnce(&Path, &crate::config::AppConfig) -> Result<(), String>,
-{
     if request.display_name.trim().is_empty() {
         return Err("Provider account name is required".to_string());
     }
-    let (mut loaded, provider_index, manifest) =
-        load_provider_and_manifest(config_path, &request.provider_id)?;
-    let parameters = provider_parameters(&manifest);
-    let parameters_by_name = parameters
-        .iter()
-        .map(|parameter| (parameter.name.as_str(), parameter))
-        .collect::<HashMap<_, _>>();
+    // Lock order: provider write lock, then the config write lock inside the
+    // transaction. Secret files are written under both locks and restored on
+    // any failure before the provider lock is released.
+    let provider_id = request.provider_id.clone();
+    crate::provider_op_lock::with_provider_write(&provider_id, || {
+        save_provider_setup_under_locks(config_path, request)
+    })
+}
 
-    for name in request.values.keys().chain(request.secret_updates.keys()) {
-        if !parameters_by_name.contains_key(name.as_str()) {
-            return Err(format!("Unknown Provider parameter {name}"));
-        }
-    }
-    for name in request.secret_updates.keys() {
-        if parameter_kind(parameters_by_name[name.as_str()]) != "secret" {
-            return Err(format!("Provider parameter {name} is not a secret"));
-        }
-    }
-    let mut normalized_values = HashMap::new();
-    for (name, value) in &request.values {
-        let parameter = parameters_by_name[name.as_str()];
-        if parameter_kind(parameter) == "secret" {
-            return Err(format!(
-                "Provider secret parameter {name} must use the protected secret input"
-            ));
-        }
-        let value = match value {
-            serde_json::Value::Null if parameter.required => {
-                return Err(format!("Provider parameter {name} is required"));
-            }
-            serde_json::Value::Null => None,
-            value => {
-                let value = value_to_env_value(parameter, value)?;
-                if value.is_empty() && !parameter.required {
-                    None
-                } else {
-                    Some(value)
-                }
-            }
-        };
-        normalized_values.insert(name.clone(), value);
-    }
-
+/// Runs inside the provider write lock. The config part is a read-modify-write
+/// transaction; the managed-secret store is built from the config loaded
+/// inside that transaction, so a concurrent storage-mode migration (W9)
+/// cannot race this save into writing plaintext into an encrypted
+/// installation.
+fn save_provider_setup_under_locks(
+    config_path: &Path,
+    request: SaveProviderSetupRequest,
+) -> Result<ProviderSetupDescriptor, String> {
     let config_dir = config_path
         .parent()
         .ok_or_else(|| "Unable to resolve config directory".to_string())?;
-    let store = ManagedSecretStore::new(
-        config_dir,
-        crate::config::secret_storage_mode_for_config_path(config_path),
-    );
-    let provider_id = request.provider_id.as_str();
-    let mut previous_secret_values: Vec<(String, Option<Vec<u8>>)> = Vec::new();
-    let mut updated_secret_placeholders = HashMap::new();
-    for (name, update) in &request.secret_updates {
-        let parameter = parameters_by_name[name.as_str()];
-        if let Some(value) = update {
-            if value.trim().is_empty() {
+
+    // (parameter, previous bytes) for every secret touched by this save;
+    // restored in reverse when the transaction fails.
+    let mut secret_rollbacks: Vec<(String, Option<Vec<u8>>)> = Vec::new();
+    let mut rollback_store: Option<ManagedSecretStore> = None;
+
+    let outcome = crate::config::update_config_at_path(config_path, |config| {
+        let index = config
+            .providers
+            .iter()
+            .position(
+                |provider| matches!(provider, ProviderConfig::Remote { id, .. } if id == &request.provider_id),
+            )
+            .ok_or_else(|| "Provider was not found".to_string())?;
+
+        // Manifest load is local I/O; safe (and required) inside the
+        // transaction so the descriptor always matches the committed config.
+        let provider_dir =
+            crate::remote_provider_commands::cached_provider_dir(config_path, &config.providers[index])?;
+        let manifest = crate::remote_provider::load_cached_manifest(&provider_dir)
+            .map_err(|error| error.to_string())?;
+
+        let parameters = provider_parameters(&manifest);
+        let parameters_by_name = parameters
+            .iter()
+            .map(|parameter| (parameter.name.as_str(), parameter))
+            .collect::<HashMap<_, _>>();
+
+        for name in request.values.keys().chain(request.secret_updates.keys()) {
+            if !parameters_by_name.contains_key(name.as_str()) {
+                return Err(format!("Unknown Provider parameter {name}"));
+            }
+        }
+        for name in request.secret_updates.keys() {
+            if parameter_kind(parameters_by_name[name.as_str()]) != "secret" {
+                return Err(format!("Provider parameter {name} is not a secret"));
+            }
+        }
+
+        let provider_id = request.provider_id.as_str();
+        let store = ManagedSecretStore::new(config_dir, config.secrets_storage.clone());
+        rollback_store = Some(store.clone());
+
+        // Current bindings before any mutation, used for change detection.
+        let bindings: HashMap<String, String> = match &config.providers[index] {
+            ProviderConfig::Remote { env_vars, .. } => env_vars.clone(),
+        };
+
+        // D9 conservative changed detection: only a save that actually changes
+        // the effective runtime inputs resets the verification state. A
+        // rename-only save keeps `ready`; a default value that materializes
+        // into envVars is a real change (the runner only ever sees envVars).
+        let mut state_affecting_change = false;
+        let mut updated_secret_placeholders: HashMap<String, String> = HashMap::new();
+
+        for (name, update) in &request.secret_updates {
+            let parameter = parameters_by_name[name.as_str()];
+            if let Some(value) = update {
+                if value.trim().is_empty() {
+                    return Err(format!(
+                        "Provider secret parameter {} cannot be empty; clear it instead",
+                        parameter.name
+                    ));
+                }
+            } else if parameter.required {
+                // Clearing a required secret is allowed, but it leaves the
+                // saved Provider unverified and disabled until the user
+                // supplies it again.
+            }
+
+            let binding = bindings.get(name).map(String::as_str);
+            let placeholder = managed_placeholder(provider_id, name);
+            let is_managed_here = binding == Some(placeholder.as_str());
+            // Only when the binding already points at this instance's managed
+            // file does the file content represent the current value. A
+            // decrypt failure maps to `None`, which classifies as "changed"
+            // instead of masking a broken secret as a no-op.
+            let stored_value = if is_managed_here {
+                store.read_effective_value(provider_id, name).ok().flatten()
+            } else {
+                None
+            };
+            let secret_changed = match (binding, update) {
+                (None, None) => false,
+                (Some(_), None) => true,
+                (Some(_), Some(value)) if is_managed_here => {
+                    stored_value.as_deref() != Some(value.trim())
+                }
+                (Some(_), Some(_)) => true,
+                (None, Some(_)) => true,
+            };
+            if secret_changed {
+                state_affecting_change = true;
+            }
+
+            let previous = store.read_for_rollback(provider_id, name)?;
+            secret_rollbacks.push((name.clone(), previous));
+            match update {
+                Some(_) if !secret_changed => {
+                    // Same managed value: skip the rewrite (no pointless DPAPI
+                    // churn) and keep the binding, which already is the
+                    // placeholder.
+                    updated_secret_placeholders.insert(name.clone(), placeholder);
+                }
+                Some(value) => {
+                    let reference = store.write(provider_id, name, value)?;
+                    updated_secret_placeholders.insert(name.clone(), reference.placeholder());
+                }
+                None => {
+                    store.delete(provider_id, name)?;
+                }
+            }
+        }
+
+        let mut normalized_values = HashMap::new();
+        for (name, value) in &request.values {
+            let parameter = parameters_by_name[name.as_str()];
+            if parameter_kind(parameter) == "secret" {
                 return Err(format!(
-                    "Provider secret parameter {} cannot be empty; clear it instead",
-                    parameter.name
+                    "Provider secret parameter {name} must use the protected secret input"
                 ));
             }
-        } else if parameter.required {
-            // Clearing a required secret is allowed, but it leaves the saved
-            // Provider unverified and disabled until the user supplies it again.
-        }
-        let previous_value = store.read_for_rollback(provider_id, name)?;
-        let write_result = match update {
-            Some(value) => store
-                .write(provider_id, name, value)
-                .map(|reference| Some(reference.placeholder())),
-            None => store.delete(provider_id, name).map(|_| None),
-        };
-        match write_result {
-            Ok(Some(placeholder)) => {
-                updated_secret_placeholders.insert(name.clone(), placeholder);
+            let value = match value {
+                serde_json::Value::Null if parameter.required => {
+                    return Err(format!("Provider parameter {name} is required"));
+                }
+                serde_json::Value::Null => None,
+                value => {
+                    let value = value_to_env_value(parameter, value)?;
+                    if value.is_empty() && !parameter.required {
+                        None
+                    } else {
+                        Some(value)
+                    }
+                }
+            };
+            if bindings.get(name) != value.as_ref() {
+                state_affecting_change = true;
             }
-            Ok(None) => {}
-            Err(error) => {
-                let _ = restore_secret_changes(&store, provider_id, &previous_secret_values);
-                return Err(error);
-            }
+            normalized_values.insert(name.clone(), value);
         }
-        previous_secret_values.push((name.clone(), previous_value));
-    }
 
-    let provider = &mut loaded.config.providers[provider_index];
-    let ProviderConfig::Remote {
-        name,
-        enabled,
-        env_vars,
-        setup_state,
-        setup_last_tested_at,
-        ..
-    } = provider;
-    *name = request.display_name.trim().to_string();
-    for (parameter_name, update) in &request.secret_updates {
-        match update {
-            Some(_) => {
-                let Some(placeholder) = updated_secret_placeholders.get(parameter_name) else {
-                    let _ = restore_secret_changes(&store, provider_id, &previous_secret_values);
-                    return Err(format!(
-                        "Managed Provider secret reference is unavailable for {parameter_name}"
-                    ));
-                };
-                env_vars.insert(parameter_name.clone(), placeholder.clone());
-            }
-            None => {
-                env_vars.remove(parameter_name);
-            }
-        }
-    }
-    for (parameter_name, value) in normalized_values {
-        match value {
-            Some(value) => {
-                env_vars.insert(parameter_name, value);
-            }
-            None => {
-                env_vars.remove(&parameter_name);
+        let provider = &mut config.providers[index];
+        let ProviderConfig::Remote {
+            name,
+            enabled,
+            env_vars,
+            setup_state,
+            setup_last_tested_at,
+            ..
+        } = provider;
+        *name = request.display_name.trim().to_string();
+        for (parameter_name, update) in &request.secret_updates {
+            match update {
+                Some(_) => {
+                    let Some(placeholder) = updated_secret_placeholders.get(parameter_name) else {
+                        return Err(format!(
+                            "Managed Provider secret reference is unavailable for {parameter_name}"
+                        ));
+                    };
+                    env_vars.insert(parameter_name.clone(), placeholder.clone());
+                }
+                None => {
+                    env_vars.remove(parameter_name);
+                }
             }
         }
-    }
-    *enabled = false;
-    *setup_state = ProviderSetupState::Unverified;
-    *setup_last_tested_at = None;
+        for (parameter_name, value) in normalized_values {
+            match value {
+                Some(value) => {
+                    env_vars.insert(parameter_name, value);
+                }
+                None => {
+                    env_vars.remove(&parameter_name);
+                }
+            }
+        }
+        if state_affecting_change {
+            *enabled = false;
+            *setup_state = ProviderSetupState::Unverified;
+            *setup_last_tested_at = None;
+        }
 
-    if let Err(error) = save_config(config_path, &loaded.config) {
-        let restore_result = restore_secret_changes(&store, provider_id, &previous_secret_values);
-        return match restore_result {
-            Ok(()) => Err(error),
-            Err(_) => Err(format!(
-                "Unable to save Provider setup: {error}; secret rollback failed"
-            )),
-        };
+        // Built from the in-transaction state, before the config commit, so a
+        // descriptor failure cannot leave a committed config behind.
+        setup_descriptor(config_path, &config.providers[index], &manifest)
+    });
+
+    match outcome {
+        Ok(descriptor) => Ok(descriptor),
+        Err(error) => {
+            let mut rollback_failed = false;
+            if let Some(store) = rollback_store.as_ref() {
+                for (name, previous) in secret_rollbacks.iter().rev() {
+                    if store
+                        .restore_for_rollback(&request.provider_id, name, previous.as_deref())
+                        .is_err()
+                    {
+                        rollback_failed = true;
+                    }
+                }
+            }
+            if rollback_failed {
+                return Err(format!(
+                    "Unable to save Provider setup: {error}; secret rollback failed"
+                ));
+            }
+            Err(error)
+        }
     }
-    setup_descriptor(
-        config_path,
-        &loaded.config.providers[provider_index],
-        &manifest,
-    )
 }
 
 #[tauri::command]
@@ -547,6 +693,8 @@ fn run_setup_test(
         provider_dir,
         runtime,
         resolved_runtime,
+        trusted_checksum,
+        version,
         timeout_seconds,
         env_vars,
         window_label_overrides,
@@ -559,6 +707,8 @@ fn run_setup_test(
         provider_dir.as_deref(),
         runtime,
         resolved_runtime.as_deref(),
+        trusted_checksum.as_deref(),
+        version.as_deref(),
         global_proxy,
         *timeout_seconds,
         config_dir,
@@ -577,18 +727,23 @@ pub fn test_provider_setup_from_path(
     config_path: &Path,
     provider_id: &str,
 ) -> Result<ProviderSetupTestResult, String> {
-    let mut loaded = load_or_create_config(config_path)?;
-    let provider_index = loaded
+    let loaded = load_or_create_config(config_path)?;
+    let provider = loaded
         .config
         .providers
         .iter()
-        .position(
-            |provider| matches!(provider, ProviderConfig::Remote { id, .. } if id == provider_id),
-        )
+        .find(|provider| matches!(provider, ProviderConfig::Remote { id, .. } if id == provider_id))
+        .cloned()
         .ok_or_else(|| "Provider was not found".to_string())?;
-    let provider = loaded.config.providers[provider_index].clone();
-    let mut snapshot =
-        run_setup_test(config_path, &provider, loaded.config.network_proxy.as_ref())?;
+    let global_proxy = loaded.config.network_proxy.clone();
+
+    // The test result only applies to the exact execution environment that was
+    // validated (cache generation + resolved env + runtime + timeout + proxy).
+    let fingerprint_before = crate::provider_op_lock::with_provider_read(provider_id, || {
+        provider_execution_fingerprint(config_path, &provider, global_proxy.as_ref())
+    })?;
+
+    let mut snapshot = run_setup_test(config_path, &provider, global_proxy.as_ref())?;
     let success = snapshot.status != "error";
     // Setup results are intended for a short UI preview, never for retaining a
     // Provider's arbitrary metadata payload.
@@ -599,20 +754,42 @@ pub fn test_provider_setup_from_path(
         classify_provider_error(&snapshot)
     };
 
-    let ProviderConfig::Remote {
-        enabled,
-        setup_state,
-        setup_last_tested_at,
-        ..
-    } = &mut loaded.config.providers[provider_index];
-    *enabled = success;
-    *setup_state = if success {
-        ProviderSetupState::Ready
-    } else {
-        ProviderSetupState::Unverified
-    };
-    *setup_last_tested_at = Some(Utc::now().to_rfc3339());
-    save_config_to_path(config_path, &loaded.config)?;
+    crate::provider_op_lock::with_provider_write(provider_id, || {
+        crate::config::update_config_at_path(config_path, |config| {
+            let index = config
+                .providers
+                .iter()
+                .position(
+                    |provider| matches!(provider, ProviderConfig::Remote { id, .. } if id == provider_id),
+                )
+                .ok_or_else(|| "Provider was not found".to_string())?;
+            let current_fingerprint = provider_execution_fingerprint(
+                config_path,
+                &config.providers[index],
+                config.network_proxy.as_ref(),
+            )?;
+            if current_fingerprint != fingerprint_before {
+                return Err(
+                    "Provider configuration changed while testing; run the test again".to_string(),
+                );
+            }
+
+            let ProviderConfig::Remote {
+                enabled,
+                setup_state,
+                setup_last_tested_at,
+                ..
+            } = &mut config.providers[index];
+            *enabled = success;
+            *setup_state = if success {
+                ProviderSetupState::Ready
+            } else {
+                ProviderSetupState::Unverified
+            };
+            *setup_last_tested_at = Some(Utc::now().to_rfc3339());
+            Ok(())
+        })
+    })?;
 
     Ok(ProviderSetupTestResult {
         success,
@@ -763,6 +940,10 @@ mod tests {
             .expect("account id field");
         assert!(account_id.value.is_none());
         assert!(descriptor.has_unknown_env_vars);
+        assert_eq!(
+            descriptor.unknown_env_vars,
+            vec!["CUSTOM_SETTING".to_string()]
+        );
     }
 
     #[test]
@@ -837,6 +1018,69 @@ mod tests {
     }
 
     #[test]
+    fn multiple_secrets_are_saved_replaced_and_cleared_independently() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let provider = setup_provider(&temp, true);
+        let manifest_path = temp.path().join("providers/remote/setup-provider/provider.json");
+        let mut manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&manifest_path).expect("manifest"),
+        ).expect("parse manifest");
+        manifest["parameters"].as_array_mut().unwrap().push(serde_json::json!({
+            "name": "SECOND_KEY", "kind": "secret", "required": false,
+            "defaultValue": "${secret:UNUSED_DEFAULT}"
+        }));
+        std::fs::write(&manifest_path, manifest.to_string()).expect("write manifest");
+        let path = config_path_with_provider(&temp, provider);
+        let request = |secret_updates| SaveProviderSetupRequest {
+            provider_id: "setup-provider".to_string(),
+            display_name: "Work".to_string(),
+            values: HashMap::new(),
+            secret_updates,
+        };
+        let store = ManagedSecretStore::new(temp.path(), SecretStorageMode::Plaintext);
+        save_provider_setup_to_path(&path, request(HashMap::from([
+            ("API_KEY".to_string(), Some("first-value".to_string())),
+            ("SECOND_KEY".to_string(), Some("second-value".to_string())),
+        ]))).expect("save both keys");
+        for (name, expected) in [("API_KEY", "first-value"), ("SECOND_KEY", "second-value")] {
+            assert_eq!(
+                crate::provider_secret_commands::reveal_managed_secret_for_path(
+                    &path, "setup-provider", name,
+                ).expect("reveal key").value,
+                expected,
+            );
+        }
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(!saved.contains("first-value"));
+        assert!(!saved.contains("second-value"));
+
+        // Both writes must roll back if a later regular-field validation fails.
+        let mut invalid = request(HashMap::from([
+            ("API_KEY".to_string(), Some("discard-first".to_string())),
+            ("SECOND_KEY".to_string(), Some("discard-second".to_string())),
+        ]));
+        invalid.values.insert("RETRIES".to_string(), serde_json::json!("invalid-number"));
+        assert!(save_provider_setup_to_path(&path, invalid).is_err());
+        assert_eq!(store.read_effective_value("setup-provider", "API_KEY").unwrap().as_deref(), Some("first-value"));
+        assert_eq!(store.read_effective_value("setup-provider", "SECOND_KEY").unwrap().as_deref(), Some("second-value"));
+
+        let descriptor = save_provider_setup_to_path(&path, request(HashMap::from([
+            ("API_KEY".to_string(), Some("replacement".to_string())),
+            ("SECOND_KEY".to_string(), None),
+        ]))).expect("replace first and clear second");
+        assert_eq!(store.read_effective_value("setup-provider", "API_KEY").unwrap().as_deref(), Some("replacement"));
+        assert!(!store.exists("setup-provider", "SECOND_KEY").unwrap());
+        assert!(!descriptor.fields.iter().find(|field| field.name == "SECOND_KEY").unwrap().configured);
+
+        // A secret default alone never creates a binding, even after another save.
+        save_provider_setup_to_path(&path, request(HashMap::new())).expect("keep keys");
+        let loaded = load_or_create_config(&path).unwrap();
+        let ProviderConfig::Remote { env_vars, .. } = &loaded.config.providers[0];
+        assert!(!env_vars.contains_key("SECOND_KEY"));
+        assert!(!store.exists("setup-provider", "SECOND_KEY").unwrap());
+    }
+
+    #[test]
     fn invalid_regular_value_is_rejected_before_secret_changes() {
         let temp = tempfile::tempdir().expect("temp dir");
         let path = config_path_with_provider(&temp, setup_provider(&temp, true));
@@ -886,22 +1130,27 @@ mod tests {
             .expect("write previous secret");
         let original_config = std::fs::read_to_string(&path).expect("original config");
 
-        let error = save_provider_setup_to_path_with(
-            &path,
-            SaveProviderSetupRequest {
-                provider_id: "setup-provider".to_string(),
-                display_name: "Work account".to_string(),
-                values: HashMap::new(),
-                secret_updates: HashMap::from([(
-                    "API_KEY".to_string(),
-                    Some("replacement-secret".to_string()),
-                )]),
-            },
-            |_, _| Err("synthetic config failure".to_string()),
-        )
-        .expect_err("config save must fail");
+        crate::config::set_config_write_failure(true);
+        let error = std::panic::catch_unwind(|| {
+            save_provider_setup_to_path(
+                &path,
+                SaveProviderSetupRequest {
+                    provider_id: "setup-provider".to_string(),
+                    display_name: "Work account".to_string(),
+                    values: HashMap::new(),
+                    secret_updates: HashMap::from([(
+                        "API_KEY".to_string(),
+                        Some("replacement-secret".to_string()),
+                    )]),
+                },
+            )
+        });
+        crate::config::set_config_write_failure(false);
+        let error = error
+            .expect("save must return an error, not panic")
+            .expect_err("config save must fail");
 
-        assert!(error.contains("synthetic config failure"));
+        assert!(error.contains("injected config write failure"));
         assert!(!error.contains("replacement-secret"));
         assert_eq!(
             std::fs::read_to_string(
@@ -915,6 +1164,194 @@ mod tests {
             std::fs::read_to_string(&path).expect("unchanged config"),
             original_config
         );
+    }
+
+    fn mark_ready(provider: &mut ProviderConfig) {
+        let ProviderConfig::Remote {
+            enabled,
+            setup_state,
+            setup_last_tested_at,
+            ..
+        } = provider;
+        *enabled = true;
+        *setup_state = ProviderSetupState::Ready;
+        *setup_last_tested_at = Some("2026-11-01T00:00:00Z".to_string());
+    }
+
+    fn load_setup_provider(path: &std::path::Path) -> ProviderConfig {
+        load_or_create_config(path)
+            .expect("load config")
+            .config
+            .providers
+            .into_iter()
+            .find(|provider| matches!(provider, ProviderConfig::Remote { id, .. } if id == "setup-provider"))
+            .expect("setup provider")
+    }
+
+    fn ready_provider_with_managed_secret(temp: &tempfile::TempDir) -> std::path::PathBuf {
+        let mut provider = setup_provider(temp, true);
+        mark_ready(&mut provider);
+        let store = ManagedSecretStore::new(temp.path(), SecretStorageMode::Plaintext);
+        store
+            .write("setup-provider", "API_KEY", "managed-secret")
+            .expect("write managed secret");
+        if let ProviderConfig::Remote { env_vars, .. } = &mut provider {
+            env_vars.insert(
+                "API_KEY".to_string(),
+                "${secret:providers/setup-provider/API_KEY}".to_string(),
+            );
+        }
+        config_path_with_provider(temp, provider)
+    }
+
+    #[test]
+    fn rename_only_save_keeps_the_verified_state() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = ready_provider_with_managed_secret(&temp);
+
+        save_provider_setup_to_path(
+            &path,
+            SaveProviderSetupRequest {
+                provider_id: "setup-provider".to_string(),
+                display_name: "Renamed account".to_string(),
+                values: HashMap::new(),
+                secret_updates: HashMap::new(),
+            },
+        )
+        .expect("rename-only save");
+
+        match load_setup_provider(&path) {
+            ProviderConfig::Remote {
+                name,
+                enabled,
+                setup_state,
+                setup_last_tested_at,
+                ..
+            } => {
+                assert_eq!(name, "Renamed account");
+                assert!(enabled, "a rename must not disable the Provider");
+                assert_eq!(setup_state, ProviderSetupState::Ready);
+                assert_eq!(
+                    setup_last_tested_at.as_deref(),
+                    Some("2026-11-01T00:00:00Z")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn same_value_managed_secret_save_is_a_noop() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = ready_provider_with_managed_secret(&temp);
+        let secret_file = temp
+            .path()
+            .join("secrets/providers/setup-provider/API_KEY.txt");
+        let bytes_before = std::fs::read(&secret_file).expect("secret bytes before");
+
+        save_provider_setup_to_path(
+            &path,
+            SaveProviderSetupRequest {
+                provider_id: "setup-provider".to_string(),
+                display_name: "Setup Provider".to_string(),
+                values: HashMap::new(),
+                secret_updates: HashMap::from([(
+                    "API_KEY".to_string(),
+                    Some("managed-secret".to_string()),
+                )]),
+            },
+        )
+        .expect("same-value save");
+
+        match load_setup_provider(&path) {
+            ProviderConfig::Remote {
+                enabled,
+                setup_state,
+                setup_last_tested_at,
+                ..
+            } => {
+                assert!(enabled, "a same-value secret save must not disable");
+                assert_eq!(setup_state, ProviderSetupState::Ready);
+                assert!(setup_last_tested_at.is_some());
+            }
+        }
+        assert_eq!(
+            std::fs::read(&secret_file).expect("secret bytes after"),
+            bytes_before,
+            "an unchanged secret must not be rewritten"
+        );
+    }
+
+    #[test]
+    fn clearing_a_managed_secret_resets_and_removes_the_binding() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = ready_provider_with_managed_secret(&temp);
+
+        save_provider_setup_to_path(
+            &path,
+            SaveProviderSetupRequest {
+                provider_id: "setup-provider".to_string(),
+                display_name: "Setup Provider".to_string(),
+                values: HashMap::new(),
+                secret_updates: HashMap::from([("API_KEY".to_string(), None)]),
+            },
+        )
+        .expect("clearing save");
+
+        match load_setup_provider(&path) {
+            ProviderConfig::Remote {
+                enabled,
+                setup_state,
+                setup_last_tested_at,
+                env_vars,
+                ..
+            } => {
+                assert!(!enabled, "clearing a credential must disable");
+                assert_eq!(setup_state, ProviderSetupState::Unverified);
+                assert!(setup_last_tested_at.is_none());
+                assert!(!env_vars.contains_key("API_KEY"));
+            }
+        }
+        assert!(!temp
+            .path()
+            .join("secrets/providers/setup-provider/API_KEY.txt")
+            .exists());
+    }
+
+    #[test]
+    fn materializing_a_default_value_resets_the_state() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let mut provider = setup_provider(&temp, true);
+        mark_ready(&mut provider);
+        // REGION has defaultValue "CN" and is absent from envVars; the runner
+        // only sees envVars, so materializing it is a real runtime change.
+        let path = config_path_with_provider(&temp, provider);
+
+        save_provider_setup_to_path(
+            &path,
+            SaveProviderSetupRequest {
+                provider_id: "setup-provider".to_string(),
+                display_name: "Setup Provider".to_string(),
+                values: HashMap::from([("REGION".to_string(), serde_json::json!("CN"))]),
+                secret_updates: HashMap::new(),
+            },
+        )
+        .expect("materializing save");
+
+        match load_setup_provider(&path) {
+            ProviderConfig::Remote {
+                enabled,
+                setup_state,
+                env_vars,
+                ..
+            } => {
+                assert!(!enabled, "materializing a default must disable");
+                assert_eq!(setup_state, ProviderSetupState::Unverified);
+                assert_eq!(
+                    env_vars.get("REGION").map(String::as_str),
+                    Some("CN")
+                );
+            }
+        }
     }
 
     #[test]
@@ -946,7 +1383,9 @@ mod tests {
         )
         .expect("managed secret payload");
         assert!(crate::secret_encryption::is_encrypted_payload(&bytes));
-        assert!(!bytes.windows(16).any(|window| *window == b"encrypted-secret"[..]));
+        assert!(!bytes
+            .windows(16)
+            .any(|window| *window == b"encrypted-secret"[..]));
         assert_eq!(
             crate::secret_encryption::decrypt_managed_secret(
                 &bytes,

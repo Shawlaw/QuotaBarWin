@@ -17,7 +17,7 @@ use crate::{
     logger::{LogLevel, LogSink},
     proxy::ProxyConfig,
     remote_provider::{
-        cache_remote_provider, check_update, compute_checksum, fetch_manifest, fetch_manifest_text,
+        check_update, compute_checksum, fetch_manifest, fetch_manifest_text,
         fetch_provider_registry, fetch_source, is_builtin_js_runtime, load_cached_manifest,
         load_remote_provider_catalog_cache, parse_manifest, remote_provider_catalog_cache_path,
         resolve_provider_url, resolve_runtime, resolve_source_url,
@@ -53,10 +53,154 @@ pub(crate) fn cached_provider_dir(
 }
 
 fn remote_provider_cache_is_healthy(provider_dir: &Path) -> bool {
-    let Ok(manifest) = load_cached_manifest(provider_dir) else {
+    let Ok(cache_root) = crate::provider_cache_generation::resolve_cache_root(provider_dir) else {
         return false;
     };
-    provider_dir.join(source_file_name(&manifest.entry)).is_file()
+    let Ok(manifest) = load_cached_manifest(&cache_root) else {
+        return false;
+    };
+    cache_root.join(source_file_name(&manifest.entry)).is_file()
+}
+
+/// Publishes a cache generation and commits the matching config entry under one
+/// provider write lock.
+///
+/// Order: prepare generation → field-level config commit → activate pointer.
+/// If activation fails, the previously captured provider entry is restored
+/// field-by-field (or removed for a first install), then the prepared
+/// generation is discarded. Returns an error string that mentions both the
+/// activation failure and a restore failure when applicable.
+fn commit_cache_files<F>(
+    config_path: &Path,
+    provider_dir: &Path,
+    provider_instance_id: &str,
+    files: &crate::remote_provider::CacheFiles,
+    apply_config: F,
+) -> Result<(), String>
+where
+    F: FnOnce(&mut AppConfig) -> Result<String, String>,
+{
+    crate::provider_op_lock::with_provider_write(provider_instance_id, || {
+        let prepared = crate::provider_cache_generation::prepare_generation(
+            provider_dir,
+            &[
+                ("provider.json", files.manifest_json.as_bytes()),
+                (files.source_name.as_str(), files.source.as_bytes()),
+                (".meta.json", files.meta_json.as_bytes()),
+            ],
+        )?;
+
+        // The previous entry is captured under the config write lock (inside
+        // the same transaction that applies the change), so the restore below
+        // can never resurrect an older snapshot over a concurrent commit.
+        let (fingerprint, previous) = match crate::config::update_config_at_path(config_path, |config| {
+            let previous = config
+                .providers
+                .iter()
+                .find(|provider| provider_id(provider) == provider_instance_id)
+                .cloned();
+            let fingerprint = apply_config(config)?;
+            Ok((fingerprint, previous))
+        }) {
+            Ok(result) => result,
+            Err(error) => {
+                let _ =
+                    crate::provider_cache_generation::discard_generation(provider_dir, &prepared);
+                return Err(error);
+            }
+        };
+
+        match crate::provider_cache_generation::activate_generation_with_fingerprint(
+            provider_dir,
+            &prepared,
+            Some(&fingerprint),
+        ) {
+            Ok(_) => Ok(()),
+            Err(error) => {
+                let restore = crate::config::update_config_at_path(config_path, |config| {
+                    match &previous {
+                        Some(previous) => {
+                            if let Some(slot) = config
+                                .providers
+                                .iter_mut()
+                                .find(|provider| provider_id(provider) == provider_instance_id)
+                            {
+                                *slot = previous.clone();
+                            }
+                        }
+                        None => {
+                            config
+                                .providers
+                                .retain(|provider| provider_id(provider) != provider_instance_id);
+                        }
+                    }
+                    Ok(())
+                });
+                let _ =
+                    crate::provider_cache_generation::discard_generation(provider_dir, &prepared);
+                match restore {
+                    Ok(()) => Err(format!("cache activation failed: {error}")),
+                    Err(restore_error) => Err(format!(
+                        "cache activation failed: {error}; config restore failed: {restore_error}"
+                    )),
+                }
+            }
+        }
+    })
+}
+
+/// One-time startup migration of legacy caches into immutable generations.
+///
+/// Legacy files stay in place for one release; readers prefer `current.json`
+/// once it exists. A failed provider migration is logged and skipped so startup
+/// never fails because of one broken cache.
+pub(crate) fn migrate_provider_caches(
+    config_path: &Path,
+    log: Option<&LogSink>,
+) -> Result<usize, String> {
+    let loaded = load_or_create_config(config_path)?;
+    let mut migrated = 0;
+    for provider in &loaded.config.providers {
+        let id = provider_id(provider).to_string();
+        let provider_dir = remote_provider_dir(config_path, &id)?;
+        let outcome = crate::provider_op_lock::with_provider_write(&id, || {
+            let _ = crate::provider_cache_generation::cleanup_staging_generations(&provider_dir);
+            crate::provider_cache_generation::migrate_legacy_cache(&provider_dir)
+        });
+        match outcome {
+            Ok(crate::provider_cache_generation::LegacyMigration::Migrated { generation }) => {
+                migrated += 1;
+                if let Some(log) = log {
+                    log_remote(
+                        log,
+                        LogLevel::Info,
+                        &format!(
+                            "provider cache migrated to generation id={} generation={} dir={}",
+                            id,
+                            generation,
+                            provider_dir.display()
+                        ),
+                    );
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                if let Some(log) = log {
+                    log_remote(
+                        log,
+                        LogLevel::Warn,
+                        &format!(
+                            "provider cache migration failed id={} dir={} error={}",
+                            id,
+                            provider_dir.display(),
+                            error
+                        ),
+                    );
+                }
+            }
+        }
+    }
+    Ok(migrated)
 }
 
 /// Ensures an installed Provider's cache can actually run: a readable cached
@@ -147,13 +291,8 @@ pub(crate) fn ensure_remote_provider_cache(
         }
 
         let resolved_runtime = resolve_manifest_runtime(&manifest)?;
-        let parent = provider_dir
-            .parent()
-            .ok_or_else(|| "provider cache directory has no parent".to_string())?
-            .to_path_buf();
-        cache_remote_provider(
-            &parent,
-            &id,
+        let files = crate::remote_provider::build_cache_files(
+            &provider_dir,
             manifest_url,
             &manifest,
             &source,
@@ -161,29 +300,33 @@ pub(crate) fn ensure_remote_provider_cache(
         )
         .map_err(|error| error.to_string())?;
 
-        let mut loaded = load_or_create_config(config_path)?;
-        let ProviderConfig::Remote {
-            manifest_url: config_manifest_url,
-            provider_dir: config_provider_dir,
-            trusted_checksum: config_trusted_checksum,
-            source_url: config_source_url,
-            version,
-            runtime,
-            resolved_runtime: config_resolved_runtime,
-            updated_at,
-            ..
-        } = find_provider_config_mut(&mut loaded.config, &id)
-            .ok_or_else(|| "provider not found".to_string())?;
-        *config_manifest_url = manifest_url.clone();
-        *config_provider_dir = Some(provider_dir.clone());
-        *config_trusted_checksum = Some(actual_checksum);
-        *config_source_url = source_url;
-        *version = manifest.version.clone();
-        *runtime = manifest.runtime.clone();
-        *config_resolved_runtime =
-            resolved_runtime.as_ref().map(|path| path.display().to_string());
-        *updated_at = Some(Utc::now().to_rfc3339());
-        save_config_to_path(config_path, &loaded.config)?;
+        commit_cache_files(config_path, &provider_dir, &id, &files, |config| {
+            let ProviderConfig::Remote {
+                manifest_url: config_manifest_url,
+                provider_dir: config_provider_dir,
+                trusted_checksum: config_trusted_checksum,
+                source_url: config_source_url,
+                version,
+                runtime,
+                resolved_runtime: config_resolved_runtime,
+                updated_at,
+                ..
+            } = find_provider_config_mut(config, &id)
+                .ok_or_else(|| "provider not found".to_string())?;
+            *config_manifest_url = manifest_url.clone();
+            *config_provider_dir = Some(provider_dir.clone());
+            *config_trusted_checksum = Some(actual_checksum.clone());
+            *config_source_url = source_url.clone();
+            *version = manifest.version.clone();
+            *runtime = manifest.runtime.clone();
+            *config_resolved_runtime = resolved_runtime
+                .as_ref()
+                .map(|path| path.display().to_string());
+            *updated_at = Some(Utc::now().to_rfc3339());
+            let updated = find_provider_config(config, &id)
+                .ok_or_else(|| "provider not found".to_string())?;
+            Ok(crate::remote_provider::provider_cache_fingerprint(updated))
+        })?;
         Ok(true)
     };
 
@@ -193,7 +336,11 @@ pub(crate) fn ensure_remote_provider_cache(
                 log_remote(
                     log,
                     LogLevel::Info,
-                    &format!("provider cache heal finished id={} dir={}", id, provider_dir.display()),
+                    &format!(
+                        "provider cache heal finished id={} dir={}",
+                        id,
+                        provider_dir.display()
+                    ),
                 );
             }
             Ok(healed)
@@ -586,7 +733,7 @@ pub(crate) fn install_remote_provider_from_source(
     source: String,
     log: &LogSink,
 ) -> Result<ProviderConfig, String> {
-    let mut loaded = load_or_create_config(path)?;
+    let loaded = load_or_create_config(path)?;
     let (instance_id, instance_index) = unique_provider_id(&loaded.config, &manifest.id);
     let default_name = manifest
         .default_config
@@ -652,29 +799,14 @@ pub(crate) fn install_remote_provider_from_source(
     let provider_dir = remote_provider_dir(path, &instance_id)
         .map_err(|e| format!("failed to resolve cache directory: {e}"))?;
 
-    let parent = provider_dir
-        .parent()
-        .expect("provider dir has parent")
-        .to_path_buf();
-    cache_remote_provider(
-        &parent,
-        &instance_id,
+    let cache_files = crate::remote_provider::build_cache_files(
+        &provider_dir,
         url,
         &manifest,
         &source,
         resolved_runtime_path.as_deref(),
     )
     .map_err(|e| e.to_string())?;
-    log_remote(
-        log,
-        LogLevel::Info,
-        &format!(
-            "provider cached providerId={} manifestId={} dir={}",
-            instance_id,
-            manifest.id,
-            provider_dir.display()
-        ),
-    );
 
     let now = Utc::now().to_rfc3339();
     let config = ProviderConfig::Remote {
@@ -686,7 +818,9 @@ pub(crate) fn install_remote_provider_from_source(
         source_url,
         provider_dir: Some(provider_dir.clone()),
         runtime: manifest.runtime.clone(),
-        resolved_runtime: resolved_runtime_path.map(|path| path.display().to_string()),
+        resolved_runtime: resolved_runtime_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
         // This proxy is scoped to downloading the registry/manifest/source.
         // Runtime proxy selection belongs to the Provider environment instead.
         proxy_url: None,
@@ -709,23 +843,33 @@ pub(crate) fn install_remote_provider_from_source(
             .default_config
             .notifications_enabled
             .unwrap_or(true),
-        show_in_screenshot: manifest
-            .default_config
-            .show_in_screenshot
-            .unwrap_or(true),
+        show_in_screenshot: manifest.default_config.show_in_screenshot.unwrap_or(true),
         env_vars: manifest.default_config.env_vars.clone(),
         setup_state: crate::config::ProviderSetupState::Pending,
         setup_last_tested_at: None,
     };
 
-    loaded.config.providers.push(config.clone());
-    save_config_to_path(path, &loaded.config)?;
+    commit_cache_files(
+        path,
+        &provider_dir,
+        &instance_id,
+        &cache_files,
+        |config_root| {
+            config_root.providers.push(config.clone());
+            let updated = find_provider_config(config_root, &instance_id)
+                .ok_or_else(|| "provider not found".to_string())?;
+            Ok(crate::remote_provider::provider_cache_fingerprint(updated))
+        },
+    )?;
     log_remote(
         log,
         LogLevel::Info,
         &format!(
-            "provider install finished providerId={} manifestId={} autoUpdate={}",
-            instance_id, manifest.id, actual_auto_update
+            "provider install finished providerId={} manifestId={} autoUpdate={} dir={}",
+            instance_id,
+            manifest.id,
+            actual_auto_update,
+            provider_dir.display()
         ),
     );
     Ok(config)
@@ -1430,7 +1574,7 @@ pub async fn migrate_remote_providers_to_registry(
     let proxy_url_ref = proxy_url.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        let mut loaded = load_or_create_config(&path)?;
+        let loaded = load_or_create_config(&path)?;
         let log = LogSink::from_config_path(&path, &loaded.config);
         let global_proxy = loaded.config.network_proxy.clone();
         log_remote(
@@ -1458,8 +1602,17 @@ pub async fn migrate_remote_providers_to_registry(
             failed: Vec::new(),
         };
 
-        for provider in &mut loaded.config.providers {
-            let instance_id = provider_id(provider).to_string();
+        let provider_ids: Vec<String> = loaded
+            .config
+            .providers
+            .iter()
+            .map(|provider| provider_id(provider).to_string())
+            .collect();
+        for instance_id in provider_ids {
+            let provider = match find_provider_config(&loaded.config, &instance_id) {
+                Some(provider) => provider,
+                None => continue,
+            };
             let provider_dir = match cached_provider_dir(&path, provider) {
                 Ok(path) => path,
                 Err(error) => {
@@ -1525,12 +1678,8 @@ pub async fn migrate_remote_providers_to_registry(
                 crate::remote_provider::verify_checksum(&source, expected_checksum)
                     .map_err(|error| error.to_string())?;
                 let resolved_runtime = resolve_manifest_runtime(&manifest)?;
-                let parent = provider_dir
-                    .parent()
-                    .ok_or_else(|| "provider cache directory has no parent".to_string())?;
-                cache_remote_provider(
-                    parent,
-                    &instance_id,
+                let files = crate::remote_provider::build_cache_files(
+                    &provider_dir,
                     &manifest_url,
                     &manifest,
                     &source,
@@ -1538,28 +1687,34 @@ pub async fn migrate_remote_providers_to_registry(
                 )
                 .map_err(|error| error.to_string())?;
 
-                let ProviderConfig::Remote {
-                    manifest_url: current_manifest_url,
-                    source_url: current_source_url,
-                    trusted_checksum,
-                    version,
-                    runtime,
-                    resolved_runtime: current_resolved_runtime,
-                    updated_at,
-                    last_checked_at,
-                    ..
-                } = provider;
-                *current_manifest_url = manifest_url.clone();
-                *current_source_url = source_url;
-                *trusted_checksum = Some(compute_checksum(&source));
-                *version = manifest.version;
-                *runtime = manifest.runtime;
-                *current_resolved_runtime = resolved_runtime
-                    .as_ref()
-                    .map(|path| path.display().to_string());
-                let now = Utc::now().to_rfc3339();
-                *updated_at = Some(now.clone());
-                *last_checked_at = Some(now);
+                commit_cache_files(&path, &provider_dir, &instance_id, &files, |config| {
+                    let ProviderConfig::Remote {
+                        manifest_url: current_manifest_url,
+                        source_url: current_source_url,
+                        trusted_checksum,
+                        version,
+                        runtime,
+                        resolved_runtime: current_resolved_runtime,
+                        updated_at,
+                        last_checked_at,
+                        ..
+                    } = find_provider_config_mut(config, &instance_id)
+                        .ok_or_else(|| "provider not found".to_string())?;
+                    *current_manifest_url = manifest_url.clone();
+                    *current_source_url = source_url.clone();
+                    *trusted_checksum = Some(compute_checksum(&source));
+                    *version = manifest.version.clone();
+                    *runtime = manifest.runtime.clone();
+                    *current_resolved_runtime = resolved_runtime
+                        .as_ref()
+                        .map(|path| path.display().to_string());
+                    let now = Utc::now().to_rfc3339();
+                    *updated_at = Some(now.clone());
+                    *last_checked_at = Some(now);
+                    let updated = find_provider_config(config, &instance_id)
+                        .ok_or_else(|| "provider not found".to_string())?;
+                    Ok(crate::remote_provider::provider_cache_fingerprint(updated))
+                })?;
                 Ok(())
             })();
 
@@ -1592,9 +1747,6 @@ pub async fn migrate_remote_providers_to_registry(
             }
         }
 
-        if !result.migrated.is_empty() {
-            save_config_to_path(&path, &loaded.config)?;
-        }
         log_remote(
             &log,
             LogLevel::Info,
@@ -1620,82 +1772,104 @@ pub async fn remove_remote_provider(
     let path = config_path_for_app(&app)?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let mut loaded = load_or_create_config(&path)?;
-        let log = LogSink::from_config_path(&path, &loaded.config);
-        log_remote(
-            &log,
-            LogLevel::Info,
-            &format!("provider remove started id={id}"),
-        );
-        let provider_dir = loaded
-            .config
-            .providers
-            .iter()
-            .find(|provider| provider_id(provider) == id)
-            .map(|provider| cached_provider_dir(&path, provider))
-            .transpose()?
-            .unwrap_or(remote_provider_dir(&path, &id)?);
-        loaded
-            .config
-            .providers
-            .retain(|provider| provider_id(provider) != id);
-        save_config_to_path(&path, &loaded.config)?;
-        log_remote(
-            &log,
-            LogLevel::Info,
-            &format!("provider removed from config id={id}"),
-        );
+        crate::provider_op_lock::with_provider_write(&id, || {
+            let loaded = load_or_create_config(&path)?;
+            let log = LogSink::from_config_path(&path, &loaded.config);
+            log_remote(
+                &log,
+                LogLevel::Info,
+                &format!("provider remove started id={id}"),
+            );
 
-        if provider_dir.exists() {
-            fs::remove_dir_all(&provider_dir).map_err(|e| e.to_string())?;
+            // Field-level commit: only this provider's entry is removed, so a
+            // concurrent adopt / update / renderer save can never be reverted
+            // by a stale whole-file snapshot.
+            crate::config::update_config_at_path(&path, |config| {
+                config.providers.retain(|provider| provider_id(provider) != id);
+                Ok(())
+            })?;
             log_remote(
                 &log,
                 LogLevel::Info,
-                &format!(
-                    "provider cache removed id={} dir={}",
-                    id,
-                    provider_dir.display()
-                ),
+                &format!("provider removed from config id={id}"),
             );
-        } else {
-            log_remote(
-                &log,
-                LogLevel::Info,
-                &format!(
-                    "provider cache absent id={} dir={}",
-                    id,
-                    provider_dir.display()
-                ),
-            );
-        }
-        if delete_managed_secrets.unwrap_or(true) {
-            let config_dir = path
-                .parent()
-                .ok_or_else(|| "Unable to resolve config directory".to_string())?;
-            let secret_dir = crate::managed_secret_store::managed_provider_secret_dir(config_dir, &id)?;
-            crate::managed_secret_store::ManagedSecretStore::new(
-                config_dir,
-                crate::config::SecretStorageMode::Plaintext,
-            )
+
+            // The cache always resolves beside the active config; the persisted
+            // providerDir is migration bookkeeping only.
+            let provider_dir = remote_provider_dir(&path, &id)?;
+            if provider_dir.exists() {
+                // Best-effort: the config commit above is the single source of
+                // truth for removal. A cleanup failure only leaves an orphan
+                // directory behind.
+                match fs::remove_dir_all(&provider_dir) {
+                    Ok(()) => log_remote(
+                        &log,
+                        LogLevel::Info,
+                        &format!(
+                            "provider cache removed id={} dir={}",
+                            id,
+                            provider_dir.display()
+                        ),
+                    ),
+                    Err(error) => log_remote(
+                        &log,
+                        LogLevel::Warn,
+                        &format!(
+                            "provider cache cleanup failed id={} dir={} error={}",
+                            id,
+                            provider_dir.display(),
+                            error
+                        ),
+                    ),
+                }
+            } else {
+                log_remote(
+                    &log,
+                    LogLevel::Info,
+                    &format!(
+                        "provider cache absent id={} dir={}",
+                        id,
+                        provider_dir.display()
+                    ),
+                );
+            }
+            if delete_managed_secrets.unwrap_or(true) {
+                let config_dir = path
+                    .parent()
+                    .ok_or_else(|| "Unable to resolve config directory".to_string())?;
+                let secret_dir =
+                    crate::managed_secret_store::managed_provider_secret_dir(config_dir, &id)?;
+                // Best-effort like the cache cleanup above; the config entry is
+                // already gone and orphaned secret files are inert.
+                match crate::managed_secret_store::ManagedSecretStore::new(
+                    config_dir,
+                    crate::config::SecretStorageMode::Plaintext,
+                )
                 .delete_provider_secrets(&id)
-                .map_err(|error| {
-                    format!(
-                        "{error}; Provider configuration was removed, but managed secret files may remain at {}",
-                        secret_dir.display()
-                    )
-                })?;
+                {
+                    Ok(()) => log_remote(
+                        &log,
+                        LogLevel::Info,
+                        &format!("managed provider secrets removed id={id}"),
+                    ),
+                    Err(error) => log_remote(
+                        &log,
+                        LogLevel::Warn,
+                        &format!(
+                            "managed provider secret cleanup failed id={} error={error}; files may remain at {}",
+                            id,
+                            secret_dir.display()
+                        ),
+                    ),
+                }
+            }
             log_remote(
                 &log,
                 LogLevel::Info,
-                &format!("managed provider secrets removed id={id}"),
+                &format!("provider remove finished id={id}"),
             );
-        }
-        log_remote(
-            &log,
-            LogLevel::Info,
-            &format!("provider remove finished id={id}"),
-        );
-        Ok(())
+            Ok(())
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1725,7 +1899,7 @@ async fn check_remote_updates_inner(
     let path = config_path_for_app(&app)?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let mut loaded = load_or_create_config(&path)?;
+        let loaded = load_or_create_config(&path)?;
         let log = LogSink::from_config_path(&path, &loaded.config);
         let global_proxy = loaded.config.network_proxy.clone();
         let registry_update_candidates = load_registry_update_candidates(
@@ -1733,30 +1907,46 @@ async fn check_remote_updates_inner(
             global_proxy.as_ref(),
             &log,
         )?;
-        let mut config_changed = false;
+        // Network requests below are long; committing a whole stale snapshot
+        // afterwards would revert concurrent adopt/setup/renderer saves. Only
+        // each provider's `lastCheckedAt` is committed, field-level.
+        let provider_summaries: Vec<(String, String, Option<String>, Option<String>, Option<String>)> =
+            loaded
+                .config
+                .providers
+                .iter()
+                .map(|provider| {
+                    let ProviderConfig::Remote {
+                        id,
+                        manifest_url,
+                        trusted_checksum,
+                        version,
+                        last_checked_at,
+                        ..
+                    } = provider;
+                    (
+                        id.clone(),
+                        manifest_url.clone(),
+                        trusted_checksum.clone(),
+                        version.clone(),
+                        last_checked_at.clone(),
+                    )
+                })
+                .collect();
         log_remote(
             &log,
             LogLevel::Info,
             &format!(
                 "remote update check started onlyId={} providers={}",
                 only_id.as_deref().unwrap_or("all"),
-                loaded.config.providers.len()
+                provider_summaries.len()
             ),
         );
 
         let mut updates = Vec::new();
-        for provider in &mut loaded.config.providers {
-            let ProviderConfig::Remote {
-                id,
-                manifest_url,
-                trusted_checksum,
-                version,
-                last_checked_at,
-                ..
-            } = provider;
-
+        for (id, manifest_url, trusted_checksum, version, last_checked_at) in provider_summaries {
             if let Some(ref only) = only_id {
-                if id != only {
+                if id != *only {
                     continue;
                 }
             }
@@ -1766,7 +1956,7 @@ async fn check_remote_updates_inner(
                 LogLevel::Info,
                 &format!("remote update check provider started id={} manifestUrl={}", id, manifest_url),
             );
-            let provider_dir = remote_provider_dir(&path, id)?;
+            let provider_dir = remote_provider_dir(&path, &id)?;
             let installed_manifest_id = load_cached_manifest(&provider_dir)
                 .map(|manifest| manifest.id)
                 .unwrap_or_else(|_| id.clone());
@@ -1789,7 +1979,7 @@ async fn check_remote_updates_inner(
             } else {
                 check_update(
                     &provider_dir,
-                    manifest_url,
+                    &manifest_url,
                     None,
                     global_proxy.as_ref(),
                     trusted_checksum.as_deref(),
@@ -1823,16 +2013,28 @@ async fn check_remote_updates_inner(
                 ),
             );
 
-            if update.checked_at != *last_checked_at {
-                *last_checked_at = update.checked_at.clone();
-                config_changed = true;
+            if update.checked_at != last_checked_at {
+                let checked_at = update.checked_at.clone();
+                crate::config::update_config_at_path(&path, |config| {
+                    if let Some(ProviderConfig::Remote {
+                        last_checked_at, ..
+                    }) = config
+                        .providers
+                        .iter_mut()
+                        .find(|provider| provider_id(provider) == id)
+                    {
+                        *last_checked_at = checked_at;
+                    }
+                    Ok(())
+                })?;
+                log_remote(
+                    &log,
+                    LogLevel::Info,
+                    &format!("remote update check persisted lastCheckedAt id={id}"),
+                );
             }
 
             updates.push(update);
-        }
-        if config_changed {
-            save_config_to_path(&path, &loaded.config)?;
-            log_remote(&log, LogLevel::Info, "remote update check persisted config changes");
         }
         log_remote(
             &log,
@@ -1996,61 +2198,52 @@ pub async fn apply_remote_update(
             return Err("manifest does not contain a source checksum".to_string());
         }
 
-        let parent = provider_dir
-            .parent()
-            .expect("provider dir has parent")
-            .to_path_buf();
         let new_resolved_runtime = resolve_manifest_runtime(&manifest)?;
-        cache_remote_provider(
-            &parent,
-            &id,
+        let files = crate::remote_provider::build_cache_files(
+            &provider_dir,
             &selected_manifest_url,
             &manifest,
             &source,
             new_resolved_runtime.as_deref(),
         )
-        .map_err(|e| {
+        .map_err(|error| error.to_string())?;
+
+        commit_cache_files(&path, &provider_dir, &id, &files, |config| {
+            let ProviderConfig::Remote {
+                manifest_url: config_manifest_url,
+                trusted_checksum,
+                source_url: config_source_url,
+                version,
+                runtime,
+                resolved_runtime,
+                updated_at,
+                last_checked_at,
+                ..
+            } = find_provider_config_mut(config, &id)
+                .ok_or_else(|| "provider not found".to_string())?;
+            *config_manifest_url = selected_manifest_url.clone();
+            *trusted_checksum = Some(compute_checksum(&source));
+            *config_source_url = new_source_url.clone();
+            *version = manifest.version.clone();
+            *runtime = manifest.runtime.clone();
+            *resolved_runtime = new_resolved_runtime
+                .as_ref()
+                .map(|path| path.display().to_string());
+            let now = Utc::now().to_rfc3339();
+            *updated_at = Some(now.clone());
+            *last_checked_at = Some(now);
+            let updated = find_provider_config(config, &id)
+                .ok_or_else(|| "provider not found".to_string())?;
+            Ok(crate::remote_provider::provider_cache_fingerprint(updated))
+        })
+        .map_err(|error| {
             log_remote(
                 &log,
                 LogLevel::Warn,
-                &format!("remote update apply cache failed id={} error={}", id, e),
+                &format!("remote update apply commit failed id={} error={}", id, error),
             );
-            e.to_string()
+            error
         })?;
-        log_remote(
-            &log,
-            LogLevel::Info,
-            &format!(
-                "remote update apply cached id={} dir={}",
-                id,
-                provider_dir.display()
-            ),
-        );
-
-        let ProviderConfig::Remote {
-            ref mut manifest_url,
-            ref mut trusted_checksum,
-            ref mut source_url,
-            ref mut version,
-            ref mut runtime,
-            ref mut resolved_runtime,
-            ref mut updated_at,
-            ref mut last_checked_at,
-            ..
-        } = find_provider_config_mut(&mut loaded.config, &id).ok_or("provider not found")?;
-        *manifest_url = selected_manifest_url;
-        *trusted_checksum = Some(compute_checksum(&source));
-        *source_url = new_source_url;
-        *version = manifest.version;
-        *runtime = manifest.runtime;
-        *resolved_runtime = new_resolved_runtime
-            .as_ref()
-            .map(|path| path.display().to_string());
-        let now = Utc::now().to_rfc3339();
-        *updated_at = Some(now.clone());
-        *last_checked_at = Some(now);
-
-        save_config_to_path(&path, &loaded.config)?;
         log_remote(
             &log,
             LogLevel::Info,
@@ -2240,8 +2433,7 @@ mod tests {
             },
             "checksums": { "source": compute_checksum(source) }
         });
-        let manifest: ProviderManifest =
-            serde_json::from_value(manifest).expect("parse manifest");
+        let manifest: ProviderManifest = serde_json::from_value(manifest).expect("parse manifest");
 
         let config_path = temp.path().join("config.json");
         let loaded = load_or_create_config(&config_path).expect("load config");
@@ -2377,9 +2569,11 @@ mod tests {
         .expect("initial catalog preview");
         assert!(!initial.from_cache);
         assert_eq!(initial.entries[0].version.as_deref(), Some("1.0.0"));
-        assert!(remote_provider_catalog_cache_path(&config_path, &upstream.registry_url)
-            .expect("catalog cache path")
-            .is_file());
+        assert!(
+            remote_provider_catalog_cache_path(&config_path, &upstream.registry_url)
+                .expect("catalog cache path")
+                .is_file()
+        );
 
         fs::remove_dir_all(&upstream_dir).expect("remove upstream");
         let cached = preview_remote_provider_registry_inner(
@@ -2417,9 +2611,12 @@ mod tests {
             )
             .expect("offline cached install");
             assert_eq!(provider_id(&installed), expected_id);
-            let provider_dir = remote_provider_dir(&config_path, expected_id).expect("provider dir");
+            let provider_dir =
+                remote_provider_dir(&config_path, expected_id).expect("provider dir");
+            let cache_root = crate::provider_cache_generation::resolve_cache_root(&provider_dir)
+                .expect("resolve cache root");
             assert_eq!(
-                fs::read_to_string(provider_dir.join("provider.js")).expect("cached source"),
+                fs::read_to_string(cache_root.join("provider.js")).expect("cached source"),
                 source
             );
         }
@@ -2441,13 +2638,8 @@ mod tests {
         let upstream_dir = temp.path().join("upstream");
         let upstream = write_builtin_catalog(&upstream_dir, "1.0.0", "// v1");
         let config_path = temp.path().join("config.json");
-        preview_remote_provider_registry_inner(
-            &config_path,
-            &upstream.registry_url,
-            None,
-            false,
-        )
-        .expect("initial catalog preview");
+        preview_remote_provider_registry_inner(&config_path, &upstream.registry_url, None, false)
+            .expect("initial catalog preview");
 
         let upstream = write_builtin_catalog(&upstream_dir, "2.0.0", "// v2");
         let automatic = preview_remote_provider_registry_inner(
@@ -2496,16 +2688,17 @@ mod tests {
         )
         .expect("initial catalog preview");
 
-        let cache_path =
-            remote_provider_catalog_cache_path(&config_path, &upstream.registry_url)
-                .expect("catalog cache path");
-        let mut cache: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(&cache_path).expect("read catalog cache"),
-        )
-        .expect("parse catalog cache");
+        let cache_path = remote_provider_catalog_cache_path(&config_path, &upstream.registry_url)
+            .expect("catalog cache path");
+        let mut cache: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&cache_path).expect("read catalog cache"))
+                .expect("parse catalog cache");
         cache["entries"][0]["source"] = serde_json::json!("// tampered");
-        fs::write(&cache_path, serde_json::to_string_pretty(&cache).expect("cache json"))
-            .expect("tamper catalog cache");
+        fs::write(
+            &cache_path,
+            serde_json::to_string_pretty(&cache).expect("cache json"),
+        )
+        .expect("tamper catalog cache");
         let validation_error =
             load_remote_provider_catalog_cache(&config_path, &upstream.registry_url)
                 .expect_err("reject tampered cache");
@@ -2564,12 +2757,14 @@ mod tests {
         assert!(healed);
 
         let provider_dir = remote_provider_dir(&config_path, "kimi").expect("cache dir");
-        assert!(provider_dir.join("provider.json").is_file());
+        let cache_root = crate::provider_cache_generation::resolve_cache_root(&provider_dir)
+            .expect("cache root");
+        assert!(cache_root.join("provider.json").is_file());
         assert_eq!(
-            fs::read_to_string(provider_dir.join("provider.cjs")).expect("read source"),
+            fs::read_to_string(cache_root.join("provider.cjs")).expect("read source"),
             source
         );
-        assert!(provider_dir.join(".meta.json").is_file());
+        assert!(cache_root.join(".meta.json").is_file());
 
         let reloaded = load_or_create_config(&config_path).expect("reload config");
         let ProviderConfig::Remote {
@@ -2579,13 +2774,80 @@ mod tests {
             ..
         } = &reloaded.config.providers[0];
         assert_eq!(version.as_deref(), Some("1.2.0"));
-        assert_eq!(trusted_checksum.as_deref(), Some(compute_checksum(source).as_str()));
+        assert_eq!(
+            trusted_checksum.as_deref(),
+            Some(compute_checksum(source).as_str())
+        );
         assert_eq!(stored_dir.as_ref(), Some(&provider_dir));
 
         // A healthy cache is left alone on later refreshes.
+        assert!(!ensure_remote_provider_cache(
+            &config_path,
+            &reloaded.config.providers[0],
+            None,
+            None
+        )
+        .expect("second check"));
+    }
+
+    #[test]
+    fn commit_cache_files_restores_the_provider_entry_when_activation_fails() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let config_path = temp.path().join("config.json");
+        let old_checksum = compute_checksum("// v1");
+        let mut config = crate::config::default_config();
+        config.providers = vec![provider_with_trusted_checksum(
+            "https://example.com/provider.json",
+            "1.0.0",
+            &old_checksum,
+        )];
+        save_config_to_path(&config_path, &config).expect("save config");
+
+        let provider_dir = remote_provider_dir(&config_path, "kimi").expect("provider dir");
+        let manifest = crate::remote_provider::parse_manifest(&format!(
+            r#"{{"schemaVersion":1,"id":"kimi","displayName":"Kimi","version":"2.0.0","runtime":"node","entry":"provider.cjs","requiredEnvVars":[],"output":"provider-snapshot-v1","checksums":{{"source":"{}"}}}}"#,
+            compute_checksum("// v2")
+        ))
+        .expect("manifest");
+        let files = crate::remote_provider::build_cache_files(
+            &provider_dir,
+            "https://example.com/provider.json",
+            &manifest,
+            "// v2",
+            None,
+        )
+        .expect("cache files");
+
+        crate::provider_cache_generation::set_pointer_write_failure(true);
+        let error = commit_cache_files(&config_path, &provider_dir, "kimi", &files, |config| {
+            let ProviderConfig::Remote {
+                version,
+                trusted_checksum,
+                ..
+            } = find_provider_config_mut(config, "kimi")
+                .ok_or_else(|| "provider not found".to_string())?;
+            *version = Some("2.0.0".to_string());
+            *trusted_checksum = Some(compute_checksum("// v2"));
+            Ok("test-fingerprint".to_string())
+        })
+        .expect_err("activation must fail");
+        crate::provider_cache_generation::set_pointer_write_failure(false);
+
+        assert!(error.contains("cache activation failed"), "{error}");
+
+        let reloaded = load_or_create_config(&config_path).expect("reload config");
+        let ProviderConfig::Remote {
+            version,
+            trusted_checksum,
+            ..
+        } = &reloaded.config.providers[0];
+        assert_eq!(version.as_deref(), Some("1.0.0"));
+        assert_eq!(trusted_checksum.as_deref(), Some(old_checksum.as_str()));
         assert!(
-            !ensure_remote_provider_cache(&config_path, &reloaded.config.providers[0], None, None)
-                .expect("second check")
+            crate::provider_cache_generation::list_generations(&provider_dir)
+                .expect("generations")
+                .is_empty(),
+            "failed activation must discard the prepared generation"
         );
     }
 
@@ -2637,7 +2899,7 @@ mod tests {
         )
         .expect("parse manifest");
         let provider_dir = remote_provider_dir(&config_path, "kimi").expect("cache dir");
-        cache_remote_provider(
+        crate::remote_provider::cache_remote_provider(
             provider_dir.parent().expect("cache parent"),
             "kimi",
             "https://example.com/provider.json",

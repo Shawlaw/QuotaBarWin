@@ -89,13 +89,57 @@ Field descriptions:
 
 ### Guided setup fields
 
-The current app generates the post-install setup form from `parameters`: `secret` uses a password input, `string` a text input, `number` a numeric input, and `select` a select control. Required fields are validated first, and saved secret values are never returned to or shown by the frontend.
+The current app generates the post-install setup form from `parameters`: `secret` uses a password input, `string` a text input, `number` a numeric input, and `select` a select control. Required fields are validated first, and saved secret values are not returned to or shown by the frontend by default; explicit user actions in the Configure page may reveal or hide a value, or copy it (excluded from Windows clipboard history and cloud clipboard sync).
 
-`helpUrl` links to API-key or parameter help. Set `"advanced": true` to keep optional, proxy, or diagnostic fields under **Advanced settings** by default; do not mark a normal first-time requirement as advanced.
+A provider can have zero to many configuration fields. Names must be unique; use ASCII environment-variable identifiers such as `API_KEY` or `CLIENT_SECRET` (`[A-Za-z_][A-Za-z0-9_]*`). Declare one parameter with the same name for each variable the user should configure. Ordinary strings, numbers, and select options use the same mechanism.
+
+- When `parameters` is non-empty, the guided form shows only those fields. It **does not automatically merge `requiredEnvVars`**. List every required variable that users should configure in the form as a parameter too. Other configured variables are listed by name only and remain editable in the advanced raw `envVars` editor.
+- When `parameters` is omitted or `[]`, the app generates a required `secret` field for each `requiredEnvVars` name, preserving legacy-manifest compatibility.
+- `required: true` makes a field required in the form; omitted or `false` makes it optional. Optional secrets appear under **Optional credentials**; other optional fields appear under **Advanced settings**. Do not put optional variables in `requiredEnvVars`: the runner would still try to resolve them before execution.
+
+`helpUrl` links to API-key or parameter help. `advanced: true` places non-secret fields under **Advanced settings**. Required secrets remain visible and optional secrets appear under **Optional credentials**. Do not mark a normal first-time non-secret requirement as advanced.
+
+#### No configuration, one Key, and multiple Keys
+
+Providers requiring no user configuration can omit both arrays below or explicitly leave them empty. Users still save and test after installation; the script obtains its own data or local sign-in information:
+
+```json
+{ "requiredEnvVars": [], "parameters": [] }
+```
+
+The complete manifest above shows one Key. For multiple Keys, declare multiple `secret` entries. This manifest fragment has two required credentials, one optional credential, and one ordinary parameter:
+
+```json
+{
+  "requiredEnvVars": ["CLIENT_ID", "CLIENT_SECRET"],
+  "parameters": [
+    { "name": "CLIENT_ID", "kind": "secret", "required": true, "label": "Client ID" },
+    { "name": "CLIENT_SECRET", "kind": "secret", "required": true, "label": "Client secret" },
+    { "name": "ACCESS_TOKEN", "kind": "secret", "required": false, "label": "Optional access token" },
+    { "name": "REGION", "kind": "string", "defaultValue": "global" }
+  ],
+  "permissions": ["env:CLIENT_ID", "env:CLIENT_SECRET", "env:ACCESS_TOKEN", "env:REGION"]
+}
+```
+
+For `builtin-js`, declare a matching `env:NAME` or `env-prefix:` permission for every variable the script reads. `parameters` does not grant permissions automatically. Read required values with `qb.env.get("CLIENT_ID")` and optional values with `qb.env.getOptional("ACCESS_TOKEN")` (returns `null` when unconfigured). External runtimes read the same names from their process environment. When every field is optional, users may save and test without entering values; the script handles missing values.
+
+#### Defaults and existing bindings
+
+- An ordinary non-secret `defaultValue` is a form default: it appears when the field has no current binding and is written to `envVars` only when the form is saved. It is not an automatic default when the script runs directly.
+- A secret parameter's `defaultValue` is not displayed and is not automatically written to a managed file or `envVars`. Declaring only `defaultValue: "${secret:NAME}"` does not mark a credential as configured.
+- Some placeholder defaults are treated as blank form values. Do not use `defaultValue` as a general binding declaration. To seed an external source at installation, use `defaultConfig.envVars` (for example `{ "API_KEY": "${env:API_KEY}" }`); the source must actually resolve. Let ordinary users enter their Keys on the Configure page.
+- Implement runtime defaults in the script, for example `qb.env.getOptional("REGION") || "global"`, with the matching environment permission.
 
 New instances install as disabled and “Pending setup”. When the user chooses **Save and test**, the host writes secret input to an instance-isolated local file and stores `${secret:providers/<provider-instance-id>/<parameter-name>}` in main config. Resolution still uses the existing `${secret:...}` resolver and the formal Provider runner. Provider authors must not require users to create files or type placeholders manually.
 
-Third-party manifests without `parameters` still install and use the retained raw `envVars` editor, preserving old-manifest compatibility.
+Credential management notes:
+
+- App-managed credentials are handled on the provider's Configure page (replace, clear, reveal, copy). The advanced `envVars` editor hides managed bindings by default; toggle **Show managed bindings** to inspect them temporarily.
+- A plaintext (literal) credential stored in config can be moved to app-managed storage with one click. External sources (`${env:}`, `${file:}`, `${secret:name}`) are not converted automatically — guide users to re-enter them via **Replace**.
+- Saving after changing only the account name no longer marks the provider unverified; changing a credential binding or a runtime parameter requires a new test before the provider is enabled again.
+
+Each Key is managed by parameter name and isolated by provider instance. Leave an existing managed Key input empty to keep its value, or enter a new value to replace it; only the explicit **Clear** action deletes the binding. Reveal and copy apply only to app-managed credentials; external sources are not automatically exposed as editable plaintext.
 
 ## Embedded JavaScript runtime (`builtin-js`)
 

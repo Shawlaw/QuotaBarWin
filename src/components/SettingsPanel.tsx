@@ -31,6 +31,7 @@ import {
   listenForAppUpdateStatus
 } from "../lib/api";
 import type { AppUpdateInfo, DevConfigCloneResult, UpdateInfo } from "../lib/api";
+import { mutationMessage } from "../lib/configMutation";
 import { DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS } from "../lib/defaults";
 import { useI18n } from "../i18n";
 import { NetworkProxySettings } from "./NetworkProxySettings";
@@ -60,11 +61,17 @@ type SettingsPanelProps = {
   configStorageInfo: ConfigStorageInfo | null;
   isConfigStorageBusy: boolean;
   isSaving: boolean;
+  reloadRequired?: boolean;
   snapshotProviders?: ProviderSnapshot[];
   onChange: (config: AppConfig) => void;
   onOpenConfigFolder: () => Promise<void>;
   onResetConfig: () => Promise<void>;
-  onSave: () => void | Promise<void>;
+  onSave: () => Promise<AppConfig | void>;
+  onReload?: () => Promise<AppConfig | void>;
+  /** Shared single-flight mutation entry (App-owned) for the provider setup page. */
+  onSetupMutation?: <T>(
+    operation: () => Promise<{ config: AppConfig; result: T; warnings?: string[] }>
+  ) => Promise<import("../lib/configMutation").MutationResult<T>>;
   onSetPortableMode: (enabled: boolean) => void;
   onPersistedConfigChanged: (
     config: AppConfig,
@@ -140,6 +147,34 @@ function formatEnvVars(envVars: Record<string, string> | undefined): string {
   return Object.entries(envVars ?? {})
     .map(([name, value]) => `${name}=${value}`)
     .join("\n");
+}
+
+function isManagedBindingFor(
+  providerId: string,
+  name: string,
+  value: string,
+): boolean {
+  return value.trim() === `\${secret:providers/${providerId}/${name}}`;
+}
+
+function formatVisibleEnvVars(
+  provider: RemoteProviderConfig,
+  showManagedBindings: boolean,
+): string {
+  return formatEnvVars(
+    Object.fromEntries(
+      Object.entries(provider.envVars ?? {}).filter(
+        ([name, value]) =>
+          showManagedBindings || !isManagedBindingFor(provider.id, name, value),
+      ),
+    ),
+  );
+}
+
+function managedBindingCount(provider: RemoteProviderConfig): number {
+  return Object.entries(provider.envVars ?? {}).filter(([name, value]) =>
+    isManagedBindingFor(provider.id, name, value),
+  ).length;
 }
 
 function parseEnvVarsText(text: string): Record<string, string> {
@@ -223,11 +258,14 @@ export function SettingsPanel({
   configStorageInfo,
   isConfigStorageBusy,
   isSaving,
+  reloadRequired = false,
   snapshotProviders = [],
   onChange,
   onOpenConfigFolder,
   onResetConfig,
   onSave,
+  onReload,
+  onSetupMutation,
   onSetPortableMode,
   onPersistedConfigChanged,
   onRequestClose,
@@ -243,6 +281,7 @@ export function SettingsPanel({
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
   const [expandedProviderActions, setExpandedProviderActions] = useState<Record<string, boolean>>({});
   const [envVarDrafts, setEnvVarDrafts] = useState<Record<string, string>>({});
+  const [showManagedBindings, setShowManagedBindings] = useState<Record<string, boolean>>({});
   const [updateInfo, setUpdateInfo] = useState<Record<string, UpdateInfo>>({});
   const [providerManifests, setProviderManifests] = useState<ProviderManifestState>({});
   const [remoteMessage, setRemoteMessage] = useState<string | null>(null);
@@ -252,6 +291,11 @@ export function SettingsPanel({
   const [appUpdateMessage, setAppUpdateMessage] = useState<string | null>(null);
   const [isAppUpdateBusy, setIsAppUpdateBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState(t.settings.noChanges);
+  const [saveFailure, setSaveFailure] = useState<{
+    kind: string;
+    message: string;
+    fields: string[];
+  } | null>(null);
   const [localApiStatusRevision, setLocalApiStatusRevision] = useState(0);
   const [localApiTokenRequired, setLocalApiTokenRequired] = useState(false);
   const [providerSettingsView, setProviderSettingsView] = useState<"main" | "add" | "sources" | "setup">(
@@ -307,7 +351,8 @@ export function SettingsPanel({
     !logMaxSizeError &&
     !hasProviderTimeoutError &&
     !localApiTokenRequired &&
-    !isSaving;
+    !isSaving &&
+    !reloadRequired;
   const isPortableMode = configStorageInfo?.mode === "portable";
   const storageModeLabel = isPortableMode ? t.settings.portableMode : t.settings.appDataMode;
   const availableUpdateCount = config.providers.filter(
@@ -381,11 +426,18 @@ export function SettingsPanel({
   });
 
   async function saveSettings(): Promise<boolean> {
+    if (reloadRequired) {
+      setSaveMessage(t.settings.reloadRequired);
+      return false;
+    }
     setSaveMessage(t.settings.saving);
     try {
       const returnToAddProvider = providerSettingsView === "sources";
-      await onSave();
-      initialConfigRef.current = JSON.stringify(config);
+      const saved = await onSave();
+      // The authoritative config may differ from the draft (merge kept a
+      // backend-owned field, or normalized setup state).
+      initialConfigRef.current = JSON.stringify(saved ?? config);
+      setSaveFailure(null);
       setLocalApiStatusRevision((revision) => revision + 1);
       setSaveMessage(t.settings.saved);
       if (returnToAddProvider) {
@@ -393,9 +445,47 @@ export function SettingsPanel({
       }
       return true;
     } catch (error) {
-      setSaveMessage(error instanceof Error ? error.message : t.settings.saveFailed);
+      const failure = parseSaveFailure(error);
+      if (failure?.kind === "recovered") {
+        // An uncertain mutation was resolved by reloading: the draft is gone
+        // (replaced by the disk state) and must not be reported as "saved".
+        setSaveFailure(null);
+        try {
+          const reloaded = await onReload?.();
+          if (reloaded) {
+            initialConfigRef.current = JSON.stringify(reloaded);
+          }
+          setEnvVarDrafts({});
+          setSaveMessage(t.settings.reloadedAfterUncertain);
+        } catch (reloadError) {
+          setSaveMessage(mutationMessage(reloadError, t.settings.saveFailed));
+        }
+        return false;
+      }
+      setSaveFailure(failure);
+      setSaveMessage(failure?.message ?? mutationMessage(error, t.settings.saveFailed));
       return false;
     }
+  }
+
+  function parseSaveFailure(error: unknown): {
+    kind: string;
+    message: string;
+    fields: string[];
+  } | null {
+    if (!error || typeof error !== "object" || !("kind" in error)) {
+      return null;
+    }
+    const kind = (error as { kind?: unknown }).kind;
+    if (typeof kind !== "string") {
+      return null;
+    }
+    const fields = (error as { fields?: unknown }).fields;
+    return {
+      kind,
+      message: mutationMessage(error, t.settings.saveFailed),
+      fields: Array.isArray(fields) ? fields.filter((field): field is string => typeof field === "string") : [],
+    };
   }
 
   function resetChanges() {
@@ -487,9 +577,17 @@ export function SettingsPanel({
     );
   }
 
-  function openProviderSetup(providerId: string) {
+  /** Direct navigation for flows that already hold unsaved-changes protection. */
+  function navigateToProviderSetup(providerId: string) {
     setSetupProviderId(providerId);
     setProviderSettingsView("setup");
+  }
+
+  /** Protected entry used by provider-row buttons. */
+  function requestOpenProviderSetup(providerId: string) {
+    void runWithUnsavedChangesProtection(async () => {
+      navigateToProviderSetup(providerId);
+    });
   }
 
   function updateLogQuotaData(enabled: boolean) {
@@ -750,7 +848,7 @@ export function SettingsPanel({
       );
       const updated = await getConfig();
       acceptPersistedConfig(updated);
-      openProviderSetup(installed.id);
+      navigateToProviderSetup(installed.id);
       return installed;
     });
   }
@@ -953,20 +1051,98 @@ export function SettingsPanel({
     return (
       <div className="fixed-save-bar" data-testid="fixed-save-bar">
         <span>
-          {localApiTokenRequired
+          {reloadRequired
+            ? t.settings.reloadRequired
+            : localApiTokenRequired
             ? t.localApi.tokenRequiredBeforeSave
             : hasChanges
               ? t.settings.unsavedChanges
               : saveMessage}
         </span>
         <div className="settings-actions">
-          <button type="button" className="button-secondary" onClick={resetChanges} disabled={!hasChanges || isSaving}>
+          {reloadRequired ? (
+            <button
+              type="button"
+              className="button-primary"
+              data-testid="reload-config-button"
+              onClick={() => void reloadAfterSaveConflict()}
+            >
+              {t.settings.reloadConfig}
+            </button>
+          ) : null}
+          <button type="button" className="button-secondary" onClick={resetChanges} disabled={!hasChanges || isSaving || reloadRequired}>
             {t.settings.resetChanges}
           </button>
           <button type="button" onClick={() => void saveSettings()} disabled={!canSave} data-testid="save-settings-button" title={`${t.settings.save} (Ctrl+S)`}>
             {isSaving ? t.settings.saving : t.settings.save}
           </button>
         </div>
+      </div>
+    );
+  }
+
+  async function reloadAfterSaveConflict() {
+    if (!onReload) {
+      return;
+    }
+    try {
+      const reloaded = await onReload();
+      if (reloaded) {
+        initialConfigRef.current = JSON.stringify(reloaded);
+      }
+      setSaveFailure(null);
+      setSaveMessage(t.settings.reloaded);
+    } catch (error) {
+      setSaveMessage(mutationMessage(error, t.settings.saveFailed));
+    }
+  }
+
+  function renderSaveConflictDialog() {
+    if (
+      !saveFailure ||
+      (saveFailure.kind !== "conflict" && saveFailure.kind !== "stale") ||
+      !onReload
+    ) {
+      return null;
+    }
+
+    return (
+      <div className="dialog-overlay" role="presentation">
+        <section
+          className="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="save-conflict-title"
+        >
+          <h3 id="save-conflict-title">{t.settings.saveConflictTitle}</h3>
+          <p>{saveFailure.message}</p>
+          {saveFailure.fields.length > 0 ? (
+            <ul>
+              {saveFailure.fields.map((field) => (
+                <li key={field}>
+                  <code>{field}</code>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="settings-hint">{t.settings.saveConflictHint}</p>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setSaveFailure(null)}
+            >
+              {t.settings.keepEditing}
+            </button>
+            <button
+              type="button"
+              className="button-primary"
+              onClick={() => void reloadAfterSaveConflict()}
+            >
+              {t.settings.reloadConfig}
+            </button>
+          </div>
+        </section>
       </div>
     );
   }
@@ -1185,36 +1361,39 @@ function renderUnsavedChangesDialog() {
   if (providerSettingsView === "add" || providerSettingsView === "sources") {
     return (
       <section className="settings-panel" aria-label={t.settings.title} data-testid="settings-page">
-        <RemoteProviderSettings
-          view={providerSettingsView}
-          registrySettings={remoteProviderRegistrySettings(config)}
-          installedProviderIds={config.providers.map((provider) => provider.id)}
-          onRegistrySettingsChange={(remoteProviderRegistry) =>
-            onChange({
-              ...config,
-              remoteProviderRegistry
-            })
-          }
-          onPreviewRegistry={previewRemoteProviderRegistry}
-          onInstallManifest={handleInstallManifest}
-          onMigrateSource={handleMigrateProviderSource}
-          onOpenGuide={openRemoteProviderGuide}
-          onBackToSettings={() => {
-            void runWithUnsavedChangesProtection(async () => {
-              setProviderSettingsView("main");
-            });
-          }}
-          onBackToAddProvider={() => {
-            void runWithUnsavedChangesProtection(async () => {
-              setProviderSettingsView("add");
-            });
-          }}
-          onManageSources={() => {
-            void runWithUnsavedChangesProtection(async () => {
-              setProviderSettingsView("sources");
-            });
-          }}
-        />
+        {/* While a reload is required, installs/migrations must not run. */}
+        <fieldset className="settings-fieldset" disabled={reloadRequired}>
+          <RemoteProviderSettings
+            view={providerSettingsView}
+            registrySettings={remoteProviderRegistrySettings(config)}
+            installedProviderIds={config.providers.map((provider) => provider.id)}
+            onRegistrySettingsChange={(remoteProviderRegistry) =>
+              onChange({
+                ...config,
+                remoteProviderRegistry
+              })
+            }
+            onPreviewRegistry={previewRemoteProviderRegistry}
+            onInstallManifest={handleInstallManifest}
+            onMigrateSource={handleMigrateProviderSource}
+            onOpenGuide={openRemoteProviderGuide}
+            onBackToSettings={() => {
+              void runWithUnsavedChangesProtection(async () => {
+                setProviderSettingsView("main");
+              });
+            }}
+            onBackToAddProvider={() => {
+              void runWithUnsavedChangesProtection(async () => {
+                setProviderSettingsView("add");
+              });
+            }}
+            onManageSources={() => {
+              void runWithUnsavedChangesProtection(async () => {
+                setProviderSettingsView("sources");
+              });
+            }}
+          />
+        </fieldset>
         {renderSaveBar()}
         {renderUnsavedChangesDialog()}
       </section>
@@ -1230,6 +1409,8 @@ function renderUnsavedChangesDialog() {
           onComplete={() => setProviderSettingsView("main")}
           closeRequest={closeRequest}
           onRequestClose={onRequestClose}
+          runMutation={onSetupMutation}
+          blocked={reloadRequired}
           onConfigChanged={async (testResult) => {
             const updated = await getConfig();
             acceptPersistedConfig(updated, testResult);
@@ -1279,6 +1460,10 @@ function renderUnsavedChangesDialog() {
           {t.settings.openGuide}
         </button>
       </div>
+      {/* Read-only while a save is in flight (an in-flight edit would be
+          silently dropped by the authoritative result) and while a reload is
+          required. */}
+      <fieldset className="settings-fieldset" disabled={isSaving || reloadRequired}>
       <div
         className="settings-content"
         role="tabpanel"
@@ -1746,7 +1931,7 @@ function renderUnsavedChangesDialog() {
                   <button
                     type="button"
                     className="button-primary button-compact"
-                    onClick={() => openProviderSetup(provider.id)}
+                    onClick={() => requestOpenProviderSetup(provider.id)}
                     data-testid={`setup-provider-${provider.id}`}
                   >
                     {needsAttention
@@ -1755,7 +1940,16 @@ function renderUnsavedChangesDialog() {
                         ? t.providerSetup.completeSetup
                         : t.providerSetup.testConfiguration}
                   </button>
-                ) : null}
+                ) : (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => requestOpenProviderSetup(provider.id)}
+                    data-testid={`setup-provider-${provider.id}`}
+                  >
+                    {t.providerSetup.configure}
+                  </button>
+                )}
                 {updateInfo[provider.id]?.available ? (
                   <button
                     type="button"
@@ -1782,7 +1976,7 @@ function renderUnsavedChangesDialog() {
                     }))
                   }
                 >
-                  {expandedProviders[provider.id] ? t.settings.collapse : t.settings.edit}
+                  {expandedProviders[provider.id] ? t.settings.collapse : t.settings.advanced}
                 </button>
                 <button
                   type="button"
@@ -1916,18 +2110,44 @@ function renderUnsavedChangesDialog() {
                         aria-describedby={`provider-env-vars-hint-${provider.id}`}
                         rows={5}
                         placeholder={t.settings.remoteEnvVarsPlaceholder}
-                        value={envVarDrafts[provider.id] ?? formatEnvVars(provider.envVars)}
+                        value={envVarDrafts[provider.id] ?? formatVisibleEnvVars(provider, showManagedBindings[provider.id] ?? false)}
                         onChange={(event) => {
                           const text = event.currentTarget.value;
                           setEnvVarDrafts((current) => ({
                             ...current,
                             [provider.id]: text
                           }));
+                          const parsed = parseEnvVarsText(text);
+                          const preserved = Object.fromEntries(
+                            Object.entries(provider.envVars ?? {}).filter(
+                              ([name, value]) =>
+                                isManagedBindingFor(provider.id, name, value) &&
+                                !(name in parsed)
+                            )
+                          );
                           updateRemoteProvider(provider, {
-                            envVars: parseEnvVarsText(text)
+                            envVars: { ...preserved, ...parsed }
                           });
                         }}
                       />
+                      {managedBindingCount(provider) > 0 ? (
+                        <label className="checkbox-row settings-toggle-row">
+                          <input
+                            type="checkbox"
+                            checked={showManagedBindings[provider.id] ?? false}
+                            onChange={(event) => {
+                              const checked = event.currentTarget.checked;
+                              setShowManagedBindings((current) => ({
+                                ...current,
+                                [provider.id]: checked
+                              }));
+                            }}
+                          />
+                          {showManagedBindings[provider.id]
+                            ? t.settings.hideManagedBindings
+                            : t.settings.showManagedBindings(managedBindingCount(provider))}
+                        </label>
+                      ) : null}
                       <span
                         id={`provider-env-vars-hint-${provider.id}`}
                         className="settings-hint"
@@ -1950,8 +2170,10 @@ function renderUnsavedChangesDialog() {
       </section>
       ) : null}
       </div>
+      </fieldset>
 
       {renderSaveBar()}
+      {renderSaveConflictDialog()}
       {renderQuotaDataConfirmDialog()}
       {renderDevCloneConfirmDialog()}
       {renderResetConfigConfirmDialog()}

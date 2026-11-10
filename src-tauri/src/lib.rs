@@ -7,7 +7,9 @@ mod builtin_js;
 mod bundled_providers;
 mod cli;
 mod config;
+mod config_merge;
 mod diagnostics;
+mod execution_fingerprint;
 mod external_links;
 mod image_clipboard;
 mod local_api;
@@ -19,7 +21,10 @@ mod notifications;
 #[cfg(test)]
 mod productization;
 mod provider_bootstrap;
+mod provider_cache_generation;
 mod provider_error;
+mod provider_op_lock;
+mod provider_secret_commands;
 mod provider_setup;
 mod proxy;
 mod quota;
@@ -29,6 +34,7 @@ mod refresh_scheduler;
 mod remote_provider;
 mod remote_provider_commands;
 mod remote_provider_runner;
+mod secret_clipboard;
 mod secret_encryption;
 mod tray;
 
@@ -45,9 +51,8 @@ pub use app_update::{
 pub use cli::run_cli;
 pub use config::{
     dev_clone_release_config, dev_preview_clone_source, dev_restart_app, get_config,
-    get_config_storage_info, migrate_config_file, open_config_folder,
-    open_remote_provider_guide, open_webhook_template_guide, reset_config, save_config,
-    set_portable_mode, AppConfig,
+    get_config_storage_info, migrate_config_file, open_config_folder, open_remote_provider_guide,
+    open_webhook_template_guide, reset_config, save_config, set_portable_mode, AppConfig,
 };
 pub use diagnostics::export_diagnostics;
 pub use local_api::{
@@ -199,6 +204,15 @@ pub fn run() {
                     );
                 }
                 if let Err(error) =
+                    crate::remote_provider_commands::migrate_provider_caches(&path, Some(&log))
+                {
+                    let _ = log.write_unfiltered(
+                        logger::LogLevel::Warn,
+                        "app",
+                        &format!("provider cache generation migration failed: {error}"),
+                    );
+                }
+                if let Err(error) =
                     crate::provider_bootstrap::seed_bundled_providers(&path, Some(&log))
                 {
                     let _ = log.write_unfiltered(
@@ -290,6 +304,9 @@ pub fn run() {
             get_provider_setup,
             save_provider_setup,
             test_provider_setup,
+            provider_secret_commands::adopt_parameter_as_managed_secret,
+            provider_secret_commands::reveal_managed_secret,
+            provider_secret_commands::copy_managed_secret,
             get_installed_remote_provider_manifest,
             preview_remote_provider_registry,
             install_remote_provider_manifest,

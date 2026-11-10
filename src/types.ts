@@ -70,6 +70,30 @@ export type AppConfig = {
   providers: RemoteProviderConfig[];
 };
 
+export type MutationFailureKind =
+  | "validation"
+  | "conflict"
+  | "stale"
+  | "uncertain"
+  | "io";
+
+/** Serializable failure returned by config mutation commands. */
+export type MutationFailure = {
+  kind: MutationFailureKind;
+  message: string;
+  /** Present for `conflict`: field paths such as `providers[kimi].envVars`. */
+  fields?: string[];
+  /** Present for `uncertain`: a compensating rollback also failed. */
+  rollbackFailed?: boolean;
+};
+
+/** Authoritative config returned after a successful save. */
+export type SaveConfigOutcome = {
+  config: AppConfig;
+  /** Post-commit side effects that failed; the config itself is committed. */
+  warnings: string[];
+};
+
 export type WebhookEndpoint = {
   id: string;
   name?: string | null;
@@ -360,8 +384,19 @@ export type ProviderSetupDescriptor = {
   displayName: string;
   setupState: ProviderSetupState;
   fields: ProviderSetupField[];
+  /** Names of configured env vars the manifest does not declare. */
+  unknownEnvVars?: string[];
   hasUnknownEnvVars: boolean;
   canAutoDetect: boolean;
+};
+
+export type AdoptSecretResult = {
+  descriptor: ProviderSetupDescriptor;
+  adopted: boolean;
+};
+
+export type RevealSecretResult = {
+  value: string;
 };
 
 export type SaveProviderSetupRequest = {

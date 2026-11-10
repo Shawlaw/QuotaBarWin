@@ -36,10 +36,14 @@ pub fn managed_secrets_encryption_status_for_path(
 pub fn enable_managed_secrets_encryption_for_path(config_path: &Path) -> Result<u32, String> {
     let config_dir = config_dir_for(config_path)?;
     let store = ManagedSecretStore::new(config_dir, SecretStorageMode::Encrypted);
-    let migrated = store.encrypt_plaintext_secrets()?;
-    update_config(config_path, |config| {
+    // The file rewrites and the mode commit share the config write lock with
+    // adopt/setup saves, so a secret written concurrently can never end up in
+    // the wrong storage format for the committed mode.
+    let migrated = crate::config::update_config_at_path(config_path, |config| {
+        let migrated = store.encrypt_plaintext_secrets()?;
         config.secrets_storage = SecretStorageMode::Encrypted;
         config.secrets_encryption_prompt_pending = false;
+        Ok(migrated)
     })?;
     Ok(migrated)
 }
@@ -47,10 +51,11 @@ pub fn enable_managed_secrets_encryption_for_path(config_path: &Path) -> Result<
 pub fn disable_managed_secrets_encryption_for_path(config_path: &Path) -> Result<u32, String> {
     let config_dir = config_dir_for(config_path)?;
     let store = ManagedSecretStore::new(config_dir, SecretStorageMode::Plaintext);
-    let decrypted = store.decrypt_encrypted_secrets()?;
-    update_config(config_path, |config| {
+    let decrypted = crate::config::update_config_at_path(config_path, |config| {
+        let decrypted = store.decrypt_encrypted_secrets()?;
         config.secrets_storage = SecretStorageMode::Plaintext;
         config.secrets_encryption_prompt_pending = false;
+        Ok(decrypted)
     })?;
     Ok(decrypted)
 }
