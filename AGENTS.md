@@ -40,6 +40,13 @@ they exist.
 These are the version facts and cross-references that actually got missed in
 past releases; verify them before pushing a release tag.
 
+- **Tag from a quiescent main.** The release workflow regenerates
+  `updates/notes/<version>.md` from the tag checkout and pushes that commit to
+  `main`, which only fast-forwards while `main` sits exactly on the tag commit.
+  Do not add any commit after `chore(release): prepare` before the workflow
+  finishes (the v1.9.0 first attempt failed exactly this way); release notes
+  and `updates/stable.json` (+`.sig`) are published by the workflow itself,
+  never by hand.
 - Code version fields move together: `src-tauri/tauri.conf.json`,
   `package.json`, `src-tauri/Cargo.toml` (plus `Cargo.lock`), and the static
   window `title` (`V<version>`) in `tauri.conf.json`, which should match the
