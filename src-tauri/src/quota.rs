@@ -210,19 +210,16 @@ fn filter_snapshot_for_config(mut snapshot: AppSnapshot, config: &AppConfig) -> 
         {
             let mut provider = provider.clone();
             provider.name = name.clone();
-            provider.windows = provider
-                .windows
-                .into_iter()
-                .filter(|window| {
-                    visible_window_ids.is_empty() || visible_window_ids.contains(&window.id)
-                })
-                .map(|mut window| {
-                    if let Some(label) = window_label_overrides.get(&window.id) {
-                        window.label = label.clone();
-                    }
-                    window
-                })
-                .collect();
+            // Cached snapshots are stored as the provider reported them. Apply
+            // the current config's ordering here as well, so reading the cache
+            // (main window focus, tray popup, local API) never waits for
+            // another provider run to reflect a reorder.
+            crate::remote_provider_runner::apply_visible_windows(&mut provider, visible_window_ids);
+            for window in &mut provider.windows {
+                if let Some(label) = window_label_overrides.get(&window.id) {
+                    window.label = label.clone();
+                }
+            }
             providers.push(provider);
         }
     }
@@ -1817,6 +1814,57 @@ console.log(JSON.stringify({
         );
         assert_eq!(cached.providers[0].name, "Renamed B");
         assert_eq!(cached.providers[0].windows[0].label, "Renamed Weekly");
+    }
+
+    #[test]
+    fn cached_snapshot_filter_applies_visible_window_order() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let mut config = test_config(vec![remote_provider(
+            &temp, "remote-a", "Remote A", true, 20.0,
+        )]);
+        let ProviderConfig::Remote {
+            visible_window_ids,
+            window_label_overrides,
+            ..
+        } = &mut config.providers[0];
+        *visible_window_ids = vec!["weekly".to_string(), "daily".to_string()];
+        window_label_overrides.insert("weekly".to_string(), "Renamed Weekly".to_string());
+
+        let window = |id: &str| QuotaWindow {
+            id: id.to_string(),
+            label: id.to_string(),
+            remaining: None,
+            used: None,
+            limit: None,
+            unit: None,
+            used_percent: Some(10.0),
+            remaining_percent: Some(90.0),
+            warning_remaining: None,
+            reset_at: None,
+            reset_text: None,
+            confidence: "exact".to_string(),
+        };
+        let mut provider = cached_provider("remote-a", "Remote A");
+        provider.windows = vec![window("daily"), window("weekly"), window("monthly")];
+
+        let filtered = filter_snapshot_for_config(
+            AppSnapshot {
+                schema_version: 1,
+                refreshed_at: "2026-06-08T10:00:00Z".to_string(),
+                providers: vec![provider],
+            },
+            &config,
+        );
+
+        assert_eq!(
+            filtered.providers[0]
+                .windows
+                .iter()
+                .map(|window| window.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["weekly", "daily"]
+        );
+        assert_eq!(filtered.providers[0].windows[0].label, "Renamed Weekly");
     }
 
     #[test]

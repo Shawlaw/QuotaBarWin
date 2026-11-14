@@ -44,6 +44,7 @@ import {
   runConfigMutation,
   type MutationResult,
 } from "./lib/configMutation";
+import { projectSnapshotForConfig } from "./lib/snapshotProjection";
 import type {
   AppConfig,
   AppSnapshot,
@@ -90,48 +91,6 @@ function isSameAvailableAppUpdate(
     previous?.version === next.version &&
     previous?.dismissed === next.dismissed
   );
-}
-
-function projectProviderSnapshot(
-  provider: ProviderSnapshot,
-  config: RemoteProviderConfig
-): ProviderSnapshot {
-  const visibleWindowIds = config.visibleWindowIds ?? [];
-  const labelOverrides = config.windowLabelOverrides ?? {};
-  const windows = provider.windows
-    .filter((window) => visibleWindowIds.length === 0 || visibleWindowIds.includes(window.id))
-    .map((window) => ({
-      ...window,
-      label: labelOverrides[window.id] ?? window.label
-    }));
-
-  return {
-    ...provider,
-    name: config.name,
-    windows
-  };
-}
-
-function projectSnapshotForConfig(
-  snapshot: AppSnapshot | null,
-  config: AppConfig
-): AppSnapshot | null {
-  if (!snapshot) {
-    return snapshot;
-  }
-
-  const providersById = new Map(snapshot.providers.map((provider) => [provider.id, provider]));
-  return {
-    ...snapshot,
-    providers: config.providers.flatMap((providerConfig) => {
-      if (!providerConfig.enabled) {
-        return [];
-      }
-
-      const provider = providersById.get(providerConfig.id);
-      return provider ? [projectProviderSnapshot(provider, providerConfig)] : [];
-    })
-  };
 }
 
 export function mergeProviderSetupSnapshot(

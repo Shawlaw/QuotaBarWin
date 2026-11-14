@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -12,7 +12,7 @@ use std::{
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, Theme};
+use tauri::{AppHandle, Emitter, Manager, Theme};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::{
@@ -22,6 +22,9 @@ use crate::{
 };
 
 pub const CURRENT_CONFIG_SCHEMA_VERSION: u8 = 29;
+/// Emitted after a whole-config save so other webviews (the tray popup) can
+/// re-project display state without waiting for a Provider refresh.
+pub const CONFIG_SAVED_EVENT: &str = "config-saved";
 pub const DEFAULT_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_REMOTE_PROVIDER_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_LOCAL_API_PORT: u16 = 41833;
@@ -1609,6 +1612,19 @@ pub fn merge_and_save_config_at_path(
     base: Option<&AppConfig>,
     next: &AppConfig,
 ) -> Result<(AppConfig, Vec<String>), MutationFailure> {
+    let (config, warnings, _previous) =
+        merge_and_save_config_at_path_with_previous(path, base, next)?;
+    Ok((config, warnings))
+}
+
+/// Same as [`merge_and_save_config_at_path`], but also returns the config that
+/// was persisted before the write. Callers use it to decide whether a save
+/// requires running Providers again or only re-projecting display state.
+pub fn merge_and_save_config_at_path_with_previous(
+    path: &Path,
+    base: Option<&AppConfig>,
+    next: &AppConfig,
+) -> Result<(AppConfig, Vec<String>, Option<AppConfig>), MutationFailure> {
     let _guard = config_write_mutex()
         .lock()
         .map_err(|_| MutationFailure::Io {
@@ -1627,7 +1643,7 @@ pub fn merge_and_save_config_at_path(
             // non-reentrant mutex is not taken twice.
             write_config_atomically(path, &config)
                 .map_err(|message| MutationFailure::Io { message })?;
-            Ok((config, warnings))
+            Ok((config, warnings, current))
         }
         MergeOutcome::Conflict { fields } => Err(MutationFailure::Conflict {
             message: "Some settings were changed by another operation".to_string(),
@@ -2021,6 +2037,144 @@ pub async fn get_config(app: AppHandle) -> Result<AppConfig, String> {
     .map_err(|error| error.to_string())?
 }
 
+fn provider_id(provider: &ProviderConfig) -> &str {
+    let ProviderConfig::Remote { id, .. } = provider;
+    id
+}
+
+fn provider_enabled(provider: &ProviderConfig) -> bool {
+    let ProviderConfig::Remote { enabled, .. } = provider;
+    *enabled
+}
+
+type ProviderRefreshSignature<'a> = (
+    Option<&'a String>,
+    &'a str,
+    &'a str,
+    Option<&'a PathBuf>,
+    &'a str,
+    Option<&'a str>,
+    Option<&'a str>,
+    u64,
+    Option<&'a str>,
+    &'a HashMap<String, String>,
+);
+
+/// The persisted fields that can change what a Provider script prints.
+///
+/// Presentation fields (`visibleWindowIds`, label overrides, tray/screenshot
+/// flags), bookkeeping timestamps, setup state, and the update schedule are
+/// deliberately absent: changing them must re-project existing data, not rerun
+/// Providers.
+fn provider_refresh_signature(provider: &ProviderConfig) -> ProviderRefreshSignature<'_> {
+    let ProviderConfig::Remote {
+        version,
+        manifest_url,
+        source_url,
+        provider_dir,
+        runtime,
+        resolved_runtime,
+        proxy_url,
+        timeout_seconds,
+        trusted_checksum,
+        env_vars,
+        ..
+    } = provider;
+    (
+        version.as_ref(),
+        manifest_url.as_str(),
+        source_url.as_str(),
+        provider_dir.as_ref(),
+        runtime.as_str(),
+        resolved_runtime.as_deref(),
+        proxy_url.as_deref(),
+        *timeout_seconds,
+        trusted_checksum.as_deref(),
+        env_vars,
+    )
+}
+
+/// True when the new visible-window list asks for a window that the previous
+/// configuration hid.
+///
+/// Hidden windows are dropped when a Provider runs, so restoring one needs
+/// fresh data. Reordering, hiding, and label edits do not.
+fn visible_windows_expanded(previous: &ProviderConfig, next: &ProviderConfig) -> bool {
+    let ProviderConfig::Remote {
+        visible_window_ids: previous_ids,
+        ..
+    } = previous;
+    let ProviderConfig::Remote {
+        visible_window_ids: next_ids,
+        ..
+    } = next;
+
+    // An empty list means "show every window", so it is the widest state.
+    if previous_ids.is_empty() {
+        return false;
+    }
+    if next_ids.is_empty() {
+        return true;
+    }
+
+    let previous_ids = previous_ids
+        .iter()
+        .map(|id| id.trim())
+        .filter(|id| !id.is_empty())
+        .collect::<HashSet<_>>();
+    next_ids
+        .iter()
+        .map(|id| id.trim())
+        .filter(|id| !id.is_empty())
+        .any(|id| !previous_ids.contains(id))
+}
+
+/// True when moving from `previous` to `next` requires Provider data to be
+/// re-read. Display-only saves (ordering, labels, theme, notifications, ...)
+/// return false so the refresh scheduler does not run every Provider just to
+/// apply presentation state.
+fn config_requires_provider_refresh(previous: &AppConfig, next: &AppConfig) -> bool {
+    if previous.network_proxy != next.network_proxy {
+        return true;
+    }
+
+    let previous_providers = previous
+        .providers
+        .iter()
+        .map(|provider| (provider_id(provider), provider))
+        .collect::<HashMap<_, _>>();
+
+    for next_provider in &next.providers {
+        let Some(previous_provider) = previous_providers.get(provider_id(next_provider)) else {
+            if provider_enabled(next_provider) {
+                return true;
+            }
+            continue;
+        };
+
+        // Disabled Providers do not run, and their entry disappears from the
+        // projected snapshot, so editing one never needs a refresh.
+        if !provider_enabled(next_provider) {
+            continue;
+        }
+        if !provider_enabled(previous_provider)
+            || provider_refresh_signature(previous_provider)
+                != provider_refresh_signature(next_provider)
+            || visible_windows_expanded(previous_provider, next_provider)
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn emit_config_saved(app: &AppHandle, config: &AppConfig) {
+    if let Err(error) = app.emit(CONFIG_SAVED_EVENT, config) {
+        eprintln!("Failed to emit config-saved event: {error}");
+    }
+}
+
 #[tauri::command]
 pub async fn save_config(
     app: AppHandle,
@@ -2029,15 +2183,15 @@ pub async fn save_config(
 ) -> Result<SaveConfigOutcome, MutationFailure> {
     let path = config_path_for_app(&app).map_err(|message| MutationFailure::Io { message })?;
     let saved_path = path.clone();
-    let (saved, warnings, previous_notifications) =
+    let (saved, warnings, previous_notifications, previous_config) =
         tauri::async_runtime::spawn_blocking(move || {
             // Capture the persisted notification settings before the file is
             // overwritten so the cleanup below can compare pre-save and post-save
             // toast state.
-            let previous = read_saved_notification_settings(&saved_path);
-            let (saved, warnings) =
-                merge_and_save_config_at_path(&saved_path, base.as_ref(), &next)?;
-            Ok::<_, MutationFailure>((saved, warnings, previous))
+            let previous_notifications = read_saved_notification_settings(&saved_path);
+            let (saved, warnings, previous_config) =
+                merge_and_save_config_at_path_with_previous(&saved_path, base.as_ref(), &next)?;
+            Ok::<_, MutationFailure>((saved, warnings, previous_notifications, previous_config))
         })
         .await
         .map_err(|error| MutationFailure::Io {
@@ -2058,7 +2212,19 @@ pub async fn save_config(
         warnings.push(format!("launchAtStartup: {error}"));
     }
     crate::local_api::reconfigure(&app);
-    crate::refresh_scheduler::signal_config_changed();
+    // Display-only saves are applied by re-projecting the existing snapshot.
+    // Only changes that can alter Provider output (or enabling a Provider)
+    // require an immediate run.
+    let refresh_providers = previous_config
+        .as_ref()
+        .map(|previous| config_requires_provider_refresh(previous, &saved))
+        .unwrap_or(true);
+    if refresh_providers {
+        crate::refresh_scheduler::signal_config_changed();
+    } else {
+        crate::refresh_scheduler::signal_schedule_changed();
+    }
+    emit_config_saved(&app, &saved);
     if let Err(error) = crate::tray::refresh_tray_menu(&app) {
         warnings.push(format!("tray: {error}"));
     }
@@ -2592,6 +2758,7 @@ pub async fn reset_config(app: AppHandle) -> Result<AppConfig, String> {
     apply_app_theme(&app, &config.theme);
     crate::tray::refresh_tray_menu(&app)?;
     crate::local_api::reconfigure(&app);
+    emit_config_saved(&app, &config);
     crate::refresh_scheduler::signal_config_changed();
     Ok(config)
 }
@@ -5049,6 +5216,127 @@ mod tests {
                 _ => None,
             })
             .expect("provider present")
+    }
+
+    #[test]
+    fn display_only_changes_do_not_require_a_provider_refresh() {
+        let mut previous = default_config();
+        previous.providers = vec![remote_provider_config("kimi")];
+        let mut next = previous.clone();
+        next.refresh_interval_seconds = 60;
+        next.display_mode = "used".to_string();
+        next.low_quota_warning_threshold = 5.0;
+        next.theme = AppTheme::Dark;
+        next.notifications.toast_enabled = !next.notifications.toast_enabled;
+
+        let ProviderConfig::Remote {
+            name,
+            visible_window_ids,
+            window_label_overrides,
+            show_in_tray,
+            notifications_enabled,
+            show_in_screenshot,
+            auto_update,
+            update_interval_seconds,
+            ..
+        } = &mut next.providers[0];
+        *name = "Renamed".to_string();
+        *visible_window_ids = vec!["weekly".to_string(), "daily".to_string()];
+        window_label_overrides.insert("weekly".to_string(), "This week".to_string());
+        *show_in_tray = false;
+        *notifications_enabled = false;
+        *show_in_screenshot = false;
+        *auto_update = false;
+        *update_interval_seconds = 60;
+
+        assert!(!config_requires_provider_refresh(&previous, &next));
+    }
+
+    #[test]
+    fn restoring_a_hidden_window_requires_a_provider_refresh() {
+        let mut previous = default_config();
+        previous.providers = vec![remote_provider_config("kimi")];
+        let ProviderConfig::Remote {
+            visible_window_ids, ..
+        } = &mut previous.providers[0];
+        *visible_window_ids = vec!["weekly".to_string(), "daily".to_string()];
+
+        let mut reordered = previous.clone();
+        let ProviderConfig::Remote {
+            visible_window_ids, ..
+        } = &mut reordered.providers[0];
+        *visible_window_ids = vec!["daily".to_string(), "weekly".to_string()];
+        assert!(!config_requires_provider_refresh(&previous, &reordered));
+
+        let mut hidden = previous.clone();
+        let ProviderConfig::Remote {
+            visible_window_ids, ..
+        } = &mut hidden.providers[0];
+        *visible_window_ids = vec!["weekly".to_string()];
+        assert!(!config_requires_provider_refresh(&previous, &hidden));
+
+        let mut restored = previous.clone();
+        let ProviderConfig::Remote {
+            visible_window_ids, ..
+        } = &mut restored.providers[0];
+        *visible_window_ids = vec![
+            "weekly".to_string(),
+            "daily".to_string(),
+            "monthly".to_string(),
+        ];
+        assert!(config_requires_provider_refresh(&previous, &restored));
+
+        let mut show_all = previous.clone();
+        let ProviderConfig::Remote {
+            visible_window_ids, ..
+        } = &mut show_all.providers[0];
+        visible_window_ids.clear();
+        assert!(config_requires_provider_refresh(&previous, &show_all));
+    }
+
+    #[test]
+    fn provider_input_changes_require_a_provider_refresh() {
+        let mut previous = default_config();
+        previous.providers = vec![remote_provider_config("kimi")];
+
+        let mut changed_env = previous.clone();
+        let ProviderConfig::Remote { env_vars, .. } = &mut changed_env.providers[0];
+        env_vars.insert("API_KEY".to_string(), "${env:NEW}".to_string());
+        assert!(config_requires_provider_refresh(&previous, &changed_env));
+
+        let mut changed_proxy = previous.clone();
+        let ProviderConfig::Remote { proxy_url, .. } = &mut changed_proxy.providers[0];
+        *proxy_url = Some("http://127.0.0.1:7890".to_string());
+        assert!(config_requires_provider_refresh(&previous, &changed_proxy));
+
+        let mut global_proxy = previous.clone();
+        global_proxy.network_proxy = Some(ProxyConfig {
+            kind: crate::proxy::ProxyKind::Http,
+            url: "http://127.0.0.1:7890".to_string(),
+        });
+        assert!(config_requires_provider_refresh(&previous, &global_proxy));
+    }
+
+    #[test]
+    fn enabling_a_provider_requires_a_refresh_but_disabling_does_not() {
+        let mut enabled = default_config();
+        enabled.providers = vec![remote_provider_config("kimi")];
+        let mut disabled = enabled.clone();
+        let ProviderConfig::Remote {
+            enabled: is_enabled,
+            ..
+        } = &mut disabled.providers[0];
+        *is_enabled = false;
+
+        assert!(!config_requires_provider_refresh(&enabled, &disabled));
+        assert!(config_requires_provider_refresh(&disabled, &enabled));
+
+        let mut new_disabled = default_config();
+        new_disabled.providers = vec![disabled.providers[0].clone()];
+        assert!(!config_requires_provider_refresh(
+            &default_config(),
+            &new_disabled
+        ));
     }
 
     #[test]

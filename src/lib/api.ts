@@ -883,6 +883,17 @@ export async function listenForSnapshotUpdates(
   );
 }
 
+export async function listenForConfigSaved(
+  onConfig: (config: AppConfig) => void,
+): Promise<() => void> {
+  if (!hasTauriInternals()) {
+    void onConfig;
+    return () => undefined;
+  }
+
+  return listen<AppConfig>("config-saved", (event) => onConfig(event.payload));
+}
+
 export async function listenForMainWindowCloseRequests(
   onCloseRequested: () => void,
 ): Promise<() => void> {

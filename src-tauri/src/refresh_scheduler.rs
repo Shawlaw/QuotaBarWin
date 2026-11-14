@@ -23,6 +23,10 @@ static WAKE_STATE: OnceLock<Arc<SchedulerWakeState>> = OnceLock::new();
 
 struct SchedulerWakeState {
     generation: Mutex<u64>,
+    /// Set by [`signal_config_changed`]: the next wake must run providers.
+    /// Presentation-only changes use [`signal_schedule_changed`] instead and
+    /// only recompute the interval.
+    refresh_pending: AtomicBool,
     wake: Condvar,
 }
 
@@ -36,6 +40,7 @@ fn wake_state() -> Arc<SchedulerWakeState> {
         .get_or_init(|| {
             Arc::new(SchedulerWakeState {
                 generation: Mutex::new(0),
+                refresh_pending: AtomicBool::new(false),
                 wake: Condvar::new(),
             })
         })
@@ -46,13 +51,33 @@ fn refresh_interval_delay(seconds: u64) -> Duration {
     Duration::from_secs(seconds.max(MIN_REFRESH_INTERVAL_SECONDS))
 }
 
-pub fn signal_config_changed() {
-    if let Some(state) = WAKE_STATE.get() {
-        if let Ok(mut generation) = state.generation.lock() {
-            *generation = generation.wrapping_add(1);
-            state.wake.notify_one();
-        }
+fn wake_scheduler(refresh_now: bool) {
+    let Some(state) = WAKE_STATE.get() else {
+        return;
+    };
+    if refresh_now {
+        // A pending refresh must never be downgraded by a later
+        // presentation-only save.
+        state.refresh_pending.store(true, Ordering::SeqCst);
     }
+    if let Ok(mut generation) = state.generation.lock() {
+        *generation = generation.wrapping_add(1);
+        state.wake.notify_one();
+    }
+}
+
+/// Signals a config change that can affect provider output. The scheduler
+/// refreshes all Providers immediately.
+pub fn signal_config_changed() {
+    wake_scheduler(true);
+}
+
+/// Signals a config change that only affects presentation (window order,
+/// labels, tray/screenshot flags, theme, ...). The scheduler re-reads the
+/// configured interval without running any Provider, so display updates never
+/// wait for a quota refresh.
+pub fn signal_schedule_changed() {
+    wake_scheduler(false);
 }
 
 pub fn start(app: AppHandle) {
@@ -86,6 +111,11 @@ fn run_scheduler(app: AppHandle, state: Arc<SchedulerWakeState>) {
             if outcome.timed_out {
                 break;
             }
+            if state.refresh_pending.swap(false, Ordering::SeqCst) {
+                break;
+            }
+            // Presentation-only signal: loop again so the new interval is
+            // applied without running any Provider.
         }
     }
 }

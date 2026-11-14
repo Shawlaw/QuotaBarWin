@@ -994,6 +994,75 @@ test("saving_provider_reorder_projects_cached_snapshot_without_refreshing_data",
   expect(overviewText.indexOf("Remote B")).toBeLessThan(overviewText.indexOf("Remote A"));
 });
 
+test("saving_window_reorder_projects_cached_snapshot_without_refreshing_data", async () => {
+  const windowConfig = buildTwoProviderConfig();
+  windowConfig.providers = [buildRemoteProvider("remote-a", "Remote A")];
+  const cachedSnapshot: AppSnapshot = {
+    schemaVersion: 1,
+    refreshedAt: "2026-06-08T10:00:00+08:00",
+    providers: [
+      {
+        id: "remote-a",
+        name: "Remote A",
+        status: "ok",
+        source: "remote",
+        updatedAt: "2026-06-08T10:00:00+08:00",
+        error: null,
+        diagnostics: null,
+        metadata: null,
+        windows: [
+          {
+            id: "daily",
+            label: "Daily",
+            used: 10,
+            limit: 100,
+            unit: "percent",
+            usedPercent: 10,
+            remainingPercent: 90,
+            resetAt: null,
+            resetText: "resets tomorrow",
+            confidence: "exact",
+          },
+          {
+            id: "weekly",
+            label: "Weekly",
+            used: 30,
+            limit: 100,
+            unit: "percent",
+            usedPercent: 30,
+            remainingPercent: 70,
+            resetAt: null,
+            resetText: "resets Friday",
+            confidence: "exact",
+          },
+        ],
+      },
+    ],
+  };
+  mocks.getConfig.mockResolvedValueOnce(windowConfig);
+  mocks.getCachedSnapshot.mockResolvedValueOnce(cachedSnapshot);
+  mocks.refreshSnapshot.mockResolvedValueOnce(cachedSnapshot);
+
+  render(<App />);
+
+  expect(await screen.findByText("Remote A")).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByTestId("edit-provider-remote-a"));
+  fireEvent.click(screen.getByRole("button", { name: "Move weekly up" }));
+  fireEvent.click(screen.getByTestId("save-settings-button"));
+
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  expect(mocks.refreshProvider).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+  await waitFor(() => expect(screen.getByTestId("overview-page")).toBeInTheDocument());
+
+  const overviewText = screen.getByLabelText("Providers").textContent ?? "";
+  expect(overviewText.indexOf("Weekly")).toBeGreaterThanOrEqual(0);
+  expect(overviewText.indexOf("Daily")).toBeGreaterThanOrEqual(0);
+  expect(overviewText.indexOf("Weekly")).toBeLessThan(overviewText.indexOf("Daily"));
+});
+
 function buildRemoteProvider(id: string, name: string): RemoteProviderConfig {
   return {
     id,

@@ -8,6 +8,7 @@ import {
   getTrayPopupPresentationId,
   hideCurrentWindow,
   hideTrayPopup,
+  listenForConfigSaved,
   listenForSnapshotUpdates,
   listenForAppUpdateStatus,
   listenForTrayPopupShown,
@@ -320,6 +321,23 @@ export function TrayPopup({ onThemeChange = () => undefined }: TrayPopupProps) {
       unlisten?.();
     };
   }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listenForConfigSaved((updatedConfig) => {
+      // Whole-config saves already persisted the new ordering/labels. Re-read
+      // the cached snapshot, which the backend filters with the current
+      // config, instead of waiting for the next Provider refresh.
+      setConfig(updatedConfig);
+      void syncCachedSnapshot();
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [syncCachedSnapshot]);
 
   useEffect(() => {
     function onFocus() {

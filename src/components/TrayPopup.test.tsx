@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
     snapshotUpdated?: (snapshot: AppSnapshot) => void;
     trayShown?: (presentationId: number) => void;
     appUpdateStatus?: (status: { info: unknown; animate: boolean }) => void;
+    configSaved?: (config: AppConfig) => void;
   } = {};
   const state = { presentationId: 0 };
   const config: AppConfig = {
@@ -170,6 +171,10 @@ const mocks = vi.hoisted(() => {
     getTrayPopupPresentationId: vi.fn(async () => state.presentationId),
     hideCurrentWindow: vi.fn(async () => undefined),
     hideTrayPopup: vi.fn(async () => undefined),
+    listenForConfigSaved: vi.fn(async (callback: (config: AppConfig) => void) => {
+      listeners.configSaved = callback;
+      return () => undefined;
+    }),
     listenForSnapshotUpdates: vi.fn(async (callback: (snapshot: AppSnapshot) => void) => {
       listeners.snapshotUpdated = callback;
       return () => undefined;
@@ -211,6 +216,7 @@ beforeEach(() => {
   mocks.listeners.snapshotUpdated = undefined;
   mocks.listeners.trayShown = undefined;
   mocks.listeners.appUpdateStatus = undefined;
+  mocks.listeners.configSaved = undefined;
   mocks.state.presentationId = 0;
 });
 
@@ -926,6 +932,61 @@ test("tray_popup_follows_main_snapshot_provider_order_for_quota_windows", async 
   expect(popupText.indexOf("Kimi")).toBeGreaterThanOrEqual(0);
   expect(popupText.indexOf("Codex Mock")).toBeGreaterThanOrEqual(0);
   expect(popupText.indexOf("Codex Mock")).toBeLessThan(popupText.indexOf("Kimi"));
+});
+
+test("tray_popup_applies_config_saved_order_without_waiting_for_refresh", async () => {
+  const { container } = renderWithEnglish(<TrayPopup />);
+
+  await waitFor(() => expect(mocks.listeners.configSaved).toBeDefined());
+  await waitFor(() => expect(mocks.listeners.trayShown).toBeDefined());
+  await act(async () => {
+    mocks.listeners.trayShown?.(1);
+  });
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(screen.getByTestId("tray-popup-provider-mock-codex")).toBeInTheDocument(),
+  );
+
+  const loaded = (await mocks.refreshSnapshot.mock.results[0]
+    .value) as AppSnapshot;
+  const reordered: AppSnapshot = {
+    ...loaded,
+    providers: [...loaded.providers].reverse(),
+  };
+  const cachedReadsBeforeSave = mocks.getCachedSnapshot.mock.calls.length;
+  mocks.getCachedSnapshot.mockResolvedValueOnce(reordered);
+  const updatedConfig: AppConfig = {
+    schemaVersion: 29,
+    refreshIntervalSeconds: 300,
+    displayMode: "remaining",
+    lowQuotaWarningThreshold: 20,
+    language: "system",
+    remoteProviderRegistry: {
+      registryUrl: null,
+      providerProxyUrl: null,
+      autoUpdate: true,
+    },
+    providers: [],
+  };
+
+  await act(async () => {
+    mocks.listeners.configSaved?.(updatedConfig);
+  });
+  await waitFor(() =>
+    expect(mocks.getCachedSnapshot).toHaveBeenCalledTimes(cachedReadsBeforeSave + 1),
+  );
+
+  await waitFor(() => {
+    const providerOrder = Array.from(
+      container.querySelectorAll('[data-testid^="tray-popup-provider-"]'),
+    ).map((element) => element.getAttribute("data-testid"));
+    expect(providerOrder).toEqual([
+      "tray-popup-provider-remote-kimi",
+      "tray-popup-provider-mock-codex",
+    ]);
+  });
+  // Applying presentation state must not trigger another Provider run.
+  expect(mocks.refreshSnapshot).toHaveBeenCalledTimes(1);
 });
 
 test("tray_popup_shows_unhealthy_provider_in_title", async () => {

@@ -1254,7 +1254,10 @@ fn parse_remote_provider_snapshot_v1(
     })
 }
 
-fn apply_visible_windows(provider: &mut ProviderSnapshot, visible_window_ids: &[String]) {
+pub(crate) fn apply_visible_windows(
+    provider: &mut ProviderSnapshot,
+    visible_window_ids: &[String],
+) {
     if visible_window_ids.is_empty() {
         return;
     }
