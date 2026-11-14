@@ -2,6 +2,17 @@
 
 This file records user-visible changes in QuotaBarWin. Simplified Chinese counterpart: [CHANGELOG.md](CHANGELOG.md).
 
+## [1.9.1] - 2026-11-14
+
+### Changed
+
+- Reordering providers or quota windows, renaming labels, and toggling tray/screenshot visibility now appear immediately in the main window and tray popup instead of waiting for every provider refresh to finish.
+- Saving display-only settings no longer starts a full quota refresh; only changes that affect provider output (credentials, runtime parameters, proxy, enabled state, ...) refresh immediately.
+
+### Fixed
+
+- Fixed provider and quota-window ordering in the tray popup and main window taking effect only after the next refresh.
+
 ## [1.9.0] - 2026-11-10
 
 ### Added
