@@ -2,16 +2,15 @@
 
 This file records user-visible changes in QuotaBarWin. Simplified Chinese counterpart: [CHANGELOG.md](CHANGELOG.md).
 
-## [1.9.1] - 2026-11-14
+## [1.9.1] - 2026-11-19
 
 ### Changed
 
-- Reordering providers or quota windows, renaming labels, and toggling tray/screenshot visibility now appear immediately in the main window and tray popup instead of waiting for every provider refresh to finish.
-- Saving display-only settings no longer starts a full quota refresh; only changes that affect provider output (credentials, runtime parameters, proxy, enabled state, ...) refresh immediately.
+- The main window and tray popup now apply changes to Provider order, quota window order, display names, and tray or screenshot visibility as soon as you save. Saving display-only settings also skips the full quota refresh.
 
 ### Fixed
 
-- Fixed provider and quota-window ordering in the tray popup and main window taking effect only after the next refresh.
+- When Kimi, BigModel, Codex Usage, OpenCode Go, or DeepSeek returns no usable quota or balance data, the main window and tray keep showing any cached data and indicate a refresh failure. To update an installed Provider, check for updates and apply them under Settings → Providers.
 
 ## [1.9.0] - 2026-11-10
 

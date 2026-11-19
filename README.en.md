@@ -196,14 +196,14 @@ The CLI can also validate Provider configuration, manifest, source checksum, and
 
 - Shows quota windows, remaining usage, reset times, status, and progress bars per Provider.
 - Includes a local HTTP API and a JSON CLI for agents and scripts, with refresh, cached reads, and remaining-percent threshold decisions.
-- Supports per-Provider manual refresh and global interval-based auto refresh.
+- Supports per-Provider manual refresh and global interval-based auto refresh. If a refresh fails, the app keeps displaying any cached quota and marks it as stale.
 - In-app event history records app starts/updates, quota resets/unexpected recoveries/exhaustion/low quota, and Provider failures/recoveries; stored locally, filterable, and clearable.
 - Supports event notifications via Windows toasts (body includes the event time) and webhooks (JSON POST, with an optional custom body template), with per-event-type selection and a test-notification button.
 - Includes Windows tray integration, hidden startup, single-instance behavior, and a resizable tray popup.
 - The tray popup can copy one Provider's display or all Provider displays as an image with the app icon, name, version, capture time, and the cards' shadow styling. Camera actions fade in on hover or keyboard focus, and images go directly to the clipboard without being saved as files. Each Provider's details offer a permanent per-provider screenshot opt-out (the Provider stays visible in the tray popup itself). When a reset time uses a weekday-and-time label, hovering reveals the full local date and time.
 - The Settings page is organized into Provider / General / Notifications / Application update / Advanced categories: General keeps the refresh interval, display mode, language, theme, and launch-at-startup; the low-quota warning threshold is edited under Notifications, with a summary and shortcut in General; the network proxy, local integration API, secret security, config storage, and logging live under Advanced. The theme follows Windows by default and can be fixed to light or dark.
 - Supports AppData storage and portable mode. Portable mode keeps config, logs, secrets, and cached remote providers beside the exe.
-- Supports Provider enablement, ordering, visible quota windows, and custom window labels.
+- Supports enabling and disabling Providers, custom ordering, window visibility, and custom window labels. The main window and tray popup apply display-only changes as soon as you save.
 - Installs Providers from remote registries/manifests with caching, SHA-256 verification, and update checks.
 - Supports global and per-Provider proxies with HTTP and SOCKS5, including a pre-save global proxy connectivity test.
 - Supports secret placeholders so real credentials do not need to be stored directly in config or logs.
