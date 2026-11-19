@@ -79,7 +79,7 @@ The script sorts windows in that order and places unknown IDs last. Unit labels 
 - Missing `BIGMODEL_API_KEY` exits with an error.
 - Non-2xx responses throw `BigModel quota request failed with <status>`.
 - If the parsed JSON has `success === false`, the provider emits `status: "error"` and copies `msg` to `error`.
-- Other parseable responses emit `status: "ok"`.
+- At least one quota window with a usage percentage or both usage and limit yields `status: "ok"`. With no usable windows, the provider returns `status: "error"` so the app can keep displaying cached quota.
 
 ## Local References
 

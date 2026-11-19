@@ -92,7 +92,7 @@ If the 300-minute window has no `used`, `remaining`, or `limit`, the script trea
 
 - Missing `KIMI_API_KEY` exits with an error.
 - Non-2xx responses throw `Kimi usage request failed with <status>`.
-- When the network request succeeds and JSON parses, the provider emits `status: "ok"`; missing optional windows only reduce `windows[]`.
+- The provider emits `status: "ok"` when it parses at least one quota window. With zero windows it emits `status: "error"`, so the app can keep displaying any cached quota.
 
 ## Local References
 

@@ -25,6 +25,11 @@ function main(qb) {
       confidence: "exact"
     });
   }
+  if (windows.length === 0) {
+    const error = "Kimi usage response contained no quota windows";
+    logStep(qb, "warn", "snapshot.empty", error);
+    return { status: "error", error, windows };
+  }
   logStep(qb, "info", "snapshot.ready", "Kimi snapshot ready", { windowCount: windows.length });
   return {
     status: "ok",

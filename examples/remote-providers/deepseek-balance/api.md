@@ -72,9 +72,10 @@ DeepSeek 返回的是余额，不是周期性 quota。没有参考总额时，�
 - 缺少 `DEEPSEEK_API_KEY` 时脚本退出并报错。
 - HTTP 非 2xx 响应会抛出 `DeepSeek balance request failed with <status>`。
 - 设置了 `DEEPSEEK_BALANCE_CURRENCY` 但响应没有对应币种时脚本报错。
-- `is_available === false` 时输出 `status: "warning"`。
+- 没有可用余额时返回 `status: "error"`，应用继续显示已有的历史余额。
+- 响应包含有效余额且 `is_available === false` 时输出 `status: "warning"`。
 - 任意窗口余额低于或等于本地 warning 阈值时输出 `status: "warning"` 并提供 diagnostics。
-- 其他可解析响应输出 `status: "ok"`。
+- 其他包含有效余额的响应输出 `status: "ok"`。
 
 ## 本地参考
 

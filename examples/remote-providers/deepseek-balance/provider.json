@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "deepseek-balance",
   "displayName": "DeepSeek Balance",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "minAppVersion": "1.1.0",
   "description": "DeepSeek pay-as-you-go account balance via remote provider script.",
   "runtime": "builtin-js",
@@ -70,6 +70,6 @@
     }
   ],
   "checksums": {
-    "source": "sha256:4dfb71cfad46ab43f633f659560f2ee9554df3ef4a366cd9f7bfe1fca35b02cc"
+    "source": "sha256:3f274e3742c9aad5a62ba84fe33cd5b87125794dfdfc86dd56886e3c2b31a6f1"
   }
 }

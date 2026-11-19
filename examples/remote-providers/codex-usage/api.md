@@ -78,7 +78,7 @@ Codex usage API 当前主要返回百分比，不返回绝对计数，所以脚�
 - 没有 access token 时脚本退出并提示设置 `CODEX_ACCESS_TOKEN` 或登录 Codex 生成本地 auth 文件。
 - HTTP 状态码不是 `200` 时抛出 `Codex usage API returned <status>`。
 - 响应无法解析为 JSON 时抛出解析错误。
-- 至少生成一个窗口时输出 `status: "ok"`；没有可用窗口时输出 `status: "warning"`。
+- 至少解析出一个有有效使用百分比的窗口时输出 `status: "ok"`。没有可用窗口时返回 `status: "error"`，应用继续显示已有的历史额度。
 
 ## 本地参考
 

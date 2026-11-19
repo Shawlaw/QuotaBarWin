@@ -78,7 +78,7 @@ The Codex usage API currently reports percentages rather than absolute counters,
 - Missing access token exits with guidance to set `CODEX_ACCESS_TOKEN` or sign in with Codex so the local auth file exists.
 - Non-`200` responses throw `Codex usage API returned <status>`.
 - Invalid JSON throws a parse error.
-- At least one window emits `status: "ok"`; no usable windows emits `status: "warning"`.
+- At least one window with a valid usage percentage yields `status: "ok"`. With no usable windows, the provider returns `status: "error"` so the app can keep displaying cached quota.
 
 ## Local References
 

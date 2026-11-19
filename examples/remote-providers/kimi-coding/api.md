@@ -92,7 +92,7 @@ English version: [`api.en.md`](api.en.md).
 
 - 缺少 `KIMI_API_KEY` 时脚本退出并报错。
 - HTTP 非 2xx 响应会抛出 `Kimi usage request failed with <status>`。
-- 网络请求成功且 JSON 可解析时输出 `status: "ok"`；缺失的可选窗口只会减少 `windows[]` 数量。
+- 至少解析出一个额度窗口时输出 `status: "ok"`。零窗口会返回 `status: "error"`，应用会继续显示已有的历史额度。
 
 ## 本地参考
 

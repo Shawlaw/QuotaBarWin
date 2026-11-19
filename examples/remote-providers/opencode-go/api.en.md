@@ -74,7 +74,7 @@ Windows are emitted in 5h, weekly, monthly order; a window missing from the resp
 - Other non-2xx statuses raise `OpenCode Go usage API returned <status>` with at most the first 160 characters of the body.
 - A body that cannot be parsed as JSON raises a parse error.
 - A response without a `usage` object raises an explicit error saying the key must belong to an account with a Go subscription.
-- With at least one parsed window the provider returns `status: "ok"`; when `usage` exists but no recognized window is present it returns `status: "warning"` with an empty `windows[]`.
+- At least one window with a valid usage percentage yields `status: "ok"`. If `usage` has no usable windows, the provider returns `status: "error"` so the app can keep displaying cached quota.
 
 ## Local references
 

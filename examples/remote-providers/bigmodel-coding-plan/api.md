@@ -79,7 +79,7 @@ English version: [`api.en.md`](api.en.md).
 - 缺少 `BIGMODEL_API_KEY` 时脚本退出并报错。
 - HTTP 非 2xx 响应会抛出 `BigModel quota request failed with <status>`。
 - 如果响应 JSON 中 `success === false`，脚本输出 `status: "error"`，并把 `msg` 放入 `error`。
-- 其他可解析响应输出 `status: "ok"`。
+- 至少解析出一个有使用百分比或完整用量的额度窗口时输出 `status: "ok"`。没有可用窗口时返回 `status: "error"`，应用继续显示已有的历史额度。
 
 ## 本地参考
 

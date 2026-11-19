@@ -4,27 +4,27 @@
     {
       "id": "kimi-coding",
       "providerUrl": "kimi-coding/provider.json",
-      "checksum": "sha256:5b5cbe619557b43986a4c66db70c7cfbfcd9fff38ccfa2263e388325510542f3"
+      "checksum": "sha256:15d0785e663211c7c96764072cd9bbb0a046de19532a055566294a0a2dc2f63c"
     },
     {
       "id": "bigmodel-coding-plan",
       "providerUrl": "bigmodel-coding-plan/provider.json",
-      "checksum": "sha256:dbaa1021ed4fce65771d008035af589dc1f7f9a3692ddef875f2ab0f0543ae13"
+      "checksum": "sha256:7139d82e7b70513f65952f1c7f646199dd602ecc4ca6f1a784c253d8e0d30233"
     },
     {
       "id": "codex-usage",
       "providerUrl": "codex-usage/provider.json",
-      "checksum": "sha256:cc9380998a657e533c72a3159f4a722dad38fcaea2fea7c7c9d6acd8477792a3"
+      "checksum": "sha256:08c546a6556db7cd58f236f51d59269f6baa5ffd3c2df15096784cece7469c14"
     },
     {
       "id": "opencode-go",
       "providerUrl": "opencode-go/provider.json",
-      "checksum": "sha256:61d301e16dbba63a645cd91168db0ca98b9d8d4eac35547badbc49cb491b5196"
+      "checksum": "sha256:f30ad09d82301d02e16930ee732410f4b1a3c04f137fe8921081e5bb1a306841"
     },
     {
       "id": "deepseek-balance",
       "providerUrl": "deepseek-balance/provider.json",
-      "checksum": "sha256:8390c7338addbca2f26980d5331e34db0c93ac7ba842fa999fceb8128dcd847e"
+      "checksum": "sha256:e3a1f853bdf58b819d43c4cfb8919a2419cb36aec99d88036fbb485215f0cb01"
     },
     {
       "id": "time-flies",

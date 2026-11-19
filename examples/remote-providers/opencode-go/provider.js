@@ -20,12 +20,17 @@ function main(qb) {
   pushWindow(windows, "weekly", "Weekly limit", usage, ["weekly", "weeklyUsage"], nowMs);
   pushWindow(windows, "monthly", "Monthly limit", usage, ["monthly", "monthlyUsage"], nowMs);
 
-  logStep(qb, windows.length > 0 ? "info" : "warn", "snapshot.ready", "OpenCode Go snapshot ready", {
-    status: windows.length > 0 ? "ok" : "warning",
+  if (windows.length === 0) {
+    const error = "OpenCode Go usage response contained no usable quota windows";
+    logStep(qb, "warn", "snapshot.empty", error);
+    return { status: "error", error, windows };
+  }
+  logStep(qb, "info", "snapshot.ready", "OpenCode Go snapshot ready", {
+    status: "ok",
     windowCount: windows.length
   });
   return {
-    status: windows.length > 0 ? "ok" : "warning",
+    status: "ok",
     updatedAt: qb.now(),
     windows,
     metadata: metadataFrom(raw, usage)
@@ -131,7 +136,7 @@ function firstNumber(source, keys) {
   return null;
 }
 function numberOrNull(value) {
-  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "number" && (typeof value !== "string" || value.trim() === "")) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }

@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "kimi-coding",
   "displayName": "Kimi Coding Usage",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "minAppVersion": "1.1.0",
   "description": "Kimi coding quota usage via remote provider script.",
   "runtime": "builtin-js",
@@ -33,6 +33,6 @@
     }
   ],
   "checksums": {
-    "source": "sha256:5e8f75b12b7ca090c14f7ba48216464d27fb53daf1609bf7450afcbc867a8dcc"
+    "source": "sha256:9fa475667789c4cfbef7f3da2947abeb853d1316e1e32464ac85fbc926221dfd"
   }
 }

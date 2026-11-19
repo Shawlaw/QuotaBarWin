@@ -74,7 +74,7 @@ English version: [`api.en.md`](api.en.md).
 - 其它非 2xx 状态码抛出 `OpenCode Go usage API returned <status>`，正文只截取前 160 个字符。
 - 响应无法解析为 JSON 时抛出解析错误。
 - 响应里没有 `usage` 对象时抛出明确错误，提示 key 必须属于有 Go 订阅的账号。
-- 至少生成一个窗口时输出 `status: "ok"`；`usage` 存在但没有任何可识别窗口时输出 `status: "warning"` 和空 `windows[]`。
+- 至少解析出一个有有效使用百分比的窗口时输出 `status: "ok"`。`usage` 存在但没有可用窗口时返回 `status: "error"`，应用继续显示已有的历史额度。
 
 ## 本地参考
 

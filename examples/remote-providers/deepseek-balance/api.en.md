@@ -72,9 +72,10 @@ DeepSeek returns balance, not a recurring quota. Without a reference total, the 
 - Missing `DEEPSEEK_API_KEY` exits with an error.
 - Non-2xx responses throw `DeepSeek balance request failed with <status>`.
 - If `DEEPSEEK_BALANCE_CURRENCY` is set and the response has no matching currency, the script errors.
-- `is_available === false` emits `status: "warning"`.
+- With no usable balance, the provider returns `status: "error"` so the app can keep displaying any cached balance.
+- A valid balance with `is_available === false` yields `status: "warning"`.
 - Any window at or below the local warning threshold emits `status: "warning"` with diagnostics.
-- Other parseable responses emit `status: "ok"`.
+- Other responses with a valid balance yield `status: "ok"`.
 
 ## Local References
 

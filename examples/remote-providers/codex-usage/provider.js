@@ -22,13 +22,18 @@ function main(qb) {
   const windows = [];
   if (normalized.session) windows.push(windowFromUsage("5h", "5h", normalized.session));
   if (normalized.weekly) windows.push(windowFromUsage("weekly", "Weekly limit", normalized.weekly));
+  if (windows.length === 0) {
+    const error = "Codex usage response contained no usable quota windows";
+    logStep(qb, "warn", "snapshot.empty", error);
+    return { status: "error", error, windows };
+  }
   logStep(qb, "info", "snapshot.ready", "Codex snapshot ready", {
-    status: windows.length > 0 ? "ok" : "warning",
+    status: "ok",
     windowCount: windows.length,
     planType: raw.plan_type || null
   });
   return {
-    status: windows.length > 0 ? "ok" : "warning",
+    status: "ok",
     updatedAt: qb.now(),
     windows,
     metadata: { planType: raw.plan_type || null, credits: raw.credits || null }
@@ -98,7 +103,7 @@ function normalizeRateLimitWindows(rateLimit) {
   return { session, weekly };
 }
 
-function usageWindowOrNull(window) { return window && typeof window.used_percent === "number" ? window : null; }
+function usageWindowOrNull(window) { return window && Number.isFinite(window.used_percent) ? window : null; }
 function rateWindowRole(window) {
   const seconds = numberOrNull(window && window.limit_window_seconds);
   if (seconds === CODEX_SESSION_WINDOW_SECONDS) return "session";

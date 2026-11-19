@@ -1,16 +1,24 @@
 function main(qb) {
   logStep(qb, "info", "provider.start", "BigModel provider started");
   const raw = fetchBigModelQuota(qb);
-  const limits = raw.data && raw.data.limits || [];
+  if (raw?.success === false) {
+    return { status: "error", error: raw.msg || "BigModel quota request failed", windows: [] };
+  }
+  const rawLimits = raw?.data?.limits;
+  const limits = Array.isArray(rawLimits) ? rawLimits.filter(isUsableLimit) : [];
+  if (limits.length === 0) {
+    const error = "BigModel quota response contained no usable quota windows";
+    logStep(qb, "warn", "snapshot.empty", error);
+    return { status: "error", error, windows: [] };
+  }
   logStep(qb, "info", "snapshot.ready", "BigModel snapshot ready", {
-    status: raw.success === false ? "error" : "ok",
+    status: "ok",
     windowCount: limits.length
   });
   return {
-    status: raw.success === false ? "error" : "ok",
+    status: "ok",
     updatedAt: qb.now(),
     windows: limits.map(limitToWindow).sort(compareWindows),
-    error: raw.success === false ? raw.msg || "BigModel quota request failed" : null,
     metadata: {
       level: raw.data && raw.data.level || null,
       usageDetails: usageDetailsFrom(limits),
@@ -39,6 +47,13 @@ function logStep(qb, level, stage, message, fields) {
   qb.log(Object.assign({ level, stage, message }, fields || {}));
 }
 
+function isUsableLimit(limit) {
+  return typeof limit?.type === "string" && limit.type.trim() !== ""
+    && numberOrNull(limit.unit) !== null && numberOrNull(limit.number) !== null
+    && (numberOrNull(limit.percentage) !== null
+      || (numberOrNull(limit.currentValue) !== null && numberOrNull(limit.usage) !== null));
+}
+
 function limitToWindow(limit) {
   const usedPercent = numberOrNull(limit.percentage);
   return {
@@ -57,7 +72,10 @@ function limitToWindow(limit) {
 function usageDetailsFrom(limits) {
   const details = {};
   for (const limit of limits) {
-    for (const item of limit.usageDetails || []) details[item.modelCode] = item.usage;
+    if (!Array.isArray(limit.usageDetails)) continue;
+    for (const item of limit.usageDetails) {
+      if (typeof item?.modelCode === "string") details[item.modelCode] = item.usage;
+    }
   }
   return details;
 }
@@ -67,7 +85,7 @@ function windowOrder(id) {
   return ({ "tokens-limit-3-5": 1, "tokens-limit-6-1": 2, "time-limit-5-1": 3 })[id] || 99;
 }
 function numberOrNull(value) {
-  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "number" && (typeof value !== "string" || value.trim() === "")) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }

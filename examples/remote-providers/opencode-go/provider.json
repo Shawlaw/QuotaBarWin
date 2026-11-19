@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "opencode-go",
   "displayName": "OpenCode Go",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.1.0",
   "description": "OpenCode Go subscription 5h, weekly, and monthly quota usage via remote provider script.",
   "runtime": "builtin-js",
@@ -34,6 +34,6 @@
     }
   ],
   "checksums": {
-    "source": "sha256:1be986426cf0a585e37eef2070d6a2671d5f68df02c6013446818c90a15336a9"
+    "source": "sha256:8053273c77f52b64d1b4bcc630d67907f90ac58a5d6ad37f2e4920c028cb7169"
   }
 }

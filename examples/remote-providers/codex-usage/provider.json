@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "codex-usage",
   "displayName": "Codex Usage",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "minAppVersion": "1.1.0",
   "description": "ChatGPT/Codex 5h and weekly usage via remote provider script.",
   "runtime": "builtin-js",
@@ -64,6 +64,6 @@
     }
   ],
   "checksums": {
-    "source": "sha256:a8b98f7170a315c68ad1aee010242fa9d1debba3756bd6a5477cc359652e68a5"
+    "source": "sha256:be891ff4eec7f9db4d41d3e0628554a99184e638fcbd443b873cde4aba3cd69e"
   }
 }

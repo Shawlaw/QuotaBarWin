@@ -2,11 +2,19 @@ function main(qb) {
   logStep(qb, "info", "provider.start", "DeepSeek provider started");
   const raw = fetchDeepSeekBalance(qb);
   const requestedCurrency = textOrNull(qb.env.getOptional("DEEPSEEK_BALANCE_CURRENCY"));
-  const balances = (raw.balance_infos || []).filter(
-    (balance) => !requestedCurrency || balance.currency === requestedCurrency
+  const rawBalances = Array.isArray(raw?.balance_infos) ? raw.balance_infos : [];
+  const currencyBalances = rawBalances.filter(
+    (balance) => typeof balance?.currency === "string" && balance.currency.trim() !== ""
+      && (!requestedCurrency || balance.currency === requestedCurrency)
   );
-  if (requestedCurrency && balances.length === 0) {
+  if (requestedCurrency && currencyBalances.length === 0) {
     throw new Error(`DeepSeek balance did not include currency ${requestedCurrency}`);
+  }
+  const balances = currencyBalances.filter((balance) => numberOrNull(balance.total_balance) !== null);
+  if (balances.length === 0) {
+    const error = "DeepSeek response contained no usable balances";
+    logStep(qb, "warn", "snapshot.empty", error);
+    return { status: "error", error, windows: [] };
   }
   const windows = balances.map((balance) => balanceToWindow(qb, balance));
   const warningWindows = windows.filter(
@@ -90,7 +98,7 @@ function balanceToWindow(qb, balance) {
 
 function envNumber(qb, name) { return numberOrNull(qb.env.getOptional(name)); }
 function numberOrNull(value) {
-  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "number" && (typeof value !== "string" || value.trim() === "")) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }

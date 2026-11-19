@@ -1368,27 +1368,35 @@ mod tests {
     use super::*;
     use crate::proxy::{ProxyConfig, ProxyKind};
 
-    fn run_official_kimi_source(raw: serde_json::Value) -> ProviderSnapshot {
+    fn run_official_provider_source(provider_id: &str, raw: serde_json::Value) -> ProviderSnapshot {
         let provider_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("repo root")
             .join("examples")
             .join("remote-providers")
-            .join("kimi-coding");
-        let manifest = load_cached_manifest(&provider_dir).expect("Kimi manifest");
-        let source = std::fs::read_to_string(provider_dir.join(&manifest.entry))
-            .expect("Kimi source")
-            .replace(
-                "const raw = fetchKimiUsage(qb);",
-                &format!(
-                    "const raw = {};",
-                    serde_json::to_string(&raw).expect("Kimi fixture JSON")
-                ),
-            );
-        let env = HashMap::from([("KIMI_API_KEY".to_string(), "test-token".to_string())]);
+            .join(provider_id);
+        let manifest = load_cached_manifest(&provider_dir).expect("provider manifest");
+        let source =
+            std::fs::read_to_string(provider_dir.join(&manifest.entry)).expect("provider source");
+        let body = serde_json::to_string(&raw.to_string()).expect("response body");
+        let source = format!(
+            r#"{source}
+const providerMain = main;
+main = (qb) => providerMain({{
+    ...qb,
+    fs: {{ readText: () => '{{"tokens":{{"access_token":"test-token"}}}}' }},
+    http: {{ request: () => ({{ ok: true, status: 200, body: {body} }}) }}
+}});
+"#
+        );
+        let env = manifest
+            .required_env_vars
+            .iter()
+            .map(|name| (name.clone(), "test-token".to_string()))
+            .collect::<HashMap<_, _>>();
         let result = run_builtin_js_provider(BuiltinJsRun {
-            provider_id: "kimi-coding",
-            provider_name: "Kimi Coding",
+            provider_id,
+            provider_name: provider_id,
             manifest: &manifest,
             source: &source,
             env: &env,
@@ -1397,43 +1405,17 @@ mod tests {
             proxy_url: None,
             log: None,
         })
-        .expect("Kimi builtin-js result");
-        parse_remote_provider_snapshot_v1("kimi-coding", "Kimi Coding", &result.json)
-            .expect("Kimi snapshot")
+        .expect("provider builtin-js result");
+        parse_remote_provider_snapshot_v1(provider_id, provider_id, &result.json)
+            .expect("provider snapshot")
+    }
+
+    fn run_official_kimi_source(raw: serde_json::Value) -> ProviderSnapshot {
+        run_official_provider_source("kimi-coding", raw)
     }
 
     fn run_official_opencode_go_source(raw: serde_json::Value) -> ProviderSnapshot {
-        let provider_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("repo root")
-            .join("examples")
-            .join("remote-providers")
-            .join("opencode-go");
-        let manifest = load_cached_manifest(&provider_dir).expect("OpenCode Go manifest");
-        let source = std::fs::read_to_string(provider_dir.join(&manifest.entry))
-            .expect("OpenCode Go source")
-            .replace(
-                "const raw = fetchOpenCodeGoUsage(qb, apiKey);",
-                &format!(
-                    "const raw = {};",
-                    serde_json::to_string(&raw).expect("OpenCode Go fixture JSON")
-                ),
-            );
-        let env = HashMap::from([("OPENCODE_GO_API_KEY".to_string(), "test-token".to_string())]);
-        let result = run_builtin_js_provider(BuiltinJsRun {
-            provider_id: "opencode-go",
-            provider_name: "OpenCode Go",
-            manifest: &manifest,
-            source: &source,
-            env: &env,
-            sensitive_values: &[],
-            timeout: Duration::from_secs(2),
-            proxy_url: None,
-            log: None,
-        })
-        .expect("OpenCode Go builtin-js result");
-        parse_remote_provider_snapshot_v1("opencode-go", "OpenCode Go", &result.json)
-            .expect("OpenCode Go snapshot")
+        run_official_provider_source("opencode-go", raw)
     }
 
     fn node_command(script: &str) -> RemoteCommandSpec {
@@ -1479,6 +1461,7 @@ mod tests {
                 "detail": { "used": "", "remaining": "", "limit": "" }
             }]
         }));
+        assert_eq!(provider.status, "ok");
         assert!(!provider
             .windows
             .iter()
@@ -1491,6 +1474,21 @@ mod tests {
         assert_eq!(weekly.used_percent, Some(15.0));
         assert_eq!(weekly.remaining_percent, Some(85.0));
         assert_eq!(weekly.confidence, "exact");
+    }
+
+    #[test]
+    fn builtin_kimi_reports_a_response_without_quota_windows_as_an_error() {
+        let provider = run_official_kimi_source(serde_json::json!({
+            "limits": [],
+            "user": { "region": "REGION_CN" }
+        }));
+
+        assert_eq!(provider.status, "error");
+        assert_eq!(
+            provider.error.as_deref(),
+            Some("Kimi usage response contained no quota windows")
+        );
+        assert!(provider.windows.is_empty());
     }
 
     #[test]
@@ -1548,13 +1546,91 @@ mod tests {
     }
 
     #[test]
-    fn builtin_opencode_go_warns_when_no_window_is_recognized() {
-        let provider = run_official_opencode_go_source(serde_json::json!({
-            "usage": { "mine": true, "useBalance": false }
-        }));
+    fn builtin_http_providers_reject_responses_without_usable_quota() {
+        for (id, body) in [
+            ("codex-usage", serde_json::json!({ "rate_limit": {} })),
+            (
+                "opencode-go",
+                serde_json::json!({ "usage": { "mine": true, "useBalance": false } }),
+            ),
+            (
+                "opencode-go",
+                serde_json::json!({
+                    "usage": { "rolling": { "percent": false }, "weekly": { "percent": " " } }
+                }),
+            ),
+            (
+                "bigmodel-coding-plan",
+                serde_json::json!({ "success": true, "data": { "limits": [] } }),
+            ),
+            (
+                "bigmodel-coding-plan",
+                serde_json::json!({
+                    "data": { "limits": [{ "type": "TOKENS_LIMIT", "unit": 3, "number": 5 }] }
+                }),
+            ),
+            (
+                "deepseek-balance",
+                serde_json::json!({ "is_available": false, "balance_infos": [] }),
+            ),
+            (
+                "deepseek-balance",
+                serde_json::json!({
+                    "balance_infos": [{ "currency": "CNY", "total_balance": false }]
+                }),
+            ),
+        ] {
+            let provider = run_official_provider_source(id, body);
+            assert_eq!(provider.status, "error", "{id}");
+            assert!(provider.windows.is_empty(), "{id}");
+            assert!(provider.error.is_some(), "{id}");
+        }
+    }
+
+    #[test]
+    fn builtin_codex_keeps_a_weekly_window_reporting_zero_usage() {
+        let provider = run_official_provider_source(
+            "codex-usage",
+            serde_json::json!({
+                "rate_limit": { "primary_window": { "used_percent": 0, "limit_window_seconds": 604800 } }
+            }),
+        );
+
+        assert_eq!(provider.status, "ok");
+        assert_eq!(provider.windows.len(), 1);
+        assert_eq!(provider.windows[0].id, "weekly");
+        assert_eq!(provider.windows[0].used_percent, Some(0.0));
+    }
+
+    #[test]
+    fn builtin_bigmodel_keeps_a_valid_window_alongside_invalid_entries() {
+        let provider = run_official_provider_source(
+            "bigmodel-coding-plan",
+            serde_json::json!({
+                "data": { "limits": [null, { "type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 0 }] }
+            }),
+        );
+
+        assert_eq!(provider.status, "ok");
+        assert_eq!(provider.windows.len(), 1);
+        assert_eq!(provider.windows[0].id, "tokens-limit-3-5");
+        assert_eq!(provider.windows[0].used_percent, Some(0.0));
+    }
+
+    #[test]
+    fn builtin_deepseek_reports_unavailable_account_with_a_valid_zero_balance() {
+        let provider = run_official_provider_source(
+            "deepseek-balance",
+            serde_json::json!({
+                "is_available": false,
+                "balance_infos": [null, { "currency": "CNY", "total_balance": "0.00" }]
+            }),
+        );
 
         assert_eq!(provider.status, "warning");
-        assert!(provider.windows.is_empty());
+        assert_eq!(provider.windows.len(), 1);
+        assert_eq!(provider.windows[0].id, "balance-cny");
+        assert_eq!(provider.windows[0].remaining, Some(0.0));
     }
 
     #[test]

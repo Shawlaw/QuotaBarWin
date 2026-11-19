@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "bigmodel-coding-plan",
   "displayName": "BigModel Coding Plan",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "minAppVersion": "1.1.0",
   "description": "Zhipu/BigModel coding plan quota via remote provider script.",
   "runtime": "builtin-js",
@@ -33,6 +33,6 @@
     }
   ],
   "checksums": {
-    "source": "sha256:d4e5163e45d6e3b9062cc666152269ff951bd3993a391247c4c5712c88f5f65d"
+    "source": "sha256:896220bbe87cf6923cf6905b01637a7dab38460f7e04ae45b94cbacdc2330bb4"
   }
 }
